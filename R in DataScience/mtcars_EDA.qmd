@@ -1,0 +1,428 @@
+---
+title: "Exploratory Data Analysis on mtcars"
+subtitle: "A Basic-Level EDA Tutorial with R"
+author: "Dr. Mustafa Hameed"
+date: today
+format:
+  html:
+    theme: flatly
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: false
+    code-tools: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# Introduction
+
+## What is Exploratory Data Analysis?
+
+**Exploratory Data Analysis (EDA)** is the critical first step in any data science workflow. Before building models or running statistical tests, we must *understand* the data.
+
+EDA involves:
+
+- **Inspecting** — What does the data look like?
+- **Summarizing** — What are the key statistics?
+- **Visualizing** — What patterns and relationships exist?
+- **Cleaning** — Are there missing values or outliers?
+
+## Why EDA Matters
+
+| Reason | Explanation |
+|:-------|:-----------|
+| Catch errors early | Spot missing values, wrong types, impossible values |
+| Understand distributions | Is the data skewed? Are there outliers? |
+| Find relationships | Which variables are correlated? |
+| Guide modeling | Choose the right algorithm based on data characteristics |
+| Communicate findings | Visualizations tell the story before models do |
+
+## The mtcars Dataset
+
+The `mtcars` dataset is built into R. It contains data from the 1974 *Motor Trend* US magazine, covering fuel consumption and 10 aspects of automobile design and performance for 32 cars.
+
+### Variable Definitions
+
+| Variable | Description | Type |
+|:---------|:-----------|:-----|
+| `mpg` | Miles per gallon (fuel efficiency) | Continuous |
+| `cyl` | Number of cylinders (4, 6, 8) | Categorical |
+| `disp` | Displacement (cubic inches) | Continuous |
+| `hp` | Gross horsepower | Continuous |
+| `drat` | Rear axle ratio | Continuous |
+| `wt` | Weight (1000 lbs) | Continuous |
+| `qsec` | Quarter-mile time (seconds) | Continuous |
+| `vs` | Engine shape (0 = V-shaped, 1 = straight) | Binary |
+| `am` | Transmission (0 = automatic, 1 = manual) | Binary |
+| `gear` | Number of forward gears (3, 4, 5) | Categorical |
+| `carb` | Number of carburetors | Categorical |
+
+---
+
+# Step 1: Load and Inspect the Data
+
+## View the Dataset
+
+```{r}
+# Display first 6 rows (default)
+head(mtcars)
+```
+
+## Check Dimensions
+
+```{r}
+# How many rows (cars) and columns (variables)?
+dim(mtcars)
+cat("Rows:", nrow(mtcars), " Columns:", ncol(mtcars), "\n")
+```
+
+**Interpretation:** We have **32 observations** (cars) and **11 variables** (features).
+
+## Preview Top and Bottom Rows
+
+```{r}
+# First 5 rows
+head(mtcars, n = 5)
+
+# Last 5 rows
+tail(mtcars, n = 5)
+```
+
+## Inspect Structure
+
+```{r}
+# Variable names, types, and sample values
+str(mtcars)
+```
+
+**Interpretation:** All variables are stored as `numeric` (type `num`). Some should be treated as **categorical** for analysis (e.g., `cyl`, `vs`, `am`, `gear`, `carb`).
+
+## Column Names
+
+```{r}
+names(mtcars)
+```
+
+---
+
+# Step 2: Summary Statistics
+
+## Descriptive Statistics
+
+```{r}
+summary(mtcars)
+```
+
+**How to read this output:**
+
+| Statistic | Meaning |
+|:----------|:--------|
+| Min | Smallest value |
+| 1st Qu. | 25th percentile — 25% of data falls below this |
+| Median | Middle value (50th percentile) |
+| Mean | Average |
+| 3rd Qu. | 75th percentile — 75% of data falls below this |
+| Max | Largest value |
+
+## Key Observations from Summary
+
+```{r}
+cat("MPG range:", min(mtcars$mpg), "to", max(mtcars$mpg), "\n")
+cat("Average MPG:", round(mean(mtcars$mpg), 2), "\n")
+cat("Median MPG:", median(mtcars$mpg), "\n")
+cat("Average HP:", round(mean(mtcars$hp), 2), "\n")
+cat("Average Weight:", round(mean(mtcars$wt), 2), "× 1000 lbs\n")
+```
+
+## Standard Deviation
+
+```{r}
+# Standard deviation measures spread around the mean
+cat("SD of MPG:", round(sd(mtcars$mpg), 2), "\n")
+cat("SD of HP:", round(sd(mtcars$hp), 2), "\n")
+cat("SD of Weight:", round(sd(mtcars$wt), 2), "\n")
+```
+
+**Interpretation:** A larger SD means more variability. HP has a large SD (~69), meaning horsepower varies widely across these cars.
+
+---
+
+# Step 3: Frequency Counts for Categorical Variables
+
+```{r}
+cat("Cylinders:\n")
+table(mtcars$cyl)
+
+cat("\nTransmission (0=auto, 1=manual):\n")
+table(mtcars$am)
+
+cat("\nGears:\n")
+table(mtcars$gear)
+
+cat("\nEngine shape (0=V, 1=straight):\n")
+table(mtcars$vs)
+```
+
+**Interpretation:**
+
+- Most cars have **8 cylinders** (14 cars), followed by 4 (11) and 6 (7).
+- **19 cars** are automatic, **13** are manual.
+- Most cars have **3 gears** (15), then 4 (12), then 5 (5).
+
+---
+
+# Step 4: Visualizations
+
+## 4.1 Histogram — Distribution of MPG
+
+```{r}
+#| label: hist-mpg
+#| fig-cap: "Distribution of fuel efficiency (MPG)"
+hist(mtcars$mpg,
+     col = "steelblue",
+     border = "white",
+     main = "Histogram of MPG",
+     xlab = "Miles Per Gallon",
+     ylab = "Frequency",
+     breaks = 10)
+abline(v = mean(mtcars$mpg), col = "red", lwd = 2, lty = 2)
+legend("topright", legend = paste("Mean =", round(mean(mtcars$mpg), 1)),
+       col = "red", lty = 2, lwd = 2)
+```
+
+**Interpretation:** The distribution of MPG is roughly **right-skewed** — most cars cluster around 15–22 MPG, with a few highly efficient outliers above 30 MPG. The red dashed line shows the mean.
+
+## 4.2 Histogram — Horsepower
+
+```{r}
+#| label: hist-hp
+#| fig-cap: "Distribution of horsepower"
+hist(mtcars$hp,
+     col = "coral",
+     border = "white",
+     main = "Histogram of Horsepower",
+     xlab = "Gross Horsepower",
+     ylab = "Frequency",
+     breaks = 10)
+abline(v = mean(mtcars$hp), col = "darkred", lwd = 2, lty = 2)
+```
+
+**Interpretation:** Horsepower is also **right-skewed**, with most cars between 50–175 HP and a few high-performance outliers above 250 HP.
+
+## 4.3 Boxplot — MPG by Number of Cylinders
+
+```{r}
+#| label: box-cyl
+#| fig-cap: "MPG grouped by number of cylinders"
+boxplot(mpg ~ cyl, data = mtcars,
+        col = c("lightgreen", "gold", "salmon"),
+        main = "MPG by Number of Cylinders",
+        xlab = "Cylinders",
+        ylab = "Miles Per Gallon")
+```
+
+**Interpretation:**
+
+- **4-cylinder** cars have the highest MPG (most fuel-efficient).
+- **8-cylinder** cars have the lowest MPG (least fuel-efficient).
+- There is a clear **negative relationship** between cylinders and fuel efficiency.
+
+## 4.4 Boxplot — MPG by Transmission Type
+
+```{r}
+#| label: box-am
+#| fig-cap: "MPG grouped by transmission type"
+boxplot(mpg ~ am, data = mtcars,
+        col = c("lightblue", "lightyellow"),
+        names = c("Automatic", "Manual"),
+        main = "MPG by Transmission Type",
+        xlab = "Transmission",
+        ylab = "Miles Per Gallon")
+```
+
+**Interpretation:** Manual transmission cars tend to have **higher MPG** than automatic cars in this dataset.
+
+## 4.5 Scatter Plot — MPG vs Weight
+
+```{r}
+#| label: scatter-wt
+#| fig-cap: "Scatter plot of fuel efficiency vs car weight"
+plot(mtcars$wt, mtcars$mpg,
+     col = "steelblue",
+     pch = 19,
+     main = "MPG vs Weight",
+     xlab = "Weight (1000 lbs)",
+     ylab = "Miles Per Gallon")
+abline(lm(mpg ~ wt, data = mtcars), col = "red", lwd = 2)
+```
+
+**Interpretation:** There is a strong **negative linear relationship** — heavier cars get worse fuel economy. The red line is the linear regression fit.
+
+## 4.6 Scatter Plot — MPG vs Horsepower
+
+```{r}
+#| label: scatter-hp
+#| fig-cap: "Scatter plot of fuel efficiency vs horsepower"
+plot(mtcars$hp, mtcars$mpg,
+     col = "coral",
+     pch = 19,
+     main = "MPG vs Horsepower",
+     xlab = "Horsepower",
+     ylab = "Miles Per Gallon")
+abline(lm(mpg ~ hp, data = mtcars), col = "darkred", lwd = 2)
+```
+
+**Interpretation:** More powerful cars tend to have **lower fuel efficiency** — a strong negative relationship.
+
+## 4.7 Bar Chart — Number of Cars by Cylinders
+
+```{r}
+#| label: bar-cyl
+#| fig-cap: "Count of cars by cylinder group"
+barplot(table(mtcars$cyl),
+        col = c("lightgreen", "gold", "salmon"),
+        main = "Number of Cars by Cylinder Count",
+        xlab = "Cylinders",
+        ylab = "Count")
+```
+
+## 4.8 Pairs Plot — Key Variables
+
+```{r}
+#| label: pairs-plot
+#| fig-cap: "Pairs plot of key numeric variables"
+pairs(mtcars[, c("mpg", "hp", "wt", "disp", "qsec")],
+      col = "steelblue",
+      pch = 19,
+      main = "Pairs Plot — Key Variables")
+```
+
+**Interpretation:** The pairs plot shows scatter plots for every pair of selected variables. Look for strong linear trends (e.g., mpg vs wt) and weak relationships (e.g., qsec vs disp).
+
+---
+
+# Step 5: Correlation Analysis
+
+```{r}
+# Correlation matrix for key variables
+cor_matrix <- round(cor(mtcars[, c("mpg", "hp", "wt", "disp", "drat", "qsec")]), 2)
+cor_matrix
+```
+
+**How to read correlations:**
+
+| Value | Meaning |
+|:------|:--------|
+| +1.00 | Perfect positive relationship |
+| +0.50 to +0.99 | Strong positive |
+| +0.10 to +0.49 | Weak positive |
+| 0.00 | No relationship |
+| −0.10 to −0.49 | Weak negative |
+| −0.50 to −0.99 | Strong negative |
+| −1.00 | Perfect negative relationship |
+
+**Key findings:**
+
+- **mpg vs wt:** Strong negative (r ≈ −0.87) — heavier cars use more fuel
+- **mpg vs hp:** Strong negative (r ≈ −0.78) — more powerful cars use more fuel
+- **mpg vs disp:** Strong negative (r ≈ −0.85) — larger engines use more fuel
+- **wt vs disp:** Strong positive (r ≈ 0.89) — heavier cars have bigger engines
+
+---
+
+# Step 6: Subsetting and Filtering
+
+## Filter: Fuel-Efficient Cars (MPG > 20)
+
+```{r}
+efficient_cars <- mtcars[mtcars$mpg > 20, c("mpg", "cyl", "hp", "wt", "am")]
+efficient_cars
+cat("\nNumber of fuel-efficient cars:", nrow(efficient_cars), "out of 32\n")
+```
+
+## Aggregate: Mean MPG by Cylinders
+
+```{r}
+agg_cyl <- aggregate(mpg ~ cyl, data = mtcars, FUN = mean)
+names(agg_cyl) <- c("Cylinders", "Mean_MPG")
+agg_cyl
+```
+
+**Interpretation:** 4-cylinder cars average ~26.7 MPG, 6-cylinder ~19.7, and 8-cylinder ~15.1.
+
+## Aggregate: Mean MPG by Transmission
+
+```{r}
+agg_am <- aggregate(mpg ~ am, data = mtcars, FUN = mean)
+agg_am$am <- ifelse(agg_am$am == 0, "Automatic", "Manual")
+names(agg_am) <- c("Transmission", "Mean_MPG")
+agg_am
+```
+
+## Aggregate: Mean MPG by Gear Count
+
+```{r}
+agg_gear <- aggregate(mpg ~ gear, data = mtcars, FUN = mean)
+names(agg_gear) <- c("Gears", "Mean_MPG")
+agg_gear
+```
+
+---
+
+# Step 7: Advanced Filtering
+
+```{r}
+# Cars with MPG > 25 AND manual transmission
+high_eff_manual <- mtcars[mtcars$mpg > 25 & mtcars$am == 1,
+                          c("mpg", "cyl", "hp", "wt", "gear")]
+cat("High-efficiency manual cars:\n")
+high_eff_manual
+```
+
+```{r}
+# Cars with 4 cylinders, sorted by MPG (descending)
+four_cyl <- mtcars[mtcars$cyl == 4, ]
+four_cyl <- four_cyl[order(-four_cyl$mpg), c("mpg", "hp", "wt", "gear", "am")]
+cat("4-cylinder cars (sorted by MPG):\n")
+four_cyl
+```
+
+---
+
+# Summary
+
+## What We Learned
+
+| EDA Step | What It Does | Key R Functions |
+|:---------|:------------|:----------------|
+| Inspect | See the data structure | `head()`, `str()`, `dim()` |
+| Summarize | Compute statistics | `summary()`, `mean()`, `sd()`, `table()` |
+| Visualize | See patterns | `hist()`, `boxplot()`, `plot()`, `pairs()` |
+| Correlate | Measure relationships | `cor()` |
+| Filter | Focus on subsets | `[ ]`, `subset()`, `aggregate()` |
+
+## Key Findings from mtcars
+
+1. **MPG ranges from 10.4 to 33.9** — wide variation in fuel efficiency
+2. **Heavier cars have worse fuel economy** (r ≈ −0.87)
+3. **More cylinders = less fuel efficient** — 4-cyl averages 26.7 MPG vs 8-cyl at 15.1
+4. **Manual transmission cars** tend to have higher MPG than automatics
+5. **HP, weight, and displacement** are the strongest predictors of fuel efficiency
+
+## Next Steps
+
+- Apply **ggplot2** for more polished visualizations
+- Perform **hypothesis testing** (e.g., is the MPG difference by transmission significant?)
+- Build a **linear regression model** to predict MPG
+- Explore **feature engineering** (e.g., power-to-weight ratio)
+
+---
+
+# References
+
+1. Henderson, H. V., & Velleman, P. F. (1981). Building multiple regression models interactively. *Biometrics*, 37, 391–411.
+2. R Core Team (2024). R: A language and environment for statistical computing.
+3. Wickham, H. (2016). *ggplot2: Elegant Graphics for Data Analysis*. Springer.

@@ -1,0 +1,280 @@
+---
+title: "Exploratory Data Analysis on mtcars — Lecture Handout"
+subtitle: "Basic-Level EDA with R"
+author: "Dr. Mustafa Hameed"
+date: today
+format:
+  pdf:
+    documentclass: article
+    papersize: letter
+    geometry:
+      - margin=1in
+    fontsize: 11pt
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    colorlinks: true
+    linkcolor: blue
+    highlight-style: github
+    header-includes: |
+      \usepackage{booktabs}
+      \usepackage{longtable}
+      \usepackage{colortbl}
+      \usepackage{xcolor}
+      \definecolor{darkblue}{HTML}{2C3E50}
+      \definecolor{accentblue}{HTML}{2980B9}
+      \usepackage{fancyhdr}
+      \pagestyle{fancy}
+      \fancyhead[L]{EDA Lecture Handout — mtcars}
+      \fancyhead[R]{Dr. Mustafa Hameed}
+      \fancyfoot[C]{\thepage}
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# What is Exploratory Data Analysis (EDA)?
+
+**Exploratory Data Analysis** is the process of examining and summarizing a dataset to understand its main characteristics *before* applying any formal statistical models or machine learning algorithms.
+
+**EDA is the FIRST step in every data science project.**
+
+## Why Do We Do EDA?
+
+| Purpose | What You Learn |
+|:--------|:---------------|
+| **Inspect structure** | How many rows/columns? What are the variable types? |
+| **Detect errors** | Missing values, impossible numbers, wrong data types |
+| **Summarize** | Mean, median, range, standard deviation |
+| **Visualize** | Distributions, relationships, outliers |
+| **Guide modeling** | Which variables matter? What transformations are needed? |
+
+## Key Statistical Concepts
+
+| Term | Definition |
+|:-----|:-----------|
+| **Mean** | The average: sum of all values ÷ count |
+| **Median** | The middle value when data is sorted |
+| **Standard Deviation (SD)** | Measures how spread out values are around the mean |
+| **Quartiles** | Split data into 4 equal parts (Q1 = 25%, Q2 = 50%, Q3 = 75%) |
+| **Correlation** | Measures the strength of linear relationship between two variables (−1 to +1) |
+| **Outlier** | A value that is unusually far from the rest of the data |
+
+---
+
+# The mtcars Dataset
+
+The `mtcars` dataset is built into R. It comes from the 1974 *Motor Trend* US magazine and contains data on 32 automobiles (1973–74 models).
+
+## Variable Descriptions
+
+| Variable | Description | Type |
+|:---------|:-----------|:-----|
+| `mpg` | Miles per gallon (fuel efficiency) | Continuous |
+| `cyl` | Number of cylinders (4, 6, 8) | Categorical |
+| `disp` | Displacement in cubic inches | Continuous |
+| `hp` | Gross horsepower | Continuous |
+| `drat` | Rear axle ratio | Continuous |
+| `wt` | Weight (× 1000 lbs) | Continuous |
+| `qsec` | Quarter-mile time (seconds) | Continuous |
+| `vs` | Engine shape (0 = V-shaped, 1 = straight) | Binary |
+| `am` | Transmission (0 = automatic, 1 = manual) | Binary |
+| `gear` | Number of forward gears (3, 4, 5) | Categorical |
+| `carb` | Number of carburetors | Categorical |
+
+---
+
+# EDA Workflow — Step by Step
+
+## Step 1: Load and Inspect
+
+```{r}
+# Dimensions
+dim(mtcars)
+
+# First 6 rows
+head(mtcars)
+
+# Structure
+str(mtcars)
+```
+
+**What to look for:** 32 rows × 11 columns. All numeric types. Some variables (cyl, vs, am, gear, carb) are actually categorical.
+
+## Step 2: Summary Statistics
+
+```{r}
+summary(mtcars)
+```
+
+**Key observations:**
+
+- MPG ranges from **10.4 to 33.9** (mean = 20.09)
+- HP ranges from **52 to 335** (mean = 146.7)
+- Weight ranges from **1.51 to 5.42** thousand lbs (mean = 3.22)
+
+## Step 3: Frequency Tables
+
+```{r}
+# How many cars per cylinder group?
+table(mtcars$cyl)
+
+# Transmission breakdown
+table(mtcars$am)
+```
+
+**Findings:** 14 cars have 8 cylinders, 11 have 4, and 7 have 6. 19 are automatic, 13 manual.
+
+## Step 4: Visualize Distributions
+
+### Histogram — MPG Distribution
+
+```{r}
+#| fig-width: 5
+#| fig-height: 3.5
+hist(mtcars$mpg, col = "steelblue", border = "white",
+     main = "Distribution of MPG", xlab = "Miles Per Gallon",
+     ylab = "Frequency", breaks = 10)
+abline(v = mean(mtcars$mpg), col = "red", lwd = 2, lty = 2)
+```
+
+**Interpretation:** Most cars get 15–22 MPG. The distribution is slightly right-skewed.
+
+### Boxplot — MPG by Cylinders
+
+```{r}
+#| fig-width: 5
+#| fig-height: 3.5
+boxplot(mpg ~ cyl, data = mtcars,
+        col = c("lightgreen", "gold", "salmon"),
+        main = "MPG by Cylinders", xlab = "Cylinders", ylab = "MPG")
+```
+
+**Interpretation:** 4-cylinder cars are the most fuel-efficient. 8-cylinder cars are the least.
+
+### Boxplot — MPG by Transmission
+
+```{r}
+#| fig-width: 5
+#| fig-height: 3.5
+boxplot(mpg ~ am, data = mtcars,
+        col = c("lightblue", "lightyellow"),
+        names = c("Automatic", "Manual"),
+        main = "MPG by Transmission", xlab = "Transmission", ylab = "MPG")
+```
+
+**Interpretation:** Manual transmission cars tend to be more fuel-efficient.
+
+## Step 5: Visualize Relationships
+
+### Scatter Plot — MPG vs Weight
+
+```{r}
+#| fig-width: 5
+#| fig-height: 3.5
+plot(mtcars$wt, mtcars$mpg, col = "steelblue", pch = 19,
+     main = "MPG vs Weight", xlab = "Weight (1000 lbs)", ylab = "MPG")
+abline(lm(mpg ~ wt, data = mtcars), col = "red", lwd = 2)
+```
+
+**Interpretation:** Strong negative relationship — heavier cars get worse fuel economy.
+
+### Scatter Plot — MPG vs Horsepower
+
+```{r}
+#| fig-width: 5
+#| fig-height: 3.5
+plot(mtcars$hp, mtcars$mpg, col = "coral", pch = 19,
+     main = "MPG vs Horsepower", xlab = "Horsepower", ylab = "MPG")
+abline(lm(mpg ~ hp, data = mtcars), col = "darkred", lwd = 2)
+```
+
+**Interpretation:** More powerful cars tend to have lower fuel efficiency.
+
+## Step 6: Correlation Analysis
+
+```{r}
+cor_vars <- mtcars[, c("mpg", "hp", "wt", "disp", "drat", "qsec")]
+round(cor(cor_vars), 2)
+```
+
+### Correlation Interpretation Guide
+
+| Correlation Range | Strength |
+|:-----------------|:---------|
+| ±0.70 to ±1.00 | Strong |
+| ±0.40 to ±0.69 | Moderate |
+| ±0.10 to ±0.39 | Weak |
+| 0.00 to ±0.09 | None |
+
+**Key correlations:**
+
+- mpg ↔ wt: **−0.87** (strong negative)
+- mpg ↔ hp: **−0.78** (strong negative)
+- mpg ↔ disp: **−0.85** (strong negative)
+- wt ↔ disp: **+0.89** (strong positive)
+
+## Step 7: Subsetting and Aggregation
+
+```{r}
+# Fuel-efficient cars (MPG > 20)
+efficient <- mtcars[mtcars$mpg > 20, c("mpg", "cyl", "hp", "wt")]
+efficient
+
+# Mean MPG by cylinder group
+aggregate(mpg ~ cyl, data = mtcars, FUN = mean)
+
+# Mean MPG by transmission
+agg_am <- aggregate(mpg ~ am, data = mtcars, FUN = mean)
+agg_am$am <- ifelse(agg_am$am == 0, "Automatic", "Manual")
+agg_am
+```
+
+---
+
+# Summary of Key Findings
+
+| Finding | Evidence |
+|:--------|:---------|
+| MPG varies widely | Range: 10.4 – 33.9 |
+| Heavier cars use more fuel | Correlation: −0.87 |
+| More cylinders = less efficient | 4-cyl: 26.7 MPG, 8-cyl: 15.1 MPG |
+| Manual cars tend to be more efficient | Manual avg: 24.4 MPG vs Auto: 17.1 MPG |
+| HP and displacement hurt fuel economy | Correlations: −0.78 and −0.85 |
+
+---
+
+# EDA Cheat Sheet
+
+| Task | R Function | Example |
+|:-----|:-----------|:--------|
+| View data | `head()`, `tail()` | `head(mtcars)` |
+| Dimensions | `dim()`, `nrow()`, `ncol()` | `dim(mtcars)` |
+| Structure | `str()` | `str(mtcars)` |
+| Summary stats | `summary()`, `mean()`, `sd()` | `summary(mtcars$mpg)` |
+| Frequency table | `table()` | `table(mtcars$cyl)` |
+| Histogram | `hist()` | `hist(mtcars$mpg)` |
+| Boxplot | `boxplot()` | `boxplot(mpg ~ cyl, data = mtcars)` |
+| Scatter plot | `plot()` | `plot(mtcars$wt, mtcars$mpg)` |
+| Correlation | `cor()` | `cor(mtcars$mpg, mtcars$wt)` |
+| Filter rows | `[ ]` or `subset()` | `mtcars[mtcars$mpg > 20, ]` |
+| Aggregate | `aggregate()` | `aggregate(mpg ~ cyl, data = mtcars, mean)` |
+
+---
+
+# Practice Exercises
+
+1. Create a histogram of `wt` (weight). Is it skewed?
+2. Make a boxplot of `hp` grouped by `cyl`. What do you observe?
+3. Calculate the correlation between `hp` and `wt`. Interpret the result.
+4. Filter cars with HP > 200. How many are there? What is their average MPG?
+5. Create a scatter plot of `disp` vs `mpg`. Add a regression line. Describe the trend.
+
+---
+
+# References
+
+1. Henderson, H. V., & Velleman, P. F. (1981). Building multiple regression models interactively. *Biometrics*, 37, 391–411.
+2. R Core Team (2024). *R: A language and environment for statistical computing*.
+3. Tukey, J. W. (1977). *Exploratory Data Analysis*. Addison-Wesley.
