@@ -1,0 +1,467 @@
+---
+title: "Association Rule Mining (ARM)"
+author: "Instructor"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: false
+  pdf:
+    toc: true
+    number-sections: true
+    geometry: margin=1in
+    fontsize: 11pt
+    pdf-engine: lualatex
+jupyter: python3
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Introduction
+
+**Association Rule Mining (ARM)** is an unsupervised machine learning technique used to
+discover interesting relationships (associations) between variables in large datasets.
+Common applications include:
+
+- **Market basket analysis** (e.g., "customers who buy bread also buy butter")
+- **Recommendation systems**
+- **Medical diagnosis**
+- **Web usage mining**
+
+### Key Metrics
+
+| Metric | Formula | Interpretation |
+|--------|---------|----------------|
+| **Support** | freq(A+B) / N | How often the itemset appears |
+| **Confidence** | Support(A+B) / Support(A) | Reliability of the rule |
+| **Lift** | Confidence(A=>B) / Support(B) | Strength vs. random chance |
+
+A **Lift > 1** indicates that A and B appear together more often than expected by chance.
+
+---
+
+## Setup: Import Libraries
+
+```{python}
+#| label: install-deps
+
+import subprocess, sys
+
+# Pin mlxtend to 0.23.1 — version 0.24.0 is incompatible with NumPy 2.x
+# (frozenset itemsets are rendered as np.str_ which breaks association_rules())
+subprocess.check_call(
+    [sys.executable, "-m", "pip", "install", "--quiet",
+     "mlxtend==0.23.1", "pandas", "numpy", "matplotlib", "seaborn"],
+    stdout=subprocess.DEVNULL,
+)
+print("Dependencies installed: mlxtend==0.23.1, pandas, numpy, matplotlib, seaborn")
+```
+
+```{python}
+#| label: setup
+
+import pandas as pd
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")          # non-interactive backend for PDF rendering
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import seaborn as sns
+from mlxtend.preprocessing import TransactionEncoder
+from mlxtend.frequent_patterns import apriori, association_rules
+
+# Consistent plot style
+sns.set_theme(style="whitegrid")
+plt.rcParams.update({"figure.dpi": 110, "figure.figsize": (8, 5)})
+print("All libraries loaded successfully.")
+```
+
+---
+
+## Dataset: Synthetic Grocery Transactions
+
+We simulate a realistic market-basket dataset with **1,000 transactions** across
+**20 grocery items**.
+
+```{python}
+#| label: create-dataset
+
+np.random.seed(42)
+
+items = [
+    "whole milk", "yogurt", "rolls/buns", "soda", "other vegetables",
+    "root vegetables", "tropical fruit", "bottled water", "pastry",
+    "citrus fruit", "shopping bags", "sausage", "newspapers",
+    "bottled beer", "canned beer", "fruit/vegetable juice",
+    "whipped/sour cream", "domestic eggs", "pip fruit", "chocolate"
+]
+
+# Define co-purchase probabilities (basket patterns)
+basket_patterns = [
+    ["whole milk", "yogurt", "other vegetables"],
+    ["whole milk", "rolls/buns", "soda"],
+    ["root vegetables", "other vegetables", "whole milk"],
+    ["tropical fruit", "yogurt", "whole milk"],
+    ["pastry", "citrus fruit", "whole milk"],
+    ["sausage", "rolls/buns", "soda"],
+    ["bottled beer", "canned beer"],
+    ["shopping bags", "other vegetables", "root vegetables"],
+    ["domestic eggs", "whole milk", "other vegetables"],
+    ["whipped/sour cream", "whole milk", "yogurt"],
+]
+
+transactions = []
+for _ in range(1000):
+    pattern = basket_patterns[np.random.randint(len(basket_patterns))]
+    extra   = list(np.random.choice(items, size=np.random.randint(0, 3), replace=False))
+    basket  = list(set(pattern + extra))
+    transactions.append(basket)
+
+print(f"Total transactions: {len(transactions)}")
+print(f"Sample transaction: {transactions[0]}")
+```
+
+---
+
+## Exploratory Data Analysis
+
+### Item Frequency
+
+```{python}
+#| label: item-frequency
+#| fig-cap: "Top 15 Most Frequent Items"
+
+all_items = [item for basket in transactions for item in basket]
+freq_series = pd.Series(all_items).value_counts()
+support_series = freq_series / len(transactions)
+
+# Bar chart
+fig, ax = plt.subplots()
+support_series.head(15).sort_values().plot(
+    kind="barh", color="steelblue", ax=ax
+)
+ax.set_xlabel("Support (Relative Frequency)")
+ax.set_title("Top 15 Most Frequent Items")
+plt.tight_layout()
+plt.savefig("item_frequency.png", bbox_inches="tight")
+plt.show()
+print(support_series.head(15).to_string())
+```
+
+### Transaction Length Distribution
+
+```{python}
+#| label: tx-length
+#| fig-cap: "Distribution of Transaction Lengths"
+
+lengths = [len(t) for t in transactions]
+fig, ax = plt.subplots()
+ax.hist(lengths, bins=range(1, max(lengths) + 2), color="coral",
+        edgecolor="white", align="left")
+ax.set_xlabel("Number of Items per Transaction")
+ax.set_ylabel("Frequency")
+ax.set_title("Transaction Length Distribution")
+plt.tight_layout()
+plt.savefig("tx_length.png", bbox_inches="tight")
+plt.show()
+print(f"Mean transaction length: {np.mean(lengths):.2f}")
+print(f"Max transaction length:  {max(lengths)}")
+```
+
+---
+
+## Encoding Transactions
+
+Convert the list-of-lists format into a binary matrix for the Apriori algorithm.
+
+```{python}
+#| label: encoding
+
+te = TransactionEncoder()
+te_array = te.fit_transform(transactions)
+df_encoded = pd.DataFrame(te_array, columns=te.columns_)
+
+print(f"Encoded matrix shape: {df_encoded.shape}")
+df_encoded.head(5)
+```
+
+---
+
+## Mining Frequent Itemsets with Apriori
+
+```{python}
+#| label: apriori
+
+frequent_itemsets = apriori(
+    df_encoded,
+    min_support=0.05,
+    use_colnames=True,
+    max_len=4
+)
+frequent_itemsets["length"] = frequent_itemsets["itemsets"].apply(len)
+frequent_itemsets_sorted = frequent_itemsets.sort_values("support", ascending=False)
+
+print(f"Total frequent itemsets: {len(frequent_itemsets)}")
+frequent_itemsets_sorted.head(10)
+```
+
+### Frequent Itemsets by Length
+
+```{python}
+#| label: itemsets-by-length
+#| fig-cap: "Number of Frequent Itemsets by Length"
+
+length_counts = frequent_itemsets["length"].value_counts().sort_index()
+fig, ax = plt.subplots(figsize=(6, 4))
+length_counts.plot(kind="bar", color="mediumseagreen", edgecolor="white", ax=ax)
+ax.set_xlabel("Itemset Length")
+ax.set_ylabel("Count")
+ax.set_title("Frequent Itemsets by Length")
+plt.tight_layout()
+plt.savefig("itemsets_by_length.png", bbox_inches="tight")
+plt.show()
+```
+
+---
+
+## Generating Association Rules
+
+```{python}
+#| label: rules
+
+rules = association_rules(
+    frequent_itemsets,
+    metric="confidence",
+    min_threshold=0.4
+)
+rules = rules.sort_values("lift", ascending=False)
+
+print(f"Total association rules: {len(rules)}")
+cols = ["antecedents", "consequents", "support", "confidence", "lift"]
+rules[cols].head(10)
+```
+
+---
+
+## Inspecting Top Rules
+
+### Top 10 Rules by Lift
+
+```{python}
+#| label: top-lift
+
+top_lift = rules.nlargest(10, "lift")[cols]
+top_lift["antecedents"] = top_lift["antecedents"].apply(lambda x: ", ".join(sorted(x)))
+top_lift["consequents"] = top_lift["consequents"].apply(lambda x: ", ".join(sorted(x)))
+print(top_lift.to_string(index=False))
+```
+
+### Top 10 Rules by Confidence
+
+```{python}
+#| label: top-confidence
+
+top_conf = rules.nlargest(10, "confidence")[cols].copy()
+top_conf["antecedents"] = top_conf["antecedents"].apply(lambda x: ", ".join(sorted(x)))
+top_conf["consequents"] = top_conf["consequents"].apply(lambda x: ", ".join(sorted(x)))
+print(top_conf.to_string(index=False))
+```
+
+---
+
+## Visualizations
+
+### Support vs Confidence (Scatter Plot)
+
+```{python}
+#| label: scatter-supp-conf
+#| fig-cap: "Support vs Confidence, coloured by Lift"
+
+fig, ax = plt.subplots()
+sc = ax.scatter(
+    rules["support"], rules["confidence"],
+    c=rules["lift"], cmap="viridis", alpha=0.7, edgecolors="none", s=60
+)
+cbar = fig.colorbar(sc, ax=ax)
+cbar.set_label("Lift")
+ax.set_xlabel("Support")
+ax.set_ylabel("Confidence")
+ax.set_title("Association Rules: Support vs Confidence")
+plt.tight_layout()
+plt.savefig("scatter_supp_conf.png", bbox_inches="tight")
+plt.show()
+```
+
+### Lift Distribution
+
+```{python}
+#| label: lift-dist
+#| fig-cap: "Distribution of Lift Values Across All Rules"
+
+fig, ax = plt.subplots(figsize=(7, 4))
+ax.hist(rules["lift"], bins=20, color="steelblue", edgecolor="white")
+ax.axvline(1.0, color="red", linestyle="--", label="Lift = 1 (random)")
+ax.set_xlabel("Lift")
+ax.set_ylabel("Number of Rules")
+ax.set_title("Distribution of Lift Values")
+ax.legend()
+plt.tight_layout()
+plt.savefig("lift_dist.png", bbox_inches="tight")
+plt.show()
+```
+
+### Confidence vs Lift (Coloured by Support)
+
+```{python}
+#| label: conf-lift
+#| fig-cap: "Confidence vs Lift, coloured by Support"
+
+fig, ax = plt.subplots()
+sc2 = ax.scatter(
+    rules["confidence"], rules["lift"],
+    c=rules["support"], cmap="plasma", alpha=0.7, edgecolors="none", s=60
+)
+cbar2 = fig.colorbar(sc2, ax=ax)
+cbar2.set_label("Support")
+ax.set_xlabel("Confidence")
+ax.set_ylabel("Lift")
+ax.set_title("Confidence vs Lift")
+plt.tight_layout()
+plt.savefig("conf_lift.png", bbox_inches="tight")
+plt.show()
+```
+
+### Top 10 Rules — Heatmap (Antecedent vs Consequent Lift)
+
+```{python}
+#| label: heatmap
+#| fig-cap: "Heatmap of Lift for Top Association Rules"
+
+top20 = rules.nlargest(20, "lift").copy()
+top20["ant_str"] = top20["antecedents"].apply(lambda x: ", ".join(sorted(x)))
+top20["con_str"] = top20["consequents"].apply(lambda x: ", ".join(sorted(x)))
+pivot = top20.pivot_table(
+    index="ant_str", columns="con_str", values="lift", aggfunc="max"
+)
+
+fig, ax = plt.subplots(figsize=(10, 6))
+sns.heatmap(pivot, cmap="YlOrRd", annot=True, fmt=".2f",
+            linewidths=0.4, ax=ax, cbar_kws={"label": "Lift"})
+ax.set_title("Lift Heatmap – Top 20 Rules")
+ax.set_xlabel("Consequent")
+ax.set_ylabel("Antecedent")
+plt.xticks(rotation=45, ha="right")
+plt.yticks(rotation=0)
+plt.tight_layout()
+plt.savefig("lift_heatmap.png", bbox_inches="tight")
+plt.show()
+```
+
+### Top 15 Rules – Horizontal Bar Chart (Lift)
+
+```{python}
+#| label: bar-lift
+#| fig-cap: "Top 15 Rules Ranked by Lift"
+
+top15 = rules.nlargest(15, "lift").copy()
+top15["rule"] = (
+    top15["antecedents"].apply(lambda x: ", ".join(sorted(x)))
+    + "  =>  "
+    + top15["consequents"].apply(lambda x: ", ".join(sorted(x)))
+)
+
+fig, ax = plt.subplots(figsize=(9, 6))
+ax.barh(top15["rule"], top15["lift"], color="steelblue")
+ax.set_xlabel("Lift")
+ax.set_title("Top 15 Association Rules by Lift")
+ax.invert_yaxis()
+plt.tight_layout()
+plt.savefig("bar_lift.png", bbox_inches="tight")
+plt.show()
+```
+
+---
+
+## Removing Redundant Rules
+
+A rule is considered redundant if a more general rule with equal or higher confidence exists.
+
+```{python}
+#| label: redundancy
+
+import pandas as pd
+
+def filter_non_redundant(rules: pd.DataFrame) -> pd.DataFrame:
+    """
+    Return a DataFrame of non-redundant rules.
+
+    A rule is redundant if there exists another rule with:
+      - the same consequent,
+      - a strictly more general antecedent (strict subset),
+      - and confidence >= this rule's confidence.
+    """
+    # Boolean mask indicating which rules are kept
+    keep_mask = pd.Series(False, index=rules.index)
+
+    # Process rules groupwise by consequent to limit comparisons
+    for con, group in rules.groupby("consequents", sort=False):
+        # Within each consequent group, sort by:
+        #   - confidence descending (so earlier rules have >= confidence)
+        #   - antecedent length ascending (more general rules first)
+        group_with_len = group.assign(
+            _ant_len=group["antecedents"].apply(len)
+        ).sort_values(
+            by=["confidence", "_ant_len"],
+            ascending=[False, True]
+        )
+
+        selected_antecedents = []
+        for idx, row in group_with_len.iterrows():
+            ant = row["antecedents"]
+            # Check if any previously selected antecedent is a strict subset
+            # of the current antecedent. Since we iterate in descending
+            # confidence order, those have confidence >= current rule.
+            redundant = any(prev_ant < ant for prev_ant in selected_antecedents)
+            if not redundant:
+                keep_mask.at[idx] = True
+                selected_antecedents.append(ant)
+
+    return rules[keep_mask]
+
+non_redundant = filter_non_redundant(rules)
+print(f"Total rules:         {len(rules)}")
+print(f"Non-redundant rules: {len(non_redundant)}")
+```
+
+---
+
+## Summary Statistics
+
+```{python}
+#| label: summary
+
+print("=== Association Rules Summary ===")
+print(rules[["support", "confidence", "lift"]].describe().round(4))
+```
+
+---
+
+## Key Takeaways
+
+- **Support** identifies how frequently an itemset appears in the dataset.
+- **Confidence** measures the reliability of an association rule.
+- **Lift > 1** indicates a positive association stronger than random chance.
+- The **Apriori algorithm** prunes low-support candidates early, making it scalable.
+- Visualization tools (scatter plots, heatmaps, bar charts) help interpret large rule sets.
+
+---
+
+## References
+
+1. Agrawal, R., & Srikant, R. (1994). *Fast algorithms for mining association rules*. VLDB.
+2. Hahsler, M., et al. (2005). `arules` – A computational environment for mining association rules. *Journal of Statistical Software*, 14(15).
+3. Raschka, S. (2018). `mlxtend`: Providing machine learning extensions. *Journal of Open Source Software*, 3(24).

@@ -1,0 +1,352 @@
+---
+title: "Association Rule Mining (ARM) — Lecture Handout"
+subtitle: "Introduction with R — Computer Accessories Dataset"
+author: "Dr. Mustafa Hameed"
+date: today
+format:
+  pdf:
+    documentclass: article
+    papersize: letter
+    geometry:
+      - margin=1in
+    fontsize: 11pt
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    colorlinks: true
+    linkcolor: blue
+    highlight-style: github
+    header-includes: |
+      \usepackage{booktabs}
+      \usepackage{longtable}
+      \usepackage{colortbl}
+      \usepackage{xcolor}
+      \definecolor{darkblue}{HTML}{2C3E50}
+      \definecolor{accentblue}{HTML}{2980B9}
+      \usepackage{fancyhdr}
+      \pagestyle{fancy}
+      \fancyhead[L]{ARM Lecture Handout}
+      \fancyhead[R]{Dr. Mustafa Hameed}
+      \fancyfoot[C]{\thepage}
+---
+
+# What is Association Rule Mining?
+
+**Association Rule Mining (ARM)** is a data mining technique that discovers interesting relationships (associations) among items in large datasets.
+
+-   **Goal:** Find hidden patterns — which items are frequently purchased together?
+-   **Classic application:** Market Basket Analysis
+-   **Other uses:** Healthcare (co-diagnoses), web mining (click patterns), course enrollment
+
+**Example rule:** {laptop, mouse} → {keyboard}
+*"Customers who buy a laptop and a mouse also tend to buy a keyboard."*
+
+---
+
+# Key Definitions
+
+| Term | Definition |
+|:------|:-----------|
+| **Transaction** | A single purchase event (one receipt / one basket) |
+| **Item** | An individual product in a transaction |
+| **Itemset** | A collection of one or more items, e.g., {laptop, mouse} |
+| **Association Rule** | An implication X → Y: "if X then Y" |
+| **Antecedent (LHS)** | The "if" part of a rule — the left-hand side |
+| **Consequent (RHS)** | The "then" part of a rule — the right-hand side |
+
+: Key ARM terminology {.striped}
+
+---
+
+# The Four Key Measures
+
+| # | Measure | Formula | Question Answered |
+|:--|:--------|:--------|:------------------|
+| 1 | **Support** | freq(A ∪ B) / N | How common is this itemset? |
+| 2 | **Confidence** | Supp(A ∪ B) / Supp(A) | How reliable is this rule? |
+| 3 | **Lift** | Conf(A→B) / Supp(B) | Is it better than random chance? |
+| 4 | **Conviction** | (1 − Supp(B)) / (1 − Conf) | How dependent is the rule? |
+
+: The four measures of ARM quality
+
+---
+
+# Dataset — Computer Accessories (N = 10)
+
+| TID | Items Purchased |
+|:----|:----------------|
+| T1 | laptop, mouse, keyboard |
+| T2 | laptop, mouse |
+| T3 | laptop, keyboard, USB hub |
+| T4 | mouse, keyboard, mousepad |
+| T5 | laptop, mouse, keyboard, USB hub |
+| T6 | mouse, mousepad |
+| T7 | laptop, mouse, keyboard, webcam |
+| T8 | keyboard, headset |
+| T9 | laptop, mouse, keyboard, mousepad |
+| T10 | laptop, keyboard |
+
+: 10 transactions, 7 unique items
+
+---
+
+# Item Counts by Hand
+
+| Item | Transactions | Count | Support |
+|:-----|:-------------|:-----:|:-------:|
+| laptop | T1, T2, T3, T5, T7, T9, T10 | 7 | 0.70 |
+| mouse | T1, T2, T4, T5, T6, T7, T9 | 7 | 0.70 |
+| keyboard | T1, T3, T4, T5, T7, T8, T9, T10 | 8 | 0.80 |
+| USB hub | T3, T5 | 2 | 0.20 |
+| mousepad | T4, T6, T9 | 3 | 0.30 |
+| webcam | T7 | 1 | 0.10 |
+| headset | T8 | 1 | 0.10 |
+
+: Individual item support values
+
+---
+
+# Hand Calculation — Rule 1: {laptop, mouse} → {keyboard}
+
+## Step 1: Support
+
+Find transactions containing **all three items** {laptop, mouse, keyboard}:
+
+- T1: laptop, mouse, keyboard ✓
+- T5: laptop, mouse, keyboard, USB hub ✓
+- T7: laptop, mouse, keyboard, webcam ✓
+- T9: laptop, mouse, keyboard, mousepad ✓
+
+$$\text{Support} = \frac{4}{10} = 0.40$$
+
+**Interpretation:** 40% of all transactions contain laptop + mouse + keyboard.
+
+## Step 2: Confidence
+
+Transactions with {laptop, mouse}: T1, T2, T5, T7, T9 → **5 transactions**
+
+$$\text{Confidence} = \frac{\text{Support}(\{L,M,K\})}{\text{Support}(\{L,M\})} = \frac{0.40}{0.50} = 0.80$$
+
+**Interpretation:** When a customer buys a laptop + mouse, there is an **80% chance** they also buy a keyboard.
+
+## Step 3: Lift
+
+$$\text{Lift} = \frac{\text{Confidence}(A \rightarrow B)}{\text{Support}(B)} = \frac{0.80}{0.80} = 1.00$$
+
+**Interpretation:** Lift = 1.00 means buying laptop + mouse does **NOT** increase the chance of buying a keyboard. They are **independent**. This happens because keyboard is already in 80% of transactions.
+
+## Step 4: Conviction
+
+$$\text{Conviction} = \frac{1 - \text{Support}(\text{keyboard})}{1 - \text{Confidence}} = \frac{1 - 0.80}{1 - 0.80} = \frac{0.20}{0.20} = 1.00$$
+
+**Interpretation:** Conviction = 1.00 confirms **independence** — consistent with Lift = 1.00.
+
+---
+
+# Hand Calculation — Rule 2: {mouse} → {mousepad}
+
+| Step | Calculation | Result |
+|:-----|:-----------|:------:|
+| Transactions with {mouse, mousepad} | T4, T6, T9 | 3 |
+| Support({mouse, mousepad}) | 3 / 10 | **0.30** |
+| Support({mouse}) | 7 / 10 | 0.70 |
+| Support({mousepad}) | 3 / 10 | 0.30 |
+| Confidence | 0.30 / 0.70 | **0.429** |
+| Lift | 0.429 / 0.30 | **1.43** |
+| Conviction | (1−0.30) / (1−0.429) | **1.23** |
+
+: Step-by-step for {mouse} → {mousepad}
+
+**Interpretation:**
+
+-   **Lift = 1.43** — buying a mouse increases the chance of buying a mousepad by **43%** over random.
+-   **Conviction = 1.23** — there is genuine dependency between mouse and mousepad.
+-   ✅ This is a **useful, actionable** association rule!
+
+---
+
+# Hand Calculation — Rule 3: {laptop} → {mouse}
+
+| Step | Calculation | Result |
+|:-----|:-----------|:------:|
+| Transactions with {laptop, mouse} | T1, T2, T5, T7, T9 | 5 |
+| Support({laptop, mouse}) | 5 / 10 | **0.50** |
+| Support({laptop}) | 7 / 10 | 0.70 |
+| Support({mouse}) | 7 / 10 | 0.70 |
+| Confidence | 0.50 / 0.70 | **0.714** |
+| Lift | 0.714 / 0.70 | **1.02** |
+| Conviction | (1−0.70) / (1−0.714) | **1.05** |
+
+: Step-by-step for {laptop} → {mouse}
+
+**Interpretation:**
+
+-   **Lift = 1.02** — almost no increase beyond random chance.
+-   **Conviction = 1.05** — very slight dependency.
+-   This is a **borderline** rule — laptop and mouse are nearly independent.
+
+---
+
+# Comparison of All Three Rules
+
+| Rule | Support | Confidence | Lift | Conviction | Verdict |
+|:-----|:-------:|:----------:|:----:|:----------:|:--------|
+| {laptop,mouse} → {keyboard} | 0.40 | 0.80 | 1.00 | 1.00 | Independent |
+| {mouse} → {mousepad} | 0.30 | 0.43 | **1.43** | **1.23** | ✅ Useful |
+| {laptop} → {mouse} | 0.50 | 0.71 | 1.02 | 1.05 | Borderline |
+
+: Side-by-side rule comparison
+
+**Key Insight:** The rule with the **highest confidence** (0.80) is the **least useful** (Lift = 1.0).
+The rule with the **highest lift** (1.43) is the **most actionable**!
+
+> **Lesson:** Never rely on confidence alone — always check Lift and Conviction.
+
+---
+
+# How to Interpret ARM Results
+
+## Measure Interpretation Guide
+
+| Measure | What to Look For |
+|:--------|:-----------------|
+| **Support** | Filter out rare patterns. Typical min: 0.10 – 0.30 |
+| **Confidence** | High confidence (≥ 0.50) means the rule fires correctly often |
+| **Lift** | > 1 = useful  ·  > 1.5 = strong  ·  > 2 = very strong |
+| **Conviction** | > 1 = dependent  ·  > 1.5 = strong dependency |
+
+: Interpretation thresholds
+
+## Business Actions Based on Lift
+
+| Lift Range | Recommended Action |
+|:-----------|:-------------------|
+| **Lift > 2.0** | Strong bundle — create a package deal |
+| **Lift 1.5–2.0** | Cross-sell — recommend at checkout |
+| **Lift 1.1–1.5** | Place nearby — adjacent shelves / web sections |
+| **Lift ≈ 1.0** | No action — items are independent |
+| **Lift < 1.0** | Separate — avoid placing together |
+
+: Business decision framework
+
+## Common Interpretation Pitfalls
+
+| Pitfall | Why it's Wrong | Solution |
+|:--------|:---------------|:---------|
+| Trusting high confidence alone | The consequent may just be very popular | Always check Lift |
+| Ignoring support | Rule may be based on very few cases | Set minimum support |
+| Treating rules as causal | ARM finds correlation, not causation | Use A/B testing to confirm |
+| Using only one measure | Each measure captures a different aspect | Check all four |
+
+---
+
+# The Apriori Algorithm
+
+The **Apriori algorithm** efficiently finds frequent itemsets without checking every possible combination.
+
+**How it works:**
+
+1.  **Set minimum support** threshold to prune rare itemsets
+2.  **Find frequent 1-itemsets** (individual items meeting min support)
+3.  **Build 2-itemsets** by joining frequent 1-itemsets
+4.  **Continue growing** until no new frequent itemsets are found
+5.  **Generate rules** from frequent itemsets that meet minimum confidence
+
+**Anti-monotone (Apriori) property:** If an itemset is *not* frequent, none of its supersets can be frequent.
+
+*Example:* If {webcam, headset} has support below the threshold, then {webcam, headset, mouse} cannot be frequent either — so we prune it immediately.
+
+---
+
+# R Implementation
+
+## Load Packages
+
+```r
+library(arules)
+library(arulesViz)
+library(ggplot2)
+```
+
+## Create the Dataset
+
+```r
+baskets <- list(
+  T1  = c("laptop","mouse","keyboard"),
+  T2  = c("laptop","mouse"),
+  T3  = c("laptop","keyboard","USB hub"),
+  T4  = c("mouse","keyboard","mousepad"),
+  T5  = c("laptop","mouse","keyboard","USB hub"),
+  T6  = c("mouse","mousepad"),
+  T7  = c("laptop","mouse","keyboard","webcam"),
+  T8  = c("keyboard","headset"),
+  T9  = c("laptop","mouse","keyboard","mousepad"),
+  T10 = c("laptop","keyboard")
+)
+txns <- as(baskets, "transactions")
+```
+
+## Run Apriori
+
+```r
+rules <- apriori(txns,
+  parameter = list(supp = 0.20, conf = 0.50, minlen = 2))
+inspect(sort(rules, by = "lift", decreasing = TRUE))
+```
+
+## Verify Hand Calculations
+
+```r
+# Rule 1: {laptop, mouse} → {keyboard}
+subset_rules <- subset(rules,
+  subset = lhs %ain% c("laptop","mouse") & rhs %in% "keyboard")
+inspect(subset_rules)
+
+# Rule 2: {mouse} → {mousepad}
+subset_rules2 <- subset(rules,
+  subset = lhs %in% "mouse" & rhs %in% "mousepad")
+inspect(subset_rules2)
+```
+
+## Visualize
+
+```r
+# Scatter plot
+plot(rules, method = "scatterplot",
+     measure = c("support","confidence"),
+     shading = "lift", engine = "ggplot2")
+
+# Network graph
+plot(rules, method = "graph", engine = "htmlwidget")
+```
+
+---
+
+# Key Takeaways
+
+1.  **Support** — how common is the pattern? (frequency)
+2.  **Confidence** — how reliable is the rule? (conditional probability)
+3.  **Lift > 1** — the rule is better than random guessing (association strength)
+4.  **Conviction > 1** — items are genuinely dependent (dependency)
+5.  **Always check Lift** before trusting a high-confidence rule
+6.  The **Apriori algorithm** prunes efficiently using the anti-monotone property
+7.  R packages **arules** + **arulesViz** make ARM accessible for analysis and visualization
+
+---
+
+# Practice Exercises
+
+1.  Change the support threshold from 0.20 to 0.10 — how many more rules appear?
+2.  Add 5 more transactions to the dataset — do the measures change significantly?
+3.  Filter rules where "mouse" is on the RHS — what predicts mouse purchases?
+4.  Calculate all four measures by hand for: {keyboard} → {laptop}
+5.  Find a rule with Lift > 1.5 and explain the business action you would take.
+
+---
+
+# References
+
+1.  Agrawal, R., & Srikant, R. (1994). Fast algorithms for mining association rules. *Proceedings of the 20th International Conference on Very Large Databases (VLDB)*, 487–499.
+2.  Hahsler, M., Grün, B., & Hornik, K. (2005). arules — A computational environment for mining association rules and frequent item sets. *Journal of Statistical Software*, 14(15).
+3.  Hahsler, M. (2017). arulesViz: Visualizing Association Rules and Frequent Itemsets. *Journal of Statistical Software*, 76(2).
+4.  Brin, S., Motwani, R., Ullman, J. D., & Tsur, S. (1997). Dynamic itemset counting and implication rules for market basket data. *ACM SIGMOD Record*, 26(2), 255–264.

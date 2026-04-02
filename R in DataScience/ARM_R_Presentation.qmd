@@ -1,0 +1,584 @@
+---
+title: "Association Rule Mining (ARM)"
+subtitle: "Introduction with R — Computer Accessories Dataset"
+author: "Dr. Mustafa Hameed"
+date: today
+format:
+  revealjs:
+    theme: simple
+    slide-number: true
+    show-slide-number: all
+    progress: true
+    chalkboard: false
+    code-line-numbers: false
+    highlight-style: github
+    smaller: false
+    scrollable: true
+    transition: slide
+    footer: "Association Rule Mining in R"
+knitr:
+  opts_chunk:
+    echo: true
+    warning: false
+    message: false
+---
+
+## What is Association Rule Mining? {background-color="#2c3e50"}
+
+::: {.callout-note appearance="minimal"}
+**Association Rule Mining (ARM)** is a data mining technique that discovers
+*interesting relationships* (associations) among items in large datasets.
+:::
+
+::: incremental
+-   Finds **hidden patterns** — which items are purchased together?
+-   Classic use case: **Market Basket Analysis**
+-   Applications: retail, e-commerce, healthcare, web mining
+:::
+
+. . .
+
+> *"Customers who buy a laptop and a mouse also tend to buy a keyboard."*
+>
+> `{laptop, mouse}` **→** `{keyboard}`
+
+## Why Does ARM Matter?
+
+::::: columns
+::: {.column width="50%"}
+**Business Uses**
+
+-   **Product placement** — put associated items nearby
+-   **Bundle deals** — "buy laptop + mouse, get keyboard 20% off"
+-   **Cross-selling** — recommend items at checkout
+-   **Inventory** — stock associated items together
+:::
+
+::: {.column width="50%"}
+**Other Domains**
+
+-   Medical co-diagnoses
+-   Web click-stream patterns
+-   Course enrollment patterns
+-   Fraud detection
+:::
+:::::
+
+## Key Definitions {background-color="#2c3e50"}
+
+| Term | Definition |
+|------|-----------|
+| **Transaction** | A single purchase event (one receipt / one basket) |
+| **Item** | An individual product in a transaction |
+| **Itemset** | A collection of one or more items, e.g. `{laptop, mouse}` |
+| **Association Rule** | An implication: `{A} → {B}` ("if A then B") |
+| **Antecedent (LHS)** | The "if" part — `{laptop, mouse}` |
+| **Consequent (RHS)** | The "then" part — `{keyboard}` |
+
+## The Four Key Measures {.smaller}
+
+| # | Measure        | Formula                        | Question it answers               |
+|---|---------------|--------------------------------|-----------------------------------|
+| 1 | **Support**    | freq(A ∪ B) / N               | How *common* is this itemset?     |
+| 2 | **Confidence** | Support(A ∪ B) / Support(A)   | How *reliable* is this rule?      |
+| 3 | **Lift**       | Confidence(A→B) / Support(B)  | Is it *better than random chance*?|
+| 4 | **Conviction** | (1 − Support(B)) / (1 − Conf) | How *dependent* is the rule?      |
+
+. . .
+
+::: callout-tip
+## Quick Guide
+
+-   **Support** = frequency · **Confidence** = reliability · **Lift** = strength · **Conviction** = dependency
+:::
+
+## Our Dataset — Computer Accessories {background-color="#2c3e50"}
+
+**10 transactions** from a computer accessories shop:
+
+| TID | Items Purchased                       |
+|-----|---------------------------------------|
+| T1  | laptop, mouse, keyboard               |
+| T2  | laptop, mouse                         |
+| T3  | laptop, keyboard, USB hub             |
+| T4  | mouse, keyboard, mousepad             |
+| T5  | laptop, mouse, keyboard, USB hub      |
+| T6  | mouse, mousepad                       |
+| T7  | laptop, mouse, keyboard, webcam       |
+| T8  | keyboard, headset                     |
+| T9  | laptop, mouse, keyboard, mousepad     |
+| T10 | laptop, keyboard                      |
+
+## Item Counts (by hand) {.smaller}
+
+Count how often each item appears **(N = 10)**:
+
+| Item       | Transactions               | Count | Support      |
+|------------|---------------------------|-------|--------------|
+| **laptop**    | T1,T2,T3,T5,T7,T9,T10       | **7** | 7/10 = 0.70 |
+| **mouse**     | T1,T2,T4,T5,T6,T7,T9        | **7** | 7/10 = 0.70 |
+| **keyboard**  | T1,T3,T4,T5,T7,T8,T9,T10    | **8** | 8/10 = 0.80 |
+| **USB hub**   | T3, T5                      | **2** | 2/10 = 0.20 |
+| **mousepad**  | T4, T6, T9                  | **3** | 3/10 = 0.30 |
+| **webcam**    | T7                          | **1** | 1/10 = 0.10 |
+| **headset**   | T8                          | **1** | 1/10 = 0.10 |
+
+## Measure 1 — Support {background-color="#34495e"}
+
+::: {.callout-note}
+## Definition
+**Support** measures how frequently an itemset appears in the dataset.
+
+$$\text{Support}(X) = \frac{\text{Number of transactions containing } X}{\text{Total number of transactions } (N)}$$
+:::
+
+-   Higher support = the pattern is more *common*
+-   A support of 0.50 means the itemset appears in 50% of all transactions
+-   Used to **filter out rare patterns** (set a minimum threshold)
+
+## Support — Step-by-Step Calculation
+
+**Rule: {laptop, mouse} → {keyboard}**
+
+**Step 1:** Find transactions containing `{laptop, mouse, keyboard}`:
+
+-   T1: laptop, mouse, keyboard ✓
+-   T5: laptop, mouse, keyboard, USB hub ✓
+-   T7: laptop, mouse, keyboard, webcam ✓
+-   T9: laptop, mouse, keyboard, mousepad ✓
+
+. . .
+
+**Step 2:** Count = **4** out of N = **10**
+
+$$\boxed{\text{Support}(\{\text{laptop, mouse, keyboard}\}) = \frac{4}{10} = 0.40}$$
+
+> ✅ **Interpretation:** 40% of all transactions contain laptop + mouse + keyboard together.
+
+## Measure 2 — Confidence {background-color="#34495e"}
+
+::: {.callout-note}
+## Definition
+**Confidence** measures how often the rule is correct — given the antecedent, how often does the consequent appear?
+
+$$\text{Confidence}(A \Rightarrow B) = \frac{\text{Support}(A \cup B)}{\text{Support}(A)}$$
+:::
+
+-   Confidence of 0.80 = "80% of the time when A is bought, B is also bought"
+-   Ranges from 0 to 1 (0% to 100%)
+-   **Higher is better**, but always verify with Lift!
+
+## Confidence — Step-by-Step Calculation
+
+**Rule: {laptop, mouse} → {keyboard}**
+
+**Step 1:** Support({laptop, mouse, keyboard}) = 4/10 = **0.40**
+
+**Step 2:** Transactions with {laptop, mouse}: T1, T2, T5, T7, T9 → **5**
+
+-   Support({laptop, mouse}) = 5/10 = **0.50**
+
+. . .
+
+**Step 3:** Apply the formula:
+
+$$\text{Confidence} = \frac{0.40}{0.50} = 0.80$$
+
+. . .
+
+> ✅ **Interpretation:** When a customer buys a laptop and mouse, there is an **80% chance** they also buy a keyboard.
+
+## Measure 3 — Lift {background-color="#34495e"}
+
+::: {.callout-note}
+## Definition
+**Lift** measures whether A and B appear together *more often than expected by chance*.
+
+$$\text{Lift}(A \Rightarrow B) = \frac{\text{Confidence}(A \Rightarrow B)}{\text{Support}(B)}$$
+:::
+
+| Lift Value    | Meaning                                               |
+|--------------|-------------------------------------------------------|
+| **Lift > 1** | Positive association — items appear together more than expected |
+| **Lift = 1** | No association — items are independent                 |
+| **Lift < 1** | Negative association — items *avoid* each other        |
+
+## Lift — Step-by-Step Calculation
+
+**Rule: {laptop, mouse} → {keyboard}**
+
+**Step 1:** Confidence = **0.80**
+
+**Step 2:** Support({keyboard}) = 8/10 = **0.80**
+
+. . .
+
+**Step 3:** Apply the formula:
+
+$$\text{Lift} = \frac{0.80}{0.80} = 1.00$$
+
+. . .
+
+> ⚠️ **Interpretation:** Lift = 1.00 means laptop + mouse does **not** increase or decrease the chance of buying a keyboard — they are **independent**.
+
+## Measure 4 — Conviction {background-color="#34495e"}
+
+::: {.callout-note}
+## Definition
+**Conviction** measures the degree of dependence between antecedent and consequent. It compares the expected error rate (if independent) to the actual error rate.
+
+$$\text{Conviction}(A \Rightarrow B) = \frac{1 - \text{Support}(B)}{1 - \text{Confidence}(A \Rightarrow B)}$$
+:::
+
+| Conviction    | Meaning                                        |
+|--------------|-------------------------------------------------|
+| **Conv = 1** | Items are independent (no dependency)            |
+| **Conv > 1** | The rule is meaningful — items are dependent     |
+| **Conv → ∞** | Perfect rule (confidence = 100%)                 |
+
+## Conviction — Step-by-Step Calculation
+
+**Rule: {laptop, mouse} → {keyboard}**
+
+**Step 1:** 1 − Support({keyboard}) = 1 − 0.80 = **0.20**
+
+**Step 2:** 1 − Confidence = 1 − 0.80 = **0.20**
+
+. . .
+
+**Step 3:** Apply the formula:
+
+$$\text{Conviction} = \frac{0.20}{0.20} = 1.00$$
+
+. . .
+
+> ⚠️ **Interpretation:** Conviction = 1.00 confirms **independence** — consistent with Lift = 1.00.
+
+## Another Rule: {mouse} → {mousepad} {background-color="#2c3e50"}
+
+| Step | Calculation | Result |
+|------|------------|--------|
+| Txns with {mouse, mousepad} | T4, T6, T9 | **3** |
+| Support({mouse, mousepad}) | 3/10 | **0.30** |
+| Support({mouse}) | 7/10 | **0.70** |
+| Support({mousepad}) | 3/10 | **0.30** |
+| **Confidence** | 0.30 / 0.70 | **0.429** |
+| **Lift** | 0.429 / 0.30 | **1.43** |
+| **Conviction** | (1−0.30) / (1−0.429) | **1.23** |
+
+. . .
+
+> ✅ **Lift = 1.43** and **Conviction = 1.23** — a meaningful positive association!
+> Buying a mouse **increases** the chance of buying a mousepad by 43% over random.
+
+## Another Rule: {laptop} → {mouse} {background-color="#2c3e50"}
+
+| Step | Calculation | Result |
+|------|------------|--------|
+| Txns with {laptop, mouse} | T1,T2,T5,T7,T9 | **5** |
+| Support({laptop, mouse}) | 5/10 | **0.50** |
+| Support({laptop}) | 7/10 | **0.70** |
+| Support({mouse}) | 7/10 | **0.70** |
+| **Confidence** | 0.50 / 0.70 | **0.714** |
+| **Lift** | 0.714 / 0.70 | **1.02** |
+| **Conviction** | (1−0.70)/(1−0.714) | **1.05** |
+
+. . .
+
+> Lift = 1.02, Conviction = 1.05 — very *slight* positive association. Nearly independent.
+
+## How to Interpret Results {background-color="#2c3e50"}
+
+| Measure    | What to look for                                           |
+|-----------|-----------------------------------------------------------|
+| **Support**    | Filter out rare patterns (min 0.10–0.30)                    |
+| **Confidence** | High confidence (≥ 0.50) = rule fires correctly often       |
+| **Lift**       | **> 1** = useful · **> 1.5** = strong · **> 2** = very strong |
+| **Conviction** | **> 1** = dependent · **> 1.5** = strong dependency          |
+
+. . .
+
+::: callout-important
+## Watch Out!
+**High confidence + low lift** → the consequent is just very popular!
+Example: confidence({laptop,mouse}→{keyboard}) = 0.80, but lift = 1.0 because keyboard is in 80% of transactions.
+
+**Always check Lift and Conviction** before acting on a rule!
+:::
+
+## The Apriori Algorithm
+
+::: incremental
+1.  **Set minimum support** — prune rare itemsets early
+2.  **Find frequent 1-itemsets** — `{laptop}`, `{mouse}`, `{keyboard}`, …
+3.  **Build frequent 2-itemsets** by joining 1-itemsets
+4.  **Continue growing** until no new frequent itemsets found
+5.  **Generate rules** that meet minimum confidence
+:::
+
+. . .
+
+::: callout-note
+**Anti-monotone property:** *A subset of a frequent itemset must also be frequent.*
+If `{laptop, mouse}` is not frequent, then `{laptop, mouse, keyboard}` cannot be frequent — so we **prune** it!
+:::
+
+## Step 1 — Load Packages
+
+```{r}
+#| label: setup
+#| echo: true
+
+if (!requireNamespace("arules",    quietly = TRUE)) install.packages("arules")
+if (!requireNamespace("arulesViz", quietly = TRUE)) install.packages("arulesViz")
+
+library(arules)
+library(arulesViz)
+library(ggplot2)
+
+cat("Ready!\n")
+```
+
+## Step 2 — Computer Accessories Dataset
+
+```{r}
+#| label: dataset
+
+baskets <- list(
+  c("laptop", "mouse", "keyboard"),
+  c("laptop", "mouse"),
+  c("laptop", "keyboard", "USB hub"),
+  c("mouse", "keyboard", "mousepad"),
+  c("laptop", "mouse", "keyboard", "USB hub"),
+  c("mouse", "mousepad"),
+  c("laptop", "mouse", "keyboard", "webcam"),
+  c("keyboard", "headset"),
+  c("laptop", "mouse", "keyboard", "mousepad"),
+  c("laptop", "keyboard")
+)
+
+txns <- as(baskets, "transactions")
+cat(length(txns), "transactions,", length(itemLabels(txns)), "unique items\n")
+cat("Items:", paste(itemLabels(txns), collapse = ", "), "\n")
+```
+
+## Step 3 — Inspect the Data
+
+```{r}
+#| label: inspect
+
+inspect(txns)
+```
+
+## Step 3b — Item Frequency Plot
+
+```{r}
+#| label: item-freq
+#| fig-width: 7
+#| fig-height: 4
+
+itemFrequencyPlot(
+  txns,
+  type = "relative",
+  col  = "steelblue",
+  main = "Item Frequency — Computer Accessories",
+  ylab = "Support (proportion of transactions)"
+)
+```
+
+## Step 4 — Verify Hand Calculations in R
+
+```{r}
+#| label: verify-hand
+
+cat("=== Verifying: {laptop, mouse} -> {keyboard} ===\n\n")
+
+supp_lmk <- sum(sapply(baskets, function(b) all(c("laptop","mouse","keyboard") %in% b))) / 10
+supp_lm  <- sum(sapply(baskets, function(b) all(c("laptop","mouse") %in% b))) / 10
+supp_k   <- sum(sapply(baskets, function(b) "keyboard" %in% b)) / 10
+
+conf <- supp_lmk / supp_lm
+lift <- conf / supp_k
+conv <- (1 - supp_k) / (1 - conf)
+
+cat("Support({laptop,mouse,keyboard}) =", supp_lmk, "\n")
+cat("Support({laptop,mouse})          =", supp_lm, "\n")
+cat("Support({keyboard})              =", supp_k, "\n\n")
+cat("Confidence =", round(conf, 4), "\n")
+cat("Lift       =", round(lift, 4), "\n")
+cat("Conviction =", round(conv, 4), "\n")
+```
+
+## Step 4b — Verify Second Rule in R
+
+```{r}
+#| label: verify-hand-2
+
+cat("=== Verifying: {mouse} -> {mousepad} ===\n\n")
+
+supp_mm  <- sum(sapply(baskets, function(b) all(c("mouse","mousepad") %in% b))) / 10
+supp_m   <- sum(sapply(baskets, function(b) "mouse" %in% b)) / 10
+supp_mp  <- sum(sapply(baskets, function(b) "mousepad" %in% b)) / 10
+
+conf2 <- supp_mm / supp_m
+lift2 <- conf2 / supp_mp
+conv2 <- (1 - supp_mp) / (1 - conf2)
+
+cat("Support({mouse,mousepad}) =", supp_mm, "\n")
+cat("Support({mouse})          =", supp_m, "\n")
+cat("Support({mousepad})       =", supp_mp, "\n\n")
+cat("Confidence =", round(conf2, 4), "\n")
+cat("Lift       =", round(lift2, 4), "\n")
+cat("Conviction =", round(conv2, 4), "\n")
+```
+
+## Step 5 — Find Frequent Itemsets
+
+```{r}
+#| label: frequent-sets
+
+frequent_sets <- apriori(
+  txns,
+  parameter = list(supp = 0.20, target = "frequent itemsets")
+)
+
+cat("Frequent itemsets found:", length(frequent_sets), "\n\n")
+inspect(sort(frequent_sets, by = "support", decreasing = TRUE))
+```
+
+## Step 6 — Generate Association Rules
+
+```{r}
+#| label: rules
+
+rules <- apriori(
+  txns,
+  parameter = list(supp = 0.20, conf = 0.50, minlen = 2)
+)
+
+cat("Rules generated:", length(rules), "\n\n")
+inspect(sort(rules, by = "lift", decreasing = TRUE))
+```
+
+## Step 7 — Interpreting R Output {.smaller}
+
+| Column     | What it means                                                |
+|------------|--------------------------------------------------------------|
+| **lhs**        | Left-hand side (antecedent) — the "if" items                |
+| **rhs**        | Right-hand side (consequent) — the "then" item               |
+| **support**    | Fraction of all transactions containing both sides           |
+| **confidence** | Of transactions with lhs, what fraction also has rhs?        |
+| **coverage**   | Support of lhs alone (how common is the antecedent?)         |
+| **lift**       | > 1 = positive association · = 1 = independent · < 1 = negative |
+| **count**      | Absolute number of transactions containing the full rule     |
+
+::: callout-tip
+## Reading a Rule
+`{laptop, mouse} → {keyboard} [supp=0.40, conf=0.80, lift=1.00]`
+
+*"40% of transactions have all three. When laptop + mouse are bought, 80% also buy keyboard. But lift=1 — this is no better than chance because keyboard is already very popular."*
+:::
+
+## Step 8 — Scatter Plot
+
+```{r}
+#| label: scatter
+#| fig-width: 7
+#| fig-height: 5
+
+plot(rules, method = "scatterplot",
+     measure = c("support", "confidence"),
+     shading = "lift",
+     main = "Rules: Support vs Confidence (shaded by Lift)")
+```
+
+## Step 8b — Network Graph
+
+```{r}
+#| label: graph
+#| fig-width: 8
+#| fig-height: 5
+
+plot(sort(rules, by = "lift"),
+     method = "graph",
+     main   = "Association Rules — Computer Accessories")
+```
+
+## Step 9 — Filter for a Specific Item
+
+*What items predict buying a **keyboard**?*
+
+```{r}
+#| label: target-keyboard
+
+rules_keyboard <- apriori(
+  txns,
+  parameter  = list(supp = 0.15, conf = 0.50, minlen = 2),
+  appearance = list(rhs = "keyboard", default = "lhs")
+)
+
+cat("Rules predicting keyboard:", length(rules_keyboard), "\n\n")
+inspect(sort(rules_keyboard, by = "lift", decreasing = TRUE))
+```
+
+## Step 10 — Export to Data Frame
+
+```{r}
+#| label: dataframe
+
+rules_df <- as(rules, "data.frame")
+rules_df$support    <- round(rules_df$support,    3)
+rules_df$confidence <- round(rules_df$confidence, 3)
+rules_df$lift       <- round(rules_df$lift,       3)
+
+head(rules_df[order(-rules_df$lift), ], 8)
+```
+
+## Summary of Four Measures {background-color="#2c3e50"}
+
+**Rule: {laptop, mouse} → {keyboard}**
+
+| Measure        | Value | Meaning                             |
+|----------------|-------|-------------------------------------|
+| **Support**    | 0.40  | Appears in 40% of transactions      |
+| **Confidence** | 0.80  | 80% of the time rule is correct     |
+| **Lift**       | 1.00  | Independent — no better than chance  |
+| **Conviction** | 1.00  | Confirms independence               |
+
+**Rule: {mouse} → {mousepad}**
+
+| Measure        | Value | Meaning                              |
+|----------------|-------|--------------------------------------|
+| **Support**    | 0.30  | Appears in 30% of transactions       |
+| **Confidence** | 0.429 | 43% of mouse buyers also buy mousepad|
+| **Lift**       | 1.43  | 43% more likely than random          |
+| **Conviction** | 1.23  | Genuine dependency                   |
+
+## Key Takeaways {background-color="#2c3e50"}
+
+::: incremental
+-   **Support** — how *common* is the pattern?
+-   **Confidence** — how *reliable* is the rule?
+-   **Lift > 1** — the rule is *better* than random guessing
+-   **Conviction > 1** — items are *genuinely dependent*
+-   Always check **Lift** before trusting a high-confidence rule
+-   The **Apriori algorithm** prunes efficiently using the anti-monotone property
+-   `arules` + `arulesViz` make ARM easy in R
+:::
+
+. . .
+
+::: callout-tip
+## Try It Yourself!
+
+1.  Change `supp` and `conf` thresholds — how does the rule count change?
+2.  Add more transactions and items — do the measures improve?
+3.  Filter for `"mouse"` on the RHS — what predicts mouse purchases?
+:::
+
+## References
+
+1.  Agrawal, R., & Srikant, R. (1994). *Fast algorithms for mining association rules*. VLDB.
+2.  Hahsler, M., Grün, B., & Hornik, K. (2005). `arules` — A computational environment for mining association rules. *Journal of Statistical Software*, 14(15).
+3.  Hahsler, M. (2017). `arulesViz`: Visualizing Association Rules and Frequent Itemsets. *Journal of Statistical Software*, 76(2).
+4.  Brin, S., Motwani, R., Ullman, J., & Tsur, S. (1997). *Dynamic itemset counting and implication rules for market basket data*. ACM SIGMOD.
