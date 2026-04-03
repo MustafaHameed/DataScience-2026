@@ -1,0 +1,371 @@
+---
+title: "Predictive Modeling with Machine Learning"
+subtitle: "Lecture Handout — Predicting Student Performance"
+author: "Dr. Mustafa Hameed"
+date: today
+format:
+  pdf:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    geometry: margin=1in
+    fontsize: 11pt
+    documentclass: article
+    colorlinks: true
+---
+
+\newpage
+
+# Introduction to Predictive Modeling
+
+## What is Prediction?
+
+**Predictive modeling** uses historical data to build mathematical models that can forecast future or unknown outcomes. In the context of education, we use data about student engagement to predict their academic performance.
+
+**Key Concept:** We are solving a **regression** problem — predicting a continuous numeric value (Final Grade) rather than a category.
+
+## The Machine Learning Workflow
+
+```
+1. Load Data
+2. Explore (EDA)
+3. Prepare Data (standardize, clean)
+4. Split into Training and Testing sets
+5. Build Model(s)
+6. Evaluate Model(s) with metrics
+7. Interpret and Compare Results
+```
+
+## Supervised vs Unsupervised Learning
+
+| Aspect | Supervised | Unsupervised |
+|--------|-----------|-------------|
+| **Labels** | Known outcomes (e.g., grades) | No known outcomes |
+| **Goal** | Predict an output | Find patterns/clusters |
+| **Examples** | Regression, Classification | Clustering, PCA |
+| **Our case** | ✓ Supervised Regression | — |
+
+\newpage
+
+# The Dataset
+
+## Student LMS Engagement Data
+
+We use a synthetic dataset of **285 students** with **12 numeric variables** representing their engagement with a Learning Management System.
+
+**Source:** `https://github.com/lamethods/data2/raw/main/lms/lms.csv`
+
+## Variables Description
+
+| Variable | Description | Type |
+|----------|-------------|------|
+| Freq_Course_View | Frequency of viewing course pages | Predictor |
+| Freq_Lecture_View | Frequency of viewing lectures | Predictor |
+| Freq_Forum_Consume | Frequency of reading forum posts | Predictor |
+| Freq_Forum_Contribute | Frequency of writing forum posts | Predictor |
+| Regularity_Course_View | Consistency of course page visits | Predictor |
+| Regularity_Lecture_View | Consistency of lecture viewing | Predictor |
+| Regularity_Forum_Consume | Consistency of forum reading | Predictor |
+| Regularity_Forum_Contribute | Consistency of forum posting | Predictor |
+| Session_Count | Number of login sessions | Predictor |
+| Total_Duration | Total time on the LMS (minutes) | Predictor |
+| Active_Days | Number of active days | Predictor |
+| **Final_Grade** | **Student's final grade** | **Target** |
+
+\newpage
+
+# Exploratory Data Analysis (EDA)
+
+## Why EDA Matters
+
+Before building models, we must understand our data:
+
+- **Distribution:** Is the target variable (Final_Grade) normally distributed?
+- **Correlations:** Which features are most related to the target?
+- **Outliers:** Are there unusual observations?
+- **Missing Values:** Is the data complete?
+
+## Key EDA Steps in R
+
+```r
+# Load and inspect
+library(tidyverse); library(rio); library(skimr)
+lms <- import("https://github.com/lamethods/data2/raw/main/lms/lms.csv")
+skim(lms)                        # Summary statistics
+cor(lms)[, "Final_Grade"]        # Correlations with target
+```
+
+## Correlation Interpretation
+
+| Correlation (r) | Strength |
+|-----------------|----------|
+| 0.00 – 0.19 | Very Weak |
+| 0.20 – 0.39 | Weak |
+| 0.40 – 0.59 | Moderate |
+| 0.60 – 0.79 | Strong |
+| 0.80 – 1.00 | Very Strong |
+
+\newpage
+
+# Data Preparation
+
+## Standardization (Z-Score Scaling)
+
+Standardization transforms each feature to have **mean = 0** and **standard deviation = 1**:
+
+$$z = \frac{x - \mu}{\sigma}$$
+
+**Why standardize?** Different features may be on different scales. Standardization ensures fair comparison and improves some algorithms (e.g., KNN, SVM).
+
+```r
+# Standardize predictors
+lms_scaled <- as.data.frame(scale(lms[, -12]))
+lms_scaled$Final_Grade <- lms$Final_Grade
+```
+
+## Multicollinearity Check (VIF)
+
+**Variance Inflation Factor (VIF)** detects when predictors are highly correlated with each other:
+
+$$VIF_j = \frac{1}{1 - R_j^2}$$
+
+| VIF Value | Interpretation |
+|-----------|---------------|
+| 1 | No collinearity |
+| 1 – 5 | Moderate (acceptable) |
+| > 5 | High (may need to remove feature) |
+| > 10 | Very high (definitely problematic) |
+
+\newpage
+
+# Train/Test Split
+
+## Concept
+
+We divide data into two parts:
+
+- **Training Set (80%):** The model learns patterns from this data
+- **Test Set (20%):** Used to evaluate performance on unseen data
+
+**Why split?** If we test on the same data we trained on, we can't tell if the model truly learned generalizable patterns or just memorized the training data (overfitting).
+
+```r
+library(rsample)
+set.seed(123)
+split <- initial_split(lms_scaled, prop = 0.80)
+train_data <- training(split)   # ~228 rows
+test_data  <- testing(split)    # ~57 rows
+```
+
+## The Bias-Variance Trade-off
+
+| Concept | Description |
+|---------|-------------|
+| **Bias** | Error from oversimplified model (underfitting) |
+| **Variance** | Error from overcomplex model (overfitting) |
+| **Goal** | Find the sweet spot between bias and variance |
+
+\newpage
+
+# Model 1: Linear Regression
+
+## How It Works
+
+Linear regression fits a straight-line (hyperplane) relationship:
+
+$$\hat{y} = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \cdots + \beta_p x_p$$
+
+- $\beta_0$ = intercept (baseline prediction)
+- $\beta_j$ = coefficient for feature $j$ (how much $\hat{y}$ changes per unit change in $x_j$)
+
+## Strengths and Weaknesses
+
+| Strengths | Weaknesses |
+|-----------|-----------|
+| Easy to interpret | Assumes linear relationships |
+| Fast to train | Sensitive to outliers |
+| Coefficients show direction & magnitude | Cannot capture complex patterns |
+
+## R Code
+
+```r
+model_lm <- lm(Final_Grade ~ ., data = train_data)
+pred_lm  <- predict(model_lm, newdata = test_data)
+summary(model_lm)
+```
+
+\newpage
+
+# Model 2: Random Forest
+
+## How It Works
+
+Random Forest is an **ensemble** method that:
+
+1. Creates many decision trees (e.g., 500)
+2. Each tree trains on a random subset of data (**bagging**)
+3. Each split considers a random subset of features
+4. Final prediction = **average** of all tree predictions
+
+## Strengths and Weaknesses
+
+| Strengths | Weaknesses |
+|-----------|-----------|
+| Handles non-linear relationships | Less interpretable than LR |
+| Robust to outliers | Slower to train |
+| Provides variable importance | Can overfit with too many trees |
+| No need for feature scaling | "Black box" model |
+
+## R Code
+
+```r
+library(randomForest)
+set.seed(123)
+model_rf <- randomForest(Final_Grade ~ ., data = train_data,
+                         ntree = 500, importance = TRUE)
+pred_rf  <- predict(model_rf, newdata = test_data)
+importance(model_rf)
+```
+
+\newpage
+
+# Model Evaluation Metrics
+
+## The Three Key Metrics
+
+### RMSE — Root Mean Squared Error
+
+$$RMSE = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (y_i - \hat{y}_i)^2}$$
+
+- Measures average prediction error
+- **Lower is better**
+- Penalizes large errors more heavily
+
+### MAE — Mean Absolute Error
+
+$$MAE = \frac{1}{n} \sum_{i=1}^{n} |y_i - \hat{y}_i|$$
+
+- Average absolute prediction error
+- **Lower is better**
+- Less sensitive to outliers than RMSE
+
+### R² — Coefficient of Determination
+
+$$R^2 = 1 - \frac{\sum (y_i - \hat{y}_i)^2}{\sum (y_i - \bar{y})^2}$$
+
+- Proportion of variance explained by the model
+- **Higher is better** (ranges from 0 to 1)
+- R² = 0.50 means the model explains 50% of the variance
+
+## R Code for Evaluation
+
+```r
+library(yardstick)
+rmse_vec(actual, predicted)
+mae_vec(actual, predicted)
+rsq_vec(actual, predicted)
+```
+
+\newpage
+
+# Visualization Guide
+
+## 1. Predicted vs Actual Scatter Plot
+
+**What to look for:** Points close to the diagonal line indicate good predictions.
+
+```r
+plot(test_data$Final_Grade, predictions,
+     xlab = "Actual", ylab = "Predicted",
+     main = "Predicted vs Actual")
+abline(0, 1, col = "red", lty = 2)
+```
+
+## 2. Residual Plot
+
+**What to look for:** Residuals randomly scattered around zero = good model. Patterns = model is missing something.
+
+```r
+residuals <- actual - predicted
+plot(predicted, residuals, main = "Residual Plot")
+abline(h = 0, col = "red", lty = 2)
+```
+
+## 3. Variable Importance Plot
+
+**What to look for:** Taller bars = more important features for prediction.
+
+```r
+varImpPlot(model_rf, main = "Variable Importance")
+```
+
+\newpage
+
+# Quick Reference: Model Comparison
+
+## When to Use Each Model
+
+| Scenario | Recommended Model |
+|----------|------------------|
+| Need interpretable results | Linear Regression |
+| Need best accuracy | Random Forest |
+| Small dataset | Linear Regression |
+| Non-linear relationships | Random Forest |
+| Feature importance needed | Random Forest |
+| Speed is important | Linear Regression |
+
+## Complete R Workflow Cheat Sheet
+
+```r
+# 1. Setup
+library(tidyverse); library(rio); library(randomForest)
+library(rsample); library(yardstick)
+
+# 2. Load data
+lms <- import("https://github.com/lamethods/data2/raw/main/lms/lms.csv")
+
+# 3. Standardize
+lms_s <- as.data.frame(scale(lms[,-12]))
+lms_s$Final_Grade <- lms$Final_Grade
+
+# 4. Split
+set.seed(123)
+split <- initial_split(lms_s, prop = 0.80)
+train <- training(split); test <- testing(split)
+
+# 5. Train models
+m_lm <- lm(Final_Grade ~ ., data = train)
+m_rf <- randomForest(Final_Grade ~ ., data = train, ntree=500)
+
+# 6. Predict
+p_lm <- predict(m_lm, test)
+p_rf <- predict(m_rf, test)
+
+# 7. Evaluate
+rmse_vec(test$Final_Grade, p_lm)
+rsq_vec(test$Final_Grade, p_lm)
+```
+
+\newpage
+
+# Practice Exercises
+
+1. **Modify the split ratio** to 70/30 and re-run both models. How do the metrics change?
+
+2. **Remove the two least important features** (based on variable importance) and retrain the Random Forest. Does R² improve?
+
+3. **Calculate RMSE by hand** for the first 5 test observations using the Linear Regression predictions.
+
+4. **Interpret the coefficients** of the Linear Regression model. Which features have positive vs. negative relationships with Final_Grade?
+
+5. **Create a bar chart** comparing RMSE, MAE, and R² for both models side by side.
+
+6. **Research Question:** What is k-fold cross-validation, and why might it give more reliable evaluation metrics than a single train/test split?
+
+---
+
+\vspace{1cm}
+
+*Dataset: Synthetic LMS Data from [lamethods/data2](https://github.com/lamethods/data2)*
+
+*Reference: Estrellado et al. — Learning Analytics Methods and Tutorials, Chapter 3*

@@ -1,0 +1,482 @@
+---
+title: "Predictive Modeling with Machine Learning in R"
+subtitle: "Predicting Student Performance from LMS Engagement Data"
+author: "Dr. Mustafa Hameed"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: false
+    theme: cosmo
+    self-contained: true
+---
+
+## Introduction
+
+### What is Predictive Modeling?
+
+**Predictive modeling** uses historical data to build mathematical models that can predict future or unknown outcomes. In education, this means using data about student behavior to predict their academic performance.
+
+### Why Predictive Modeling Matters
+
+- **Early Intervention**: Identify at-risk students before they fail
+- **Resource Allocation**: Direct support to students who need it most
+- **Understanding Behavior**: Learn which engagement patterns lead to success
+- **Data-Driven Decisions**: Move beyond intuition to evidence-based strategies
+
+### Our Goal
+
+We will predict **Final_Grade** (a continuous numeric outcome) using student engagement features from a Learning Management System (LMS). This is a **regression** problem.
+
+### Machine Learning Workflow
+
+```
+1. Load Data → 2. Explore (EDA) → 3. Prepare Data → 4. Split (Train/Test)
+→ 5. Build Models → 6. Evaluate & Compare → 7. Interpret Results
+```
+
+---
+
+## Setup
+
+### Load Required Libraries
+
+```{r}
+#| message: false
+#| warning: false
+
+# Data manipulation and visualization
+library(tidyverse)
+
+# Data import
+library(rio)
+
+# Summary statistics
+library(skimr)
+
+# Correlation analysis
+library(correlation)
+
+# Random Forest
+library(randomForest)
+
+# Train/Test splitting
+library(rsample)
+
+# Model evaluation metrics
+library(yardstick)
+
+# Model performance checks
+library(performance)
+```
+
+### Load the Dataset
+
+We use a synthetic dataset of 285 students with LMS engagement metrics.
+
+```{r}
+# Load data from GitHub
+lms <- rio::import("https://github.com/lamethods/data2/raw/main/lms/lms.csv")
+
+# Quick look at the data
+glimpse(lms)
+```
+
+### Understanding the Variables
+
+| Variable | Description |
+|----------|-------------|
+| `Freq_Course_View` | How often student views course pages |
+| `Freq_Lecture_View` | How often student views lectures |
+| `Freq_Forum_Consume` | How often student reads forum posts |
+| `Freq_Forum_Contribute` | How often student writes forum posts |
+| `Regularity_Course_View` | Consistency of course page visits |
+| `Regularity_Lecture_View` | Consistency of lecture viewing |
+| `Regularity_Forum_Consume` | Consistency of forum reading |
+| `Regularity_Forum_Contribute` | Consistency of forum posting |
+| `Session_Count` | Number of login sessions |
+| `Total_Duration` | Total time spent on LMS |
+| `Active_Days` | Number of days with LMS activity |
+| **`Final_Grade`** | **Target variable — student's final grade** |
+
+---
+
+## Exploratory Data Analysis (EDA)
+
+### Summary Statistics
+
+```{r}
+skim(lms)
+```
+
+### Distribution of the Target Variable
+
+```{r}
+ggplot(lms, aes(x = Final_Grade)) +
+  geom_histogram(bins = 20, fill = "steelblue", color = "white", alpha = 0.8) +
+  geom_vline(aes(xintercept = mean(Final_Grade)), 
+             color = "red", linetype = "dashed", size = 1) +
+  labs(title = "Distribution of Final Grade",
+       subtitle = paste("Mean =", round(mean(lms$Final_Grade), 2)),
+       x = "Final Grade", y = "Count") +
+  theme_minimal()
+```
+
+### Correlation Analysis
+
+```{r}
+#| fig-width: 10
+#| fig-height: 8
+
+# Compute correlations
+cor_matrix <- cor(lms)
+
+# Visualize with a heatmap
+cor_df <- as.data.frame(as.table(cor_matrix))
+names(cor_df) <- c("Var1", "Var2", "Correlation")
+
+ggplot(cor_df, aes(x = Var1, y = Var2, fill = Correlation)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white",
+                       midpoint = 0, limit = c(-1, 1)) +
+  geom_text(aes(label = round(Correlation, 2)), size = 2.5) +
+  labs(title = "Correlation Heatmap of All Variables") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### Top Correlations with Final_Grade
+
+```{r}
+# Which features correlate most with Final_Grade?
+cor_with_grade <- cor(lms)[, "Final_Grade"]
+cor_with_grade <- sort(abs(cor_with_grade), decreasing = TRUE)
+cor_with_grade[-1]  # Remove self-correlation
+```
+
+### Scatter Plots: Key Predictors vs Final Grade
+
+```{r}
+#| fig-width: 10
+#| fig-height: 6
+
+lms_long <- lms %>%
+  pivot_longer(cols = -Final_Grade, names_to = "Feature", values_to = "Value")
+
+ggplot(lms_long, aes(x = Value, y = Final_Grade)) +
+  geom_point(alpha = 0.3, color = "steelblue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  facet_wrap(~Feature, scales = "free_x", ncol = 4) +
+  labs(title = "Relationship Between Each Feature and Final Grade") +
+  theme_minimal()
+```
+
+---
+
+## Data Preparation
+
+### Standardize the Features
+
+Standardization transforms features to have **mean = 0** and **standard deviation = 1**. This ensures all features are on the same scale.
+
+$$z = \frac{x - \mu}{\sigma}$$
+
+```{r}
+# Separate predictors and target
+predictors <- lms %>% select(-Final_Grade)
+target <- lms$Final_Grade
+
+# Standardize predictors
+predictors_scaled <- as.data.frame(scale(predictors))
+
+# Recombine
+lms_scaled <- predictors_scaled %>%
+  mutate(Final_Grade = target)
+
+head(lms_scaled)
+```
+
+### Check for Multicollinearity (VIF)
+
+**Variance Inflation Factor (VIF)** measures how much the variance of a regression coefficient is inflated due to collinearity. VIF > 5 may indicate a problem.
+
+```{r}
+# Fit a linear model to check VIF
+lm_check <- lm(Final_Grade ~ ., data = lms_scaled)
+check_collinearity(lm_check)
+```
+
+---
+
+## Train/Test Split
+
+We split the data **80% for training** and **20% for testing**. The model learns patterns from the training set and is evaluated on the unseen test set.
+
+```{r}
+set.seed(123)  # For reproducibility
+
+# Create 80/20 split
+split <- initial_split(lms_scaled, prop = 0.80)
+train_data <- training(split)
+test_data  <- testing(split)
+
+cat("Training set:", nrow(train_data), "rows\n")
+cat("Testing set: ", nrow(test_data), "rows\n")
+```
+
+---
+
+## Model Building
+
+### Model 1: Linear Regression
+
+**Linear Regression** fits a straight-line relationship between predictors and the outcome.
+
+$$\hat{y} = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \cdots + \beta_p x_p$$
+
+```{r}
+# Train linear regression model
+model_lm <- lm(Final_Grade ~ ., data = train_data)
+
+# Summary of model
+summary(model_lm)
+```
+
+```{r}
+# Make predictions on test set
+pred_lm <- predict(model_lm, newdata = test_data)
+
+# View first 10 predictions vs actual
+head(data.frame(Actual = test_data$Final_Grade, Predicted = round(pred_lm, 3)), 10)
+```
+
+### Model 2: Random Forest
+
+**Random Forest** builds many decision trees on random subsets of the data and averages their predictions. This reduces overfitting and improves accuracy.
+
+```{r}
+set.seed(123)
+
+# Train Random Forest with 500 trees
+model_rf <- randomForest(
+  Final_Grade ~ ., 
+  data = train_data,
+  ntree = 500,
+  importance = TRUE
+)
+
+# Model summary
+print(model_rf)
+```
+
+```{r}
+# Make predictions on test set
+pred_rf <- predict(model_rf, newdata = test_data)
+
+# View first 10 predictions vs actual
+head(data.frame(Actual = test_data$Final_Grade, Predicted = round(pred_rf, 3)), 10)
+```
+
+---
+
+## Model Evaluation
+
+### Key Evaluation Metrics
+
+| Metric | Formula | Interpretation |
+|--------|---------|---------------|
+| **RMSE** | $\sqrt{\frac{1}{n}\sum(y_i - \hat{y}_i)^2}$ | Average prediction error (lower = better) |
+| **MAE** | $\frac{1}{n}\sum\|y_i - \hat{y}_i\|$ | Average absolute error (lower = better) |
+| **R²** | $1 - \frac{SS_{res}}{SS_{tot}}$ | Proportion of variance explained (higher = better) |
+
+### Calculate Metrics for Both Models
+
+```{r}
+# Create results data frames
+results_lm <- data.frame(
+  truth = test_data$Final_Grade,
+  estimate = pred_lm
+)
+
+results_rf <- data.frame(
+  truth = test_data$Final_Grade,
+  estimate = pred_rf
+)
+
+# Calculate metrics for Linear Regression
+cat("=== Linear Regression ===\n")
+cat("RMSE:", rmse_vec(results_lm$truth, results_lm$estimate), "\n")
+cat("MAE: ", mae_vec(results_lm$truth, results_lm$estimate), "\n")
+cat("R²:  ", rsq_vec(results_lm$truth, results_lm$estimate), "\n\n")
+
+# Calculate metrics for Random Forest
+cat("=== Random Forest ===\n")
+cat("RMSE:", rmse_vec(results_rf$truth, results_rf$estimate), "\n")
+cat("MAE: ", mae_vec(results_rf$truth, results_rf$estimate), "\n")
+cat("R²:  ", rsq_vec(results_rf$truth, results_rf$estimate), "\n")
+```
+
+### Comparison Table
+
+```{r}
+# Build a comparison table
+comparison <- data.frame(
+  Model = c("Linear Regression", "Random Forest"),
+  RMSE = c(
+    rmse_vec(results_lm$truth, results_lm$estimate),
+    rmse_vec(results_rf$truth, results_rf$estimate)
+  ),
+  MAE = c(
+    mae_vec(results_lm$truth, results_lm$estimate),
+    mae_vec(results_rf$truth, results_rf$estimate)
+  ),
+  R_squared = c(
+    rsq_vec(results_lm$truth, results_lm$estimate),
+    rsq_vec(results_rf$truth, results_rf$estimate)
+  )
+)
+
+comparison %>%
+  mutate(across(where(is.numeric), round, 3)) %>%
+  knitr::kable(caption = "Model Comparison: Linear Regression vs Random Forest")
+```
+
+---
+
+## Visualizing Results
+
+### Predicted vs Actual Values
+
+```{r}
+#| fig-width: 10
+#| fig-height: 5
+
+# Combine predictions
+viz_data <- data.frame(
+  Actual = rep(test_data$Final_Grade, 2),
+  Predicted = c(pred_lm, pred_rf),
+  Model = rep(c("Linear Regression", "Random Forest"), each = nrow(test_data))
+)
+
+ggplot(viz_data, aes(x = Actual, y = Predicted, color = Model)) +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  facet_wrap(~Model) +
+  labs(title = "Predicted vs Actual Final Grade",
+       subtitle = "Points on the dashed line = perfect predictions",
+       x = "Actual Grade", y = "Predicted Grade") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+### Residual Plots
+
+Residuals = Actual − Predicted. Ideally, residuals should be randomly scattered around zero.
+
+```{r}
+#| fig-width: 10
+#| fig-height: 5
+
+viz_data$Residual <- viz_data$Actual - viz_data$Predicted
+
+ggplot(viz_data, aes(x = Predicted, y = Residual, color = Model)) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  facet_wrap(~Model) +
+  labs(title = "Residual Plots",
+       subtitle = "Residuals should be randomly scattered around 0",
+       x = "Predicted Grade", y = "Residual") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+### Variable Importance (Random Forest)
+
+Variable importance shows which features have the most impact on predictions.
+
+```{r}
+#| fig-width: 8
+#| fig-height: 6
+
+# Extract importance
+imp <- importance(model_rf)
+imp_df <- data.frame(
+  Feature = rownames(imp),
+  Importance = imp[, "%IncMSE"]
+)
+
+ggplot(imp_df, aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_col(fill = "steelblue", alpha = 0.8) +
+  coord_flip() +
+  labs(title = "Random Forest: Variable Importance",
+       subtitle = "% Increase in MSE when variable is permuted",
+       x = "Feature", y = "Importance (% Increase in MSE)") +
+  theme_minimal()
+```
+
+---
+
+## Interpretation of Results
+
+### Key Findings
+
+1. **Both models can predict student grades** from LMS engagement data, explaining a meaningful portion of the variance.
+
+2. **Linear Regression** provides interpretable coefficients — you can see exactly how each feature contributes to the prediction.
+
+3. **Random Forest** captures non-linear relationships that linear regression may miss, often producing better accuracy.
+
+4. **Most Important Features** typically include:
+   - **Session_Count**: Number of login sessions
+   - **Active_Days**: Days with LMS activity
+   - **Total_Duration**: Time spent on the platform
+   - **Freq_Lecture_View**: How often lectures are viewed
+
+### Practical Implications
+
+- Students who **log in more frequently** and **spend more time** on the LMS tend to score higher.
+- **Regular engagement** (not just total amount) matters for predicting success.
+- These models can power **early warning systems** in educational settings.
+
+---
+
+## Summary
+
+### What We Learned
+
+| Step | What We Did |
+|------|-------------|
+| **1. Load Data** | Imported 285 student records with 12 variables |
+| **2. EDA** | Explored distributions, correlations, and patterns |
+| **3. Prepare** | Standardized features for fair comparison |
+| **4. Split** | 80% training / 20% testing |
+| **5. Build** | Trained Linear Regression and Random Forest |
+| **6. Evaluate** | Compared using RMSE, MAE, and R² |
+| **7. Interpret** | Identified key engagement features |
+
+### Key Definitions
+
+- **Supervised Learning**: Learning from labeled examples (we know the outcome)
+- **Regression**: Predicting a continuous numeric value
+- **Training Set**: Data used to teach the model
+- **Test Set**: Held-out data used to evaluate the model
+- **Overfitting**: When a model learns noise instead of patterns
+- **RMSE**: Root Mean Squared Error — penalizes large errors
+- **MAE**: Mean Absolute Error — average error magnitude
+- **R²**: Coefficient of Determination — proportion of variance explained
+
+---
+
+## Practice Exercises
+
+1. **Change the split ratio** to 70/30 instead of 80/20. How do the results change?
+2. **Try removing** the least important variable. Does performance improve?
+3. **Increase the number of trees** in Random Forest to 1000. Does R² improve?
+4. **Plot** the histogram of residuals for each model. Are they normally distributed?
+5. **Research**: What is cross-validation and why might it be better than a single train/test split?
+
+---
+
+*Dataset source: [lamethods/data2](https://github.com/lamethods/data2) — Synthetic LMS engagement data*
