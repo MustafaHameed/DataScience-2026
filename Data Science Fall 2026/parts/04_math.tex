@@ -1,0 +1,394 @@
+%=====================================================================
+\chapter{The Mathematical Toolkit}\label{ch:math}
+%=====================================================================
+\locator{1}{Part I --- Foundations of Data}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Represent} an observation as a vector and a dataset as a matrix, and state what each dimension means.
+  \item \textbf{Compute} a dot product and a Euclidean distance by hand, and explain what each measures about two observations.
+  \item \textbf{Interpret} a derivative as a slope and a gradient as a direction of steepest increase.
+  \item \textbf{Trace} one step of gradient descent numerically.
+  \item \textbf{Explain} why every model in this book is ultimately an optimisation problem.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{data} --- observations, features and measurement scales. Nothing beyond
+school algebra is assumed. If the prerequisite self-check troubled you, work this
+chapter slowly; everything later depends on it.
+\end{prereq}
+
+\begin{keyterms}
+scalar $\bullet$ vector $\bullet$ matrix $\bullet$ dot product $\bullet$ norm
+$\bullet$ Euclidean distance $\bullet$ cosine similarity $\bullet$ function
+$\bullet$ derivative $\bullet$ slope $\bullet$ gradient $\bullet$ minimum
+$\bullet$ learning rate $\bullet$ gradient descent
+\end{keyterms}
+
+\section{Why Mathematics, and How Much}
+
+Every model in this book does the same two things: it \emph{represents} data as
+numbers arranged in a particular shape, and it \emph{searches} for the arrangement
+of its own parameters that makes its errors smallest. The first is linear algebra;
+the second is calculus. That is the whole of the mathematics you need, and this
+chapter covers it at the depth this course requires --- intuition, notation, and
+the ability to do a small example by hand.
+
+\begin{conceptbox}[The One-Sentence Summary of Machine Learning]
+\emph{Put the data in a matrix, define a number that says how wrong you are, and
+roll downhill until that number stops getting smaller.} Everything in Parts III
+and IV is a variation on this sentence.
+\end{conceptbox}
+
+\section{Vectors: One Observation}
+
+\begin{definitionbox}[Scalar, Vector, Matrix]
+A \term{scalar} is a single number ($5$, $-2.3$). A \term{vector} is an ordered
+list of numbers, written $x = [x_1, x_2, \dots, x_p]$ --- one observation with $p$
+features. A \term{matrix} is a rectangular grid, written $X$ with $n$ rows and $p$
+columns --- a whole dataset.
+\end{definitionbox}
+
+A student described by (attendance 92\%, quizzes 8, forum posts 12) is the vector
+$x = [92, 8, 12]$. That is not an analogy; it is literally how the data is stored
+and how every algorithm sees it.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  cel/.style={draw=gray!50, fill=white, minimum width=1.25cm, minimum height=0.5cm},
+  hcel/.style={draw=primary!60, fill=primary!12, text=primary!50!black,
+               font=\scriptsize\bfseries, minimum width=1.25cm, minimum height=0.5cm},
+  rcel/.style={draw=accent!60, fill=accent!10, minimum width=1.25cm, minimum height=0.5cm}]
+
+% column headers
+\foreach \c/\t in {0/attend, 1/quizzes, 2/posts}
+  \node[hcel] at (\c*1.25,0) {\t};
+% rows
+\foreach \r/\a/\b/\c in {0/92/8/12, 1/45/3/0, 2/78/6/4}{
+  \pgfmathsetmacro{\yy}{-0.5-\r*0.5}
+  \ifnum\r=0
+    \node[rcel] at (0,\yy) {\a}; \node[rcel] at (1.25,\yy) {\b}; \node[rcel] at (2.5,\yy) {\c};
+  \else
+    \node[cel] at (0,\yy) {\a}; \node[cel] at (1.25,\yy) {\b}; \node[cel] at (2.5,\yy) {\c};
+  \fi}
+
+\node[font=\scriptsize, text=accent, anchor=west] at (3.0,-0.5)
+     {$\leftarrow$ one \textbf{observation} = one vector $x_1=[92,8,12]$};
+\node[font=\scriptsize, text=primary!60!black, anchor=west] at (3.0,0.0)
+     {$\uparrow$ one \textbf{feature} = one column};
+\node[font=\scriptsize, text=gray!55!black, anchor=west] at (3.0,-1.35)
+     {the whole grid = the \textbf{matrix} $X$, here $n=3$, $p=3$};
+
+% dimension braces
+\draw[decorate, decoration={brace, amplitude=4pt, mirror}, gray!60]
+      (-0.72,-1.78) -- (3.12,-1.78) node[midway, below=4pt, font=\scriptsize] {$p=3$ features};
+\draw[decorate, decoration={brace, amplitude=4pt}, gray!60]
+      (-0.78,-1.75) -- (-0.78,-0.25) node[midway, left=4pt, font=\scriptsize] {$n=3$};
+\end{tikzpicture}}%
+{A dataset as a matrix. Every algorithm in this book consumes exactly this object: $n$
+rows of $p$ numbers. Making real-world data fit this shape is the work of
+\chref{wrangling}.}{matrix-anatomy}
+
+\subsection{Length, Distance and Direction}
+
+Three operations on vectors carry almost all the geometric intuition you need.
+
+\begin{definitionbox}[Norm, Distance, Dot Product]
+The \term{norm} (length) of $x$ is $\|x\| = \sqrt{x_1^2 + \dots + x_p^2}$.\\[2pt]
+The \term{Euclidean distance} between $a$ and $b$ is
+$d(a,b) = \sqrt{\sum_{j=1}^{p}(a_j - b_j)^2}$ --- how far apart two observations are.\\[2pt]
+The \term{dot product} is $a \cdot b = \sum_{j=1}^{p} a_j b_j$ --- a single number
+measuring how much two vectors point the same way.
+\end{definitionbox}
+
+\begin{worked}[Distance Between Two Students]
+$a = [92, 8, 12]$ (engaged), $b = [45, 3, 0]$ (disengaged).
+
+\smallskip
+\textbf{Differences:} $92-45 = 47$, \quad $8-3 = 5$, \quad $12-0 = 12$.
+
+\textbf{Squares:} $47^2 = 2209$, \quad $5^2 = 25$, \quad $12^2 = 144$.
+
+\textbf{Sum:} $2209 + 25 + 144 = 2378$.
+
+\textbf{Distance:} $d(a,b) = \sqrt{2378} \approx 48.8$.
+
+\smallskip
+\textbf{The lesson hiding in this number.} The attendance difference (47) supplied
+$2209/2378 = 93\%$ of the total. Attendance dominates purely because it is measured
+on a 0--100 scale while the others run 0--20. The distance is not measuring
+similarity of students; it is measuring similarity of \emph{attendance}. This is
+exactly why \chref{wrangling} insists on \term{scaling} features before any
+distance-based method (k-NN in \chref{classification}, k-means in
+\chref{unsupervised}) is used.
+\end{worked}
+
+\begin{conceptbox}[Cosine Similarity: Direction Without Magnitude]
+Sometimes you care that two things are \emph{about the same}, not that they are the
+same \emph{size}. Cosine similarity,
+$\cos\theta = \dfrac{a \cdot b}{\|a\|\,\|b\|}$, ranges from $-1$ to $1$ and ignores
+length entirely. It is the standard similarity measure for text
+(\chref{nlp}), where a long document and a short one on the same topic should count
+as similar.
+\end{conceptbox}
+
+\section{Functions, Slopes and Gradients}
+
+\begin{definitionbox}[Derivative]
+The \term{derivative} of $f$ at a point, written $f'(x)$ or $\frac{df}{dx}$, is the
+\emph{slope} of $f$ there: how much $f$ changes per unit change in $x$. Where the
+derivative is zero, the function is momentarily flat --- at a peak, a valley or a
+plateau.
+\end{definitionbox}
+
+For this course you need three derivatives and one rule:
+
+\begin{center}
+$\dfrac{d}{dx}(c) = 0$, \qquad
+$\dfrac{d}{dx}(x^2) = 2x$, \qquad
+$\dfrac{d}{dx}(x^n) = n x^{n-1}$, \qquad
+and derivatives add.
+\end{center}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=11.5cm, height=6.0cm,
+  xlabel={\scriptsize parameter $w$}, ylabel={\scriptsize loss $L(w)$},
+  xmin=-3.4, xmax=3.4, ymin=-0.6, ymax=9.5,
+  axis lines=left, tick label style={font=\scriptsize},
+  label style={font=\scriptsize}, legend style={font=\scriptsize, draw=gray!40,
+  at={(0.99,0.99)}, anchor=north east},
+  grid=major, grid style={gray!18},
+]
+\addplot[primary, line width=1.3pt, domain=-3.2:3.2, samples=120] {x^2};
+\addlegendentry{$L(w)=w^2$}
+
+% tangent at w = 2 (slope 4)
+\addplot[accent, line width=1.1pt, dashed, domain=0.9:3.1] {4*x - 4};
+\addlegendentry{slope at $w=2$ is $+4$}
+\addplot[accent, only marks, mark=*, mark size=1.9pt] coordinates {(2,4)};
+
+% tangent at w = -1.5 (slope -3)
+\addplot[greenhl, line width=1.1pt, dashed, domain=-2.9:-0.2] {-3*x - 2.25};
+\addlegendentry{slope at $w=-1.5$ is $-3$}
+\addplot[greenhl, only marks, mark=*, mark size=1.9pt] coordinates {(-1.5,2.25)};
+
+\addplot[purplehl, only marks, mark=*, mark size=2.4pt] coordinates {(0,0)};
+\node[font=\scriptsize, purplehl, anchor=north] at (axis cs:0,-0.05) {minimum: slope $=0$};
+
+\draw[-{Stealth[length=2mm]}, accent, line width=1pt]
+     (axis cs:2,4) -- (axis cs:1.2,4);
+\draw[-{Stealth[length=2mm]}, greenhl, line width=1pt]
+     (axis cs:-1.5,2.25) -- (axis cs:-0.7,2.25);
+\node[font=\scriptsize\itshape, text=gray!55!black, align=center] at (axis cs:0,7.2)
+     {move \emph{against} the slope\\to go downhill};
+\end{axis}
+\end{tikzpicture}}%
+{Slope as the guide to the minimum. Where the slope is positive the minimum lies to the
+left; where it is negative, to the right. In both cases you move in the direction
+\emph{opposite} the sign of the derivative --- which is the entire idea of gradient
+descent.}{slope-minimum}
+
+\begin{definitionbox}[Gradient]
+When a function has several inputs, the \term{gradient} $\nabla L$ is the vector of
+its partial derivatives --- one slope per parameter. It points in the direction of
+\emph{steepest increase}, so $-\nabla L$ points downhill.
+\end{definitionbox}
+
+\section{Gradient Descent}
+
+This is the algorithm that trains almost every model in Parts III and IV. It is
+three lines long.
+
+\begin{definitionbox}[Gradient Descent]
+Repeat until the loss stops improving:
+\[
+w \;\leftarrow\; w \;-\; \alpha \, \nabla L(w)
+\]
+where $w$ are the parameters, $L$ is the loss, $\nabla L$ is its gradient, and
+$\alpha$ is the \term{learning rate} --- how big a step to take.
+\end{definitionbox}
+
+\begin{worked}[Three Steps of Gradient Descent by Hand]
+Minimise $L(w) = w^2$, starting at $w_0 = 3$, with learning rate $\alpha = 0.3$.
+The gradient is $\nabla L = 2w$.
+
+\smallskip
+\textbf{Step 1.} $\nabla L(3) = 6$. \quad
+$w_1 = 3 - 0.3 \times 6 = 3 - 1.8 = 1.2$. \quad $L = 1.44$.
+
+\textbf{Step 2.} $\nabla L(1.2) = 2.4$. \quad
+$w_2 = 1.2 - 0.3 \times 2.4 = 1.2 - 0.72 = 0.48$. \quad $L = 0.23$.
+
+\textbf{Step 3.} $\nabla L(0.48) = 0.96$. \quad
+$w_3 = 0.48 - 0.3 \times 0.96 = 0.48 - 0.288 = 0.192$. \quad $L = 0.037$.
+
+\smallskip
+The loss fell from $9$ to $0.037$ in three steps, and $w$ is converging on the true
+minimum at $0$. Notice the steps get smaller automatically: near the minimum the
+gradient is small, so the algorithm slows down as it arrives. Nobody had to program
+that.
+
+\smallskip
+\textbf{Now try $\alpha = 1.2$.} $w_1 = 3 - 1.2 \times 6 = -4.2$; $w_2 = -4.2 -
+1.2\times(-8.4) = 5.88$. The loss is \emph{rising}. Too large a learning rate
+overshoots and diverges --- which is the subject of the next figure.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=3 by 1, horizontal sep=1.05cm},
+  width=5.35cm, height=4.3cm,
+  xmin=-4.6, xmax=4.6, ymin=-0.8, ymax=13,
+  axis lines=left, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries}, xlabel={$w$},
+]
+% --- too small
+\nextgroupplot[title={\color{secondary}$\alpha$ too small}, ylabel={$L(w)$}]
+\addplot[primary, line width=1pt, domain=-4.4:4.4, samples=80] {x^2};
+\addplot[secondary, only marks, mark=*, mark size=1.5pt]
+  coordinates {(3,9) (2.7,7.29) (2.43,5.9) (2.19,4.79) (1.97,3.87)};
+\draw[-{Stealth[length=1.5mm]}, secondary] (axis cs:3,9) -- (axis cs:2.7,7.29);
+\draw[-{Stealth[length=1.5mm]}, secondary] (axis cs:2.7,7.29) -- (axis cs:2.43,5.9);
+\node[font=\tiny, text=secondary!70!black, align=center] at (axis cs:-1.6,10.5) {crawls;\\wastes time};
+
+% --- just right
+\nextgroupplot[title={\color{greenhl}$\alpha$ about right}]
+\addplot[primary, line width=1pt, domain=-4.4:4.4, samples=80] {x^2};
+\addplot[greenhl, only marks, mark=*, mark size=1.5pt]
+  coordinates {(3,9) (1.2,1.44) (0.48,0.23) (0.19,0.04)};
+\draw[-{Stealth[length=1.5mm]}, greenhl] (axis cs:3,9) -- (axis cs:1.2,1.44);
+\draw[-{Stealth[length=1.5mm]}, greenhl] (axis cs:1.2,1.44) -- (axis cs:0.48,0.23);
+\node[font=\tiny, text=greenhl!60!black, align=center] at (axis cs:-2.0,10.5) {converges\\quickly};
+
+% --- too big
+\nextgroupplot[title={\color{accent}$\alpha$ too large}]
+\addplot[primary, line width=1pt, domain=-4.4:4.4, samples=80] {x^2};
+\addplot[accent, only marks, mark=*, mark size=1.5pt]
+  coordinates {(1.5,2.25) (-2.1,4.41) (2.94,8.64)};
+\draw[-{Stealth[length=1.5mm]}, accent] (axis cs:1.5,2.25) -- (axis cs:-2.1,4.41);
+\draw[-{Stealth[length=1.5mm]}, accent] (axis cs:-2.1,4.41) -- (axis cs:2.94,8.64);
+\node[font=\tiny, text=accent!80!black, align=center] at (axis cs:0,11.5) {overshoots;\\diverges};
+\end{groupplot}
+\end{tikzpicture}}%
+{The learning rate is the single most important hyperparameter you will tune. Too small
+wastes compute; too large diverges. \chref{neuralnets} returns to this with real training
+curves.}{learning-rate}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Computing distances on unscaled features.} The feature with the
+        biggest numeric range silently becomes the only feature that matters.
+  \item \textbf{Assuming a zero gradient means the best answer.} It means
+        \emph{flat}. For the bowl-shaped losses of \chref{regression} that is the
+        global minimum; for the neural networks of \chref{neuralnets} it need not
+        be.
+  \item \textbf{Treating the learning rate as unimportant.} It decides whether
+        training works at all.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Vectors, Distance and Optimisation}
+\lensLA{Each student becomes a vector of engagement features. Euclidean distance
+between two students answers ``who behaves like whom'', which is what drives peer
+grouping and the clustering of \chref{unsupervised}. The scaling warning matters
+acutely here: attendance on 0--100 will otherwise drown quiz counts on 0--10.}
+
+\lensPM{Each completed task becomes a vector (estimated hours, actual hours,
+number of dependencies, team size). Distance identifies the historical tasks most
+similar to a new one, giving a defensible estimate --- ``the five most similar
+past tasks took 11--16 hours'' --- rather than a guess.}
+
+\lensIOT{A one-minute window of sensor readings becomes a vector. Distance from the
+fleet's normal-operation vector is the simplest possible anomaly score, and it runs
+in a few arithmetic operations --- which is why it can execute on the device
+itself, at the edge (\chref{cloudedge}).}
+
+\lensSEC{A network session becomes a vector (bytes in, bytes out, duration, packet
+count, distinct ports). Cosine similarity to known attack signatures ignores
+volume and compares \emph{shape}, so a slow, low-volume version of an attack still
+resembles the fast one. Attackers routinely change magnitude; changing shape is
+harder.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Distance and Descent from First Principles]
+\begin{lstlisting}[language=Python]
+import numpy as np
+
+# --- vectors and distance -------------------------------------------
+a = np.array([92,  8, 12])   # engaged student
+b = np.array([45,  3,  0])   # disengaged student
+
+print("dot product :", a @ b)
+print("norm of a   :", np.linalg.norm(a))
+print("distance a-b:", np.linalg.norm(a - b))     # ~48.8
+
+# Now scale each feature to 0-1 and recompute: the answer changes a lot,
+# because attendance no longer dominates purely by having a bigger range.
+lo, hi = np.array([0,0,0]), np.array([100, 10, 25])
+a_s, b_s = (a - lo)/(hi - lo), (b - lo)/(hi - lo)
+print("scaled distance:", np.linalg.norm(a_s - b_s))
+
+# --- gradient descent on L(w) = w^2 ---------------------------------
+w, alpha = 3.0, 0.3
+for step in range(6):
+    grad = 2 * w                 # dL/dw
+    w = w - alpha * grad
+    print(f"step {step+1}: w={w:7.4f}  L={w**2:8.5f}")
+
+# Change alpha to 1.2 and run again -- watch the loss increase.
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Compute the Euclidean distance between $[3, 4]$ and $[0, 0]$.
+  \item $L(w) = w^2$ and you are at $w = -2$. What is the gradient, and does
+        gradient descent move $w$ left or right?
+  \item Two documents have cosine similarity 0.95 but Euclidean distance 40. What
+        does that combination tell you about them?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item An observation is a vector; a dataset is an $n \times p$ matrix. Every
+        algorithm consumes this shape.
+  \item Euclidean distance measures dissimilarity; it is dominated by whichever
+        feature has the largest scale, so scale first.
+  \item Cosine similarity compares direction while ignoring magnitude --- the
+        right choice for text.
+  \item A derivative is a slope; a gradient is a vector of slopes pointing
+        steeply uphill.
+  \item Gradient descent is $w \leftarrow w - \alpha \nabla L$. The learning rate
+        $\alpha$ decides between crawling, converging and diverging.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The gradient of a loss function points in the direction of:
+        (a)~steepest decrease (b)~steepest increase (c)~the minimum (d)~zero error.
+  \item \textbf{(MCQ)} For a dataset with 500 rows and 12 columns, the matrix $X$
+        has dimensions: (a)~$12 \times 500$ (b)~$500 \times 12$ (c)~$500 \times
+        500$ (d)~$12 \times 12$.
+  \item \textbf{(Short)} Compute $\|[6, 8]\|$ and the distance between $[6,8]$ and
+        $[2,5]$.
+  \item \textbf{(Short)} Explain in your own words why gradient descent
+        automatically takes smaller steps as it approaches a minimum.
+  \item \textbf{(Short)} Give one scenario in which cosine similarity is clearly
+        the right choice and Euclidean distance is clearly wrong.
+  \item \textbf{(Applied)} Perform two steps of gradient descent by hand on
+        $L(w) = (w-4)^2$ from $w_0 = 0$ with $\alpha = 0.4$. (Hint: $\nabla L =
+        2(w-4)$.) State the value of $L$ after each step.
+  \item \textbf{(Applied)} A colleague computes distances between servers using
+        features \{uptime in seconds, CPU load 0--1, error count 0--50\}. Explain
+        precisely what will go wrong and how to fix it.
+\end{reviewq}

@@ -1,0 +1,430 @@
+%=====================================================================
+\chapter{Probability and Uncertainty}\label{ch:probability}
+%=====================================================================
+\locator{1}{Part I --- Foundations of Data}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Apply} the addition and multiplication rules of probability, and test whether two events are independent.
+  \item \textbf{Compute} a conditional probability and explain why $P(A \mid B) \neq P(B \mid A)$.
+  \item \textbf{Use} Bayes' theorem to update a belief in the light of evidence.
+  \item \textbf{Explain} the base-rate fallacy and demonstrate it numerically for a rare-event detector.
+  \item \textbf{State} the Central Limit Theorem and say why it makes inference possible.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{descriptive} --- distributions, mean and standard deviation. Bayes'
+theorem here is the direct foundation of naive Bayes in \chref{classification} and
+of the false-alarm arithmetic in \chref{evaluation} and \chref{cybersecurity}.
+\end{prereq}
+
+\begin{keyterms}
+experiment $\bullet$ outcome $\bullet$ event $\bullet$ sample space $\bullet$
+independence $\bullet$ mutually exclusive $\bullet$ conditional probability
+$\bullet$ Bayes' theorem $\bullet$ prior, likelihood, posterior $\bullet$ base rate
+$\bullet$ random variable $\bullet$ expected value $\bullet$ Central Limit Theorem
+\end{keyterms}
+
+\section{Why Probability Is the Language of This Course}
+
+Every prediction you make is uncertain, and pretending otherwise is the fastest
+way to lose the trust of the people who use your work. Probability is how
+uncertainty is written down, compared, and combined. It is also, quite directly,
+what a classifier outputs: ``0.78 probability of failing'' is a probability
+statement, and you cannot interpret it without this chapter.
+
+\section{The Rules}
+
+\begin{definitionbox}[Probability]
+For an event $A$, $P(A)$ is a number in $[0,1]$ giving the long-run proportion of
+occasions on which $A$ happens. $P(A)=0$ means impossible, $P(A)=1$ means certain,
+and $P(\text{not }A) = 1 - P(A)$.
+\end{definitionbox}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{3.3cm}p{5.0cm}p{6.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Rule} & \textbf{Formula} & \textbf{In words} \\
+\midrule
+\endhead
+Complement & $P(\bar{A}) = 1 - P(A)$ & Either it happens or it does not \\
+Addition (general) & $P(A \cup B) = P(A) + P(B) - P(A \cap B)$ & Add, then subtract the double-counted overlap \\
+Addition (exclusive) & $P(A \cup B) = P(A) + P(B)$ & Valid \emph{only} when $A$ and $B$ cannot both occur \\
+Multiplication (general) & $P(A \cap B) = P(A)\,P(B \mid A)$ & Chance of $A$, then chance of $B$ given $A$ happened \\
+Multiplication (independent) & $P(A \cap B) = P(A)\,P(B)$ & Valid \emph{only} when $A$ tells you nothing about $B$ \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The Two Words That Cause Most Errors]
+\emph{Mutually exclusive} and \emph{independent} are not the same thing and are
+almost opposites. Mutually exclusive events \emph{cannot} co-occur, so knowing one
+happened tells you the other definitely did not --- which is the strongest possible
+\emph{dependence}. Two mutually exclusive events with non-zero probability are
+never independent.
+\end{alertbox}
+
+\section{Conditional Probability}
+
+\begin{definitionbox}[Conditional Probability]
+\[
+P(A \mid B) \;=\; \frac{P(A \cap B)}{P(B)}, \qquad P(B) > 0
+\]
+Read as ``the probability of $A$ \emph{given that} $B$ has occurred''. It is the
+probability of $A$ within the reduced world in which $B$ is true.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+% --- unconditional world
+\draw[draw=gray!55, fill=gray!6, line width=1pt] (0,0) rectangle (5.0,3.2);
+\node[anchor=north west, text=gray!55!black] at (0.08,3.15) {all sessions $S$};
+\begin{scope}
+  \clip (0,0) rectangle (5.0,3.2);
+  \fill[secondary!22] (1.75,1.6) circle (1.3cm);
+  \fill[accent!28] (3.15,1.6) circle (1.05cm);
+  \begin{scope}
+    \clip (1.75,1.6) circle (1.3cm);
+    \fill[purplehl!45] (3.15,1.6) circle (1.05cm);
+  \end{scope}
+\end{scope}
+\draw[secondary, line width=1pt] (1.75,1.6) circle (1.3cm);
+\draw[accent, line width=1pt] (3.15,1.6) circle (1.05cm);
+\node[text=secondary!60!black, font=\scriptsize\bfseries] at (1.15,2.55) {$B$: from};
+\node[text=secondary!60!black, font=\scriptsize\bfseries] at (1.15,2.28) {new device};
+\node[text=accent!70!black, font=\scriptsize\bfseries] at (4.05,2.5) {$A$: fraud};
+\node[text=purplehl!50!black, font=\tiny\bfseries] at (2.62,1.6) {$A\cap B$};
+
+\node[align=center, text=gray!55!black] at (2.5,-0.55)
+     {$P(A)=\dfrac{|A|}{|S|}$ --- fraud among \emph{all} sessions};
+
+% --- arrow
+\draw[-{Stealth[length=3mm]}, primary!60, line width=2pt] (5.6,1.6) -- (7.1,1.6);
+\node[text=primary!70!black, font=\scriptsize, align=center] at (6.35,2.15) {condition\\on $B$};
+
+% --- conditioned world
+\draw[secondary, line width=1.4pt, fill=secondary!10] (9.9,1.6) circle (1.55cm);
+\begin{scope}
+  \clip (9.9,1.6) circle (1.55cm);
+  \fill[purplehl!45] (10.75,1.6) circle (1.25cm);
+  \draw[accent, line width=1pt] (10.75,1.6) circle (1.25cm);
+\end{scope}
+\node[text=secondary!60!black, font=\scriptsize\bfseries] at (9.9,3.4) {the world shrinks to $B$};
+\node[text=purplehl!50!black, font=\tiny\bfseries] at (10.55,1.6) {$A\cap B$};
+\node[align=center, text=gray!55!black] at (9.9,-0.55)
+     {$P(A\mid B)=\dfrac{|A\cap B|}{|B|}$ --- fraud among \emph{new-device} sessions};
+\end{tikzpicture}}%
+{Conditioning shrinks the universe. $P(A)$ divides the overlap by everything; $P(A \mid B)$
+divides the same overlap by $B$ alone. Because the denominators differ,
+$P(A\mid B)$ and $P(B \mid A)$ are different numbers --- confusing them is the base-rate
+fallacy.}{conditional-prob}
+
+\section{Bayes' Theorem}
+
+\begin{definitionbox}[Bayes' Theorem]
+\[
+\underbrace{P(A \mid B)}_{\text{posterior}}
+\;=\;
+\frac{\overbrace{P(B \mid A)}^{\text{likelihood}} \; \overbrace{P(A)}^{\text{prior}}}
+     {\underbrace{P(B)}_{\text{evidence}}}
+\]
+It converts $P(B \mid A)$ --- which you can usually measure --- into
+$P(A \mid B)$ --- which is usually what you actually want to know.
+\end{definitionbox}
+
+\begin{worked}[The Base-Rate Fallacy: An Intrusion Detector]
+An intrusion detection system is tested and found to be excellent:
+\begin{tight}
+  \item It flags 99\% of genuine attacks: $P(\text{alert} \mid \text{attack}) = 0.99$.
+  \item It has a 1\% false alarm rate: $P(\text{alert} \mid \text{normal}) = 0.01$.
+\end{tight}
+Attacks are rare: 1 session in 10{,}000 is an attack, so $P(\text{attack}) = 0.0001$.
+
+\smallskip
+\textbf{The alert fires. What is the probability this is a real attack?}
+
+\smallskip
+Work with a concrete population of 1{,}000{,}000 sessions.
+\begin{tight}
+  \item Genuine attacks: $1{,}000{,}000 \times 0.0001 = 100$.
+        Of these, $100 \times 0.99 = \mathbf{99}$ are flagged.
+  \item Normal sessions: $999{,}900$.
+        Of these, $999{,}900 \times 0.01 = \mathbf{9{,}999}$ are flagged.
+\end{tight}
+
+\textbf{Total alerts:} $99 + 9{,}999 = 10{,}098$.
+
+\[
+P(\text{attack} \mid \text{alert}) \;=\; \frac{99}{10{,}098} \;\approx\; 0.0098
+\]
+
+\smallskip
+\textbf{Under 1\%.} A detector that catches 99\% of attacks produces alerts that
+are wrong 99\% of the time. Nothing is broken --- the arithmetic is simply
+dominated by the \term{base rate}. There are so many more normal sessions that even
+a 1\% error on them swamps the true positives.
+
+\smallskip
+\textbf{Consequences you must remember:}
+\begin{tight}
+  \item This is why security teams suffer alert fatigue, and why reducing the
+        false-positive rate matters far more than raising the detection rate.
+  \item To reach $P(\text{attack}\mid\text{alert}) > 0.5$ here, the false alarm
+        rate must fall to about $0.0001$ --- a hundredfold improvement.
+  \item The same arithmetic governs medical screening, plagiarism detection and
+        every rare-event problem you will meet. \chref{evaluation} formalises it
+        as \emph{precision}.
+\end{tight}
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=12.0cm, height=5.6cm,
+  xmode=log, xmin=0.00002, xmax=0.5,
+  ymin=0, ymax=1.02,
+  xlabel={\scriptsize base rate --- proportion of sessions that really are attacks (log scale)},
+  ylabel={\scriptsize $P(\text{attack}\mid\text{alert})$},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  axis lines=left, grid=major, grid style={gray!18},
+  legend style={font=\tiny, draw=gray!40, at={(0.02,0.98)}, anchor=north west},
+]
+% P(A|alert) = .99b / (.99b + fpr(1-b))
+\addplot[accent, line width=1.3pt, domain=0.00002:0.5, samples=200]
+  {0.99*x/(0.99*x + 0.01*(1-x))};
+\addlegendentry{false alarm rate 1\%}
+\addplot[goldhl, line width=1.3pt, domain=0.00002:0.5, samples=200]
+  {0.99*x/(0.99*x + 0.001*(1-x))};
+\addlegendentry{false alarm rate 0.1\%}
+\addplot[greenhl, line width=1.3pt, domain=0.00002:0.5, samples=200]
+  {0.99*x/(0.99*x + 0.0001*(1-x))};
+\addlegendentry{false alarm rate 0.01\%}
+
+\addplot[primary, dashed, line width=0.8pt, domain=0.00002:0.5] {0.5};
+\node[font=\tiny, primary, anchor=south east] at (axis cs:0.45,0.51) {alerts more right than wrong};
+
+\addplot[black, only marks, mark=*, mark size=1.8pt] coordinates {(0.0001,0.0098)};
+\draw[gray!60, line width=0.5pt] (axis cs:0.0001,0.0098) -- (axis cs:0.00025,0.30);
+\node[font=\tiny, anchor=south west, align=left, fill=white, fill opacity=0.85,
+      text opacity=1, inner sep=1.5pt] at (axis cs:0.00023,0.30)
+     {the worked example:\\1 in 10{,}000, 1\% FPR\\$\Rightarrow$ 0.98\%};
+\end{axis}
+\end{tikzpicture}}%
+{Why rare-event detection is hard. Detection rate is held at 99\% throughout; only the
+false alarm rate changes. At a base rate of 1 in 10{,}000 even a 0.1\% false alarm rate
+leaves most alerts wrong. This single figure explains the design of every alerting system
+in \chref{cybersecurity}.}{base-rate}
+
+\section{Random Variables and Expected Value}
+
+\begin{definitionbox}[Random Variable and Expected Value]
+A \term{random variable} $X$ assigns a number to each outcome. Its \term{expected
+value} is the long-run average,
+\[
+E[X] \;=\; \sum_{k} k \cdot P(X = k)
+\]
+--- each possible value weighted by how often it occurs.
+\end{definitionbox}
+
+\begin{worked}[Is the Alert Worth Investigating?]
+Each investigation costs 20 minutes of analyst time. A missed attack costs an
+estimated 40 hours of incident response. Using the numbers above,
+$P(\text{attack} \mid \text{alert}) = 0.0098$.
+
+\smallskip
+\textbf{Expected cost of investigating:} 20 minutes, always.
+
+\textbf{Expected cost of ignoring:}
+$0.0098 \times 2400 \text{ min} + 0.9902 \times 0 = 23.5$ minutes.
+
+\smallskip
+\textbf{Conclusion:} investigate --- but only just. The margin is 3.5 minutes per
+alert, so a modest rise in the false alarm rate would flip the decision and make
+the detector actively harmful to deploy. Expected value turns ``is this model good
+enough?'' from an opinion into an arithmetic question, which is exactly how it
+should be presented to the people funding the work.
+\end{worked}
+
+\section{The Central Limit Theorem}
+
+\begin{definitionbox}[Central Limit Theorem (CLT)]
+Take samples of size $n$ from \emph{any} distribution with a finite mean $\mu$ and
+standard deviation $\sigma$. As $n$ grows, the distribution of the \emph{sample
+mean} approaches a normal distribution with mean $\mu$ and standard deviation
+$\sigma/\sqrt{n}$ --- regardless of the shape of the original distribution.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=4 by 1, horizontal sep=0.6cm},
+  width=4.35cm, height=3.4cm,
+  axis lines=left, ymin=0, ytick=\empty,
+  tick label style={font=\tiny}, title style={font=\tiny\bfseries},
+]
+\nextgroupplot[title={the population ($n{=}1$)}, xmin=0, xmax=6]
+\addplot[draw=accent, fill=accent!18, line width=0.9pt, domain=0.03:6, samples=140]
+  {1.9*exp(-(ln(x)-0.05)^2/(2*0.8^2))/(x*0.8*2.5066)};
+\node[font=\tiny, accent!80!black] at (axis cs:3.6,0.55) {very skewed};
+
+\nextgroupplot[title={means of $n{=}5$}, xmin=0, xmax=6]
+\addplot[draw=goldhl, fill=goldhl!22, line width=0.9pt, domain=0.03:6, samples=140]
+  {1.55*exp(-(ln(x)-0.25)^2/(2*0.42^2))/(x*0.42*2.5066)};
+
+\nextgroupplot[title={means of $n{=}20$}, xmin=0, xmax=6]
+\addplot[draw=secondary, fill=secondary!22, line width=0.9pt, domain=0.03:6, samples=140]
+  {1.35*exp(-(ln(x)-0.32)^2/(2*0.22^2))/(x*0.22*2.5066)};
+
+\nextgroupplot[title={means of $n{=}100$}, xmin=0, xmax=6]
+\addplot[draw=greenhl, fill=greenhl!22, line width=0.9pt, domain=0.03:6, samples=140]
+  {1.28*exp(-(ln(x)-0.35)^2/(2*0.10^2))/(x*0.10*2.5066)};
+\node[font=\tiny, greenhl!55!black, align=center] at (axis cs:3.9,1.6) {normal,\\and narrow};
+\end{groupplot}
+\end{tikzpicture}}%
+{The Central Limit Theorem at work. The population (left) is heavily skewed, yet the
+distribution of \emph{sample means} becomes normal and progressively narrower as $n$ grows.
+The spread shrinks as $\sigma/\sqrt{n}$ --- quadrupling the sample halves the
+uncertainty.}{clt}
+
+\begin{conceptbox}[Why the CLT Is the Most Useful Theorem in the Course]
+It means you can put a confidence interval around an average, and run a hypothesis
+test, \emph{without knowing the shape of the underlying data}. Response times are
+wildly skewed; the average of 200 response times is nevertheless approximately
+normal, so the standard tools apply. That is the entire licence on which
+\chref{inference} operates.
+
+Note also the $\sqrt{n}$: to halve your uncertainty you need \emph{four times} the
+data. This is why ``just collect more data'' has sharply diminishing returns, and
+why it is worth knowing before you promise a stakeholder anything.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Confusing $P(A\mid B)$ with $P(B\mid A)$.} ``99\% of attacks
+        trigger an alert'' is not ``99\% of alerts are attacks''. See
+        \dsref{base-rate}.
+  \item \textbf{Multiplying probabilities that are not independent.} Two sensors on
+        the same power supply do not fail independently, so $P(\text{both fail})
+        \gg P(A)P(B)$.
+  \item \textbf{Applying the CLT to a single observation.} The theorem is about the
+        distribution of \emph{means}, not of raw values. Individual response times
+        stay skewed no matter how much data you collect.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Conditional Probability and Base Rates}
+\lensLA{Only 8\% of students eventually fail. A model that flags at-risk students
+with a 10\% false-positive rate will produce a flagged list that is mostly students
+who would have passed anyway. Before any outreach programme is designed, compute
+$P(\text{fails} \mid \text{flagged})$ --- because a list that is 70\% wrong will
+destroy staff confidence in the system within a term, and may harm the students
+wrongly labelled (\chref{ethics}).}
+
+\lensPM{The prior probability that a randomly chosen project overruns is about
+50\% in many organisations --- which is a \emph{high} base rate, and therefore the
+opposite situation to security. Here even a moderately accurate predictor produces
+alerts that are usually right, so the practical difficulty is not false alarms but
+persuading people to act on a warning they already half-expected.}
+
+\lensIOT{$P(\text{failure within 30 days}) \approx 0.002$ for a given motor. This
+is a rare-event problem, so the base-rate arithmetic of \dsref{base-rate} applies
+directly: an 80\%-detection, 2\%-false-alarm model yields
+$P(\text{fail} \mid \text{alert}) \approx 7\%$. Whether that is acceptable is an
+expected-value question --- compare the cost of 13 unnecessary inspections against
+one unplanned line stoppage.}
+
+\lensSEC{The worked example is this lens. Add to it: an adversary who knows your
+detector exists will deliberately operate just below its threshold, which changes
+$P(\text{alert}\mid\text{attack})$ over time in a way no other domain in this course
+experiences. Base-rate arithmetic tells you today's precision; \chref{cybersecurity}
+deals with the fact that tomorrow's is being actively degraded.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Simulating the Base-Rate Fallacy]
+Do not take the arithmetic on trust --- generate a million sessions and count.
+
+\begin{lstlisting}[language=Python]
+import numpy as np
+rng = np.random.default_rng(42)
+
+N          = 1_000_000
+base_rate  = 0.0001     # 1 in 10,000 sessions is an attack
+detection  = 0.99       # P(alert | attack)
+false_alarm= 0.01       # P(alert | normal)
+
+is_attack = rng.random(N) < base_rate
+p_alert   = np.where(is_attack, detection, false_alarm)
+alert     = rng.random(N) < p_alert
+
+print("attacks           :", is_attack.sum())
+print("alerts raised     :", alert.sum())
+print("alerts that were real:", (alert & is_attack).sum())
+print("P(attack | alert) :", (alert & is_attack).sum() / alert.sum())
+# ~0.0098 -- matches the hand calculation
+
+# Now set false_alarm = 0.0001 and re-run. Precision jumps to ~50%.
+# Changing detection from 0.99 to 0.999 barely moves it at all.
+\end{lstlisting}
+
+\textbf{The point of the last two lines:} in rare-event detection, effort spent
+reducing false alarms is worth vastly more than effort spent raising the detection
+rate. That is a counter-intuitive engineering priority, and it falls straight out
+of Bayes' theorem.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A test is 95\% accurate for a condition affecting 1 in 1{,}000 people.
+        Roughly what fraction of positive tests are correct --- about 95\%, about
+        50\%, or about 2\%? Justify without a calculator.
+  \item Events $A$ and $B$ are mutually exclusive and both have probability 0.3.
+        Are they independent? Show why.
+  \item The CLT says the sample mean becomes normal as $n$ grows. Does it say
+        individual observations become normal?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Probability is how uncertainty is written down; every classifier output is
+        a probability statement.
+  \item $P(A \cap B) = P(A)P(B)$ only under independence; the addition rule needs
+        the overlap subtracted unless events are mutually exclusive.
+  \item Conditioning shrinks the sample space, which is why $P(A\mid B)$ and
+        $P(B\mid A)$ differ.
+  \item Bayes' theorem converts measurable likelihoods into the posterior you
+        actually want. Under a low base rate, an excellent detector still produces
+        mostly-wrong alerts.
+  \item Expected value turns model quality into a cost comparison a stakeholder can
+        act on.
+  \item The CLT makes sample means normal regardless of the population's shape, and
+        uncertainty falls only as $\sqrt{n}$.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} $P(A \cap B) = P(A) \times P(B)$ holds when $A$ and $B$ are:
+        (a)~mutually exclusive (b)~independent (c)~equally likely (d)~always.
+  \item \textbf{(MCQ)} As sample size quadruples, the standard deviation of the
+        sample mean: (a)~quadruples (b)~doubles (c)~halves (d)~is unchanged.
+  \item \textbf{(Short)} State Bayes' theorem and name each of its four parts.
+  \item \textbf{(Short)} Explain the base-rate fallacy to a non-technical manager
+        in three sentences, without using a formula.
+  \item \textbf{(Short)} Why are two sensors sharing a power supply not independent,
+        and what does that do to your estimate of $P(\text{both fail})$?
+  \item \textbf{(Applied)} A plagiarism detector flags 90\% of copied assignments
+        and falsely flags 5\% of honest ones. 2\% of assignments are copied. For
+        10{,}000 submissions, build the full table of counts and compute
+        $P(\text{copied} \mid \text{flagged})$. Comment on whether this detector
+        should be used to open disciplinary proceedings automatically.
+  \item \textbf{(Applied)} Using expected value, decide whether to investigate
+        alerts from a detector with $P(\text{attack}\mid\text{alert}) = 0.004$,
+        where investigation costs 30 minutes and a missed attack costs 60 hours.
+        Show the calculation and state the break-even precision.
+\end{reviewq}

@@ -1,0 +1,422 @@
+%=====================================================================
+\chapter{Sequences, Time Series and Streaming Analytics}\label{ch:timeseries}
+%=====================================================================
+\locator{4}{Part IV --- Deep Learning and Modern AI}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Decompose} a time series into trend, seasonality and residual, and read the decomposition.
+  \item \textbf{Build} lag, rolling-window and calendar features for a forecasting model.
+  \item \textbf{Validate} a temporal model correctly, and explain why random splitting is invalid.
+  \item \textbf{Distinguish} batch from stream processing and describe windowing.
+  \item \textbf{Detect} concept drift and specify a response.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{descriptive}, \chref{evaluation} (validation strategy) and
+\chref{features} (window aggregations). This chapter is the direct bridge into
+\chref{iot}.
+\end{prereq}
+
+\begin{keyterms}
+time series $\bullet$ trend $\bullet$ seasonality $\bullet$ residual $\bullet$
+stationarity $\bullet$ lag feature $\bullet$ rolling window $\bullet$
+autocorrelation $\bullet$ ARIMA $\bullet$ horizon $\bullet$ walk-forward validation
+$\bullet$ batch vs stream $\bullet$ tumbling and sliding windows $\bullet$
+watermark $\bullet$ concept drift
+\end{keyterms}
+
+\section{What Makes Time Different}
+
+\begin{alertbox}[The Rule That Governs This Whole Chapter]
+Observations are \textbf{not independent}. Today's value depends on yesterday's.
+Every technique in Part III assumed independence, so every one of them needs
+adjusting here --- most importantly the validation strategy. Shuffling a time
+series destroys the only structure that matters.
+\end{alertbox}
+
+\section{Decomposition}
+
+\begin{definitionbox}[Time Series Decomposition]
+Any series can be viewed as
+\[
+y_t = \text{Trend}_t + \text{Seasonality}_t + \text{Residual}_t
+\]
+(or multiplicatively). \term{Trend} is the long-run direction, \term{seasonality}
+is the repeating cycle, and the \term{residual} is what is left --- which is where
+anomalies live.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=1 by 4, vertical sep=0.42cm, x descriptions at=edge bottom},
+  width=12.4cm, height=2.5cm,
+  axis lines=left, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\tiny\bfseries, at={(0.02,0.92)}, anchor=north west},
+  xmin=0, xmax=48, ytick=\empty,
+]
+\nextgroupplot[title={\color{primary}OBSERVED --- weekly VLE logins}]
+\addplot[primary, line width=0.9pt, domain=0:48, samples=145]
+  {40 + 0.9*x + 12*sin(deg(2*pi*x/12)) + 4*sin(deg(x*3.1))};
+
+\nextgroupplot[title={\color{secondary}TREND --- steady growth}]
+\addplot[secondary, line width=1.1pt, domain=0:48, samples=100] {40 + 0.9*x};
+
+\nextgroupplot[title={\color{greenhl}SEASONALITY --- a 12-week teaching cycle}]
+\addplot[greenhl, line width=0.9pt, domain=0:48, samples=145] {12*sin(deg(2*pi*x/12))};
+
+\nextgroupplot[title={\color{accent}RESIDUAL --- anomalies live here},
+               xlabel={week}]
+\addplot[accent, line width=0.7pt, domain=0:48, samples=145] {4*sin(deg(x*3.1))};
+\addplot[accent, only marks, mark=*, mark size=2pt] coordinates {(31,-13)};
+\node[font=\tiny, accent, anchor=west] at (axis cs:32,-12) {outage};
+\end{groupplot}
+\end{tikzpicture}}%
+{Decomposition of a weekly series. Separating trend and seasonality is what lets you say
+whether a drop is alarming: a fall in week 31 means nothing if week 31 always falls, and
+everything if it does not.}{decomposition}
+
+\begin{conceptbox}[Why Decomposition Is the First Step]
+``Logins fell 30\% this week'' is not information until you know whether they fall
+every year at this point. Decomposition converts a raw number into a statement
+about the residual --- and only the residual is worth alerting on. This is the
+single most useful idea in operational monitoring.
+\end{conceptbox}
+
+\section{Features for Forecasting}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{3.1cm}p{4.6cm}p{6.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Feature type} & \textbf{Construction} & \textbf{Captures} \\
+\midrule
+\endhead
+Lags & $y_{t-1}$, $y_{t-7}$, $y_{t-365}$ & Recent level, last week, last year --- pick lags matching known cycles \\
+Rolling statistics & mean, sd, min, max over a window & Local level and volatility \\
+Rolling differences & $y_t - y_{t-1}$; $y_t / y_{t-7}$ & Change and growth rate rather than level \\
+Calendar & hour, day of week, month, is\_holiday & Human rhythms --- essential in security and IoT \\
+Expanding statistics & mean since the start & Long-run baseline for that entity \\
+Time since event & days since last failure / login & Recency, which is often the strongest single feature \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Every Lag Must Look Backwards Only]
+A rolling mean centred on $t$ uses $y_{t+1}$, which will not exist at prediction
+time. Use \emph{trailing} windows exclusively. Most time-series leakage is a
+centred window or a \texttt{shift()} in the wrong direction --- and it produces
+spectacular, entirely fake, validation scores.
+\end{alertbox}
+
+\section{Validating a Temporal Model}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+% ---- WRONG
+\node[font=\scriptsize\bfseries, text=accent, anchor=west] at (-0.8,1.5)
+     {\faIcon{times-circle}~WRONG --- random k-fold: trains on the future to predict the past};
+\foreach \i in {0,...,11}{
+  \pgfmathsetmacro{\xx}{\i*0.95}
+  \pgfmathtruncatemacro{\m}{mod(\i*5,3)}
+  \ifnum\m=1
+    \node[rounded corners=1.5pt, fill=goldhl!35, draw=goldhl, minimum width=0.85cm,
+          minimum height=0.42cm] at (\xx,0.85) {};
+  \else
+    \node[rounded corners=1.5pt, fill=primary!14, draw=primary!45, minimum width=0.85cm,
+          minimum height=0.42cm] at (\xx,0.85) {};
+  \fi}
+\node[font=\tiny, text=gray!55!black, anchor=west] at (11.4,0.85) {time $\rightarrow$};
+
+% ---- RIGHT
+\node[font=\scriptsize\bfseries, text=greenhl!50!black, anchor=west] at (-0.8,-0.15)
+     {\faIcon{check-circle}~RIGHT --- walk-forward: always train on the past, test on the future};
+\foreach \r/\trainend in {1/3, 2/5, 3/7, 4/9}{
+  \pgfmathsetmacro{\yy}{-0.75-(\r-1)*0.6}
+  \foreach \i in {0,...,11}{
+    \pgfmathsetmacro{\xx}{\i*0.95}
+    \ifnum\i<\trainend
+      \node[rounded corners=1.5pt, fill=primary!14, draw=primary!45, minimum width=0.85cm,
+            minimum height=0.42cm] at (\xx,\yy) {};
+    \else
+      \ifnum\i<\numexpr\trainend+2\relax
+        \node[rounded corners=1.5pt, fill=goldhl!35, draw=goldhl, minimum width=0.85cm,
+              minimum height=0.42cm] at (\xx,\yy) {};
+      \else
+        \node[rounded corners=1.5pt, fill=gray!8, draw=gray!25, minimum width=0.85cm,
+              minimum height=0.42cm] at (\xx,\yy) {};
+      \fi
+    \fi}
+  \node[font=\tiny, text=gray!55!black, anchor=west] at (11.4,\yy) {split \r};}
+
+\node[anchor=west, align=left, font=\tiny, text=gray!55!black] at (-0.8,-3.5)
+     {\textcolor{primary!55!black}{$\blacksquare$}~train \quad
+      \textcolor{goldhl!60!black}{$\blacksquare$}~validate \quad
+      \textcolor{gray!45}{$\blacksquare$}~not yet available};
+\node[anchor=west, align=left, text width=13.0cm, font=\tiny, text=accent!75!black]
+     at (-0.8,-4.1)
+     {\textbf{Why the top row is fatal:} a model that has seen next month's traffic will
+      predict this month's beautifully and be useless in production. The score is not
+      merely optimistic --- it measures nothing that will ever happen again.};
+\end{tikzpicture}}%
+{Walk-forward (rolling-origin) validation. The training window only ever extends
+backwards; each validation block sits strictly after its training data, exactly as
+deployment will.}{walk-forward}
+
+\begin{worked}[Choosing the Forecast Horizon]
+A university wants to predict weekly VLE logins to size its servers.
+
+\smallskip
+\textbf{The question nobody asks first:} \emph{how far ahead, and why?} The horizon
+is set by how long the resulting action takes, not by what the model can do.
+\begin{tight}
+  \item Auto-scaling cloud capacity: minutes of lead time needed $\Rightarrow$
+        1-hour horizon.
+  \item Provisioning extra servers: 2 weeks of procurement $\Rightarrow$ 2-week
+        horizon.
+  \item Budgeting next year's contract: 12-month horizon.
+\end{tight}
+
+\textbf{Why it changes the model.} At a 1-hour horizon, $y_{t-1}$ is available and
+is overwhelmingly the best predictor --- a naive ``same as last hour'' baseline is
+hard to beat. At a 12-month horizon, no recent lag is available at prediction time,
+so the model must rely on trend, seasonality and enrolment forecasts, and error
+will be several times larger.
+
+\smallskip
+\textbf{The consequence for evaluation.} A model quoted as ``8\% error'' is
+meaningless without its horizon. Always report error \emph{per horizon}, and always
+compare against the naive baseline at that same horizon --- which, at short
+horizons, is a much stronger competitor than students expect.
+\end{worked}
+
+\section{Batch and Stream Processing}
+
+\begin{definitionbox}[Batch versus Stream]
+\term{Batch} processing runs over a bounded, stored dataset --- nightly, hourly.
+\term{Stream} processing runs continuously over an unbounded sequence of events,
+computing results incrementally as data arrives.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+% tumbling
+\node[font=\scriptsize\bfseries, text=primary, anchor=west] at (-0.6,2.35) {TUMBLING windows --- fixed, non-overlapping};
+\foreach \i in {0,1,2,3}{
+  \pgfmathsetmacro{\xx}{\i*2.6}
+  \draw[rounded corners=2pt, draw=primary, fill=primary!10] (\xx,1.5) rectangle (\xx+2.4,2.1);
+  \node[font=\tiny, text=primary!55!black] at (\xx+1.2,1.8) {0--5 min};}
+
+% sliding
+\node[font=\scriptsize\bfseries, text=greenhl!50!black, anchor=west] at (-0.6,0.95)
+     {SLIDING windows --- fixed length, overlapping};
+\foreach \i in {0,1,2,3,4,5}{
+  \pgfmathsetmacro{\xx}{\i*1.3}
+  \pgfmathsetmacro{\yy}{0.55-mod(\i,2)*0.35}
+  \draw[rounded corners=2pt, draw=greenhl, fill=greenhl!10] (\xx,\yy) rectangle (\xx+2.4,\yy+0.3);}
+
+% session
+\node[font=\scriptsize\bfseries, text=goldhl!55!black, anchor=west] at (-0.6,-0.55)
+     {SESSION windows --- bounded by a gap in activity};
+\foreach \x/\w in {0/1.8, 2.9/3.2, 7.4/1.4, 9.8/2.6}{
+  \draw[rounded corners=2pt, draw=goldhl, fill=goldhl!16] (\x,-1.35) rectangle (\x+\w,-0.95);}
+\foreach \x in {2.1, 6.5, 9.1}{
+  \node[font=\tiny, text=accent, anchor=center] at (\x,-1.15) {gap};}
+
+\draw[-{Stealth[length=2mm]}, gray!55] (-0.6,-1.85) -- (12.8,-1.85);
+\node[font=\tiny, text=gray!55!black] at (12.8,-2.15) {time};
+
+\node[anchor=west, align=left, text width=13.0cm, font=\tiny, text=gray!55!black]
+     at (-0.6,-2.75)
+     {\textbf{Which to use:} tumbling for periodic reports (``failures per 5 minutes'');
+      sliding for smooth, responsive alerting (``failed logins in the last 5 minutes,
+      updated every 30 seconds''); session for user- or device-centric analysis where the
+      natural unit is a burst of activity. Streaming systems also need a
+      \textbf{watermark} --- a rule for how long to wait for late-arriving events before
+      closing a window, which in IoT is unavoidable.};
+\end{tikzpicture}}%
+{Three windowing strategies for streaming data. Choosing the window is choosing what
+``recent'' means, and it determines both detection latency and false-alarm
+rate.}{windowing}
+
+\section{Concept Drift}
+
+\begin{definitionbox}[Concept Drift]
+The relationship between features and target changes over time, so a model that was
+correct becomes wrong without anything breaking. \term{Data drift} is a change in
+the inputs' distribution; \term{concept drift} is a change in the mapping itself.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=12.4cm, height=5.0cm,
+  xlabel={\scriptsize weeks since deployment}, ylabel={\scriptsize model performance},
+  xmin=0, xmax=52, ymin=0.35, ymax=0.95,
+  axis lines=left, grid=major, grid style={gray!18},
+  tick label style={font=\tiny}, label style={font=\tiny},
+  legend style={font=\tiny, draw=gray!40, at={(0.99,0.99)}, anchor=north east},
+]
+% sudden drift
+\addplot[accent, line width=1.2pt] coordinates {
+ (0,0.86)(10,0.85)(19,0.845)(20,0.61)(30,0.60)(40,0.595)(52,0.59)};
+\addlegendentry{sudden drift (a system change)}
+% gradual drift
+\addplot[goldhl, line width=1.2pt, domain=0:52, samples=60] {0.86 - 0.0055*x};
+\addlegendentry{gradual drift (behaviour shifts)}
+% with retraining
+\addplot[greenhl, line width=1.2pt] coordinates {
+ (0,0.86)(8,0.82)(8,0.86)(16,0.82)(16,0.86)(24,0.82)(24,0.86)(32,0.82)(32,0.86)
+ (40,0.82)(40,0.86)(48,0.82)(48,0.86)(52,0.85)};
+\addlegendentry{scheduled retraining}
+
+\draw[gray!60, dashed] (axis cs:0,0.75) -- (axis cs:52,0.75);
+\node[font=\tiny, text=gray!55!black, anchor=west] at (axis cs:0.5,0.72) {agreed minimum};
+\draw[-{Stealth[length=1.8mm]}, accent] (axis cs:23,0.68) -- (axis cs:20.5,0.62);
+\node[font=\tiny, accent, anchor=west] at (axis cs:23,0.69) {new VLE released};
+\end{axis}
+\end{tikzpicture}}%
+{Three fates of a deployed model. Nothing about the code changed in any of them --- the
+world did. Monitoring for this is the subject of \chref{mlops}.}{concept-drift}
+
+\rowcolors{2}{white}{defbg}
+\begin{longtable}{@{}p{3.0cm}p{4.8cm}p{6.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Drift type} & \textbf{Looks like} & \textbf{Response} \\
+\midrule
+\endhead
+Sudden & A cliff in the performance chart & Investigate the cause first --- usually an upstream change, not the model \\
+Gradual & Slow decline over months & Scheduled retraining on a rolling window \\
+Seasonal / recurring & Performance dips at the same point each cycle & Add the seasonal feature; do not retrain away a pattern you can model \\
+Adversarial & Decline that accelerates after deployment & The attacker is adapting (\chref{cybersecurity}); retraining alone will not fix it \\
+\bottomrule
+\end{longtable}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Time and Streams}
+\lensLA{Engagement is strongly seasonal on a weekly and a semester cycle --- always
+decompose before alerting, or you will raise an alarm every reading week. The
+\emph{trajectory} of a student's residual is the signal: two consecutive weeks
+below their own baseline is a far better trigger than any absolute threshold.
+Validation must be walk-forward across cohorts, since a model trained on the 2025
+cohort to predict 2024 proves nothing.}
+
+\lensPM{Sprint data is a short, irregular series with strong autocorrelation ---
+this sprint resembles the last. The naive baseline (``same as last sprint'') is
+genuinely hard to beat, and saying so honestly is more valuable than a marginally
+better model. Concept drift is guaranteed whenever the team composition changes,
+which is why models here need a shorter memory than elsewhere.}
+
+\lensIOT{This chapter is the technical bridge to \chref{iot}. Telemetry is the
+purest streaming problem: unbounded, high-volume, out-of-order. Use sliding windows
+for detection latency, tumbling for reporting, and set the watermark from the
+worst-case network delay in your fleet. Sensors drift physically as well as
+statistically --- a thermistor ages --- so drift monitoring must distinguish a
+failing sensor from a changing process.}
+
+\lensSEC{Windowed counts are the core feature type: failed logins per account per
+5 minutes, distinct ports per host per minute. Diurnal and weekly seasonality is
+strong, so a 3 a.m.\ spike matters and a 3 p.m.\ one may not --- decompose first.
+Drift here is \emph{adversarial}, which makes it categorically different from the
+other three lenses: the distribution is not shifting by accident, it is being
+shifted deliberately, and scheduled retraining on recent data can be poisoned.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Decompose, Feature, Validate]
+\begin{lstlisting}[language=Python]
+import pandas as pd, numpy as np
+from statsmodels.tsa.seasonal import seasonal_decompose
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.metrics import mean_absolute_error
+
+s = df.set_index("date")["logins"].asfreq("W")
+
+# --- 1. decompose before doing anything else --------------------------
+seasonal_decompose(s, model="additive", period=12).plot()
+
+# --- 2. features -- every one looks BACKWARDS only --------------------
+X = pd.DataFrame(index=s.index)
+for lag in (1, 2, 4, 12, 52):
+    X[f"lag{lag}"] = s.shift(lag)                 # shift(+n) = past. Never shift(-n).
+X["roll4_mean"] = s.shift(1).rolling(4).mean()    # shift(1) FIRST, then roll
+X["roll4_std"]  = s.shift(1).rolling(4).std()
+X["delta1"]     = s.shift(1) - s.shift(2)
+X["week"]       = X.index.isocalendar().week.astype(int)
+X["month"]      = X.index.month
+y = s
+X, y = X.dropna(), y.loc[X.dropna().index]
+
+# --- 3. walk-forward validation, never random -------------------------
+tscv = TimeSeriesSplit(n_splits=5)
+naive_errs, model_errs = [], []
+for tr, te in tscv.split(X):
+    m = HistGradientBoostingRegressor().fit(X.iloc[tr], y.iloc[tr])
+    model_errs.append(mean_absolute_error(y.iloc[te], m.predict(X.iloc[te])))
+    naive_errs.append(mean_absolute_error(y.iloc[te], X.iloc[te]["lag1"]))
+
+print(f"naive (last value) MAE : {np.mean(naive_errs):.2f}")
+print(f"model MAE              : {np.mean(model_errs):.2f}")
+# If the model does not clearly beat naive, the extra complexity is not earning its keep.
+
+# --- 4. a simple drift monitor ----------------------------------------
+recent, reference = model_errs[-1], np.mean(model_errs[:-1])
+if recent > 1.5 * reference:
+    print("DRIFT ALERT: recent error is 50% above the reference window")
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why is \texttt{rolling(7, center=True)} a leakage bug in a forecasting
+        feature?
+  \item Traffic drops 40\% on 25 December. Is this an anomaly? What must you compute
+        before answering?
+  \item A model's accuracy fell from 0.87 to 0.62 in one week with no code change.
+        What are the first two things you check?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Temporal observations are dependent, so the independence assumption behind
+        Part III does not hold --- most importantly for validation.
+  \item Decompose into trend, seasonality and residual; alert on the residual, not
+        the raw value.
+  \item Build lag, rolling, difference and calendar features, all strictly
+        backward-looking.
+  \item Validate walk-forward. Random k-fold on a time series trains on the future
+        and produces meaningless scores.
+  \item The forecast horizon is set by the lead time of the action it supports, and
+        error must be reported per horizon against the naive baseline.
+  \item Streams need windows --- tumbling, sliding or session --- plus a watermark
+        for late data.
+  \item Concept drift degrades deployed models silently. Monitor, and distinguish
+        gradual, sudden, seasonal and adversarial drift.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The correct validation scheme for a forecasting model is:
+        (a)~random k-fold (b)~stratified k-fold (c)~walk-forward (d)~leave-one-out.
+  \item \textbf{(MCQ)} Windows that are fixed-length and non-overlapping are called:
+        (a)~sliding (b)~tumbling (c)~session (d)~expanding.
+  \item \textbf{(Short)} Define concept drift and distinguish it from data drift.
+  \item \textbf{(Short)} Why is the naive ``last value'' baseline so strong at short
+        horizons, and what does that imply for how you report results?
+  \item \textbf{(Short)} What is a watermark in stream processing and why does IoT
+        need one?
+  \item \textbf{(Applied)} You must alert on unusual failed-login volume per account.
+        Specify the window type and length, the decomposition you would apply, and the
+        threshold rule --- and justify each against the base-rate argument of
+        \chref{probability}.
+  \item \textbf{(Applied)} A deployed predictive-maintenance model degrades steadily
+        over eight months. List four possible causes spanning sensors, process and
+        model, and state the diagnostic that would distinguish them.
+\end{reviewq}

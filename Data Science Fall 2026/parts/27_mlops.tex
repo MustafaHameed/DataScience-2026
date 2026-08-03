@@ -1,0 +1,372 @@
+%=====================================================================
+\chapter{MLOps: Deployment, Monitoring and Reliability}\label{ch:mlops}
+%=====================================================================
+\locator{5}{Part V --- Data Science in Systems Context}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} the path from a trained model to a monitored production service.
+  \item \textbf{Choose} between batch, online and edge serving for a stated requirement.
+  \item \textbf{Specify} what to version so that a prediction can be reproduced months later.
+  \item \textbf{Design} a monitoring plan covering data, prediction and outcome drift.
+  \item \textbf{Plan} a safe rollout and rollback.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{cloudedge} (containers and deployment tiers), \chref{timeseries} (drift) and
+\chref{evaluation} (the metrics you will monitor).
+\end{prereq}
+
+\begin{keyterms}
+MLOps $\bullet$ model registry $\bullet$ feature store $\bullet$ training--serving
+skew $\bullet$ batch / online / edge inference $\bullet$ CI/CD $\bullet$ shadow
+deployment $\bullet$ canary release $\bullet$ A/B test $\bullet$ rollback $\bullet$
+data drift $\bullet$ prediction drift $\bullet$ ground-truth lag $\bullet$
+observability $\bullet$ model card
+\end{keyterms}
+
+\section{The Gap Between a Notebook and a System}
+
+\begin{conceptbox}[What Changes at Deployment]
+A notebook model runs once, on data you chose, with you watching. A deployed model
+runs thousands of times a day, on data nobody inspected, with nobody watching, for
+years --- while the world it was trained on changes. MLOps is the engineering
+discipline that makes the second situation survivable.
+\end{conceptbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  s/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!50!black,
+            text width=2.35cm, align=center, font=\tiny\bfseries, minimum height=0.95cm},
+  arr/.style={-{Stealth[length=2mm]}, primary!55, line width=1pt},
+  note/.style={font=\tiny\itshape, text=gray!55!black, align=center, text width=2.6cm}]
+
+\node[s=secondary] (a) at (0,0)     {1. TRAIN\\{\tiny versioned code + data}};
+\node[s=goldhl]    (b) at (3.1,0)   {2. VALIDATE\\{\tiny gate on metrics}};
+\node[s=tealhl]    (c) at (6.2,0)   {3. REGISTER\\{\tiny model registry}};
+\node[s=primary]   (d) at (9.3,0)   {4. PACKAGE\\{\tiny container}};
+\node[s=greenhl]   (e) at (12.4,0)  {5. ROLL OUT\\{\tiny shadow $\to$ canary}};
+\node[s=purplehl]  (f) at (12.4,-2.3){6. MONITOR};
+\node[s=accent]    (g) at (9.3,-2.3) {7. DETECT DRIFT};
+\node[s=secondary] (h) at (6.2,-2.3) {8. RETRAIN};
+
+\foreach \x/\y in {a/b,b/c,c/d,d/e}{\draw[arr] (\x) -- (\y);}
+\draw[arr] (e) -- (f);
+\draw[arr] (f) -- (g);
+\draw[arr] (g) -- (h);
+\draw[arr] (h.west) .. controls +(-2.0,0) and +(0,-1.4) .. (a.south);
+
+\node[note] at (3.1,-1.15) {block promotion if it fails, don't just warn};
+\node[note] at (12.4,-1.15) {never a big-bang release};
+\node[note] at (3.1,-2.3) {the loop never terminates};
+
+\node[anchor=west, align=left, text width=13.8cm, font=\tiny, text=accent!75!black]
+     at (-1.5,-3.4)
+     {\textbf{Step 2 is the one teams omit.} An automated gate that refuses to promote a
+      model scoring below the current production model --- on a fixed benchmark set,
+      including fairness slices --- prevents the most common production incident: a
+      retrained model silently worse than the one it replaced.};
+\end{tikzpicture}}%
+{The MLOps lifecycle. It is a closed loop, and the arrow from retraining back to training
+is the one that distinguishes a maintained system from an abandoned
+one.}{mlops-lifecycle}
+
+\section{Serving Patterns}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{2.5cm}p{3.7cm}p{3.5cm}p{4.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{Batch} & \textbf{Online (API)} & \textbf{Edge} \\
+\midrule
+\endhead
+When it runs & On a schedule & On request & On the device, continuously \\
+Latency & Hours & 10--500 ms & $<10$ ms \\
+Complexity & Lowest & Moderate & Highest --- updates are hard \\
+Good for & Weekly risk scores, nightly maintenance lists & Fraud checks, live recommendations & Safety shutdowns, offline operation \\
+Watch out for & Staleness --- the score is as old as the last run & Latency budget, autoscaling, cold starts & Model size, power, over-the-air updates \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Choose the Simplest That Meets the Requirement]
+Most student projects reach for an API when a nightly batch job would serve the
+decision perfectly well. If the intervention happens on Monday mornings, a Sunday
+night batch is simpler, cheaper, easier to monitor and easier to reproduce.
+Real-time serving is a cost you should incur only when the decision genuinely
+cannot wait.
+\end{conceptbox}
+
+\section{Training--Serving Skew}
+
+\begin{alertbox}[The Most Common Production Failure]
+The model was trained on features computed by a pandas script, and serves on
+features computed by a Java service written by a different team. The two
+implementations disagree slightly --- a different null handling, a different
+timezone, a rounding difference --- and accuracy in production is far below what
+testing promised. Nothing is broken and no error is raised.
+
+\textbf{The fix:} compute features in \emph{one} place. A \term{feature store}
+serves the same computed features to both training and inference, which eliminates
+the class of bug entirely rather than testing for it.
+\end{alertbox}
+
+\section{What to Version}
+
+\begin{definitionbox}[Reproducibility Requires Five Things]
+To reproduce a prediction made eight months ago you need: the \textbf{code}, the
+\textbf{data} (or a snapshot reference), the \textbf{environment} (container image),
+the \textbf{hyperparameters}, and the \textbf{model artefact} itself --- each tied
+together by a single run identifier. Missing any one makes the result
+unreproducible, and an unreproducible result cannot be defended when challenged.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  v/.style={rounded corners=3pt, draw=#1, fill=#1!10, text=#1!50!black,
+            text width=2.3cm, align=center, font=\tiny\bfseries, minimum height=1.05cm}]
+
+\node[v=secondary] (c) at (0,0)   {\faIcon{code}\\CODE\\{\tiny git commit}};
+\node[v=goldhl]    (d) at (2.75,0){\faIcon{database}\\DATA\\{\tiny snapshot hash}};
+\node[v=tealhl]    (e) at (5.5,0) {\faIcon{cube}\\ENVIRONMENT\\{\tiny image digest}};
+\node[v=purplehl]  (p) at (8.25,0){\faIcon{sliders-h}\\PARAMS\\{\tiny config file}};
+\node[v=greenhl]   (m) at (11.0,0){\faIcon{box}\\MODEL\\{\tiny artefact hash}};
+
+\node[rounded corners=4pt, draw=primary, fill=primary!8, text=primary,
+      text width=12.6cm, align=center, font=\tiny\bfseries, minimum height=0.62cm]
+      (run) at (5.5,-1.5) {RUN ID 2026-08-01-a41f  ---  one identifier binds all five};
+\foreach \n in {c,d,e,p,m}{
+  \draw[-{Stealth[length=1.6mm]}, primary!45] (\n) -- (run);}
+
+\node[anchor=west, align=left, text width=13.4cm, font=\tiny, text=gray!55!black]
+     at (-1.3,-2.5)
+     {\textbf{Plus, for every individual prediction served:} the run ID of the model that
+      produced it, the input features as actually received, the output, and the timestamp.
+      Without this you cannot answer ``why was this student flagged in March?'' --- a
+      question that will be asked, and which \chref{ethics} may require you to answer.};
+\end{tikzpicture}}%
+{The five things that must be versioned together. A model registry exists to keep these
+bound to one identifier, so that any past prediction can be explained and
+reproduced.}{versioning}
+
+\section{Monitoring}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  hd/.style={rounded corners=3pt, fill=#1, text=white, font=\scriptsize\bfseries,
+             text width=6.7cm, align=center, minimum height=0.55cm},
+  b/.style={rounded corners=3pt, draw=#1, fill=#1!7, text width=6.7cm, align=left,
+            font=\scriptsize, inner sep=6pt, minimum height=2.1cm}]
+
+\node[hd=secondary] at (0,0)    {LAYER 1 --- INPUTS};
+\node[b=secondary]  at (0,-1.42){%
+  \textbf{Available:} instantly\\[3pt]
+  Feature distributions vs.\ training; null rates; unseen categories; row volume.\\[3pt]
+  \emph{Detects data drift and broken pipelines --- your earliest warning, and the only
+  one that needs no labels.}};
+
+\node[hd=goldhl] at (7.3,0)    {LAYER 2 --- PREDICTIONS};
+\node[b=goldhl]  at (7.3,-1.42){%
+  \textbf{Available:} instantly\\[3pt]
+  Distribution of scores; alert rate; share above threshold; per-segment rates.\\[3pt]
+  \emph{A model that suddenly flags 12\% instead of 3\% is telling you something before
+  any outcome is known.}};
+
+\node[hd=purplehl] at (0,-3.2)    {LAYER 3 --- OUTCOMES};
+\node[b=purplehl]  at (0,-4.62){%
+  \textbf{Available:} after a delay\\[3pt]
+  True precision and recall, once ground truth arrives.\\[3pt]
+  \emph{The number you actually care about, and the one you get last --- weeks for
+  student outcomes, months for equipment failure.}};
+
+\node[hd=greenhl] at (7.3,-3.2)    {LAYER 4 --- BUSINESS};
+\node[b=greenhl]  at (7.3,-4.62){%
+  \textbf{Available:} slowest\\[3pt]
+  Stoppages prevented, students retained, breaches caught, cost saved.\\[3pt]
+  \emph{The only layer the funder cares about. Report it even though it lags.}};
+
+\node[anchor=west, align=left, text width=13.4cm, font=\scriptsize, text=accent!75!black]
+     at (-3.35,-6.5)
+     {\textbf{Ground-truth lag is why layers 1 and 2 exist.} If you only monitor accuracy,
+      you learn a model broke months after it broke. Input and prediction monitoring give
+      you a signal on day one --- imperfect, but immediate. Every deployed model in this
+      book should have all four layers, in that order of alerting priority.};
+\end{tikzpicture}}%
+{Four monitoring layers, ordered by how quickly each becomes available. Alert on layers 1
+and 2; report layers 3 and 4.}{monitoring-layers}
+
+\section{Safe Rollout}
+
+\begin{definitionbox}[Shadow, Canary, and Rollback]
+\term{Shadow}: the new model runs on live traffic and its predictions are logged
+but not acted on --- zero risk, real data. \term{Canary}: it serves a small
+percentage of real traffic, with automatic rollback if metrics degrade.
+\term{Rollback}: reverting to the previous version, which must be a single command
+and must be rehearsed.
+\end{definitionbox}
+
+\begin{worked}[Rolling Out a New Model Safely]
+The dropout model is retrained and scores better offline. How does it reach
+production?
+
+\smallskip
+\textbf{Week 1 --- shadow.} Both models score every student; only the old model's
+output drives outreach. Compare on live data: do they agree? Where they disagree,
+which is right? This catches training--serving skew, which offline testing cannot.
+
+\textbf{Week 2 --- canary at 10\%.} A random 10\% of students are scored by the new
+model. Automatic rollback triggers if the alert rate moves more than 50\% from
+baseline, or if any monitored fairness slice degrades.
+
+\textbf{Week 3 --- 50\%, then 100\%.} Advance only if layer-1 and layer-2 monitors
+are stable.
+
+\textbf{Week 8 --- outcome evaluation.} The first real precision figures arrive as
+term results come in. Only now do you actually know whether the new model was
+better.
+
+\smallskip
+\textbf{Keep the old model deployable for a full outcome cycle.} Offline metrics
+promised an improvement; only week 8 confirms it, and until then rollback must
+remain one command away.
+\end{worked}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Operating Models in Production}
+\lensLA{\emph{Serving:} weekly batch --- outreach happens on a schedule, so an API is
+unnecessary complexity. \emph{Ground-truth lag:} an entire term, which is why input
+and prediction monitoring carry the alerting load. \emph{Special requirement:}
+every prediction must be logged with its features and model version, because a
+student may ask why they were contacted and the institution must be able to answer
+(\chref{ethics}). \emph{Retraining:} annually, per cohort --- retraining mid-term
+changes the rules on students partway through.}
+
+\lensPM{\emph{Serving:} batch, weekly. \emph{Special difficulty:} the prediction
+changes the outcome --- a team told it will miss the sprint often does not, which
+makes the model look wrong precisely when it worked. Log the prediction \emph{and}
+whether it was shown, so this can be analysed rather than argued about.
+\emph{Retraining:} whenever team composition changes materially, not on a calendar.}
+
+\lensIOT{\emph{Serving:} edge, which makes deployment the hard part --- over-the-air
+updates across a fleet on unreliable links, with staged rollout by device group and
+automatic rollback if a device fails to check in. \emph{Monitoring:} you must watch
+the \emph{devices} as well as the model, and distinguish model drift from sensor
+drift (\chref{iot}). \emph{Retraining:} monthly in the cloud on accumulated
+features, pushed down after canary on a device subset.}
+
+\lensSEC{\emph{Serving:} online and streaming --- detection latency is a control.
+\emph{Retraining:} frequent, because the adversary adapts --- but each retrain is an
+attack surface (\chref{cybersecurity}), so the training set must be screened and
+promotion gated by a human. \emph{Monitoring:} alerts per analyst per hour is a
+first-class operational metric, and a sharp \emph{drop} in alert volume is as
+alarming as a spike, since it may mean a log source has silently died.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[A Monitored Service]
+\begin{lstlisting}[language=Python]
+import json, hashlib, numpy as np, pandas as pd
+from datetime import datetime
+from scipy.stats import ks_2samp
+
+MODEL_VERSION = "2026.08.1"
+TRAINING_REF  = pd.read_parquet("reference_features.parquet")   # training snapshot
+
+# --- LAYER 1: input drift, available immediately -----------------------
+def input_drift(live: pd.DataFrame, ref=TRAINING_REF, alpha=0.01):
+    """KS test per feature. Note: with large n everything is 'significant'
+       (Chapter 9), so gate on the STATISTIC, not the p-value."""
+    report = {}
+    for col in ref.columns:
+        stat, _ = ks_2samp(ref[col].dropna(), live[col].dropna())
+        report[col] = {"ks": round(float(stat), 4), "drifted": stat > 0.15}
+    unseen = set(live.get("programme", [])) - set(ref.get("programme", []))
+    report["_unseen_categories"] = list(unseen)
+    report["_null_rates"] = live.isna().mean().round(3).to_dict()
+    return report
+
+# --- LAYER 2: prediction drift -----------------------------------------
+def prediction_drift(scores, baseline_rate, threshold, tol=0.5):
+    rate = float((scores > threshold).mean())
+    return {"alert_rate": round(rate, 4),
+            "baseline": baseline_rate,
+            "drifted": abs(rate - baseline_rate) > tol * baseline_rate}
+
+# --- every prediction is logged so it can be explained later ----------
+def serve(features: pd.DataFrame):
+    scores = model.predict_proba(features)[:, 1]
+    for i, row in features.iterrows():
+        log_prediction({
+            "run_id":        MODEL_VERSION,
+            "entity_id":     row["student_id"],
+            "features":      row.drop("student_id").to_dict(),   # as RECEIVED
+            "feature_hash":  hashlib.sha256(
+                                 json.dumps(row.to_dict(), sort_keys=True,
+                                            default=str).encode()).hexdigest()[:12],
+            "score":         float(scores[i]),
+            "ts":            datetime.utcnow().isoformat(),
+        })
+    return scores
+
+# --- the promotion gate: refuse to ship a worse model -----------------
+def promotion_gate(new_metrics, prod_metrics, slices):
+    if new_metrics["pr_auc"] < prod_metrics["pr_auc"]:
+        raise RuntimeError("BLOCKED: new model is worse on the benchmark set")
+    for s in slices:                              # fairness slices, Chapter 28
+        if new_metrics[s]["recall"] < prod_metrics[s]["recall"] - 0.05:
+            raise RuntimeError(f"BLOCKED: recall regressed on slice '{s}'")
+    return True
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Define training--serving skew and give a concrete example. What eliminates
+        the whole class of bug?
+  \item Your outcome labels arrive three months late. Which monitoring layers give
+        you a same-day signal, and what can each actually detect?
+  \item A retrained model scores better offline. Why is that insufficient reason to
+        replace the production model immediately?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item MLOps closes the loop: train, validate, register, package, roll out, monitor,
+        detect drift, retrain.
+  \item An automated promotion gate that blocks a worse model prevents the most
+        common production incident.
+  \item Choose the simplest serving pattern that meets the latency the decision
+        genuinely needs.
+  \item Training--serving skew is eliminated by computing features in one place, not
+        by testing harder.
+  \item Version code, data, environment, parameters and artefact under one run ID,
+        and log every prediction with the version that made it.
+  \item Monitor inputs and predictions for an immediate signal; outcomes and business
+        impact arrive later but are what matter.
+  \item Roll out via shadow then canary, keep rollback to one command, and keep the
+        old model deployable for a full outcome cycle.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Running a new model on live traffic without acting on its
+        output is called: (a)~canary (b)~shadow (c)~rollback (d)~A/B testing.
+  \item \textbf{(MCQ)} Which monitoring layer requires no ground truth?
+        (a)~outcome (b)~business impact (c)~input distribution (d)~precision.
+  \item \textbf{(Short)} List the five things that must be versioned to reproduce a
+        prediction, and say what goes wrong if the environment is omitted.
+  \item \textbf{(Short)} Explain ground-truth lag and its consequence for how you
+        design alerting.
+  \item \textbf{(Short)} Why can a sudden \emph{drop} in alert volume be as serious as
+        a spike?
+  \item \textbf{(Applied)} Write the monitoring plan for the predictive maintenance
+        model of \chref{iot}: state what you measure at each of the four layers, the
+        alert threshold for each, and who is paged.
+  \item \textbf{(Applied)} Your team wants to auto-retrain and auto-deploy nightly.
+        Give three arguments in favour, three risks, and the specific gates you would
+        require before agreeing --- noting where the security domain differs.
+\end{reviewq}

@@ -1,0 +1,379 @@
+%=====================================================================
+\chapter{Inferential Statistics}\label{ch:inference}
+%=====================================================================
+\locator{2}{Part II --- From Data to Insight}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} a population from a sample and identify the sampling method used in a study.
+  \item \textbf{Construct} and \textbf{interpret} a confidence interval, and state precisely what it does \emph{not} mean.
+  \item \textbf{Conduct} a hypothesis test and interpret a $p$-value correctly.
+  \item \textbf{Explain} why statistical significance and practical importance are different things, using effect size.
+  \item \textbf{Recognise} the multiple-comparisons problem and apply a correction.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{probability} --- especially the Central Limit Theorem, which is what licenses
+everything in this chapter --- and \chref{descriptive}.
+\end{prereq}
+
+\begin{keyterms}
+population $\bullet$ sample $\bullet$ sampling bias $\bullet$ standard error
+$\bullet$ confidence interval $\bullet$ null and alternative hypothesis $\bullet$
+$p$-value $\bullet$ significance level $\bullet$ Type I and Type II error $\bullet$
+statistical power $\bullet$ effect size $\bullet$ multiple comparisons $\bullet$
+$p$-hacking
+\end{keyterms}
+
+\section{From Sample to Population}
+
+\begin{definitionbox}[Population and Sample]
+The \term{population} is every unit you want to make a claim about. The
+\term{sample} is the subset you actually measured. Inference is the discipline of
+saying what the sample entitles you to claim about the population --- and, equally,
+what it does not.
+\end{definitionbox}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{3.0cm}p{5.2cm}p{6.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Sampling method} & \textbf{How} & \textbf{Bias risk} \\
+\midrule
+\endhead
+Simple random & Every unit equally likely & Low, but often impractical \\
+Stratified & Sample within each subgroup & Low; \emph{improves} precision when groups differ \\
+Cluster & Sample whole groups (e.g.\ 5 classes) & Moderate; units within a cluster are similar, so effective $n$ is smaller than it looks \\
+Systematic & Every $k$-th unit & Low unless the data has a matching period \\
+Convenience & Whoever is available & \textbf{High} --- the commonest and most damaging method in student projects \\
+Voluntary response & Whoever chooses to reply & \textbf{High} --- respondents differ systematically from non-respondents \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[No Sample Size Fixes a Biased Sample]
+If your survey reaches only students who log in to the VLE, no increase in $n$
+will tell you anything about students who have stopped logging in --- and in a
+dropout study, those are the population of interest. A large biased sample is
+\emph{more} dangerous than a small one, because its narrow confidence interval
+projects false authority.
+\end{alertbox}
+
+\section{Confidence Intervals}
+
+\begin{definitionbox}[Standard Error and Confidence Interval]
+The \term{standard error} of the mean is $\text{SE} = s/\sqrt{n}$ --- the typical
+distance between a sample mean and the true mean. An approximate 95\%
+\term{confidence interval} is
+\[
+\bar{x} \;\pm\; 1.96 \times \frac{s}{\sqrt{n}}
+\]
+\end{definitionbox}
+
+\begin{worked}[A Confidence Interval, and What It Means]
+A sample of $n = 100$ support tickets has mean resolution time
+$\bar{x} = 42$ minutes with $s = 15$ minutes.
+
+\smallskip
+\textbf{Standard error:} $\text{SE} = 15/\sqrt{100} = 15/10 = 1.5$ minutes.
+
+\textbf{Margin of error:} $1.96 \times 1.5 = 2.94$ minutes.
+
+\textbf{95\% CI:} $42 \pm 2.94 = [39.1,\; 44.9]$ minutes.
+
+\smallskip
+\textbf{What this means:} if you repeated this sampling procedure many times, about
+95\% of the intervals so constructed would contain the true population mean.
+
+\textbf{What it does \emph{not} mean:} that there is a 95\% probability the true
+mean lies in \emph{this} interval. The true mean is a fixed number; it either is or
+is not in $[39.1, 44.9]$. The 95\% describes the reliability of the
+\emph{procedure}, not this one result.
+
+\smallskip
+\textbf{Now quadruple the sample.} With $n = 400$, $\text{SE} = 15/20 = 0.75$ and
+the interval halves to $[40.5, 43.5]$. Four times the data for twice the precision
+--- the $\sqrt{n}$ from \chref{probability}, in its practical form. Budget
+accordingly.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=12.2cm, height=5.4cm,
+  xlabel={\scriptsize sample size $n$}, ylabel={\scriptsize margin of error (min)},
+  xmin=0, xmax=820, ymin=0, ymax=11,
+  axis lines=left, grid=major, grid style={gray!18},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+]
+\addplot[primary, line width=1.4pt, domain=10:800, samples=200] {1.96*15/sqrt(x)};
+\addplot[accent, only marks, mark=*, mark size=2pt] coordinates {(100,2.94) (400,1.47)};
+\draw[gray!60, dashed] (axis cs:100,0) -- (axis cs:100,2.94) -- (axis cs:0,2.94);
+\draw[gray!60, dashed] (axis cs:400,0) -- (axis cs:400,1.47) -- (axis cs:0,1.47);
+\node[font=\tiny, accent, anchor=south west] at (axis cs:105,3.1) {$n=100$: $\pm2.94$};
+\node[font=\tiny, accent, anchor=south west] at (axis cs:405,1.6) {$n=400$: $\pm1.47$};
+\node[font=\scriptsize\itshape, text=gray!55!black, align=center, anchor=north east]
+     at (axis cs:790,9.5) {diminishing returns:\\to halve the error,\\quadruple the data};
+\end{axis}
+\end{tikzpicture}}%
+{Margin of error against sample size. The curve is $1.96s/\sqrt{n}$. The flat right-hand
+region is why collecting ten times more data rarely improves a study ten-fold --- and why
+reducing bias usually beats increasing $n$.}{margin-error}
+
+\section{Hypothesis Testing}
+
+\begin{definitionbox}[Null and Alternative Hypotheses]
+The \term{null hypothesis} $H_0$ states there is no effect --- no difference, no
+relationship. The \term{alternative} $H_1$ states there is one. A test asks: if
+$H_0$ were true, how surprising would data like mine be?
+\end{definitionbox}
+
+\begin{definitionbox}[$p$-value]
+The $p$-value is the probability of observing data \emph{at least as extreme as
+yours}, assuming the null hypothesis is true. Small $p$ means your data would be
+unusual if there were no effect.
+\end{definitionbox}
+
+\begin{alertbox}[What a $p$-value Is Not]
+It is \textbf{not} the probability that $H_0$ is true.\\
+It is \textbf{not} the probability your result was due to chance.\\
+It is \textbf{not} a measure of how large or important the effect is.\\
+$p = 0.04$ and $p = 0.0001$ do not mean ``true'' and ``very true''.
+\end{alertbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+\node[rounded corners=3pt, fill=primary, text=white, font=\scriptsize\bfseries,
+      minimum width=3.4cm, minimum height=0.7cm] at (4.2,1.55) {THE TRUTH (unknown)};
+\node[font=\scriptsize\bfseries, text=primary] at (1.0,0.85) {$H_0$ is true};
+\node[font=\scriptsize\bfseries, text=primary] at (7.4,0.85) {$H_0$ is false};
+\node[rounded corners=3pt, fill=primary!75, text=white, font=\scriptsize\bfseries,
+      minimum width=1.0cm, minimum height=3.0cm, rotate=90] at (-3.0,-1.35) {YOUR DECISION};
+
+\node[align=center, font=\scriptsize\bfseries, text=primary, text width=2.2cm] at (-1.4,-0.3)
+     {do not reject $H_0$};
+\node[align=center, font=\scriptsize\bfseries, text=primary, text width=2.2cm] at (-1.4,-2.4)
+     {reject $H_0$};
+
+\node[rounded corners=3pt, fill=greenhl!14, draw=greenhl, text width=5.2cm, align=center,
+      minimum height=1.7cm, inner sep=4pt] at (1.0,-0.3)
+     {{\color{greenhl!50!black}\bfseries Correct}\\[2pt]
+      \emph{no effect, none claimed}};
+\node[rounded corners=3pt, fill=accent!12, draw=accent, text width=5.2cm, align=center,
+      minimum height=1.7cm, inner sep=4pt] at (7.4,-0.3)
+     {{\color{accent}\bfseries TYPE II ERROR ($\beta$)}\\[2pt]
+      \emph{a real effect missed}\\
+      {\color{accent!70!black}\tiny e.g.\ an intrusion not detected}};
+\node[rounded corners=3pt, fill=accent!12, draw=accent, text width=5.2cm, align=center,
+      minimum height=1.7cm, inner sep=4pt] at (1.0,-2.4)
+     {{\color{accent}\bfseries TYPE I ERROR ($\alpha$)}\\[2pt]
+      \emph{an effect claimed that is not there}\\
+      {\color{accent!70!black}\tiny e.g.\ a false alarm}};
+\node[rounded corners=3pt, fill=greenhl!14, draw=greenhl, text width=5.2cm, align=center,
+      minimum height=1.7cm, inner sep=4pt] at (7.4,-2.4)
+     {{\color{greenhl!50!black}\bfseries Correct --- POWER ($1-\beta$)}\\[2pt]
+      \emph{a real effect detected}};
+
+\node[align=left, text width=13.5cm, font=\tiny, text=gray!55!black] at (3.2,-4.0)
+     {Setting $\alpha = 0.05$ means accepting a 1-in-20 Type I error rate \emph{by design}.
+      Lowering $\alpha$ reduces false alarms but raises misses --- the same trade-off that
+      reappears as precision versus recall in \chref{evaluation}.};
+\end{tikzpicture}}%
+{The two errors. Which one is worse is a domain question, never a statistical one: a Type I
+error wastes an analyst's afternoon, a Type II error lets an intrusion through.}{error-types}
+
+\begin{worked}[Did the New Lab Format Help?]
+Pass rates: old format 68 of 100 students; new format 79 of 100.
+
+\smallskip
+\textbf{$H_0$:} the true pass rates are equal. \quad \textbf{$H_1$:} they differ.
+
+\textbf{Test:} two-proportion z-test.
+Pooled proportion $\hat{p} = (68+79)/200 = 0.735$.
+\[
+\text{SE} = \sqrt{0.735 \times 0.265 \times \left(\tfrac{1}{100}+\tfrac{1}{100}\right)}
+          = \sqrt{0.1948 \times 0.02} = 0.0624
+\]
+\[
+z = \frac{0.79 - 0.68}{0.0624} = \frac{0.11}{0.0624} = 1.76
+\]
+
+\textbf{$p$-value:} for a two-sided test, $p \approx 0.078$.
+
+\smallskip
+\textbf{Decision at $\alpha = 0.05$:} do not reject $H_0$. The evidence is
+suggestive but not conclusive.
+
+\textbf{The honest report:} ``Pass rates rose by 11 percentage points
+(68\% to 79\%). This did not reach significance at the 5\% level ($p = 0.078$),
+which with 100 students per group is unsurprising --- the study had roughly 40\%
+power to detect an effect of this size. The observed difference is educationally
+meaningful and warrants a larger trial, not dismissal.''
+
+\smallskip
+\textbf{The dishonest report:} ``No significant difference; the new format does not
+work.'' Absence of evidence is not evidence of absence, and with this sample size
+the test was never capable of settling the question.
+\end{worked}
+
+\section{Effect Size and Power}
+
+\begin{definitionbox}[Effect Size]
+A measure of \emph{how big} a difference is, independent of sample size. For two
+means, Cohen's $d = \dfrac{\bar{x}_1 - \bar{x}_2}{s_{\text{pooled}}}$, conventionally
+read as small ($\approx 0.2$), medium ($\approx 0.5$), large ($\approx 0.8$).
+\end{definitionbox}
+
+\begin{conceptbox}[Why Every Result Needs Both Numbers]
+With $n = 10$ million, a difference of 0.01\% in click rate will be highly
+significant and completely worthless. With $n = 20$, a difference that would
+transform the department may not reach significance at all. The $p$-value tells you
+whether the effect is \emph{detectable}; the effect size tells you whether it is
+\emph{worth acting on}. Report both, always.
+\end{conceptbox}
+
+\section{Multiple Comparisons}
+
+\begin{alertbox}[The Problem]
+At $\alpha = 0.05$, each test has a 1-in-20 chance of a false positive. Run 20
+independent tests on data with no real effects and the probability of at least one
+``significant'' result is $1 - 0.95^{20} = 64\%$. Run 100 and it is 99.4\%.
+
+This is how a team ``discovers'' that students born in March do better: they tested
+enough hypotheses that something had to come up.
+\end{alertbox}
+
+\begin{definitionbox}[Bonferroni Correction]
+When running $m$ tests, use $\alpha' = \alpha / m$ for each. With 20 tests at an
+overall 5\% level, require $p < 0.0025$ individually. It is conservative --- it
+raises Type II errors --- but it is simple and defensible.
+\end{definitionbox}
+
+\begin{pitfall}[$p$-hacking]
+\begin{tight}
+  \item Testing many outcomes and reporting only the significant ones.
+  \item Adding data until $p$ drops below 0.05, then stopping.
+  \item Trying several subgroups and reporting the one that worked.
+  \item Deciding the hypothesis after seeing the result.
+\end{tight}
+\textbf{The defence:} write the hypothesis, the test and the success criterion down
+\emph{before} you look at the data --- exactly the discipline
+\chref{lifecycle} demanded in framing, and which \chref{research} formalises as
+pre-registration.
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Inference in Practice}
+\lensLA{Comparing pass rates between two teaching formats is a two-proportion
+test --- but students are not independent: they share tutors, timetables and study
+groups, which is cluster sampling in disguise, so the effective sample is smaller
+than the headcount. Always report the effect size in percentage points alongside
+$p$, because a statistically significant 0.5-point rise will not justify redesigning
+a module.}
+
+\lensPM{Sprint samples are small ($n \approx 10$--20), so power is low and
+non-significant results are near-guaranteed. Confidence intervals on velocity are
+far more useful to a team than tests: ``we complete 28--41 points per sprint with
+95\% confidence'' supports planning in a way that ``$p = 0.31$'' never will.}
+
+\lensIOT{With millions of readings, \emph{everything} is statistically significant
+--- a $0.02^\circ$C difference between two sensor batches will have $p < 10^{-9}$
+and mean nothing. In this domain the $p$-value is almost useless and the effect
+size is almost everything. Beware also that consecutive readings are
+autocorrelated, so the effective sample size is far below the row count.}
+
+\lensSEC{Type I and Type II errors have wildly asymmetric costs here, so
+$\alpha = 0.05$ is an arbitrary import from another field. Set the threshold from
+the cost ratio instead (\chref{probability}'s expected-value calculation). Multiple
+comparisons are acute: a SIEM testing thousands of rules per hour will generate
+false positives continuously by construction unless corrected.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Interval, Test and Effect Size]
+\begin{lstlisting}[language=Python]
+import numpy as np
+from scipy import stats
+
+old = np.array([0]*32 + [1]*68)      # 68 of 100 passed
+new = np.array([0]*21 + [1]*79)      # 79 of 100 passed
+
+# --- confidence interval for the new format's pass rate ---------------
+p, n = new.mean(), len(new)
+se = np.sqrt(p*(1-p)/n)
+print(f"new pass rate: {p:.2f}  95% CI [{p-1.96*se:.3f}, {p+1.96*se:.3f}]")
+
+# --- hypothesis test --------------------------------------------------
+t, pval = stats.ttest_ind(new, old)
+print(f"t = {t:.2f}, p = {pval:.4f}")
+
+# --- effect size: report this WITH the p-value, never instead of it ---
+pooled = np.sqrt((old.std(ddof=1)**2 + new.std(ddof=1)**2) / 2)
+print(f"Cohen's d = {(new.mean()-old.mean())/pooled:.3f}")
+
+# --- the multiple-comparisons demonstration ---------------------------
+rng = np.random.default_rng(0)
+hits = sum(stats.ttest_ind(rng.normal(size=50), rng.normal(size=50)).pvalue < 0.05
+           for _ in range(20))
+print(f"'significant' results from 20 tests on pure noise: {hits}")
+\end{lstlisting}
+
+\textbf{Run the last block a few times.} It is drawing from identical
+distributions every time, so every ``significant'' result is false. Seeing this
+happen is more convincing than being told it happens.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A 95\% CI for mean response time is $[210, 260]$~ms. Is the statement
+        ``there is a 95\% chance the true mean is between 210 and 260'' correct?
+        If not, state the correct interpretation.
+  \item A study reports $p = 0.001$ with $n = 500{,}000$ and a difference of
+        0.03\%. Should the organisation act on it?
+  \item You test 15 features for association with an outcome at $\alpha = 0.05$.
+        Roughly what is the chance of at least one false positive if none are
+        genuinely associated?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Inference generalises from sample to population; a biased sample cannot be
+        rescued by size.
+  \item A confidence interval describes the reliability of the \emph{procedure},
+        not the probability of this particular interval.
+  \item Precision improves only as $\sqrt{n}$ --- quadruple the data to halve the
+        error.
+  \item A $p$-value is $P(\text{data this extreme} \mid H_0)$. It is not the
+        probability that $H_0$ is true, and it says nothing about effect size.
+  \item Type I errors are false alarms, Type II are misses; which is worse is a
+        domain judgement.
+  \item Report effect size with every $p$-value, and correct for multiple
+        comparisons or expect to find things that are not there.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The $p$-value is the probability of: (a)~$H_0$ being true
+        (b)~data at least this extreme given $H_0$ (c)~a Type II error
+        (d)~the effect being large.
+  \item \textbf{(MCQ)} To halve a confidence interval's width you must multiply the
+        sample size by: (a)~2 (b)~4 (c)~$\sqrt{2}$ (d)~10.
+  \item \textbf{(Short)} Define Type I and Type II errors and give a security
+        example of each with its practical cost.
+  \item \textbf{(Short)} Explain why voluntary-response sampling is especially
+        dangerous in a study of student disengagement.
+  \item \textbf{(Short)} Why does an IoT dataset of ten million readings make
+        $p$-values nearly useless?
+  \item \textbf{(Applied)} A trial compares two intrusion detection configurations
+        over 30 days. Config A raised 220 alerts of which 14 were real; config B
+        raised 95 of which 11 were real. Set up the hypotheses, say which test you
+        would run, and explain what effect size you would report to management.
+  \item \textbf{(Applied)} A colleague tests 40 candidate features against an
+        outcome and reports the three with $p < 0.05$. Explain what is wrong,
+        compute the Bonferroni-corrected threshold, and describe a defensible
+        procedure they should have followed instead.
+\end{reviewq}

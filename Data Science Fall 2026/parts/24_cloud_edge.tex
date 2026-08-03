@@ -1,0 +1,385 @@
+%=====================================================================
+\chapter{Cloud and Edge Computing for Data Science}\label{ch:cloudedge}
+%=====================================================================
+\locator{5}{Part V --- Data Science in Systems Context}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} IaaS, PaaS and SaaS, and say who is responsible for what in each.
+  \item \textbf{Explain} how containers differ from virtual machines and why that matters for reproducibility.
+  \item \textbf{Choose} between cloud, fog and edge placement for a given inference workload.
+  \item \textbf{Estimate} and control the cost of a data science workload.
+  \item \textbf{Apply} the shared responsibility model to a cloud deployment.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{dataeng} (pipelines and storage). This chapter supplies the deployment
+substrate for \chref{iot} and \chref{mlops}.
+\end{prereq}
+
+\begin{keyterms}
+IaaS / PaaS / SaaS $\bullet$ public, private, hybrid cloud $\bullet$ elasticity
+$\bullet$ virtual machine $\bullet$ container $\bullet$ image $\bullet$ Kubernetes
+$\bullet$ serverless $\bullet$ GPU $\bullet$ cloud, fog and edge $\bullet$ latency
+$\bullet$ quantisation $\bullet$ shared responsibility $\bullet$ data residency
+$\bullet$ egress cost
+\end{keyterms}
+
+\section{Service Models}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  you/.style={rounded corners=2pt, fill=accent!22, draw=accent!60, text=accent!65!black,
+              minimum width=2.5cm, minimum height=0.42cm, font=\tiny},
+  them/.style={rounded corners=2pt, fill=secondary!16, draw=secondary!50, text=secondary!55!black,
+               minimum width=2.5cm, minimum height=0.42cm, font=\tiny},
+  hd/.style={rounded corners=3pt, fill=primary, text=white, font=\tiny\bfseries,
+             minimum width=2.5cm, minimum height=0.5cm}]
+
+\foreach \l/\i in {Application/0, Data/1, Runtime/2, Middleware/3, {OS}/4,
+                   Virtualisation/5, Servers/6, Storage/7, Networking/8}{
+  \pgfmathsetmacro{\yy}{2.15-\i*0.5}
+  \node[font=\tiny, anchor=east, text=gray!50!black] at (-0.25,\yy) {\l};}
+
+\node[hd] at (1.4,2.75)  {ON-PREMISES};
+\node[hd] at (4.3,2.75)  {IaaS};
+\node[hd] at (7.2,2.75)  {PaaS};
+\node[hd] at (10.1,2.75) {SaaS};
+
+% on-prem: all you
+\foreach \i in {0,...,8}{\pgfmathsetmacro{\yy}{2.15-\i*0.5}\node[you] at (1.4,\yy) {};}
+% IaaS: you down to OS
+\foreach \i in {0,...,4}{\pgfmathsetmacro{\yy}{2.15-\i*0.5}\node[you] at (4.3,\yy) {};}
+\foreach \i in {5,...,8}{\pgfmathsetmacro{\yy}{2.15-\i*0.5}\node[them] at (4.3,\yy) {};}
+% PaaS: you app+data
+\foreach \i in {0,1}{\pgfmathsetmacro{\yy}{2.15-\i*0.5}\node[you] at (7.2,\yy) {};}
+\foreach \i in {2,...,8}{\pgfmathsetmacro{\yy}{2.15-\i*0.5}\node[them] at (7.2,\yy) {};}
+% SaaS: you data only
+\node[you] at (10.1,1.65) {};
+\node[them] at (10.1,2.15) {};
+\foreach \i in {2,...,8}{\pgfmathsetmacro{\yy}{2.15-\i*0.5}\node[them] at (10.1,\yy) {};}
+
+\node[font=\scriptsize, anchor=west, align=left] at (11.6,1.9)
+     {\textcolor{accent!65!black}{$\blacksquare$}~\textbf{you manage}\\[4pt]
+      \textcolor{secondary!55!black}{$\blacksquare$}~provider manages};
+
+\node[anchor=west, align=left, text width=6.6cm, font=\scriptsize, text=gray!55!black]
+     at (-1.9,-2.5)
+     {\textbf{The one row that never changes colour} is \emph{Data}. It is always yours:
+      the provider runs the machines, but you remain accountable for what is in them and
+      who may see it (\chref{ethics}).};
+
+\node[anchor=west, align=left, text width=6.6cm, font=\scriptsize, text=gray!55!black]
+     at (5.5,-2.5)
+     {\textbf{Examples:} IaaS --- a GPU virtual machine you configure yourself. PaaS ---
+      a managed notebook or training service. SaaS --- a BI dashboard or a hosted model
+      API. Moving right buys convenience and costs control.};
+\end{tikzpicture}}%
+{The service models as a stack of responsibilities. Reading which layers are yours tells
+you exactly what you must secure, patch and pay for.}{service-models}
+
+\section{Virtual Machines, Containers, Serverless}
+
+\begin{definitionbox}[Container]
+A package containing an application together with its libraries and configuration,
+sharing the host operating system kernel rather than running a full guest OS. Starts
+in under a second, measured in megabytes, and runs identically wherever it is
+deployed.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  l/.style={rounded corners=2pt, draw=#1, fill=#1!14, text=#1!50!black,
+            minimum height=0.45cm, font=\tiny},
+  hd/.style={font=\tiny\bfseries, text=primary}]
+
+% --- VMs
+\node[hd] at (2.0,3.3) {VIRTUAL MACHINES};
+\foreach \i in {0,1,2}{
+  \pgfmathsetmacro{\xx}{\i*1.35}
+  \node[l=accent, minimum width=1.2cm] at (\xx,2.75) {app};
+  \node[l=goldhl, minimum width=1.2cm] at (\xx,2.28) {libs};
+  \node[l=secondary, minimum width=1.2cm, minimum height=0.6cm] at (\xx,1.75) {guest OS};}
+\node[l=purplehl, minimum width=3.9cm] at (1.35,1.2) {hypervisor};
+\node[l=primary, minimum width=3.9cm] at (1.35,0.73) {host OS};
+\node[l=neutral, minimum width=3.9cm] at (1.35,0.26) {hardware};
+\node[font=\tiny, text=accent!75!black, align=center, text width=4.0cm] at (1.35,-0.45)
+     {each carries a whole OS:\\GBs, slow to start,\\strong isolation};
+
+% --- Containers
+\node[hd] at (8.4,3.3) {CONTAINERS};
+\foreach \i in {0,...,4}{
+  \pgfmathsetmacro{\xx}{6.4+\i*0.95}
+  \node[l=accent, minimum width=0.85cm] at (\xx,2.75) {app};
+  \node[l=goldhl, minimum width=0.85cm] at (\xx,2.28) {libs};}
+\node[l=greenhl, minimum width=4.7cm] at (8.3,1.75) {container runtime};
+\node[l=primary, minimum width=4.7cm] at (8.3,1.24) {host OS (shared kernel)};
+\node[l=neutral, minimum width=4.7cm] at (8.3,0.73) {hardware};
+\node[font=\tiny, text=greenhl!45!black, align=center, text width=4.6cm] at (8.3,-0.45)
+     {share the kernel: MBs,\\start in $<1$s, many per host,\\weaker isolation};
+
+\node[anchor=west, align=left, text width=13.6cm, font=\tiny, text=primary!60!black]
+     at (-1.0,-1.6)
+     {\textbf{Why this matters to a data scientist specifically:} ``it worked on my
+      laptop'' is a reproducibility failure, and a container is the fix. The image pins
+      the Python version, every library version and the system libraries beneath them, so
+      the model that trained in March can be retrained identically in November. A
+      \texttt{requirements.txt} does not achieve this; an image does.};
+\end{tikzpicture}}%
+{Virtual machines versus containers. For data science the decisive property is not
+efficiency but reproducibility: the container image is an exact, versioned record of the
+environment a result was produced in.}{vm-container}
+
+\begin{conceptbox}[Serverless]
+You supply a function; the provider runs it on demand and bills per invocation.
+Nothing is running --- or being paid for --- between calls. Excellent for
+intermittent, short, stateless work such as scoring a single record on arrival.
+Poor for long training jobs, for anything needing a GPU, and for workloads
+sensitive to the \term{cold start} delay on the first call after an idle period.
+\end{conceptbox}
+
+\section{Cloud, Fog and Edge}
+
+\begin{definitionbox}[Edge, Fog and Cloud]
+\term{Edge}: computation on or beside the device that generates the data.
+\term{Fog}: an intermediate tier --- a gateway or local server serving a site.
+\term{Cloud}: centralised, effectively unlimited compute, far away in network terms.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  tier/.style={rounded corners=4pt, draw=#1, fill=#1!8, text width=3.5cm, align=center,
+               font=\tiny, inner sep=5pt, minimum height=2.85cm},
+  hd/.style={rounded corners=3pt, fill=#1, text=white, font=\tiny\bfseries,
+             text width=3.5cm, align=center, minimum height=0.55cm}]
+
+\node[hd=greenhl] at (0,0)    {EDGE --- on the device};
+\node[tier=greenhl] at (0,-1.8){%
+  \textbf{Latency:} $<10$ ms\\
+  \textbf{Compute:} tiny (MCU)\\
+  \textbf{Cost:} no bandwidth\\[4pt]
+  \emph{Anomaly threshold on a vibration sensor; wake-word detection}\\[4pt]
+  {\color{greenhl!45!black}works when the network is down}};
+
+\node[hd=goldhl] at (4.7,0)    {FOG --- site gateway};
+\node[tier=goldhl] at (4.7,-1.8){%
+  \textbf{Latency:} 10--50 ms\\
+  \textbf{Compute:} moderate\\
+  \textbf{Cost:} low bandwidth\\[4pt]
+  \emph{Aggregate 400 sensors; run a small model for the whole factory}\\[4pt]
+  {\color{goldhl!50!black}sees the whole site, not one device}};
+
+\node[hd=secondary] at (9.4,0)    {CLOUD --- central};
+\node[tier=secondary] at (9.4,-1.8){%
+  \textbf{Latency:} 50--500 ms\\
+  \textbf{Compute:} unlimited, GPUs\\
+  \textbf{Cost:} bandwidth + compute\\[4pt]
+  \emph{Train models on the whole fleet; long-term storage; dashboards}\\[4pt]
+  {\color{secondary!55!black}the only place big training happens}};
+
+\draw[-{Stealth[length=2.4mm]}, primary!35, line width=5pt, opacity=0.45]
+     (-1.9,-3.65) -- (11.3,-3.65);
+\node[font=\tiny\bfseries, text=primary!60!black] at (4.7,-4.0)
+     {more compute, more latency, more bandwidth cost $\longrightarrow$};
+
+\node[anchor=west, align=left, text width=13.5cm, font=\tiny, text=gray!55!black]
+     at (-1.9,-4.75)
+     {\textbf{The standard pattern is not to choose but to split:} \emph{train in the
+      cloud, infer at the edge}. The heavy, occasional work goes where compute is cheap;
+      the light, constant work goes where latency is low and bandwidth is expensive. This
+      is the architecture of nearly every production IoT system (\chref{iot}).};
+\end{tikzpicture}}%
+{The three tiers. Placement is decided by the latency the decision requires and the
+bandwidth you can afford --- not by where the computation is most convenient to
+write.}{cloud-fog-edge}
+
+\begin{worked}[Where Should the Model Run?]
+400 motors, each producing 6 channels at 100 Hz. A vibration anomaly must trigger a
+shutdown.
+
+\smallskip
+\textbf{Option A --- send everything to the cloud.}\\
+Data rate: $400 \times 6 \times 100 \times 4\text{ bytes} = 960$ kB/s $\approx$
+83 GB/day $\approx$ 30 TB/year. Round-trip latency: 100--300 ms. Also: if the link
+drops, the factory has no protection at all.
+
+\textbf{Option B --- everything at the edge.}\\
+Latency: under 10 ms; no bandwidth cost; works offline. But a microcontroller
+cannot train, and cannot see the other 399 motors, so it can never learn what
+fleet-wide normal looks like.
+
+\textbf{Option C --- split (the answer).}
+\begin{tight}
+  \item \emph{Edge:} compute window statistics on-device and run a quantised
+        threshold model. Trigger shutdown locally in under 10 ms. Transmit only
+        features and alerts --- roughly 1 kB per device per minute, about
+        \textbf{0.6 GB/year} in total.
+  \item \emph{Fog:} the site gateway correlates across all 400 motors, catching
+        site-wide events no single device could see.
+  \item \emph{Cloud:} retrain the model monthly on the accumulated feature history
+        and push the updated model back to the devices.
+\end{tight}
+
+\smallskip
+\textbf{Result:} bandwidth falls by a factor of roughly 50{,}000, the safety-critical
+decision meets its latency budget, protection survives a network outage, and the
+model still improves from fleet-wide learning. Note that the constraint that decided
+this was \emph{latency and availability}, not accuracy.
+\end{worked}
+
+\section{Cost and the Shared Responsibility Model}
+
+\begin{alertbox}[The Costs That Surprise Students]
+\begin{tight}
+  \item \textbf{Idle GPUs.} A GPU instance left running overnight costs the same as
+        one training. Shut them down; use spot instances for interruptible work.
+  \item \textbf{Egress.} Moving data \emph{into} a cloud is usually free; moving it
+        \emph{out} is charged per gigabyte. This is what makes Option A above
+        expensive forever, not just once.
+  \item \textbf{Cross-region traffic.} Storage in one region and compute in another
+        pays egress on every read.
+  \item \textbf{Forgotten storage.} Nobody deletes the 2 TB of intermediate
+        Parquet from March. Set lifecycle rules on creation.
+\end{tight}
+\end{alertbox}
+
+\begin{definitionbox}[Shared Responsibility]
+The provider secures the cloud --- physical sites, hardware, hypervisor, managed
+services. You secure what is \emph{in} the cloud --- your data, access control,
+network configuration and application code. Nearly every publicised ``cloud breach''
+is a failure on the customer's side of this line, most often a misconfigured storage
+bucket.
+\end{definitionbox}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Cloud and Edge}
+\lensLA{Almost entirely cloud, since inference is nightly rather than real time and
+volumes are modest. The dominant constraint is not technical but legal:
+\textbf{data residency}. Student records may be required to remain in a specific
+jurisdiction, which decides your region before any performance consideration.
+Encrypt at rest and in transit, and restrict access by role --- most staff need
+aggregates, not individual records.}
+
+\lensPM{Nearly all the tooling is SaaS --- tracker, CI, chat --- so the data science
+work is integration rather than infrastructure. The relevant risks are lock-in and
+API stability: a vendor changing its API without notice breaks your pipeline
+(\chref{dataeng}), and export capability should be checked before adoption, not
+after.}
+
+\lensIOT{This lens is the whole reason the chapter exists, and the worked example is
+its canonical form: train in the cloud, infer at the edge, aggregate at the fog.
+Devices must also be updatable over the air, because a model that cannot be
+redeployed cannot respond to the drift of \chref{timeseries}. Budget bandwidth per
+device before choosing a model size --- on cellular-connected fleets, bandwidth,
+not accuracy, sets the architecture.}
+
+\lensSEC{Cloud brings both new defences and a much larger attack surface. Log
+collection benefits enormously from elastic storage, and managed detection services
+are genuinely good. But the shared responsibility line is where organisations fail:
+public buckets, over-permissive IAM roles, and unencrypted snapshots are all on the
+customer's side. Add to that the \textbf{multi-tenancy} question --- your workload
+shares hardware with strangers --- and containers' weaker isolation compared with
+virtual machines becomes a real consideration for sensitive processing.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Containerise a Model for Reproducibility]
+\begin{lstlisting}[language=bash]
+# ---- Dockerfile: an exact, versioned record of the environment --------
+FROM python:3.11-slim                    # pin the version. never use :latest
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY model.pkl serve.py ./
+EXPOSE 8080
+CMD ["python", "serve.py"]
+\end{lstlisting}
+
+\begin{lstlisting}[language=Python]
+# ---- serve.py: a minimal scoring service -----------------------------
+import joblib, pandas as pd
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+model = joblib.load("model.pkl")
+
+@app.route("/health")                     # every service needs this
+def health():
+    return {"status": "ok"}, 200
+
+@app.route("/predict", methods=["POST"])
+def predict():
+    df = pd.DataFrame(request.get_json()["rows"])
+    proba = model.predict_proba(df)[:, 1]
+    return jsonify({"scores": proba.tolist()})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
+\end{lstlisting}
+
+\begin{lstlisting}[language=bash]
+# ---- build, run, and shrink for the edge -----------------------------
+docker build -t risk-model:2026.08.1 .    # tag with a version, not "latest"
+docker run -p 8080:8080 risk-model:2026.08.1
+
+# For an edge device, the same model must be made small:
+#   quantise float32 -> int8   (roughly 4x smaller, 2-3x faster)
+#   python -m tf.lite.TFLiteConverter ... with optimizations=[OPTIMIZE_FOR_SIZE]
+# Then measure accuracy AFTER quantisation -- it usually drops a little,
+# and whether that drop is acceptable is a Chapter 14 question.
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Under the shared responsibility model, who is accountable for a publicly
+        readable storage bucket containing student records?
+  \item Give two reasons why a container is a better answer to ``it worked on my
+        laptop'' than a \texttt{requirements.txt} file.
+  \item A safety shutdown must occur within 20 ms of detection. Which tier must the
+        inference run on, and why is that not negotiable?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item IaaS, PaaS and SaaS differ in how much of the stack you manage --- but the
+        data layer is always yours.
+  \item Containers share the host kernel, start in under a second, and pin the
+        entire environment, which is what makes results reproducible.
+  \item Serverless suits short, intermittent, stateless work; not training, not GPUs.
+  \item Edge, fog and cloud trade latency against compute. The standard pattern is
+        train in the cloud, infer at the edge.
+  \item Placement is decided by latency requirements, bandwidth cost and offline
+        availability --- not by convenience.
+  \item Egress, idle GPUs and forgotten storage are the costs that surprise people;
+        misconfiguration on the customer's side causes most cloud breaches.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Containers differ from virtual machines principally because
+        they: (a)~are more secure (b)~share the host kernel (c)~cannot run Linux
+        (d)~require a GPU.
+  \item \textbf{(MCQ)} Which workload is least suited to serverless? (a)~scoring one
+        record on arrival (b)~a nightly 6-hour GPU training job (c)~resizing an
+        uploaded image (d)~responding to a webhook.
+  \item \textbf{(Short)} Explain data residency and give a scenario where it
+        overrides a performance-based choice of region.
+  \item \textbf{(Short)} Why is egress cost a recurring rather than a one-off
+        concern in an IoT architecture?
+  \item \textbf{(Short)} What is a cold start, and which deployment model suffers
+        from it?
+  \item \textbf{(Applied)} A hospital wants real-time patient-monitoring alerts.
+        Specify which computation runs at the edge, fog and cloud, and justify each
+        placement by latency, bandwidth, privacy and availability.
+  \item \textbf{(Applied)} Estimate the annual bandwidth for 250 devices sending
+        4 channels at 50 Hz as 4-byte floats. Then propose an edge-feature scheme
+        and estimate the new figure, showing your working.
+\end{reviewq}

@@ -1,0 +1,351 @@
+%=====================================================================
+\chapter{Capstone: One Problem, Four Domains}\label{ch:capstone}
+%=====================================================================
+\locator{6}{Part VI --- Professional Practice}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Execute} a complete data science project from framing to monitoring, unaided.
+  \item \textbf{Transfer} one technical approach across four application domains, adapting it to each.
+  \item \textbf{Justify} every design decision by reference to the constraint that forced it.
+  \item \textbf{Produce} the four artefacts a professional project delivers.
+  \item \textbf{Assess} your own work against the rubric used to mark it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+All thirty-one preceding chapters. This one introduces no new technique --- it asks
+whether you can choose among the ones you have.
+\end{prereq}
+
+\section{The Shared Problem}
+
+Every Four Lenses panel in this book has hinted at something worth making explicit
+now: the four domains have been solving \emph{the same problem} in different
+clothing.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  core/.style={rounded corners=5pt, draw=primary, line width=1.4pt, fill=primary!8,
+               text=primary, text width=4.6cm, align=center, font=\scriptsize\bfseries,
+               inner sep=7pt},
+  d/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!50!black,
+            text width=3.3cm, align=center, font=\tiny, inner sep=5pt, minimum height=2.0cm},
+  arr/.style={-{Stealth[length=2.2mm]}, primary!45, line width=0.9pt}]
+
+\node[core] (c) at (5.75,0.4) {%
+  THE COMMON PROBLEM\\[3pt]
+  \normalfont\tiny Detect, early and from behavioural traces, which entities are
+  heading for a bad outcome --- while there is still time to act, and with only as
+  many alerts as someone can act on.};
+
+\node[d=lensLA]  (la) at (0,-3.0)     {%
+  {\color{lensLA}\bfseries\faIcon{graduation-cap}~Learning Analytics}\\[3pt]
+  \textbf{Entity:} student\\
+  \textbf{Bad outcome:} failure\\
+  \textbf{Trace:} clickstream\\
+  \textbf{Budget:} adviser hours};
+
+\node[d=lensPM]  (pm) at (3.85,-3.0)  {%
+  {\color{lensPM}\bfseries\faIcon{tasks}~Project Management}\\[3pt]
+  \textbf{Entity:} sprint\\
+  \textbf{Bad outcome:} overrun\\
+  \textbf{Trace:} ticket activity\\
+  \textbf{Budget:} attention};
+
+\node[d=lensIOT] (io) at (7.7,-3.0)   {%
+  {\color{lensIOT}\bfseries\faIcon{microchip}~Internet of Things}\\[3pt]
+  \textbf{Entity:} motor\\
+  \textbf{Bad outcome:} failure\\
+  \textbf{Trace:} telemetry\\
+  \textbf{Budget:} technicians};
+
+\node[d=lensSEC] (se) at (11.55,-3.0) {%
+  {\color{lensSEC}\bfseries\faIcon{shield-alt}~Cybersecurity}\\[3pt]
+  \textbf{Entity:} account\\
+  \textbf{Bad outcome:} compromise\\
+  \textbf{Trace:} auth logs\\
+  \textbf{Budget:} analysts};
+
+\foreach \n in {la,pm,io,se}{\draw[arr] (c) -- (\n);}
+
+\node[anchor=west, align=left, text width=13.8cm, font=\tiny, text=accent!75!black]
+     at (-2.0,-4.6)
+     {\textbf{The differences that matter are not technical.} All four are rare-outcome
+      detection on behavioural time series with a hard capacity constraint. What differs
+      is the \emph{base rate} (from 8\% to 0.01\%), the \emph{ground-truth lag} (a term,
+      a fortnight, a quarter, never), whether the entity \emph{knows} it is being modelled
+      and adapts, and what happens to a person when you are wrong. Those four differences
+      determine your design.};
+\end{tikzpicture}}%
+{The common structure beneath the four domains. Recognising it is the point of the whole
+handout: the technique transfers, and the constraints do not.}{capstone-common}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{2.9cm}p{2.5cm}p{2.5cm}p{2.5cm}p{2.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{Learning} & \textbf{Projects} & \textbf{IoT} & \textbf{Security} \\
+\midrule
+\endhead
+Base rate & $\sim$8\% & $\sim$50\% & $\sim$0.2\% & $\sim$0.001\% \\
+Rows available & thousands & \textbf{dozens} & millions & billions \\
+Labels? & yes, lagged & yes, few & \textbf{rarely} & few, biased \\
+Ground-truth lag & one term & one sprint & months & often never \\
+Adversarial? & mildly & no & no & \textbf{yes} \\
+Cost of a miss & a lost student & a late release & a line stoppage & a breach \\
+Cost of a false alarm & a wasted call & lost credibility & a wasted inspection & analyst time \\
+Fairness stakes & \textbf{very high} & high & low & moderate \\
+Right primary metric & recall @ capacity & $F_1$ / interval & recall + lead time & precision @ capacity \\
+Right model class & interpretable & \textbf{very simple} & boosting / anomaly & ensemble + anomaly \\
+Right validation & walk-forward, by cohort & chronological & by device \& time & strictly chronological \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Read That Table Downwards, Then Across]
+Downwards, it is four independent project briefs. Across, it is the answer to
+``what actually changes between domains?'' --- and the answer is almost never the
+algorithm. It is the base rate, the labels, the lag, the adversary and the stakes.
+A graduate who can reason across that table is employable in all four fields.
+\end{conceptbox}
+
+\section{The Capstone Brief}
+
+\begin{definitionbox}[Your Task]
+Choose \textbf{one} domain from \dsref{capstone-common}. Execute a complete project
+on it, from framing to monitoring plan. Then write one page explaining how your
+design would have to change if you moved it to a \emph{different} one of the four
+--- naming the specific constraint that forces each change.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  st/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!50!black,
+             text width=2.45cm, align=center, font=\tiny\bfseries, minimum height=0.85cm},
+  arr/.style={-{Stealth[length=2mm]}, primary!55, line width=0.95pt},
+  ch/.style={font=\tiny\itshape, text=gray!55!black, align=center, text width=2.6cm}]
+
+\node[st=primary]   (a) at (0,0)      {1. FRAME\\{\tiny 6 questions}};
+\node[st=secondary] (b) at (2.85,0)   {2. AUDIT\\{\tiny 6 dimensions}};
+\node[st=tealhl]    (c) at (5.7,0)    {3. EXPLORE};
+\node[st=goldhl]    (d) at (8.55,0)   {4. BASELINE};
+\node[st=greenhl]   (e) at (11.4,0)   {5. FEATURES};
+\node[st=purplehl]  (f) at (0,-2.55)  {6. MODEL};
+\node[st=accent]    (g) at (2.85,-2.55){7. EVALUATE\\{\tiny \& threshold}};
+\node[st=lensSEC]   (h) at (5.7,-2.55) {8. FAIRNESS\\{\tiny \& explain}};
+\node[st=lensIOT]   (i) at (8.55,-2.55){9. DEPLOY\\{\tiny plan}};
+\node[st=lensPM]    (j) at (11.4,-2.55){10. MONITOR\\{\tiny plan}};
+
+\foreach \x/\y in {a/b,b/c,c/d,d/e}{\draw[arr] (\x) -- (\y);}
+\draw[arr] (e.south) .. controls +(0,-1.1) and +(0,1.1) .. (f.north);
+\foreach \x/\y in {f/g,g/h,h/i,i/j}{\draw[arr] (\x) -- (\y);}
+
+\node[ch] at (0,-1.1)     {Ch.\ 2 --- decision, unit, target, timing, criterion, baseline};
+\node[ch] at (2.85,-1.1)  {Ch.\ 3, 7 --- quality, missingness, leakage};
+\node[ch] at (5.7,-1.1)   {Ch.\ 8 --- distributions, relationships, confounders};
+\node[ch] at (8.55,-1.1)  {Ch.\ 11 --- beat it or stop};
+\node[ch] at (11.4,-1.1)  {Ch.\ 15, 19 --- windows, lags, recency, trend};
+\node[ch] at (0,-3.65)    {Ch.\ 12--18 --- simplest that works};
+\node[ch] at (2.85,-3.65) {Ch.\ 14 --- PR curve, cost-based threshold};
+\node[ch] at (5.7,-3.65)  {Ch.\ 28 --- subgroups, counterfactuals};
+\node[ch] at (8.55,-3.65) {Ch.\ 24, 27 --- where, how, rollback};
+\node[ch] at (11.4,-3.65) {Ch.\ 27 --- four layers, drift, retrain};
+\end{tikzpicture}}%
+{The ten-step capstone process, with the chapter that supplies each step. If you can carry
+a problem through all ten and justify each choice, you have completed this
+course.}{capstone-steps}
+
+\section{The Four Deliverables}
+
+\rowcolors{2}{white}{defbg}
+\begin{longtable}{@{}p{3.4cm}p{4.4cm}p{6.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Artefact} & \textbf{Audience} & \textbf{Must contain} \\
+\midrule
+\endhead
+Technical report (8--12 pp) & Peer / examiner & Framing, audit, method, validation scheme, results with uncertainty, subgroup performance, limitations (\chref{research}) \\
+Reproducible repository & Anyone, in a year & Pinned environment, fixed seeds, one command that regenerates every figure (\chref{research}) \\
+One-page decision brief & The sponsor & Bottom line up front, cost, recommendation, the one caveat that changes the decision (\chref{communication}) \\
+Model card & The record & Intended and out-of-scope use, data, subgroup metrics, ethical review, contest route (\chref{ethics}) \\
+\bottomrule
+\end{longtable}
+
+\section{Marking Rubric --- Assess Yourself First}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{3.6cm}p{1.3cm}p{4.3cm}p{4.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Criterion} & \textbf{Weight} & \textbf{Strong work} & \textbf{Weak work} \\
+\midrule
+\endhead
+Framing & 15\% & All six questions answered; baseline identified before modelling & ``Predict X'' with no decision or baseline \\
+Data handling & 15\% & Audited, leakage checked, missingness mechanism reasoned about & Loaded and modelled \\
+Method choice & 15\% & Simplest adequate model, justified by a constraint & Most complex model available, unjustified \\
+Evaluation & 20\% & Right metric for the base rate; threshold from costs; validation matches deployment & Accuracy on a random split \\
+Ethics \& fairness & 15\% & Subgroup metrics, criterion chosen and defended, contest route & Mentioned in a closing paragraph \\
+Operations & 10\% & Deployment tier justified; four-layer monitoring; retraining trigger & ``Then we deploy it'' \\
+Communication & 10\% & Conclusion first; uncertainty in natural frequencies; three audiences served & Method narrated chronologically \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The Three Things That Sink Capstone Projects]
+\begin{tightnum}
+  \item \textbf{An unbelievably good result.} 99\% accuracy on a hard problem is
+        leakage until proven otherwise (\chref{wrangling}). Examiners check this
+        first, and finding it yourself is worth more marks than hiding it.
+  \item \textbf{Accuracy on an imbalanced problem.} Reporting 97\% where 97\% is the
+        majority class demonstrates that \chref{evaluation} was not understood.
+  \item \textbf{No baseline.} Without it, no result can be shown to be worth
+        anything, and the entire project is unassessable.
+\end{tightnum}
+\end{alertbox}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{The Same Project, Moved}
+\lensLA{\emph{If you built here and moved elsewhere:} your interpretable model and
+counterfactual explanations were driven by the fairness stakes of modelling people.
+Moving to IoT, that constraint disappears and you may use a black box freely ---
+which is a genuine gain in accuracy, obtained by leaving the hardest constraint
+behind. State that honestly rather than claiming the model improved.}
+
+\lensPM{\emph{If you built here:} your entire design was shaped by $n \approx 40$.
+Moving to security, you gain billions of rows and lose the ability to inspect them,
+so cross-validation stops being the bottleneck and label quality becomes it.
+Conversely, moving \emph{into} project management from any other domain, expect to
+discard your model class entirely --- ensembles cannot be justified on 40 rows.}
+
+\lensIOT{\emph{If you built here:} you had abundant data and almost no labels, so
+you used anomaly detection. Moving to learning analytics, labels appear but rows
+collapse from millions to thousands, and --- decisively --- the entity becomes a
+person with rights. Every architectural freedom you enjoyed at the edge is replaced
+by an accountability requirement.}
+
+\lensSEC{\emph{If you built here:} you designed against an adversary, chose features
+by manipulation cost, and worked backwards from analyst capacity. Moving to IoT, the
+adversary vanishes and you may use the cheap, obvious features you previously had to
+avoid. Moving \emph{into} security from anywhere else, the reverse holds, and it is
+the single largest adjustment in this book: you must now assume your model will be
+studied and attacked.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[The Capstone Skeleton]
+\begin{lstlisting}[language=Python]
+"""capstone.py -- one command regenerates every figure in the report."""
+import random, numpy as np
+SEED = 42
+random.seed(SEED); np.random.seed(SEED)
+
+# ---- 1. FRAME (Ch 2) -- written down BEFORE any data is loaded --------
+FRAME = {
+    "decision":  "Which 20% of entities receive the limited intervention.",
+    "unit":      "one entity per week",
+    "target":    "bad outcome within the next 30 days",
+    "timing":    "features from strictly before the prediction point",
+    "criterion": "recall >= 0.70 at a flag rate <= 0.20",
+    "baseline":  "current rule; measure it FIRST",
+}
+
+# ---- 2-3. AUDIT and EXPLORE (Ch 3, 7, 8) ------------------------------
+audit(df)                     # completeness, validity, uniqueness, volume
+assert not leaks(features, cutoff=PREDICTION_TIME)   # Ch 7: the fatal error
+
+# ---- 4. BASELINE FIRST (Ch 11). Never skip. ---------------------------
+base = current_rule(df)
+print("baseline:", score(base))          # everything is measured against this
+
+# ---- 5-6. FEATURES and MODEL (Ch 15, 19) ------------------------------
+X = build_features(df)        # windows, lags, recency, trend, per-entity z-scores
+model = fit(X, y, cv=correct_cv_for_domain())   # walk-forward / group / stratified
+
+# ---- 7. EVALUATE: right metric, cost-based threshold (Ch 14) ----------
+report_pr_curve(model, X_te, y_te)                   # NOT roc if positives are rare
+thr = threshold_from_costs(cost_fp=COST_FP, cost_fn=COST_FN)
+
+# ---- 8. FAIRNESS (Ch 28) ---------------------------------------------
+fairness_report(y_te, y_pred, y_score, group=protected_attribute)
+assert recall_gap() < 0.05, "subgroup recall gap too large -- do not deploy"
+
+# ---- 9-10. DEPLOY and MONITOR plans (Ch 24, 27) ----------------------
+write_model_card(FRAME, metrics, subgroup_metrics, limitations, contest_route)
+write_monitoring_plan(layers=["inputs", "predictions", "outcomes", "business"])
+\end{lstlisting}
+
+\textbf{Notice what this skeleton enforces:} the frame exists before the data, the
+baseline exists before the model, the leakage check is an assertion rather than an
+intention, and the fairness gap can block deployment. Those four lines are the
+difference between a student project and a professional one.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Your capstone model reaches 0.97 accuracy on a problem where 6\% of cases are
+        positive. What are the first two things you check, in order?
+  \item You built for IoT and are asked to move the approach to learning analytics.
+        Name the three constraints that change and what each forces you to do
+        differently.
+  \item Which single deliverable of the four would a sponsor read, and what must be
+        in its first two sentences?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item All four course domains are the same problem: early detection of rare bad
+        outcomes from behavioural traces under a capacity constraint.
+  \item What differs between them is the base rate, label availability,
+        ground-truth lag, the presence of an adversary and the human stakes --- not
+        the algorithm.
+  \item The ten-step process runs framing $\rightarrow$ audit $\rightarrow$ explore
+        $\rightarrow$ baseline $\rightarrow$ features $\rightarrow$ model
+        $\rightarrow$ evaluate $\rightarrow$ fairness $\rightarrow$ deploy
+        $\rightarrow$ monitor.
+  \item Deliver four artefacts: technical report, reproducible repository, one-page
+        decision brief, model card.
+  \item Projects fail on leakage, on accuracy under imbalance, and on the absence of
+        a baseline --- all three preventable in the first week.
+  \item The mark of competence is not building the most complex model, but choosing
+        the simplest one the constraints permit and saying which constraint forced
+        each choice.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(Short)} State, in one sentence each, the four properties that
+        distinguish the course's domains from one another.
+  \item \textbf{(Short)} Why is ``we used gradient boosting because it was most
+        accurate'' a weaker justification than ``we used logistic regression because
+        advisers must be able to explain the decision to a student''?
+  \item \textbf{(Short)} Give the three checks an examiner performs first on a
+        suspiciously good result.
+  \item \textbf{(Applied)} Complete the full ten-step process for one domain of your
+        choice. Produce all four deliverables. Then write the one-page transfer
+        analysis required by the brief.
+  \item \textbf{(Applied)} Take a project you have already completed --- in this or
+        another module --- and mark it against the rubric above. Identify the two
+        criteria on which it scored worst and write what you would do differently.
+  \item \textbf{(Applied)} You are given 40 sprints of project data and asked for a
+        completion-risk model. Write the honest one-paragraph response you would send
+        the sponsor, including what you can and cannot deliver, and what you would do
+        instead.
+\end{reviewq}
+
+\begin{center}
+\vspace{6pt}
+\begin{tcolorbox}[enhanced, width=0.94\textwidth, colback=primary!5,
+  colframe=primary, boxrule=0pt, leftrule=5pt, arc=3pt, top=8pt, bottom=8pt]
+\small
+\textbf{\color{primary}A closing word.} You began this handout being told that data
+science turns data into understanding and action. Thirty-two chapters later, the
+part that turned out to be hard was never the modelling. It was framing the question
+so that an answer would matter, getting data honest enough to trust, choosing a
+metric that reflected the real cost of being wrong, and explaining the result to
+someone who had to act on it. The algorithms are the easy part, and they are
+freely available to everyone. The judgement is not.
+\end{tcolorbox}
+\end{center}

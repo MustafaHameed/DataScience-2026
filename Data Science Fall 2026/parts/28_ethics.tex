@@ -1,0 +1,399 @@
+%=====================================================================
+\chapter{Responsible AI and Data Ethics}\label{ch:ethics}
+%=====================================================================
+\locator{6}{Part VI --- Professional Practice}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Identify} where bias enters a data science system, at each of five stages.
+  \item \textbf{Compute} and \textbf{compare} the main fairness metrics, and explain why they cannot all hold at once.
+  \item \textbf{Apply} the core data-protection principles to a project design.
+  \item \textbf{Choose} an explainability technique appropriate to the audience and the stakes.
+  \item \textbf{Conduct} a structured ethical review before deployment.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{evaluation} (metrics --- fairness metrics are confusion matrices computed per
+group) and \chref{causality} (proxies and confounding).
+\end{prereq}
+
+\begin{keyterms}
+algorithmic bias $\bullet$ protected attribute $\bullet$ proxy variable $\bullet$
+demographic parity $\bullet$ equal opportunity $\bullet$ equalised odds $\bullet$
+calibration $\bullet$ impossibility result $\bullet$ personal data $\bullet$ consent
+$\bullet$ data minimisation $\bullet$ purpose limitation $\bullet$ anonymisation
+$\bullet$ explainability $\bullet$ SHAP $\bullet$ LIME $\bullet$ model card
+\end{keyterms}
+
+\section{Why This Chapter Is Not Optional}
+
+\begin{conceptbox}[The Position This Chapter Takes]
+Everything in this book so far optimises a number. This chapter is about the
+questions that number cannot answer: whether the system should exist, who it
+affects, who can contest it, and what happens when it is wrong about a particular
+person. A technically excellent system that fails these questions is a failed
+system --- and increasingly, an unlawful one.
+\end{conceptbox}
+
+\section{Where Bias Enters}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  s/.style={rounded corners=3pt, draw=accent, fill=accent!8, text=accent!65!black,
+            text width=2.35cm, align=center, font=\tiny\bfseries, minimum height=0.85cm},
+  ex/.style={font=\tiny, text=gray!55!black, align=center, text width=2.6cm},
+  arr/.style={-{Stealth[length=2mm]}, accent!55, line width=0.9pt}]
+
+\node[s] (a) at (0,0)     {1. THE WORLD};
+\node[s] (b) at (2.85,0)  {2. COLLECTION};
+\node[s] (c) at (5.7,0)   {3. LABELS};
+\node[s] (d) at (8.55,0)  {4. MODEL};
+\node[s] (e) at (11.4,0)  {5. DEPLOYMENT};
+
+\foreach \x/\y in {a/b,b/c,c/d,d/e}{\draw[arr] (\x) -- (\y);}
+
+\node[ex] at (0,-1.35)     {Historical inequity is real. Data recording it faithfully is
+                            \emph{accurate} and still unjust to learn from.};
+\node[ex] at (2.85,-1.35)  {Who is missing? A VLE-only survey never reaches students who
+                            stopped logging in.};
+\node[ex] at (5.7,-1.35)   {``Good employee'' = past promotions, which encode past bias.
+                            The label is the judgement.};
+\node[ex] at (8.55,-1.35)  {Optimising overall accuracy sacrifices minority groups ---
+                            they cost the loss function least.};
+\node[ex] at (11.4,-1.35)  {Feedback loops: policing where you predicted crime generates
+                            the data that confirms it.};
+
+\node[anchor=west, align=left, text width=13.6cm, font=\tiny, text=primary!60!black]
+     at (-1.3,-3.1)
+     {\textbf{Removing the protected attribute does not remove the bias.} Postcode
+      predicts ethnicity; school attended predicts class; typing speed and device type
+      predict disability and income. A model denied a protected attribute will
+      reconstruct it from \term{proxy variables} --- and will do so \emph{silently}, so
+      you cannot even measure the problem. Keep the attribute for measurement; control
+      its use in the decision.};
+\end{tikzpicture}}%
+{Five stages at which bias enters. Only stage 4 is a modelling problem; the other four
+are design, data and deployment problems, which is why fairness cannot be fixed by
+choosing a different algorithm.}{bias-stages}
+
+\section{Fairness Metrics --- and Why You Cannot Have Them All}
+
+\begin{definitionbox}[Three Common Fairness Criteria]
+\term{Demographic parity}: the flag rate is equal across groups,
+$P(\hat{y}=1 \mid A{=}a)$ equal for all $a$.\\[2pt]
+\term{Equal opportunity}: recall is equal across groups,
+$P(\hat{y}=1 \mid y{=}1, A{=}a)$ equal for all $a$.\\[2pt]
+\term{Calibration}: a score of 0.7 means the same thing in every group,
+$P(y{=}1 \mid \hat{p}{=}s, A{=}a)$ equal for all $a$.
+\end{definitionbox}
+
+\begin{worked}[The Impossibility Result, in Numbers]
+A dropout model is evaluated on two groups. Group A has a genuine base rate of 20\%;
+group B, for reasons of prior disadvantage entirely outside the model, has 40\%.
+
+\smallskip
+\textbf{Suppose the model is well calibrated} in both groups --- a score of 0.6
+means a 60\% chance of failing, whoever you are. This is usually considered the
+minimum requirement for a score to be honest.
+
+\smallskip
+\textbf{Then flag rates cannot be equal.} Group B contains twice as many genuine
+cases, so any calibrated model flags roughly twice as many of them. Demographic
+parity is violated by construction.
+
+\smallskip
+\textbf{Force demographic parity instead} --- flag 25\% of each group. Now you must
+use a lower threshold for A and a higher one for B. In group B, students at genuine
+risk are left unflagged so the quota can be met; in group A, students who are fine
+are flagged. The score no longer means the same thing in each group, so calibration
+is broken.
+
+\smallskip
+\textbf{This is not a defect of your model.} It is a theorem: when base rates differ
+between groups, calibration and equal error rates cannot both hold, except in the
+degenerate case of a perfect classifier. You must \emph{choose} which fairness
+criterion your context demands, state the choice explicitly, and justify it --- and
+no amount of technical work will let you avoid the choice.
+
+\smallskip
+\textbf{How to choose here.} The intervention is supportive (a phone call offering
+help), not punitive, and capacity is limited. Equal opportunity is the defensible
+target: a student at genuine risk should have the same chance of being offered help
+regardless of group. That is a value judgement, made by the institution, recorded in
+writing --- not a hyperparameter.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=3 by 1, horizontal sep=0.9cm},
+  width=5.35cm, height=4.0cm,
+  axis lines=left, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+  ybar={9pt}, ymin=0, ymax=0.72,
+  symbolic x coords={Group A, Group B}, xtick=data,
+  legend style={font=\tiny, draw=gray!40, at={(0.5,-0.22)}, anchor=north, legend columns=2},
+]
+\nextgroupplot[title={Calibrated model}, ylabel={rate}]
+\addplot[draw=primary, fill=primary!35] coordinates {(Group A,0.20) (Group B,0.40)};
+\addplot[draw=goldhl, fill=goldhl!45] coordinates {(Group A,0.22) (Group B,0.43)};
+\legend{true rate, flag rate}
+\node[font=\tiny, accent, align=center, anchor=north] at (axis cs:Group A,0.70)
+     {flag rates differ};
+
+\nextgroupplot[title={Forced demographic parity}]
+\addplot[draw=primary, fill=primary!35] coordinates {(Group A,0.20) (Group B,0.40)};
+\addplot[draw=goldhl, fill=goldhl!45] coordinates {(Group A,0.30) (Group B,0.30)};
+\node[font=\tiny, accent, align=center, anchor=north] at (axis cs:Group A,0.70)
+     {equal flags,\\but B under-served};
+
+\nextgroupplot[title={Equal opportunity (recall)}]
+\addplot[draw=secondary, fill=secondary!35] coordinates {(Group A,0.78) (Group B,0.77)};
+\addplot[draw=accent, fill=accent!35] coordinates {(Group A,0.09) (Group B,0.11)};
+\legend{recall, false-positive rate}
+\node[font=\tiny, greenhl!45!black, align=center, anchor=north] at (axis cs:Group A,0.70)
+     {equal chance of\\being helped};
+\end{groupplot}
+\end{tikzpicture}}%
+{The same model under three fairness criteria. Each panel is defensible in some context
+and indefensible in others. The professional obligation is to choose deliberately and say
+so, not to achieve all three.}{fairness-metrics}
+
+\section{Privacy and Data Protection}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{3.2cm}p{4.8cm}p{6.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Principle} & \textbf{Means} & \textbf{In practice, for your project} \\
+\midrule
+\endhead
+Lawful basis & You need a legal reason to process & Identify it before collection, not after the model works \\
+Purpose limitation & Use it only for the stated purpose & Attendance collected for registers may not be repurposed for risk scoring without a new basis \\
+Data minimisation & Collect only what you need & Every extra field is liability. Justify each one \\
+Accuracy & Keep it correct and current & Stale data produces wrong decisions about real people \\
+Storage limitation & Delete when no longer needed & Set retention at creation; nobody deletes later \\
+Security & Protect it appropriately & Encryption, access control, audit logs (\chref{cybersecurity}) \\
+Accountability & Be able to demonstrate compliance & Documentation, lineage (\chref{dataeng}), model cards \\
+Rights of the individual & Access, rectification, objection, explanation & You must be able to say why \emph{this person} was scored as they were \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Anonymisation Is Harder Than It Looks]
+Removing names is \emph{pseudonymisation}, not anonymisation. A combination of
+postcode, date of birth and gender identifies most individuals uniquely; a single
+student's timetable plus a few timestamps identifies them in any campus dataset.
+Assume re-identification is possible unless you have specifically tested otherwise,
+and treat pseudonymised data as personal data --- because legally, it usually is.
+\end{alertbox}
+
+\section{Explainability}
+
+\rowcolors{2}{white}{defbg}
+\begin{longtable}{@{}p{3.0cm}p{4.6cm}p{6.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Technique} & \textbf{Gives you} & \textbf{Use when} \\
+\midrule
+\endhead
+Use a simple model & Global, exact, free & The stakes are high and a small accuracy loss is acceptable --- often the right answer \\
+Coefficients / odds ratios & Global, exact & Linear or logistic models (\chref{classification}) \\
+Permutation importance & Global, model-agnostic & ``Which features matter overall?'' (\chref{features}) \\
+SHAP & Per-prediction contribution of each feature, with a consistency guarantee & You must explain \emph{this} decision to \emph{this} person \\
+LIME & Local linear approximation around one prediction & Quick local intuition; less stable than SHAP \\
+Counterfactual & ``Had X been different, the decision would change'' & \textbf{The most actionable form} --- it tells the person what to do \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Explain to the Audience, Not to Yourself]
+A SHAP force plot satisfies a data scientist. A student needs: \emph{``You were
+flagged mainly because you have not submitted since week 2. Submitting this week's
+work would remove the flag.''} That is a counterfactual explanation, and it is the
+only kind that gives the person a route to a different outcome. If your explanation
+does not tell someone what they could do differently, it is documentation rather
+than accountability.
+\end{conceptbox}
+
+\section{An Ethical Review You Can Actually Run}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  q/.style={rounded corners=3pt, draw=#1, fill=#1!7, text width=4.1cm, align=left,
+            font=\tiny, inner sep=5pt, minimum height=2.5cm},
+  hd/.style={rounded corners=3pt, fill=#1, text=white, font=\tiny\bfseries,
+             text width=4.1cm, align=center, minimum height=0.5cm}]
+
+\node[hd=primary] at (0,0)     {BEFORE YOU BUILD};
+\node[q=primary]  at (0,-1.65) {%
+  $\square$ Who is affected, including people who are not the customer?\\[3pt]
+  $\square$ What is the worst outcome for the \emph{worst-affected individual}, not on
+  average?\\[3pt]
+  $\square$ Is there a less invasive way to achieve the same goal?\\[3pt]
+  $\square$ Would we be comfortable if this were reported publicly?};
+
+\node[hd=goldhl] at (4.75,0)     {WHILE YOU BUILD};
+\node[q=goldhl]  at (4.75,-1.65) {%
+  $\square$ Which groups can we measure performance for?\\[3pt]
+  $\square$ Do error rates differ across them, and by how much?\\[3pt]
+  $\square$ Which fairness criterion have we chosen, and who signed off?\\[3pt]
+  $\square$ What proxies for protected attributes are in the feature set?};
+
+\node[hd=greenhl] at (9.5,0)     {BEFORE YOU DEPLOY};
+\node[q=greenhl]  at (9.5,-1.65) {%
+  $\square$ Can we explain any single decision to the person it concerns?\\[3pt]
+  $\square$ How does someone contest a decision, and who reviews it?\\[3pt]
+  $\square$ What is the human's role --- decide, review, or rubber-stamp?\\[3pt]
+  $\square$ What monitoring would tell us it has started harming someone?};
+
+\node[anchor=west, align=left, text width=13.6cm, font=\tiny, text=accent!75!black]
+     at (-2.3,-3.5)
+     {\textbf{The two questions that do most of the work} are ``what is the worst outcome
+      for the worst-affected individual?'' --- because averages hide exactly the harm you
+      need to see --- and ``how does someone contest this?'' --- because a system with no
+      appeal route is not a decision-support tool, it is an unaccountable authority.};
+\end{tikzpicture}}%
+{A three-stage ethical review. It takes about an hour, requires no specialist training,
+and catches most of what goes wrong.}{ethics-review}
+
+\begin{definitionbox}[Model Card]
+A short standard document accompanying every deployed model: its intended use,
+out-of-scope uses, training data and its limitations, performance overall
+\emph{and by subgroup}, ethical considerations, and contact details for challenge.
+It is the accountability artefact that makes the rest of this chapter auditable.
+\end{definitionbox}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Responsible Practice}
+\lensLA{The highest-stakes lens in this book, because the subjects are identifiable
+young people with limited power in the relationship. \emph{Specific risks:}
+self-fulfilling prophecy --- a student told they are ``high risk'' may disengage
+further; proxy discrimination via postcode, school and device type; and mission
+creep from support into assessment. \emph{Requirements:} equal opportunity as the
+fairness criterion, counterfactual explanations given to the student, a human
+adviser who can and does overrule the model, and a stated route to contest. Never
+show a raw risk score to a student.}
+
+\lensPM{Predicting which teams or individuals will underperform edges quickly into
+workplace surveillance. \emph{Rule of thumb:} model the \emph{work}, not the
+\emph{worker}. Forecasting sprint completion is legitimate; ranking developers by
+predicted productivity is a different activity with employment-law consequences and
+predictable effects on behaviour --- people optimise whatever is measured, usually
+at the expense of what is not.}
+
+\lensIOT{Sensing is easy to deploy and hard to consent to. Occupancy and movement
+data is personal data the moment it can be linked to an individual, which is more
+often than designers assume. \emph{Practices:} aggregate at the edge so that raw
+identifiable data never leaves the device (\chref{cloudedge}), set retention short
+and enforce it, and post clear notice where sensing occurs. ``We only store counts''
+is only true if you engineered it to be.}
+
+\lensSEC{Security work involves monitoring colleagues, which is legitimate and
+requires limits. \emph{Practices:} proportionality --- monitor what the threat
+justifies, not what is technically possible; access to raw logs restricted and
+itself audited; and a documented process for when monitoring surfaces something
+non-security-related. Note also the dual-use problem: the techniques in
+\chref{cybersecurity} defend systems and also enable surveillance, and the
+difference lies entirely in governance rather than in the code.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Measuring Fairness]
+\begin{lstlisting}[language=Python]
+import numpy as np, pandas as pd
+from sklearn.metrics import confusion_matrix
+
+def fairness_report(y_true, y_pred, y_score, group):
+    """Fairness metrics are just per-group confusion matrices (Chapter 14)."""
+    rows = []
+    for g in pd.unique(group):
+        m = group == g
+        tn, fp, fn, tp = confusion_matrix(y_true[m], y_pred[m]).ravel()
+        rows.append({
+            "group":      g,
+            "n":          int(m.sum()),
+            "base_rate":  round(y_true[m].mean(), 3),
+            "flag_rate":  round(y_pred[m].mean(), 3),   # demographic parity
+            "recall":     round(tp / (tp + fn), 3),     # equal opportunity
+            "precision":  round(tp / (tp + fp), 3),
+            "fpr":        round(fp / (fp + tn), 3),     # equalised odds (with recall)
+        })
+    df = pd.DataFrame(rows)
+
+    print(df.to_string(index=False))
+    print(f"\nmax recall gap    : {df.recall.max() - df.recall.min():.3f}")
+    print(f"max flag-rate gap : {df.flag_rate.max() - df.flag_rate.min():.3f}")
+    print("NOTE: if base rates differ, these two gaps CANNOT both be zero.")
+    return df
+
+# --- calibration check: does 0.7 mean 0.7 for everyone? ---------------
+def calibration_by_group(y_true, y_score, group, bins=5):
+    q = pd.qcut(y_score, bins, labels=False, duplicates="drop")
+    tab = (pd.DataFrame({"bin": q, "y": y_true, "g": group})
+             .groupby(["g", "bin"])["y"].mean().unstack())
+    print("\nobserved rate per score bin, per group:")
+    print(tab.round(3))     # rows should be similar; large differences = miscalibration
+
+# --- proxy detection: can group be predicted from the features? -------
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import cross_val_score
+proxy_auc = cross_val_score(RandomForestClassifier(n_estimators=200),
+                            X, group, cv=5, scoring="roc_auc").mean()
+print(f"\ngroup predictable from features: AUC {proxy_auc:.3f}")
+# AUC well above 0.5 means proxies exist -- dropping the protected attribute
+# achieved nothing except making the bias unmeasurable.
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item You remove \texttt{gender} from the feature set. Has the model become fair?
+        What test would you run to find out?
+  \item Two groups have base rates of 15\% and 35\%. Can a calibrated model also
+        achieve demographic parity? Explain.
+  \item A student asks why they were flagged. Which explainability technique gives
+        them something they can act on, and what does the explanation look like?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Bias enters at five stages; only one is a modelling problem, so no algorithm
+        choice fixes it.
+  \item Removing a protected attribute does not remove bias --- proxies reconstruct
+        it and make it unmeasurable. Retain it for measurement, control its use.
+  \item Demographic parity, equal opportunity and calibration cannot all hold when
+        base rates differ. Choose deliberately, document the choice, and have it
+        signed off.
+  \item Data protection principles --- lawful basis, purpose limitation,
+        minimisation, retention, security, accountability, individual rights ---
+        constrain project design from the start.
+  \item Pseudonymisation is not anonymisation; assume re-identification is possible.
+  \item Explain to the audience. Counterfactual explanations are the only kind that
+        give a person a route to a different outcome.
+  \item Run the three-stage review, and publish a model card.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Equal opportunity requires equality across groups of:
+        (a)~flag rate (b)~recall (c)~precision (d)~accuracy.
+  \item \textbf{(MCQ)} Postcode used as a feature is problematic mainly because it is:
+        (a)~high-cardinality (b)~a proxy for protected attributes (c)~missing often
+        (d)~nominal.
+  \item \textbf{(Short)} State the impossibility result in your own words and explain
+        what it obliges a practitioner to do.
+  \item \textbf{(Short)} Distinguish pseudonymisation from anonymisation, with an
+        example of re-identification.
+  \item \textbf{(Short)} Why is a counterfactual explanation more useful to an
+        affected individual than a feature-importance chart?
+  \item \textbf{(Applied)} Write a model card for the dropout-prediction model used
+        throughout this book: intended use, out-of-scope use, data, subgroup
+        performance you would report, limitations, and the contest route.
+  \item \textbf{(Applied)} A university proposes webcam-based exam proctoring with
+        automated cheating detection. Run the three-stage ethical review of
+        \dsref{ethics-review} and give a recommendation with conditions.
+\end{reviewq}

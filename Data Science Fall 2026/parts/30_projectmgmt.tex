@@ -1,0 +1,343 @@
+%=====================================================================
+\chapter{Managing Data Science Projects}\label{ch:projectmgmt}
+%=====================================================================
+\locator{6}{Part VI --- Professional Practice}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why data science projects fail differently from software projects.
+  \item \textbf{Structure} a project as a sequence of decision gates rather than a fixed plan.
+  \item \textbf{Estimate} work whose outcome is genuinely unknown.
+  \item \textbf{Select} metrics and build a dashboard that supports delivery decisions.
+  \item \textbf{Identify} and \textbf{mitigate} the risks specific to AI-enabled projects.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{lifecycle} (CRISP-DM, framing, business versus model metrics),
+\chref{mlops} (what ``done'' actually means) and \chref{ethics}.
+\end{prereq}
+
+\begin{keyterms}
+project lifecycle $\bullet$ scope, time, cost, quality $\bullet$ agile $\bullet$
+sprint $\bullet$ velocity $\bullet$ spike $\bullet$ decision gate $\bullet$
+technical debt $\bullet$ reference class forecasting $\bullet$ leading and lagging
+indicator $\bullet$ RAID log $\bullet$ stakeholder
+\end{keyterms}
+
+\section{Why Data Science Projects Are Different}
+
+\begin{alertbox}[The Property That Breaks Normal Planning]
+In a software project you know at the outset that the feature can be built; the
+uncertainty is how long it takes. In a data science project you do not know whether
+the thing is \emph{possible at all} until you have done a substantial part of the
+work. The signal may not be in the data. No amount of planning discipline removes
+this, and a plan that pretends otherwise will be wrong.
+\end{alertbox}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{3.4cm}p{5.1cm}p{5.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{Software project} & \textbf{Data science project} \\
+\midrule
+\endhead
+Feasibility & Known at the start & \textbf{Unknown until you try} \\
+Definition of done & Acceptance criteria pass & A metric threshold that may be unreachable \\
+Estimation & Reference classes work reasonably & Highly unreliable before the data is understood \\
+Main risk & Scope creep & \textbf{The data does not support the question} \\
+After delivery & Maintenance & \textbf{Continuous retraining and monitoring} (\chref{mlops}) \\
+Biggest cost & Development & Data acquisition and preparation (\dsref{effort-split}) \\
+Failure mode & Late or over budget & Delivered, deployed, and quietly wrong \\
+\bottomrule
+\end{longtable}
+
+\section{Gates, Not a Plan}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  ph/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!50!black,
+             text width=2.5cm, align=center, font=\tiny\bfseries, minimum height=0.9cm},
+  g/.style={diamond, draw=accent, fill=accent!10, text=accent!70!black, aspect=1.7,
+            inner sep=1.5pt, font=\tiny\bfseries, align=center},
+  arr/.style={-{Stealth[length=2mm]}, primary!55, line width=0.95pt},
+  kill/.style={-{Stealth[length=2mm]}, accent!70, line width=0.9pt, dashed}]
+
+\node[ph=secondary] (a) at (0,0)     {FRAME\\{\tiny 1 week}};
+\node[g]            (g1) at (2.5,0)  {worth\\doing?};
+\node[ph=tealhl]    (b) at (5.0,0)   {DATA\\FEASIBILITY\\{\tiny 2 weeks}};
+\node[g]            (g2) at (7.6,0)  {signal\\present?};
+\node[ph=goldhl]    (c) at (10.2,0)  {BASELINE\\MODEL\\{\tiny 2 weeks}};
+\node[g]            (g3) at (12.8,0) {beats\\baseline?};
+
+\node[ph=greenhl]   (d) at (2.5,-2.4)  {PRODUCTION\\MODEL\\{\tiny 4 weeks}};
+\node[g]            (g4) at (5.4,-2.4) {ethics \&\\ops ready?};
+\node[ph=purplehl]  (e) at (8.3,-2.4)  {DEPLOY\\{\tiny shadow $\to$ canary}};
+\node[ph=primary]   (f) at (11.4,-2.4) {OPERATE\\{\tiny indefinitely}};
+
+\foreach \x/\y in {a/g1, g1/b, b/g2, g2/c, c/g3}{\draw[arr] (\x) -- (\y);}
+\draw[arr] (g3.south) .. controls +(0,-1.2) and +(0,1.2) .. (d.north);
+\foreach \x/\y in {d/g4, g4/e, e/f}{\draw[arr] (\x) -- (\y);}
+
+\node[ph=accent, minimum height=0.7cm] (stop) at (7.6,1.75) {STOP\\{\tiny and say so}};
+\foreach \n in {g1,g2,g3}{\draw[kill] (\n) -- (stop);}
+
+\node[anchor=west, align=left, text width=13.6cm, font=\tiny, text=primary!60!black]
+     at (-1.5,-3.85)
+     {\textbf{The gates are the management technique.} Each is a real decision point with
+      an explicit criterion agreed in advance, and each is allowed to end the project.
+      Total spend before the first go/no-go is one week; before the second, three. A
+      project killed at gate 2 for three weeks of effort is a \emph{success} of the
+      process --- the failure is the one that runs nine months and then discovers the
+      signal was never there.};
+\end{tikzpicture}}%
+{A data science project as a sequence of decision gates. Because feasibility is unknown at
+the start, the plan must be structured to discover it cheaply and to permit an honourable
+stop.}{project-gates}
+
+\begin{conceptbox}[Make Stopping Respectable]
+Teams continue doomed projects because stopping looks like failure. Fix this with
+process: name the gates and their criteria in the project charter, so that stopping
+at a gate is the plan working rather than the team losing. A group that has killed
+projects at gate 2 is more trustworthy than one that has never killed anything.
+\end{conceptbox}
+
+\section{Estimation Under Genuine Uncertainty}
+
+\begin{worked}[Estimating a Task Nobody Can Estimate]
+\emph{``How long to build the dropout model?''}
+
+\smallskip
+\textbf{The wrong answer:} ``six weeks'' --- a single number, which will be treated
+as a commitment and will be wrong.
+
+\smallskip
+\textbf{Better --- decompose by uncertainty type.}
+\begin{center}
+\begin{tabular}{@{}p{4.3cm}p{2.6cm}p{6.2cm}@{}}
+\toprule
+\textbf{Activity} & \textbf{Estimate} & \textbf{Why this confidence} \\
+\midrule
+Data access and permissions & 1--4 weeks & Depends on other people; historically the
+longest pole \\
+Data audit and cleaning & 2 weeks $\pm$1 & Similar to three past projects \\
+Feature engineering & 1--3 weeks & Depends on what the audit reveals \\
+Baseline model & 3 days & Genuinely routine \\
+Reaching the target metric & \textbf{unbounded} & \textbf{May be impossible} \\
+Deployment and monitoring & 2 weeks & Reference class exists \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{What to actually commit to.} Not the outcome, but the \emph{gate}:
+\emph{``In three weeks we will report whether the data contains enough signal to
+reach 70\% recall at 20\% flag rate. If it does, delivery is a further 6--8 weeks.
+If it does not, we will recommend stopping and explain why.''}
+
+\smallskip
+\textbf{Why this is better management, not evasion.} It commits to a date, a
+deliverable and a decision --- all of which are within the team's control --- and
+declines to commit to a result that is not. A stakeholder given this can plan; a
+stakeholder given ``six weeks'' cannot, because the number is fiction.
+\end{worked}
+
+\begin{definitionbox}[Spike]
+A strictly time-boxed investigation whose deliverable is \emph{knowledge}, not
+working software: ``spend three days determining whether the clickstream contains
+week-4 signal.'' The time box is the point --- it converts open-ended research into
+a bounded commitment.
+\end{definitionbox}
+
+\section{Metrics and Dashboards}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  hd/.style={rounded corners=3pt, fill=#1, text=white, font=\tiny\bfseries,
+             text width=4.15cm, align=center, minimum height=0.5cm},
+  b/.style={rounded corners=3pt, draw=#1, fill=#1!7, text width=4.15cm, align=left,
+            font=\tiny, inner sep=5pt, minimum height=2.5cm}]
+
+\node[hd=secondary] at (0,0)     {LEADING --- delivery health};
+\node[b=secondary]  at (0,-1.5)  {%
+  Available \emph{now}; predicts trouble.\\[3pt]
+  $\bullet$ gate criteria met / missed\\
+  $\bullet$ data access blockers open\\
+  $\bullet$ cycle time per experiment\\
+  $\bullet$ share of effort on rework\\[3pt]
+  \emph{Act on these.}};
+
+\node[hd=goldhl] at (4.75,0)     {LAGGING --- model quality};
+\node[b=goldhl]  at (4.75,-1.5)  {%
+  Available at each gate.\\[3pt]
+  $\bullet$ PR-AUC vs baseline\\
+  $\bullet$ recall at the agreed flag rate\\
+  $\bullet$ subgroup performance (\chref{ethics})\\
+  $\bullet$ stability across CV folds\\[3pt]
+  \emph{Decide gates on these.}};
+
+\node[hd=greenhl] at (9.5,0)     {OUTCOME --- did it work?};
+\node[b=greenhl]  at (9.5,-1.5)  {%
+  Available only after deployment.\\[3pt]
+  $\bullet$ students retained\\
+  $\bullet$ adviser hours per student helped\\
+  $\bullet$ share of flags acted on\\
+  $\bullet$ cost per retained student\\[3pt]
+  \emph{Justify the work on these.}};
+
+\node[anchor=west, align=left, text width=13.8cm, font=\tiny, text=accent!75!black]
+     at (-2.2,-3.15)
+     {\textbf{``Share of flags acted on'' is the metric that predicts failure earliest.}
+      A model whose output is ignored has already failed, however good its PR-AUC, and
+      you can see that within a fortnight of launch --- long before any outcome data
+      exists. Every deployed model should have one metric of this kind: not how good the
+      predictions are, but whether anyone is using them.};
+\end{tikzpicture}}%
+{Three kinds of project metric, ordered by when each becomes available. Leading indicators
+are for acting on, lagging for deciding gates, outcome measures for justifying the
+work.}{project-metrics}
+
+\section{Risk}
+
+\rowcolors{2}{white}{defbg}
+\begin{longtable}{@{}p{3.9cm}p{4.1cm}p{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Risk} & \textbf{Likelihood} & \textbf{Mitigation} \\
+\midrule
+\endhead
+The data lacks the signal & \textbf{High} & Gate 2 at three weeks; agree in advance that this ends the project \\
+Data access takes months & \textbf{High} & Start the request on day one, in parallel with everything else \\
+Leakage inflates results & High & Independent review of the split and features (\chref{wrangling}) \\
+Stakeholder expects certainty & High & Communicate in ranges and probabilities from the first meeting (\chref{communication}) \\
+The model is unfair to a subgroup & Moderate & Subgroup metrics in the gate criteria, not after deployment \\
+Nobody uses the output & Moderate & Frame around the decision (\chref{lifecycle}); involve the user from gate 1 \\
+Model decays after launch & \textbf{Certain} & Budget ongoing MLOps effort from the start (\chref{mlops}) \\
+Key person leaves & Moderate & Reproducible pipelines, not notebooks (\chref{research}) \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Budget for After Launch]
+The commonest structural error in data science project planning is treating
+deployment as the end. A deployed model needs monitoring, periodic retraining,
+incident response and eventual retirement. Plan roughly 20--30\% of the build
+effort per year, indefinitely. A project plan that ends at deployment is planning a
+system that will silently decay (\dsref{concept-drift}).
+\end{alertbox}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Managing the Work}
+\lensPM{This chapter is the project-management lens in full. The distilled version:
+gate the project so infeasibility is discovered in weeks rather than months, commit
+to decisions rather than to outcomes, and budget for the operating phase from the
+beginning.}
+
+\lensLA{Education projects have an immovable constraint the others do not: the
+\emph{academic calendar}. A model that misses the start of semester is useless for
+a year, and you cannot compress a cohort. Plan backwards from week 1 of the
+semester, and note that gate criteria involving student outcomes take a full term to
+evaluate --- so the first genuine outcome evidence arrives after the second
+deployment.}
+
+\lensIOT{The critical path runs through \emph{hardware procurement}, not software.
+Sensors have lead times, sites need physical access, and connectivity contracts take
+weeks. Pilot on 20 devices before committing to 4{,}000: fleet failure modes are
+invisible at bench scale, and the cost of discovering them post-deployment is
+measured in site visits. Budget for the fact that firmware updates across a fleet
+are themselves a project.}
+
+\lensSEC{Success is invisible --- the business case rests on incidents that did not
+occur --- so agree the metrics before starting: mean time to detect, mean time to
+respond, coverage of monitored assets, alerts per analyst. Detection engineering is
+continuous maintenance rather than a delivery, so the operating budget is not
+optional. And note the tension with \chref{research}: publishing your method helps
+attackers, which constrains how openly the project can be documented.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[A Project Charter That Fits on One Page]
+\begin{lstlisting}[basicstyle=\ttfamily\tiny, frame=none, backgroundcolor=\color{codebg}]
+PROJECT        Early identification of at-risk first-year students
+SPONSOR        Head of Department          DATE  2026-09-01
+
+DECISION       Which students receive an outreach call in week 5.
+               (If no decision changes, there is no project.)
+USERS          Three academic advisers. Involved from gate 1, not shown a demo at the end.
+
+SUCCESS        >= 70% of eventual failures identified, flagging <= 20% of the cohort.
+BASELINE       Current rule ("missed two labs") achieves ~45% recall at 15% flag rate.
+               The model must beat THIS, not chance.
+
+GATES
+  G1  wk 1   Framing agreed, data access requested, decision confirmed  -> go/no-go
+  G2  wk 3   Signal check: can ANY model reach 60% recall at 20% flags?  -> go/no-go
+  G3  wk 5   Baseline beaten on walk-forward validation                  -> go/no-go
+  G4  wk 9   Subgroup fairness within 5pp; monitoring plan signed off    -> go/no-go
+             Stopping at any gate is a valid, expected outcome.
+
+OUT OF SCOPE   Grading, disciplinary use, any automated action without a human.
+ETHICS         Equal opportunity as the fairness criterion (approved by X, 2026-09-01).
+               Counterfactual explanation shown to the adviser. Student may contest.
+
+TOP RISKS      1. Signal absent            -> G2 kills the project at 3 weeks
+               2. Data access slow          -> requested day 1; escalation path named
+               3. Leakage                   -> split and features reviewed by Y at G3
+
+AFTER LAUNCH   0.5 day/week monitoring; annual retrain per cohort; owner named: Z.
+               Review for retirement after 3 years.
+\end{lstlisting}
+
+\textbf{Everything on this page is a commitment the team can keep.} Note what is
+absent: a promised accuracy figure, and a delivery date for a result nobody can yet
+know is achievable.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why can a data science project not be planned the way a software feature
+        can? Name the specific property.
+  \item A sponsor asks for a delivery date and an accuracy figure. What do you
+        commit to instead, and how do you explain the difference?
+  \item Your project is killed at gate 2 after three weeks. Was this a failure?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Data science projects differ because feasibility is unknown until you try;
+        planning must be built around discovering that cheaply.
+  \item Structure the work as decision gates with criteria agreed in advance, each
+        able to end the project honourably.
+  \item Estimate by decomposing into activities of different uncertainty, and commit
+        to gates and deliverables rather than to results.
+  \item Use time-boxed spikes for open-ended investigation.
+  \item Track leading indicators to act, lagging indicators to decide gates, and
+        outcome measures to justify the work.
+  \item The largest planning error is treating deployment as the end. Budget 20--30\%
+        of build effort per year for operations, indefinitely.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The distinctive risk of a data science project is:
+        (a)~scope creep (b)~the data may not support the question (c)~poor UI
+        (d)~server capacity.
+  \item \textbf{(MCQ)} A time-boxed investigation whose output is knowledge is a:
+        (a)~sprint (b)~spike (c)~gate (d)~epic.
+  \item \textbf{(Short)} Explain why a project killed at an early gate can be a
+        success of the process.
+  \item \textbf{(Short)} Give two leading and two lagging indicators for a data
+        science project, and say how each is used differently.
+  \item \textbf{(Short)} Why must the operating phase be budgeted at the start rather
+        than requested later?
+  \item \textbf{(Applied)} Write a one-page charter for a predictive maintenance
+        project on 150 HVAC units, including four gates with explicit criteria, three
+        risks with mitigations, and what you commit to versus what you decline to
+        commit to.
+  \item \textbf{(Applied)} A sponsor says ``the model must be 95\% accurate''.
+        Explain, in terms they would accept, why that specification is both unhelpful
+        and possibly meaningless, and propose a replacement.
+\end{reviewq}

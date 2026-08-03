@@ -1,0 +1,391 @@
+%=====================================================================
+\chapter{Supervised Learning II: Classification}\label{ch:classification}
+%=====================================================================
+\locator{3}{Part III --- Machine Learning Core}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} how logistic regression converts a linear score into a probability, and interpret its coefficients as odds ratios.
+  \item \textbf{Describe} the mechanism, strengths and weaknesses of k-NN, naive Bayes, decision trees and support vector machines.
+  \item \textbf{Match} a classifier to a problem's constraints --- data size, interpretability, training cost, feature types.
+  \item \textbf{Interpret} a decision boundary plot and relate its shape to model bias.
+  \item \textbf{Explain} why the default 0.5 threshold is a choice, not a law.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{probability} (Bayes' theorem, for naive Bayes), \chref{math} (distance, for
+k-NN) and \chref{regression} (the linear score that logistic regression squashes).
+\end{prereq}
+
+\begin{keyterms}
+classification $\bullet$ decision boundary $\bullet$ logistic (sigmoid) function
+$\bullet$ odds ratio $\bullet$ log loss $\bullet$ k-nearest neighbours $\bullet$
+naive Bayes $\bullet$ decision tree $\bullet$ Gini impurity $\bullet$ entropy
+$\bullet$ support vector machine $\bullet$ margin $\bullet$ kernel $\bullet$
+decision threshold
+\end{keyterms}
+
+\section{From Regression to Classification}
+
+Classification predicts a \emph{category}, not a number. The natural first attempt
+--- fit a straight line and threshold it --- fails, because a line is unbounded and
+predicts probabilities above 1 and below 0. Logistic regression fixes this with one
+function.
+
+\begin{definitionbox}[Logistic Regression]
+Compute a linear score $z = w_0 + \sum_j w_j x_j$, then squash it into $(0,1)$
+with the \term{sigmoid}:
+\[
+\hat{p} \;=\; \sigma(z) \;=\; \frac{1}{1 + e^{-z}}
+\]
+Predict the positive class when $\hat{p}$ exceeds a chosen threshold. Despite its
+name it is a classifier, not a regressor.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.5cm},
+  width=6.6cm, height=4.6cm,
+  axis lines=left, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+]
+\nextgroupplot[title={\color{accent}A line cannot be a probability},
+  xlabel={engagement score}, ylabel={outcome / prediction},
+  xmin=0, xmax=10, ymin=-0.45, ymax=1.45]
+\addplot[only marks, mark=*, mark size=1.3pt, primary] coordinates {
+ (0.8,0)(1.5,0)(2.2,0)(2.9,0)(3.6,0)(4.3,1)(5.0,0)(5.7,1)(6.4,1)(7.1,1)(7.8,1)(8.5,1)(9.2,1)};
+\addplot[accent, line width=1.2pt, domain=0:10] {-0.22 + 0.135*x};
+\draw[gray!55, dashed] (axis cs:0,1) -- (axis cs:10,1);
+\draw[gray!55, dashed] (axis cs:0,0) -- (axis cs:10,0);
+\node[font=\tiny, accent!80!black, anchor=west] at (axis cs:5.0,1.3) {predicts $>1$};
+\node[font=\tiny, accent!80!black, anchor=west] at (axis cs:0.2,-0.32) {predicts $<0$};
+
+\nextgroupplot[title={\color{greenhl}The sigmoid always lies in $(0,1)$},
+  xlabel={linear score $z$}, ylabel={$\sigma(z)$},
+  xmin=-6, xmax=6, ymin=-0.08, ymax=1.12]
+\addplot[greenhl, line width=1.4pt, domain=-6:6, samples=120] {1/(1+exp(-x))};
+\draw[gray!55, dashed] (axis cs:-6,0.5) -- (axis cs:6,0.5);
+\draw[gray!55, dashed] (axis cs:0,-0.08) -- (axis cs:0,0.5);
+\addplot[accent, only marks, mark=*, mark size=1.8pt] coordinates {(0,0.5)};
+\node[font=\tiny, accent, anchor=west] at (axis cs:0.25,0.42) {$z=0 \Rightarrow p=0.5$};
+\node[font=\tiny, text=gray!55!black, anchor=west] at (axis cs:-5.8,0.93) {saturates at 1};
+\node[font=\tiny, text=gray!55!black, anchor=west] at (axis cs:1.6,0.07) {saturates at 0};
+\end{groupplot}
+\end{tikzpicture}}%
+{Why logistic regression exists. A linear fit to a 0/1 outcome produces impossible
+probabilities; the sigmoid maps any real score into a valid probability and saturates
+gracefully at both ends.}{sigmoid}
+
+\begin{worked}[Interpreting a Logistic Coefficient]
+A model predicting course failure returns
+\[
+z = -1.2 - 0.045\,(\text{attendance\%}) + 0.62\,(\text{days\_absent})
+\]
+
+\smallskip
+\textbf{Step 1 --- a concrete prediction.} For a student with 60\% attendance and
+4 days absent:
+\[
+z = -1.2 - 0.045(60) + 0.62(4) = -1.2 - 2.7 + 2.48 = -1.42
+\]
+\[
+\hat{p} = \frac{1}{1+e^{1.42}} = \frac{1}{1+4.137} = 0.195
+\]
+About a 19.5\% estimated probability of failing.
+
+\smallskip
+\textbf{Step 2 --- the odds ratio.} Exponentiating a coefficient gives the
+multiplicative effect on the \emph{odds}:
+\[
+e^{0.62} = 1.86
+\]
+Each additional day absent multiplies the odds of failing by 1.86 --- an 86\%
+increase in odds, holding attendance constant. This is how logistic models are
+reported in practice, because ``the odds nearly double per day absent'' is
+comprehensible in a way that ``the log-odds rise by 0.62'' is not.
+
+\smallskip
+\textbf{Step 3 --- the trap.} Odds are not probability. Odds rising 86\% moves a
+probability of 0.05 to 0.089, but a probability of 0.5 to 0.65. The same
+coefficient has a very different effect depending on where the student started.
+\end{worked}
+
+\section{Four More Classifiers}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  hd/.style={rounded corners=3pt, fill=#1, text=white, font=\scriptsize\bfseries,
+             text width=4.35cm, align=center, minimum height=0.62cm},
+  bd/.style={rounded corners=3pt, draw=#1, fill=#1!7, text=#1!50!black,
+             text width=4.35cm, align=left, font=\scriptsize, minimum height=2.35cm,
+             inner sep=5pt}]
+
+\foreach \i/\c/\name/\body [count=\n from 0] in {%
+  0/secondary/{Logistic Regression}/{\textbf{Idea:} squash a weighted sum.\\[3pt]
+     \textbf{Good:} fast, gives calibrated probabilities, coefficients explain
+     themselves.\\[3pt] \textbf{Bad:} boundary must be a straight line.},
+  1/greenhl/{k-Nearest Neighbours}/{\textbf{Idea:} vote among the $k$ closest
+     points.\\[3pt] \textbf{Good:} no training at all; any boundary shape.\\[3pt]
+     \textbf{Bad:} slow at prediction, needs scaling, dies in high dimensions.},
+  2/goldhl/{Naive Bayes}/{\textbf{Idea:} Bayes' theorem, pretending features are
+     independent.\\[3pt] \textbf{Good:} tiny data, very fast, excellent for
+     text.\\[3pt] \textbf{Bad:} the independence assumption is usually false.},
+  3/purplehl/{Decision Tree}/{\textbf{Idea:} ask a sequence of yes/no questions.\\[3pt]
+     \textbf{Good:} readable by non-experts, no scaling, mixed data types.\\[3pt]
+     \textbf{Bad:} overfits badly alone --- see \chref{features}.},
+  4/accent/{Support Vector Machine}/{\textbf{Idea:} the boundary with the widest
+     margin.\\[3pt] \textbf{Good:} strong with many features, kernels give
+     curves.\\[3pt] \textbf{Bad:} slow on large $n$, no natural probabilities.}}{%
+  % 3 across on the top row, 2 on the second -- 4.35cm cards stay legible
+  \pgfmathsetmacro{\xx}{mod(\n,3)*4.7}
+  \pgfmathsetmacro{\yy}{-floor(\n/3)*3.55}
+  \node[hd=\c] at (\xx,\yy) {\name};
+  \node[bd=\c] at (\xx,\yy-1.6) {\body};}
+\end{tikzpicture}}%
+{The five classical classifiers, with the trade-off that decides between them. There is no
+best one --- \chref{mlfundamentals}'s no-free-lunch result in practical form.}{classifier-cards}
+
+\subsection{Decision Trees: How the Split Is Chosen}
+
+\begin{definitionbox}[Gini Impurity]
+For a node containing class proportions $p_k$,
+$\;G = 1 - \sum_k p_k^2$. It is 0 when the node is pure (one class only) and
+maximal when classes are evenly mixed. A tree chooses the split that reduces
+weighted impurity the most.
+\end{definitionbox}
+
+\begin{worked}[Choosing a Split by Gini]
+100 students, 30 of whom failed. Root impurity:
+\[
+G_{\text{root}} = 1 - (0.7^2 + 0.3^2) = 1 - (0.49 + 0.09) = 0.42
+\]
+
+\textbf{Candidate split: attendance $< 50\%$?}
+\begin{tight}
+  \item Left (attendance $<50$): 25 students, 20 failed.
+        $G_L = 1 - (0.2^2 + 0.8^2) = 1 - (0.04+0.64) = 0.32$
+  \item Right: 75 students, 10 failed.
+        $G_R = 1 - (0.867^2 + 0.133^2) = 1 - (0.751+0.018) = 0.231$
+\end{tight}
+Weighted impurity: $\frac{25}{100}(0.32) + \frac{75}{100}(0.231) = 0.08 + 0.173 = 0.253$.
+
+\textbf{Gain:} $0.42 - 0.253 = 0.167$.
+
+\smallskip
+\textbf{Candidate split: posted on forum?}
+Left: 40 students, 14 failed, so $G_L = 1-(0.35^2+0.65^2) = 0.455$.
+Right: 60 students, 16 failed, so $G_R = 1-(0.267^2+0.733^2) = 0.391$.
+Weighted impurity $\frac{40}{100}(0.455) + \frac{60}{100}(0.391) = 0.417$,
+a gain of only $0.42 - 0.417 = 0.003$.
+
+\smallskip
+\textbf{The tree picks attendance}, because it separates the classes far better.
+Repeat recursively on each child, and that is the entire algorithm.
+\end{worked}
+
+\section{Decision Boundaries}
+
+The single most useful way to understand a classifier is to see the shape of
+boundary it is capable of drawing.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=4 by 1, horizontal sep=0.55cm},
+  width=4.3cm, height=3.9cm,
+  axis lines=left, xtick=\empty, ytick=\empty,
+  title style={font=\tiny\bfseries},
+  xmin=0, xmax=10, ymin=0, ymax=10,
+]
+% shared point sets: two interleaved clusters
+\nextgroupplot[title={\color{secondary}Logistic: a line}]
+\addplot[secondary!25, fill=secondary!12, draw=none] coordinates {(0,0)(10,7.6)(10,0)} \closedcycle;
+\addplot[only marks, mark=*, mark size=1pt, primary] coordinates {
+ (1.2,1.4)(2.1,2.6)(1.8,3.9)(3.2,1.8)(2.6,4.6)(4.1,2.9)(3.6,5.4)(1.4,5.8)(4.8,4.2)(2.9,6.7)};
+\addplot[only marks, mark=triangle*, mark size=1.3pt, accent] coordinates {
+ (7.2,8.4)(8.1,6.6)(6.8,5.9)(8.6,8.8)(5.9,7.8)(9.1,7.2)(7.6,4.9)(6.2,9.1)(8.9,5.4)(5.4,6.2)};
+\addplot[secondary, line width=1.1pt] coordinates {(0,0)(10,7.6)};
+
+\nextgroupplot[title={\color{greenhl}k-NN: wiggly}]
+\addplot[only marks, mark=*, mark size=1pt, primary] coordinates {
+ (1.2,1.4)(2.1,2.6)(1.8,3.9)(3.2,1.8)(2.6,4.6)(4.1,2.9)(3.6,5.4)(1.4,5.8)(4.8,4.2)(2.9,6.7)};
+\addplot[only marks, mark=triangle*, mark size=1.3pt, accent] coordinates {
+ (7.2,8.4)(8.1,6.6)(6.8,5.9)(8.6,8.8)(5.9,7.8)(9.1,7.2)(7.6,4.9)(6.2,9.1)(8.9,5.4)(5.4,6.2)};
+\addplot[greenhl, line width=1.1pt, smooth] coordinates {
+ (0,1.2)(1.4,2.4)(2.2,2.0)(3.4,3.6)(4.2,3.2)(5.0,5.0)(5.8,4.4)(6.6,6.0)(7.6,5.6)(8.6,7.2)(10,7.0)};
+
+\nextgroupplot[title={\color{purplehl}Tree: axis-aligned}]
+\addplot[only marks, mark=*, mark size=1pt, primary] coordinates {
+ (1.2,1.4)(2.1,2.6)(1.8,3.9)(3.2,1.8)(2.6,4.6)(4.1,2.9)(3.6,5.4)(1.4,5.8)(4.8,4.2)(2.9,6.7)};
+\addplot[only marks, mark=triangle*, mark size=1.3pt, accent] coordinates {
+ (7.2,8.4)(8.1,6.6)(6.8,5.9)(8.6,8.8)(5.9,7.8)(9.1,7.2)(7.6,4.9)(6.2,9.1)(8.9,5.4)(5.4,6.2)};
+\addplot[purplehl, line width=1.1pt] coordinates {(5.1,0)(5.1,4.6)};
+\addplot[purplehl, line width=1.1pt] coordinates {(5.1,4.6)(10,4.6)};
+
+\nextgroupplot[title={\color{accent}SVM (RBF): smooth curve}]
+\addplot[only marks, mark=*, mark size=1pt, primary] coordinates {
+ (1.2,1.4)(2.1,2.6)(1.8,3.9)(3.2,1.8)(2.6,4.6)(4.1,2.9)(3.6,5.4)(1.4,5.8)(4.8,4.2)(2.9,6.7)};
+\addplot[only marks, mark=triangle*, mark size=1.3pt, accent] coordinates {
+ (7.2,8.4)(8.1,6.6)(6.8,5.9)(8.6,8.8)(5.9,7.8)(9.1,7.2)(7.6,4.9)(6.2,9.1)(8.9,5.4)(5.4,6.2)};
+\addplot[accent, line width=1.1pt, domain=0:10, samples=60] {1.1 + 0.62*x + 0.9*sin(deg(x/1.7))};
+\end{groupplot}
+\end{tikzpicture}}%
+{The same data, four boundary shapes. Logistic regression can only draw a line; a tree can
+only draw axis-parallel steps; k-NN and kernel SVMs can draw anything --- which is powerful
+and is also how they overfit.}{decision-boundaries}
+
+\section{The Threshold Is a Decision}
+
+\begin{alertbox}[0.5 Is Not Sacred]
+Predicting ``positive when $\hat{p} > 0.5$'' is a default, not a requirement.
+Lower the threshold and you catch more true positives at the cost of more false
+alarms; raise it and the reverse. On imbalanced problems the default is almost
+always wrong. \chref{evaluation} shows how to choose the threshold from the cost
+of each error type --- and that is where this chapter's models actually become
+usable.
+\end{alertbox}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{2.7cm}p{2.4cm}p{2.4cm}p{2.5cm}p{4.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Model} & \textbf{Train speed} & \textbf{Predict speed} & \textbf{Explainable?} & \textbf{Reach for it when} \\
+\midrule
+\endhead
+Logistic regression & Fast & Very fast & \textbf{Yes} --- odds ratios & You must justify decisions to people \\
+k-NN & Instant (none) & \textbf{Slow} & Partly & Small data, odd boundary shapes \\
+Naive Bayes & Very fast & Very fast & Partly & Text, tiny data, a strong baseline \\
+Decision tree & Fast & Very fast & \textbf{Yes} --- readable rules & Mixed types, rules must be auditable \\
+SVM (RBF) & Slow on big $n$ & Moderate & No & Many features, moderate $n$, accuracy over clarity \\
+\bottomrule
+\end{longtable}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Using k-NN without scaling.} The largest-range feature becomes the
+        only feature (\chref{math}).
+  \item \textbf{Believing naive Bayes' probabilities.} Its ranking is often good;
+        its probabilities are usually badly calibrated because the independence
+        assumption is false.
+  \item \textbf{Deploying a single unpruned tree.} It will memorise the training
+        set. Use depth limits, or the ensembles of \chref{features}.
+  \item \textbf{Reading logistic coefficients as probabilities.} They are
+        log-odds; exponentiate them for odds ratios.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Choosing a Classifier}
+\lensLA{Use \emph{logistic regression or a shallow tree}, even at some cost in
+accuracy. A model that flags a student for intervention must be explainable to that
+student and to the appeals process --- ``you were flagged because attendance below
+50\% and two missed labs'' is defensible; ``the SVM said so'' is not. This is a
+requirement from \chref{ethics}, not a preference.}
+
+\lensPM{With 40 sprints of history, \emph{naive Bayes or a depth-2 tree} is the
+honest choice. Anything more flexible will fit noise. A two-rule tree that a scrum
+master can read out in a stand-up will actually change behaviour, which is the
+point --- a marginally better black box that nobody trusts changes nothing.}
+
+\lensIOT{At the edge, prediction cost is a hard constraint: a device with a
+microcontroller cannot run k-NN against a million stored points. \emph{Logistic
+regression or a small tree} fits in kilobytes and predicts in microseconds. Train
+something heavy in the cloud, then distil or replace it with something small enough
+to deploy (\chref{cloudedge}).}
+
+\lensSEC{\emph{Naive Bayes} remains a strong, fast baseline for phishing and spam
+because text features are numerous and the speed matters at mail-gateway volumes.
+For intrusion detection, tree ensembles dominate --- but note that an interpretable
+model has a specific operational value here: an analyst must be able to explain to
+an incident review why a session was blocked. Also, a k-NN boundary that hugs
+training data is trivially evaded by an adversary who probes it.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Five Classifiers, One Comparison]
+\begin{lstlisting}[language=Python]
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.tree import DecisionTreeClassifier, export_text
+from sklearn.svm import SVC
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import cross_val_score
+
+models = {
+    # scaling matters for the distance/margin-based models
+    "logistic":   make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000)),
+    "k-NN (k=5)": make_pipeline(StandardScaler(), KNeighborsClassifier(5)),
+    "naive Bayes": GaussianNB(),
+    "tree (d=3)": DecisionTreeClassifier(max_depth=3, random_state=0),
+    "SVM (RBF)":  make_pipeline(StandardScaler(), SVC()),
+}
+
+for name, m in models.items():
+    s = cross_val_score(m, X_tr, y_tr, cv=5, scoring="roc_auc")
+    print(f"{name:12s} AUC {s.mean():.3f} +/- {s.std():.3f}")
+
+# --- the tree's great advantage: you can read it out loud -------------
+tree = DecisionTreeClassifier(max_depth=3).fit(X_tr, y_tr)
+print(export_text(tree, feature_names=list(feature_names)))
+
+# --- logistic coefficients as odds ratios -----------------------------
+lr = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000)).fit(X_tr, y_tr)
+for f, c in zip(feature_names, lr[-1].coef_[0]):
+    print(f"  {f:22s} log-odds {c:+.3f}   odds ratio {np.exp(c):.2f}")
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A logistic model has coefficient $+1.1$ on a feature. What is the odds
+        ratio, and what does it mean in words?
+  \item Why does k-NN require feature scaling while a decision tree does not?
+  \item A node contains 40 samples: 40 positive, 0 negative. What is its Gini
+        impurity, and what will the tree do next?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Logistic regression squashes a linear score through a sigmoid to produce a
+        probability; $e^{w_j}$ is the odds ratio for feature $j$.
+  \item k-NN needs no training but is slow, scale-sensitive and degrades in high
+        dimensions.
+  \item Naive Bayes assumes feature independence --- usually false, yet often
+        effective, especially on text.
+  \item Trees split to reduce Gini impurity, are readable, need no scaling, and
+        overfit badly if unconstrained.
+  \item SVMs maximise the margin and can draw curved boundaries via kernels, at
+        the cost of interpretability and training speed.
+  \item Boundary shape is the key intuition: linear, axis-parallel, or arbitrary.
+  \item The 0.5 threshold is a default to be revisited in \chref{evaluation}.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The sigmoid function maps a real number into:
+        (a)~$[-1,1]$ (b)~$(0,1)$ (c)~$[0,\infty)$ (d)~$\{0,1\}$.
+  \item \textbf{(MCQ)} Which classifier produces a boundary made only of
+        axis-parallel segments? (a)~Logistic regression (b)~k-NN (c)~Decision tree
+        (d)~RBF SVM.
+  \item \textbf{(Short)} Explain what ``naive'' refers to in naive Bayes and give an
+        example where the assumption clearly fails.
+  \item \textbf{(Short)} A logistic coefficient is $-0.35$. Compute the odds ratio
+        and interpret it.
+  \item \textbf{(Short)} Why is a single deep decision tree a poor production model,
+        and what does \chref{features} do about it?
+  \item \textbf{(Applied)} Compute the Gini impurity of a node with 60 samples, 45
+        of class A and 15 of class B. Then compute the weighted impurity of a split
+        producing children of (30: 28A/2B) and (30: 17A/13B), and state the gain.
+  \item \textbf{(Applied)} For each of the four running domains, choose a classifier
+        and defend the choice in two sentences, referring to at least one constraint
+        that is not accuracy.
+\end{reviewq}

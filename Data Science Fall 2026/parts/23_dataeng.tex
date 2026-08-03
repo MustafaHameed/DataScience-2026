@@ -1,0 +1,393 @@
+%=====================================================================
+\chapter{Data Engineering at Scale}\label{ch:dataeng}
+%=====================================================================
+\locator{5}{Part V --- Data Science in Systems Context}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} a data pipeline and distinguish ETL from ELT.
+  \item \textbf{Compare} data warehouses, lakes and lakehouses, and choose one for a stated need.
+  \item \textbf{Explain} the five V's of big data and what each demands technically.
+  \item \textbf{Describe} how partitioning and parallelism make large computations tractable.
+  \item \textbf{Specify} data quality checks that run automatically in a pipeline.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{data} (quality dimensions), \chref{wrangling} (the transformations a
+pipeline automates) and \chref{timeseries} (batch versus stream).
+\end{prereq}
+
+\begin{keyterms}
+data pipeline $\bullet$ ETL / ELT $\bullet$ orchestration $\bullet$ DAG $\bullet$
+idempotence $\bullet$ data warehouse $\bullet$ data lake $\bullet$ lakehouse
+$\bullet$ schema-on-read / schema-on-write $\bullet$ the five V's $\bullet$
+partitioning $\bullet$ MapReduce $\bullet$ Spark $\bullet$ data contract
+$\bullet$ lineage
+\end{keyterms}
+
+\section{Why Data Engineering Exists}
+
+\begin{conceptbox}[The Uncomfortable Ratio]
+A model that runs once in a notebook needs no engineering. A model that must run
+every morning on yesterday's data, for the next three years, needs a great deal of
+it. Most data science that reaches production is 20\% modelling and 80\% making
+data arrive reliably --- and the 80\% is what this chapter is about.
+\end{conceptbox}
+
+\section{Pipelines}
+
+\begin{definitionbox}[Data Pipeline]
+An automated, scheduled sequence of steps that moves data from source systems to a
+form analysts and models can use. Steps are arranged as a \term{directed acyclic
+graph} (DAG): each task declares what it depends on, and the orchestrator works out
+the order and what can run in parallel.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  src/.style={rounded corners=3pt, draw=secondary, fill=secondary!9, text=secondary!55!black,
+              text width=1.9cm, align=center, font=\tiny\bfseries, minimum height=0.72cm},
+  t/.style={rounded corners=3pt, draw=#1, fill=#1!9, text=#1!50!black,
+            text width=2.0cm, align=center, font=\tiny\bfseries, minimum height=0.72cm},
+  arr/.style={-{Stealth[length=1.8mm]}, gray!60, line width=0.8pt}]
+
+\node[src] (s1) at (0,1.5)   {registry DB};
+\node[src] (s2) at (0,0.55)  {VLE API};
+\node[src] (s3) at (0,-0.4)  {swipe logs};
+\node[src] (s4) at (0,-1.35) {sensor stream};
+
+\node[t=primary]  (ing) at (2.9,0.07)  {ingest\\{\tiny raw, unchanged}};
+\node[t=goldhl]   (val) at (5.6,0.07)  {validate\\{\tiny contracts}};
+\node[t=tealhl]   (tr1) at (8.3,0.85)  {clean \&\\conform};
+\node[t=tealhl]   (tr2) at (8.3,-0.7)  {aggregate\\{\tiny to grain}};
+\node[t=greenhl]  (feat) at (11.0,0.07) {feature\\store};
+\node[t=purplehl] (out) at (13.4,0.07)  {model /\\dashboard};
+
+\foreach \s in {s1,s2,s3,s4}{\draw[arr] (\s) -- (ing);}
+\draw[arr] (ing) -- (val);
+\draw[arr] (val) -- (tr1);
+\draw[arr] (val) -- (tr2);
+\draw[arr] (tr1) -- (feat);
+\draw[arr] (tr2) -- (feat);
+\draw[arr] (feat) -- (out);
+
+% quarantine branch
+\node[t=accent] (q) at (5.6,-1.75) {quarantine};
+\draw[arr, accent] (val) -- node[right, font=\tiny, text=accent!75!black, pos=0.45] {fails} (q);
+
+\node[anchor=west, align=left, text width=13.6cm, font=\tiny, text=gray!55!black]
+     at (-1.2,-2.9)
+     {\textbf{Three properties that separate a pipeline from a script:}
+      it is \textbf{idempotent} (re-running Tuesday's job produces Tuesday's result, not a
+      duplicate); it \textbf{fails loudly} (bad data is quarantined and alerted, never
+      silently averaged in); and it records \textbf{lineage} (for any number on the
+      dashboard you can say which source rows produced it).};
+\end{tikzpicture}}%
+{A data pipeline as a DAG. The quarantine branch is the part beginners omit and the part
+that saves projects: data that fails validation must stop, not flow onwards.}{pipeline-dag}
+
+\begin{definitionbox}[ETL versus ELT]
+\term{ETL}: Extract, Transform, then Load --- transform before storing, so the
+warehouse holds only clean, modelled data. \term{ELT}: Extract, Load, then
+Transform --- land the raw data first and transform inside the destination system.
+ELT dominates modern practice because storage is cheap and keeping the raw data
+lets you re-derive everything when requirements change.
+\end{definitionbox}
+
+\section{Where Data Lives}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  hd/.style={rounded corners=3pt, fill=#1, text=white, font=\tiny\bfseries,
+             text width=3.9cm, align=center, minimum height=0.55cm},
+  b/.style={rounded corners=3pt, draw=#1, fill=#1!7, text width=3.9cm, align=left,
+            font=\tiny, inner sep=5pt, minimum height=3.5cm}]
+
+\node[hd=secondary] at (0,0)    {DATA WAREHOUSE};
+\node[b=secondary]  at (0,-2.15){%
+  \textbf{Schema-on-write:} structure is fixed before loading.\\[4pt]
+  \textbf{Holds:} cleaned, modelled tables\\
+  \textbf{Query:} SQL, fast\\
+  \textbf{Users:} analysts, BI tools\\[4pt]
+  {\color{greenhl!45!black}\textbf{+} fast, governed, trustworthy}\\
+  {\color{accent}\textbf{--} rigid; adding a source is a project}\\[4pt]
+  \emph{Snowflake, BigQuery, Redshift}};
+
+\node[hd=goldhl] at (4.5,0)    {DATA LAKE};
+\node[b=goldhl]  at (4.5,-2.15){%
+  \textbf{Schema-on-read:} store anything, interpret later.\\[4pt]
+  \textbf{Holds:} raw files of any type\\
+  \textbf{Query:} engines over files\\
+  \textbf{Users:} data scientists, engineers\\[4pt]
+  {\color{greenhl!45!black}\textbf{+} cheap, flexible, keeps everything}\\
+  {\color{accent}\textbf{--} becomes a ``data swamp'' without catalogue and governance}\\[4pt]
+  \emph{S3, ADLS, GCS}};
+
+\node[hd=greenhl] at (9.0,0)    {LAKEHOUSE};
+\node[b=greenhl]  at (9.0,-2.15){%
+  Lake storage plus warehouse guarantees.\\[4pt]
+  \textbf{Holds:} raw \emph{and} curated\\
+  \textbf{Query:} SQL over open formats\\
+  \textbf{Users:} both audiences\\[4pt]
+  {\color{greenhl!45!black}\textbf{+} transactions, schema evolution, one copy of the data}\\
+  {\color{accent}\textbf{--} newer; more moving parts}\\[4pt]
+  \emph{Delta Lake, Iceberg}};
+
+\node[anchor=north, align=left, text width=13.2cm, font=\scriptsize, text=gray!55!black]
+     at (4.5,-4.2)
+     {\textbf{How to choose.} Known questions, structured sources and BI reporting
+      $\Rightarrow$ warehouse. Unknown future questions, unstructured or sensor data
+      $\Rightarrow$ lake. Both, and you can afford the extra moving parts
+      $\Rightarrow$ lakehouse.};
+\end{tikzpicture}}%
+{Warehouse, lake and lakehouse. The real distinction is \emph{when} you commit to a
+schema --- before loading, or at query time --- and that choice determines how expensive
+it is to change your mind later.}{warehouse-lake}
+
+\section{Big Data: The Five V's}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{2.3cm}p{4.3cm}p{7.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{V} & \textbf{Meaning} & \textbf{What it forces you to do} \\
+\midrule
+\endhead
+Volume & More data than one machine holds & Partition across machines; move the computation to the data, not the reverse \\
+Velocity & Arriving faster than batch can absorb & Stream processing and windowing (\chref{timeseries}) \\
+Variety & Structured, semi-structured and unstructured together & Schema-on-read; a lake rather than a warehouse \\
+Veracity & Quality varies and cannot be assumed & Automated validation, quarantine, lineage \\
+Value & Most of it is never used & Prioritise ruthlessly; storage is cheap but attention is not \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[``Big Data'' Is Rarer Than Claimed]
+A dataset is big when it does not fit on one machine. A year of records for
+2{,}000 students is a few hundred megabytes and belongs in pandas, not in Spark.
+Reaching for distributed tooling on data that fits in memory adds days of
+complexity for negative benefit. Measure first.
+\end{alertbox}
+
+\section{Parallelism and Partitioning}
+
+\begin{definitionbox}[Partitioning]
+Split data into independent chunks --- by date, by device, by region --- so that
+each can be processed on a different machine simultaneously, and so that a query
+for one day reads one partition instead of the whole dataset.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  blk/.style={rounded corners=2pt, draw=#1, fill=#1!12, text=#1!50!black,
+              minimum width=1.55cm, minimum height=0.55cm, font=\tiny, align=center},
+  arr/.style={-{Stealth[length=1.8mm]}, gray!60, line width=0.8pt}]
+
+\node[blk=primary, minimum width=2.2cm] (in) at (0,0) {400 GB of\\telemetry};
+
+\foreach \i/\lbl in {1/{node 1\\Jan}, 2/{node 2\\Feb}, 3/{node 3\\Mar}, 4/{node 4\\Apr}}{
+  \pgfmathsetmacro{\yy}{1.65-(\i-1)*1.1}
+  \node[blk=secondary, minimum height=0.8cm] (m\i) at (3.3,\yy) {\lbl};
+  \draw[arr] (in) -- (m\i);
+  \node[blk=goldhl, minimum height=0.8cm] (r\i) at (6.2,\yy) {partial\\result};
+  \draw[arr] (m\i) -- (r\i);}
+
+\node[blk=greenhl, minimum width=2.2cm, minimum height=1.0cm] (out) at (9.2,0.0)
+     {combined\\result};
+\foreach \i in {1,2,3,4}{\draw[arr] (r\i) -- (out);}
+
+\node[font=\tiny\bfseries, text=secondary!55!black] at (3.3,2.6) {MAP};
+\node[font=\tiny\bfseries, text=goldhl!50!black] at (6.2,2.6) {(shuffle)};
+\node[font=\tiny\bfseries, text=greenhl!45!black] at (9.2,2.6) {REDUCE};
+
+\node[anchor=west, align=left, text width=4.2cm, font=\tiny, text=gray!55!black] at (10.8,0.0)
+     {\textbf{Why this works:} the four months are independent, so the map step needs no
+      communication. Operations that \emph{do} need communication --- a join, a global
+      sort --- force a shuffle across the network, which is the expensive part. Design
+      partitions so the common query touches one.};
+
+\node[anchor=west, align=left, text width=13.6cm, font=\tiny, text=accent!75!black]
+     at (-1.2,-2.55)
+     {\textbf{Partition by what you filter on.} If every query asks for one device's last
+      week, partition by date and device. Partitioning by something you never filter on
+      buys nothing and multiplies your file count --- the ``small files problem'' that
+      cripples lakes.};
+\end{tikzpicture}}%
+{Map--reduce over partitioned data. Spark is a modern, in-memory implementation of this
+idea; the principle --- split, compute independently, combine --- is what makes data larger
+than one machine tractable.}{mapreduce}
+
+\section{Data Contracts and Automated Quality}
+
+\begin{definitionbox}[Data Contract]
+An explicit, versioned agreement between a data producer and its consumers: which
+fields exist, their types, their permitted ranges, their nullability, and the
+freshness guarantee. Enforced automatically at ingestion, it converts a silent
+breakage into a loud, attributable failure.
+\end{definitionbox}
+
+\begin{worked}[Writing Checks That Would Have Caught Real Failures]
+Each check below corresponds to a failure from the audit in \chref{data}.
+
+\smallskip
+\begin{center}
+\begin{tabular}{@{}p{3.5cm}p{5.2cm}p{5.0cm}@{}}
+\toprule
+\textbf{Dimension} & \textbf{Automated check} & \textbf{Action on failure} \\
+\midrule
+Completeness & \texttt{null\_rate(prior\_qual) < 0.40} & warn; block if $>0.6$ \\
+Validity & \texttt{final\_grade IN (A,B,C,D,F)} & quarantine the rows \\
+Accuracy & \texttt{age BETWEEN 15 AND 90} & quarantine, alert owner \\
+Uniqueness & \texttt{count(*) = count(DISTINCT student\_id, term)} & block the run \\
+Timeliness & \texttt{max(loaded\_at) > now() - 26h} & page on-call \\
+Consistency & \texttt{|registry\_count $-$ vle\_count| < 50} & warn \\
+Volume & \texttt{row\_count} within $\pm30\%$ of the 7-day median & block the run \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The last check is the most valuable and the least obvious.} A source that
+silently starts returning 10\% of its usual rows breaks no type and violates no
+range --- every individual row is valid. Only the \emph{row count} reveals it, and
+without that check the model quietly trains on a biased tenth of the population.
+Volume anomaly detection is the cheapest high-value check in any pipeline.
+\end{worked}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Data Engineering}
+\lensLA{Sources are the registry (nightly batch), the VLE (API, hourly) and swipe
+readers (near real time). Grain conflicts are the recurring problem: registry is
+one row per enrolment, VLE is one row per click. Land both raw, then build a
+conformed weekly student table. \textbf{Governance is unusually strict:} this is
+personal data about identifiable young people, so lineage is not merely good
+practice but a requirement (\chref{ethics}).}
+
+\lensPM{Volumes are trivial --- everything fits in a spreadsheet --- so the
+engineering problem is not scale but \emph{integration}. Ticket tracker, git,
+timesheets and CI logs each identify the same work item differently, and reconciling
+those identifiers is most of the work. A data contract with each tool's owner is
+worth more here than any distributed technology.}
+
+\lensIOT{The genuine big-data case in this course: 400 devices $\times$ 6 sensors
+$\times$ 1 Hz is 200 million rows a day. Partition by date and device, store in a
+columnar format, and pre-aggregate to minute and hour grains --- almost no query
+needs raw 1 Hz data. Expect duplicates from at-least-once delivery and out-of-order
+arrival from network delay, so ingestion must be idempotent and windowing must use
+watermarks (\chref{timeseries}).}
+
+\lensSEC{Log volumes are enormous and retention is often mandated by regulation, so
+the lake pattern dominates: land everything raw, index selectively. Two engineering
+requirements are specific to this domain --- logs must be \textbf{tamper-evident},
+because an attacker's first act is to alter them, and lineage must be strong enough
+to stand up in an investigation. Ingestion latency is itself a security control: a
+detection pipeline with a six-hour lag cannot stop anything.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[A Pipeline Task with Contracts]
+\begin{lstlisting}[language=Python]
+import pandas as pd
+from datetime import datetime, timedelta
+
+class DataContractViolation(Exception):
+    pass
+
+CONTRACT = {
+    "required":  ["student_id", "term", "attendance_pct", "loaded_at"],
+    "ranges":    {"attendance_pct": (0, 100), "age": (15, 90)},
+    "allowed":   {"final_grade": {"A", "B", "C", "D", "F"}},
+    "unique_on": ["student_id", "term"],
+    "max_null":  {"prior_qualification": 0.40},
+    "freshness_hours": 26,
+}
+
+def validate(df, contract=CONTRACT):
+    """Returns (clean_rows, quarantined_rows). Blocks on structural failures."""
+    missing = set(contract["required"]) - set(df.columns)
+    if missing:
+        raise DataContractViolation(f"missing required columns: {missing}")
+
+    if df.duplicated(contract["unique_on"]).any():
+        raise DataContractViolation("uniqueness violated -- run blocked")
+
+    age = (datetime.now() - df["loaded_at"].max()).total_seconds() / 3600
+    if age > contract["freshness_hours"]:
+        raise DataContractViolation(f"stale data: {age:.1f}h old")
+
+    bad = pd.Series(False, index=df.index)
+    for col, (lo, hi) in contract["ranges"].items():
+        if col in df:
+            bad |= ~df[col].between(lo, hi) & df[col].notna()
+    for col, allowed in contract["allowed"].items():
+        if col in df:
+            bad |= ~df[col].isin(allowed) & df[col].notna()
+
+    for col, limit in contract["max_null"].items():
+        if col in df and df[col].isna().mean() > limit:
+            print(f"WARN: {col} is {df[col].isna().mean():.0%} null (limit {limit:.0%})")
+
+    return df[~bad], df[bad]          # quarantine, never silently drop
+
+def check_volume(df, history_median, tolerance=0.30):
+    """The cheapest high-value check: did the source quietly shrink?"""
+    ratio = len(df) / history_median
+    if abs(ratio - 1) > tolerance:
+        raise DataContractViolation(
+            f"row count {len(df)} is {ratio:.0%} of the 7-day median -- run blocked")
+
+# clean, quarantined = validate(raw_df)
+# check_volume(clean, history_median=1987)
+# quarantined.to_parquet(f"quarantine/{datetime.now():%Y-%m-%d}.parquet")
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item What does it mean for a pipeline task to be idempotent, and why does it
+        matter when a job is re-run after a failure?
+  \item Your dataset is 300 MB. Should you use Spark? Justify.
+  \item A source silently starts returning 10\% of its usual rows. Which of the six
+        quality dimensions catches this, and which check specifically?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Pipelines are DAGs of scheduled tasks; they must be idempotent, fail loudly
+        and record lineage.
+  \item ELT has largely displaced ETL because cheap storage makes keeping the raw
+        data worthwhile.
+  \item Warehouses fix the schema on write, lakes on read, lakehouses attempt both.
+        The choice is about when you commit.
+  \item The five V's each impose a technical requirement; veracity is the one most
+        often ignored.
+  \item Partition by what you filter on. Shuffles across the network are the
+        expensive operation.
+  \item Data contracts turn silent breakage into an attributable failure, and a
+        row-count check is the cheapest valuable test you can write.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Schema-on-read is characteristic of: (a)~a data warehouse
+        (b)~a data lake (c)~ETL (d)~a relational database.
+  \item \textbf{(MCQ)} Which operation forces an expensive network shuffle?
+        (a)~filtering one partition (b)~a per-row transformation (c)~a join across
+        partitions (d)~reading a column.
+  \item \textbf{(Short)} Define idempotence and give an example of a non-idempotent
+        pipeline step and its consequence.
+  \item \textbf{(Short)} Explain why a quarantine branch is preferable to dropping
+        invalid rows.
+  \item \textbf{(Short)} Why is ingestion latency a security control in a detection
+        pipeline?
+  \item \textbf{(Applied)} Design the ingestion layer for 400 IoT devices reporting
+        6 channels at 1 Hz. Specify the storage format, partitioning scheme,
+        aggregation grains, and how you handle duplicates and late arrivals.
+  \item \textbf{(Applied)} Write six data-contract checks for a nightly student
+        enrolment feed, stating for each whether failure should warn, quarantine or
+        block the run --- and justify the three that block.
+\end{reviewq}

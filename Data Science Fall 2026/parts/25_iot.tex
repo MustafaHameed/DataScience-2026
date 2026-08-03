@@ -1,0 +1,407 @@
+%=====================================================================
+\chapter{Data Science for the Internet of Things}\label{ch:iot}
+%=====================================================================
+\locator{5}{Part V --- Data Science in Systems Context}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} the IoT reference architecture and where analytics sits within it.
+  \item \textbf{Characterise} telemetry data and the failure modes specific to sensors.
+  \item \textbf{Design} a predictive maintenance system end to end, from framing to deployment.
+  \item \textbf{Apply} sensor fusion and explain why multiple weak sensors beat one good one.
+  \item \textbf{Evaluate} an IoT model against operational rather than statistical criteria.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+The four chapters this one is built on: \chref{timeseries} (streaming, windowing,
+drift), \chref{unsupervised} (anomaly detection without labels), \chref{features}
+(window aggregations) and \chref{cloudedge} (edge inference). This is the chapter
+those were preparing you for.
+\end{prereq}
+
+\begin{keyterms}
+telemetry $\bullet$ sensor $\bullet$ actuator $\bullet$ MQTT $\bullet$ gateway
+$\bullet$ device twin $\bullet$ sampling rate $\bullet$ sensor drift $\bullet$
+calibration $\bullet$ sensor fusion $\bullet$ predictive maintenance $\bullet$
+remaining useful life $\bullet$ digital twin $\bullet$ over-the-air update
+\end{keyterms}
+
+\section{The Architecture, and Where Data Science Lives in It}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  lay/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!50!black,
+              text width=2.35cm, align=center, font=\tiny\bfseries, minimum height=1.45cm},
+  arr/.style={-{Stealth[length=2mm]}, gray!60, line width=0.9pt},
+  ds/.style={font=\tiny, text=accent!75!black, align=center, text width=2.5cm}]
+
+\node[lay=secondary] (dev)  at (0,0)    {\faIcon{microchip}\\DEVICE\\{\tiny sensors,\\actuators}};
+\node[lay=tealhl]    (net)  at (2.9,0)  {\faIcon{wifi}\\CONNECTIVITY\\{\tiny MQTT, LoRa,\\5G}};
+\node[lay=goldhl]    (gw)   at (5.8,0)  {\faIcon{server}\\GATEWAY\\{\tiny fog tier}};
+\node[lay=primary]   (plat) at (8.7,0)  {\faIcon{database}\\PLATFORM\\{\tiny ingest, store,\\device mgmt}};
+\node[lay=purplehl]  (app)  at (11.6,0) {\faIcon{chart-line}\\APPLICATION\\{\tiny dashboards,\\work orders}};
+
+\foreach \a/\b in {dev/net, net/gw, gw/plat, plat/app}{\draw[arr] (\a) -- (\b);}
+\draw[arr, gray!45, dashed] (plat.south) .. controls +(0,-1.1) and +(0,-1.1) .. (dev.south);
+\node[font=\tiny, text=gray!55!black] at (4.35,-1.55) {control \& over-the-air model updates};
+
+% where data science acts
+\node[ds] at (0,1.55)    {\textbf{edge inference}\\threshold, tiny model};
+\node[ds] at (5.8,1.55)  {\textbf{fog analytics}\\cross-device correlation};
+\node[ds] at (8.7,1.55)  {\textbf{training}\\fleet-wide learning};
+\node[ds] at (11.6,1.55) {\textbf{decision support}\\RUL, scheduling};
+\foreach \x in {0,5.8,8.7,11.6}{
+  \draw[-{Stealth[length=1.6mm]}, accent!60, dashed] (\x,1.05) -- (\x,0.78);}
+
+\node[anchor=west, align=left, text width=13.8cm, font=\tiny, text=primary!60!black]
+     at (-1.5,-2.55)
+     {\textbf{Read this diagram as a constraint list, not a picture.} Each layer imposes a
+      limit that shapes the model: the device limits compute and power, connectivity
+      limits bandwidth and guarantees only at-least-once delivery, the gateway is where
+      cross-device context first exists, and the platform is the only place with enough
+      history to train. A model design that ignores any of these will not deploy.};
+\end{tikzpicture}}%
+{The IoT reference architecture, annotated with where data science actually runs. Analytics
+is not a single box at the end --- it is distributed across four tiers with different
+capabilities.}{iot-architecture}
+
+\section{What Telemetry Data Is Like}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{3.2cm}p{4.6cm}p{6.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Property} & \textbf{Consequence} & \textbf{What you must do} \\
+\midrule
+\endhead
+Very high volume & Cannot store or query raw indefinitely & Pre-aggregate to minute/hour grains; retain raw only briefly (\chref{dataeng}) \\
+Highly autocorrelated & Effective sample size $\lll$ row count & Never trust a $p$-value computed on raw readings (\chref{inference}) \\
+Irregular timestamps & Clocks drift across a fleet & Resample to a fixed grid; use the gateway's clock, not the device's \\
+Duplicates & At-least-once delivery guarantees them & Idempotent ingestion keyed on (device, timestamp) \\
+Out of order & Network delay and buffering & Watermarks; decide how long to wait (\chref{timeseries}) \\
+Missing bursts & Connectivity loss & Forward fill \emph{with a cap}, plus a \texttt{was\_missing} flag \\
+Extremely imbalanced labels & Equipment rarely fails & Anomaly detection, not classification (\chref{unsupervised}) \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The Failure Mode That Catches Everyone]
+A sensor that fails often reports a \emph{perfectly plausible constant}. Nothing is
+null, nothing is out of range, no error is logged --- and the model sees a machine
+in flawless health. Add a check for \emph{variance too low} alongside your range
+checks. A temperature that has not changed by 0.01 degrees in six hours is not a
+stable process; it is a dead thermistor.
+\end{alertbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 2, horizontal sep=1.3cm, vertical sep=1.0cm},
+  width=6.5cm, height=3.3cm,
+  axis lines=left, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\tiny\bfseries}, xtick=\empty,
+]
+\nextgroupplot[title={\color{greenhl}Healthy: noisy around a set point}, ymin=68, ymax=76]
+\addplot[greenhl, line width=0.7pt, domain=0:100, samples=180]
+  {72 + 1.4*sin(deg(x/3.1)) + 0.9*sin(deg(x*1.7))};
+
+\nextgroupplot[title={\color{accent}Stuck sensor: variance collapses}, ymin=68, ymax=76]
+\addplot[accent, line width=0.7pt, domain=0:45, samples=90]
+  {72 + 1.4*sin(deg(x/3.1)) + 0.9*sin(deg(x*1.7))};
+\addplot[accent, line width=1.1pt, domain=45:100, samples=10] {71.6};
+\draw[gray!60, dashed] (axis cs:45,68) -- (axis cs:45,76);
+\node[font=\tiny, accent!80!black, anchor=west] at (axis cs:48,74.6) {no error raised};
+
+\nextgroupplot[title={\color{goldhl!60!black}Calibration drift: slow baseline shift}, ymin=68, ymax=80]
+\addplot[goldhl, line width=0.7pt, domain=0:100, samples=180]
+  {72 + 0.055*x + 1.2*sin(deg(x/3.1))};
+\draw[gray!55, dashed] (axis cs:0,72) -- (axis cs:100,72);
+\node[font=\tiny, goldhl!50!black, anchor=west] at (axis cs:8,78.6) {the process is fine; the sensor is not};
+
+\nextgroupplot[title={\color{purplehl}Genuine degradation: variance grows}, ymin=64, ymax=80]
+\addplot[purplehl, line width=0.7pt, domain=0:100, samples=200]
+  {72 + (0.6+0.055*x)*sin(deg(x*2.3)) + 0.5*sin(deg(x/2.7))};
+\node[font=\tiny, purplehl, anchor=west] at (axis cs:5,78) {this is the one you want to catch};
+\end{groupplot}
+\end{tikzpicture}}%
+{Four telemetry signatures. Distinguishing a failing \emph{sensor} (top right, bottom left)
+from a failing \emph{machine} (bottom right) is the central diagnostic skill in IoT
+analytics --- and range checks alone cannot do it.}{telemetry-signatures}
+
+\section{Sensor Fusion}
+
+\begin{definitionbox}[Sensor Fusion]
+Combining readings from several sensors to produce an estimate better than any one
+of them. Sensors fail and drift independently, so their errors partly cancel --- the
+same argument that makes ensembles work (\chref{features}), applied to hardware.
+\end{definitionbox}
+
+\begin{worked}[Why Three Cheap Sensors Beat One Good One]
+A bearing is monitored for overheating.
+
+\smallskip
+\textbf{Single sensor.} One precise thermometer, $\sigma = 0.5^\circ$C. If it
+sticks (\dsref{telemetry-signatures}, top right), you have no monitoring at all and
+no way to know.
+
+\textbf{Three cheap sensors,} each $\sigma = 1.5^\circ$C, averaged. Because their
+errors are independent, the standard error of the mean is
+\[
+\frac{1.5}{\sqrt{3}} = 0.87^\circ\text{C}
+\]
+--- worse than the single precise sensor on accuracy alone.
+
+\smallskip
+\textbf{But now add the disagreement check.} If one sensor reads $71.4$ and the
+other two read $77.2$ and $77.6$, the odd one out is identifiable and can be
+excluded. With a single sensor that comparison does not exist.
+
+\smallskip
+\textbf{And add a different physical quantity.} Combine temperature with vibration
+and current draw. A failing bearing raises all three; a failing \emph{thermistor}
+moves only temperature. This is the decisive advantage: fusion across
+\emph{different physics} distinguishes a broken machine from a broken sensor, which
+no amount of precision in one channel can achieve.
+
+\smallskip
+\textbf{Conclusion:} the design goal is not the most accurate sensor but the most
+\emph{diagnosable} sensor set. Redundancy buys fault detection; diversity buys
+attribution.
+\end{worked}
+
+\section{Predictive Maintenance End to End}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  s/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!50!black,
+            text width=2.5cm, align=center, font=\tiny\bfseries, minimum height=0.95cm},
+  arr/.style={-{Stealth[length=2mm]}, primary!55, line width=1pt},
+  note/.style={font=\tiny\itshape, text=gray!55!black, align=center, text width=2.7cm}]
+
+\node[s=primary]   (a) at (0,0)     {1. FRAME\\{\tiny \chref{lifecycle}}};
+\node[s=secondary] (b) at (3.3,0)   {2. INGEST\\{\tiny \chref{dataeng}}};
+\node[s=tealhl]    (c) at (6.6,0)   {3. WINDOW\\FEATURES\\{\tiny \chref{features}}};
+\node[s=goldhl]    (d) at (9.9,0)   {4. MODEL};
+\node[s=purplehl]  (e) at (13.0,0)  {5. THRESHOLD\\{\tiny \chref{evaluation}}};
+\node[s=greenhl]   (f) at (3.3,-2.4){6. DEPLOY\\TO EDGE\\{\tiny \chref{cloudedge}}};
+\node[s=accent]    (g) at (6.6,-2.4){7. MONITOR\\DRIFT\\{\tiny \chref{mlops}}};
+\node[s=primary]   (h) at (9.9,-2.4){8. RETRAIN};
+
+\foreach \x/\y in {a/b,b/c,c/d,d/e}{\draw[arr] (\x) -- (\y);}
+\draw[arr] (e.south) .. controls +(0,-1.0) and +(2.6,0) .. (f.east);
+\draw[arr] (f) -- (g);
+\draw[arr] (g) -- (h);
+\draw[arr] (h.east) .. controls +(1.6,0) and +(0,-1.4) .. (d.south);
+
+\node[note] at (0,-1.15)   {``will this fail in 30 days?'' --- horizon set by parts lead time};
+\node[note] at (6.6,-1.15) {rolling mean, sd, max, rate of change, FFT bands};
+\node[note] at (9.9,-1.15) {isolation forest if no failure labels; boosting if some};
+\node[note] at (13.0,-2.4) {loop closes: the model is never finished};
+\end{tikzpicture}}%
+{Predictive maintenance as an assembly of earlier chapters. Nothing here is new
+technique --- the contribution of this chapter is the ordering, the constraints and the
+operational criteria.}{predictive-maintenance}
+
+\begin{worked}[Framing a Predictive Maintenance Model Properly]
+Applying the six framing questions of \chref{lifecycle} to 400 motors.
+
+\smallskip
+\textbf{1. Decision:} whether to schedule a motor for inspection in this week's
+maintenance window. \emph{Not} ``predict failure'' --- there is a specific action
+with a specific capacity.
+
+\textbf{2. Unit:} one motor on one day. So the modelling table has
+$400 \times 365 = 146{,}000$ rows per year, not 12 billion raw readings.
+
+\textbf{3. Target:} does this motor fail within the next 30 days? The horizon comes
+from parts lead time (3 weeks) plus scheduling slack, not from the data.
+
+\textbf{4. Timing:} only telemetry up to and including today. Any feature computed
+over the failure window is a leak (\chref{wrangling}) --- and in this domain the
+leak is easy to introduce, because maintenance records are timestamped when they
+are \emph{entered}, often after the failure.
+
+\textbf{5. Criterion:} prevent $\geq 80\%$ of unplanned stoppages with $\leq 5$
+unnecessary teardowns per 100 motors per year. Note this is recall-at-fixed-precision,
+expressed in the operations manager's units.
+
+\textbf{6. Baseline:} fixed-interval servicing every 90 days, which currently
+catches about 45\% of failures and performs 4 inspections per motor per year. The
+model must beat \emph{that}, not beat random.
+
+\smallskip
+\textbf{What this framing prevents.} Without question 2, someone builds a model on
+raw readings and reports 99.99\% accuracy (nearly every reading is from a healthy
+motor). Without question 6, a model catching 60\% of failures sounds impressive
+until you notice the calendar already catches 45\% for free.
+\end{worked}
+
+\begin{alertbox}[Evaluate on Operational Criteria, Not Statistical Ones]
+Report these four numbers, in this order:
+\begin{tightnum}
+  \item \textbf{Unplanned stoppages prevented per year} --- the business metric.
+  \item \textbf{Unnecessary inspections per year} --- the cost of false positives,
+        in technician-days.
+  \item \textbf{Warning lead time} --- a correct prediction 2 days ahead is useless
+        if parts take 3 weeks. A model with lower recall but longer lead time is
+        often the better model.
+  \item \textbf{Alerts per technician per week} --- if this exceeds what the team
+        can act on, the system will be ignored regardless of its PR-AUC.
+\end{tightnum}
+Point 3 is the one students miss: for maintenance, \emph{when} you are right
+matters as much as \emph{whether}.
+\end{alertbox}
+
+\begin{definitionbox}[Digital Twin]
+A live software model of a physical asset, continuously updated from its telemetry.
+It supports asking counterfactual questions --- ``what happens if we run this pump
+20\% faster?'' --- without touching the equipment, and provides a simulated baseline
+against which real behaviour can be compared.
+\end{definitionbox}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{IoT Analytics}
+\lensIOT{This chapter is the IoT lens in full. The distilled version: aggregate
+before you model, treat sensor faults as a distinct class from machine faults, place
+inference where the latency budget demands, and evaluate on stoppages prevented
+rather than on AUC.}
+
+\lensLA{IoT enters the campus as occupancy sensors, lab equipment usage, library
+gate counts and environmental monitoring. Room-occupancy telemetry against timetable
+data reveals which sessions are genuinely attended --- objectively, without a
+register. \textbf{Deploy this carefully:} sensing that can identify individuals'
+movements is surveillance, and requires the consent and proportionality analysis of
+\chref{ethics}, not merely a privacy notice.}
+
+\lensPM{IoT projects are unusually hard to manage and worth studying as a project
+type. They combine hardware lead times, firmware, connectivity contracts and
+analytics, so the critical path runs through procurement rather than code. Pilot on
+20 devices before committing to 4{,}000 --- the failure modes of a fleet are not
+visible at bench scale, and the cost of discovering them after deployment is
+measured in truck rolls.}
+
+\lensSEC{IoT devices are a serious and growing attack surface: default credentials,
+firmware that is never patched, and plaintext protocols. Two data science
+consequences follow. First, \textbf{compromised devices produce anomalous
+telemetry}, so your maintenance anomaly detector is also, incidentally, an intrusion
+detector --- and you should treat unexplained anomalies as a security question, not
+only an engineering one. Second, telemetry can be \emph{forged}: an attacker who
+controls a device can send readings that look healthy while the machine is damaged,
+or that trigger unnecessary shutdowns. Sensor fusion across independent physics is a
+partial defence, because forging three correlated channels consistently is much
+harder than forging one.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Telemetry to Alert]
+\begin{lstlisting}[language=Python]
+import pandas as pd, numpy as np
+from sklearn.ensemble import IsolationForest
+
+# --- 1. resample to a fixed grid; device clocks cannot be trusted -------
+t = (raw.set_index("gateway_ts")            # gateway clock, not device clock
+        .groupby("device_id")
+        .resample("1min")
+        .agg(temp=("temp", "mean"), vib=("vib", "mean"),
+             current=("current", "mean"), n=("temp", "size")))
+
+# --- 2. sensor health checks BEFORE any modelling ----------------------
+w = 60  # one hour
+health = t.groupby("device_id").rolling(w, min_periods=30).agg(["std", "mean"])
+
+stuck   = health[("temp", "std")] < 0.01        # dead sensor, not a stable process
+missing = t["n"] == 0                            # no readings arrived at all
+drifted = (health[("temp", "mean")]
+           - health[("temp", "mean")].groupby("device_id").transform("first")).abs() > 5
+
+t["sensor_suspect"] = stuck | missing | drifted  # exclude from training; alert separately
+
+# --- 3. window features (Chapter 15) -----------------------------------
+g = t.groupby("device_id")
+feat = pd.DataFrame(index=t.index)
+for col in ("temp", "vib", "current"):
+    feat[f"{col}_mean_1h"]  = g[col].transform(lambda s: s.rolling(60).mean())
+    feat[f"{col}_std_1h"]   = g[col].transform(lambda s: s.rolling(60).std())
+    feat[f"{col}_max_24h"]  = g[col].transform(lambda s: s.rolling(1440).max())
+    feat[f"{col}_slope_24h"] = g[col].transform(
+        lambda s: s.rolling(1440).apply(lambda v: np.polyfit(range(len(v)), v, 1)[0],
+                                        raw=True))
+# rising variance is the degradation signature of Figure 25.2, bottom right
+feat["vib_var_ratio"] = feat["vib_std_1h"] / g["vib"].transform(
+    lambda s: s.rolling(10080).std())          # this hour vs this week
+
+# --- 4. unsupervised: there are no failure labels ----------------------
+train = feat[~t["sensor_suspect"]].dropna()
+iso = IsolationForest(contamination=0.005, random_state=0).fit(train)
+feat["score"] = -iso.score_samples(feat.fillna(0))
+
+# --- 5. alert on PERSISTENCE, not on a single reading ------------------
+# One anomalous minute is noise. Six of the last ten is a signal.
+flag = feat["score"] > np.percentile(feat["score"], 99.5)
+feat["alert"] = flag.groupby(level="device_id").transform(
+    lambda s: s.rolling(10).sum() >= 6)
+
+print(feat.groupby(level="device_id")["alert"].sum().sort_values(ascending=False).head())
+\end{lstlisting}
+
+\textbf{Step 5 is the one that makes this deployable.} Alerting on every anomalous
+reading generates hundreds of alerts a day and the system is switched off within a
+week. Requiring persistence trades a little detection latency for a false-alarm rate
+technicians will tolerate --- the practical form of the base-rate argument from
+\chref{probability}.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A temperature sensor has reported 71.6$^\circ$C exactly for eight hours. Range
+        and null checks both pass. What is wrong, and what check catches it?
+  \item Why is ``one row per raw reading'' almost never the right unit of analysis
+        for a predictive maintenance model?
+  \item A model predicts failures with 85\% recall but only 24 hours ahead, while
+        parts take three weeks to arrive. Is it useful?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item IoT analytics is distributed across device, gateway, platform and
+        application, each with different compute, latency and context.
+  \item Telemetry is high-volume, autocorrelated, duplicated, out of order and
+        almost never labelled --- so aggregate first and expect to work unsupervised.
+  \item Distinguishing a failing sensor from a failing machine is the core
+        diagnostic skill; a stuck sensor passes every conventional validity check.
+  \item Sensor fusion across \emph{different physical quantities} is what makes that
+        distinction possible.
+  \item Frame predictive maintenance around the maintenance decision, at a device-day
+        grain, with the horizon set by parts lead time and the baseline set by the
+        existing service interval.
+  \item Evaluate on stoppages prevented, unnecessary inspections, warning lead time
+        and alerts per technician --- and alert on persistence, not on single readings.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} At-least-once delivery in an IoT platform means ingestion must
+        be: (a)~fast (b)~idempotent (c)~encrypted (d)~batched.
+  \item \textbf{(MCQ)} Which signature indicates genuine mechanical degradation
+        rather than sensor failure? (a)~variance collapsing to zero (b)~a slow
+        baseline shift in one channel (c)~growing variance across correlated channels
+        (d)~missing readings.
+  \item \textbf{(Short)} Explain why warning lead time can matter more than recall in
+        predictive maintenance.
+  \item \textbf{(Short)} Give two reasons predictive maintenance is usually an
+        unsupervised problem in practice.
+  \item \textbf{(Short)} How does sensor fusion across different physical quantities
+        help distinguish a broken sensor from a broken machine?
+  \item \textbf{(Applied)} Design a predictive maintenance system for 150 HVAC units
+        in a university. Answer all six framing questions, name the features you would
+        build, state where inference runs and why, and give the four numbers you would
+        report to the estates manager.
+  \item \textbf{(Applied)} An attacker compromises 30 devices and makes them report
+        healthy readings while the equipment degrades. Describe three data-side
+        defences, and explain which of them your existing anomaly detector already
+        provides.
+\end{reviewq}

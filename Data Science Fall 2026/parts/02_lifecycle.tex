@@ -1,0 +1,337 @@
+%=====================================================================
+\chapter{The Data Science Lifecycle}\label{ch:lifecycle}
+%=====================================================================
+\locator{1}{Part I --- Foundations of Data}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} the six phases of the CRISP-DM lifecycle and explain why the process is a loop rather than a line.
+  \item \textbf{Translate} a vague business request into a precise, measurable data science problem statement.
+  \item \textbf{Distinguish} a business metric from a model metric, and explain why a project needs both.
+  \item \textbf{Estimate} where project effort actually goes, and plan accordingly.
+  \item \textbf{Recognise} the four failure modes that kill data science projects before any model is fitted.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{landscape} --- particularly the four levels of analytics, which determine
+which lifecycle phases a project will need.
+\end{prereq}
+
+\begin{keyterms}
+CRISP-DM $\bullet$ problem framing $\bullet$ business understanding $\bullet$ data
+understanding $\bullet$ baseline $\bullet$ business metric $\bullet$ model metric
+$\bullet$ success criterion $\bullet$ deployment $\bullet$ iteration
+\end{keyterms}
+
+\section{Why a Lifecycle at All}
+
+Beginners imagine data science as: get data, build model, done. Practitioners
+know it as a loop that revisits its own assumptions repeatedly, and in which the
+modelling step is usually the shortest.
+
+The value of naming the phases is not bureaucracy. It is that each phase has a
+distinct \emph{failure mode}, and being able to say ``we are stuck in data
+understanding'' is the first step to getting unstuck.
+
+\section{CRISP-DM: The Standard Lifecycle}
+
+\begin{definitionbox}[CRISP-DM]
+The \textbf{Cross-Industry Standard Process for Data Mining}: a six-phase,
+explicitly cyclic process model --- business understanding, data understanding,
+data preparation, modelling, evaluation and deployment. It remains the most widely
+taught lifecycle because it puts \emph{understanding the problem} before
+\emph{touching the data}.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[scale=1.0,
+  ph/.style={circle, draw=#1, line width=1.2pt, fill=#1!10, text=#1!50!black,
+             align=center, font=\scriptsize\bfseries, minimum size=2.15cm, inner sep=1pt},
+  arr/.style={-{Stealth[length=2.6mm]}, primary!55, line width=1.1pt}]
+
+  \node[ph=primary]   (bu) at (90:3.3)  {Business\\Understanding};
+  \node[ph=secondary] (du) at (30:3.3)  {Data\\Understanding};
+  \node[ph=tealhl]    (dp) at (-30:3.3) {Data\\Preparation};
+  \node[ph=greenhl]   (mo) at (-90:3.3) {Modelling};
+  \node[ph=goldhl]    (ev) at (-150:3.3){Evaluation};
+  \node[ph=purplehl]  (de) at (150:3.3) {Deployment};
+
+  \draw[arr] (bu) to[bend left=14] (du);
+  \draw[arr] (du) to[bend left=14] (dp);
+  \draw[arr] (dp) to[bend left=14] (mo);
+  \draw[arr] (mo) to[bend left=14] (ev);
+  \draw[arr] (ev) to[bend left=14] (de);
+  \draw[arr] (de) to[bend left=14] (bu);
+
+  % the loops that beginners do not expect
+  \draw[{Stealth[length=2mm]}-{Stealth[length=2mm]}, accent!70, dashed, line width=0.9pt]
+        (bu) -- (du);
+  \draw[{Stealth[length=2mm]}-{Stealth[length=2mm]}, accent!70, dashed, line width=0.9pt]
+        (dp) -- (mo);
+  \draw[{Stealth[length=2mm]}-{Stealth[length=2mm]}, accent!70, dashed, line width=0.9pt]
+        (ev) -- (bu);
+
+  \node[font=\scriptsize, text=primary!70!black, align=center] at (0,0.35) {THE DATA};
+  \node[font=\scriptsize, text=primary!70!black, align=center] at (0,-0.05) {\bfseries CRISP-DM};
+  \node[font=\tiny\itshape, text=accent!80!black, align=center] at (0,-0.55)
+       {dashed = the loops\\beginners do not expect};
+\end{tikzpicture}}%
+{The CRISP-DM lifecycle. The solid arrows are the nominal order; the dashed arrows are the
+back-steps that happen in every real project. Evaluation sending you back to business
+understanding is not a sign of failure --- it is the process working.}{crispdm}
+
+\subsection{What Happens in Each Phase}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{2.9cm}p{5.3cm}p{6.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Phase} & \textbf{The work} & \textbf{Its characteristic failure} \\
+\midrule
+\endhead
+Business Understanding & Agree the objective, the decision it supports, the success criterion and the constraints & Building something nobody asked for, beautifully \\
+Data Understanding & Collect, describe, explore and check the quality of what is available & Discovering in month three that the key field is 60\% empty \\
+Data Preparation & Clean, join, transform, engineer features, split the data & Leaking information from the future into the training set \\
+Modelling & Select algorithms, train, tune hyperparameters & Chasing a 0.3\% gain that the business cannot perceive \\
+Evaluation & Check against the \emph{business} criterion, not just the metric & Declaring victory on a test set that does not resemble reality \\
+Deployment & Ship it, monitor it, retrain it, document it & Handing over a notebook and calling it a system \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Why Deployment Points Back to Business Understanding]
+The arrow from deployment back to the start is the most important one in
+\dsref{crispdm}. Once a model is live it changes the behaviour it was trained to
+predict --- students who are warned study differently, attackers who are blocked
+change tactics. The world you modelled no longer exists, so the cycle restarts.
+\chref{mlops} is entirely about living with this.
+\end{conceptbox}
+
+\section{Framing the Problem}
+
+Most projects that fail, fail here. A request arrives in the language of the
+business --- ``reduce dropouts'', ``stop the breaches'', ``ship on time'' --- and
+must be converted into something a computer can be scored against.
+
+\begin{definitionbox}[Problem Framing]
+The act of converting a stakeholder's goal into a precise specification: what is
+being predicted or described, for which unit of analysis, using what data
+available at what time, judged by what criterion, to support which decision.
+\end{definitionbox}
+
+A complete frame answers six questions. If you cannot answer all six, you are not
+ready to open the data.
+
+\dsfig{%
+\begin{tikzpicture}[
+  q/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!7,
+            text width=3.5cm, align=center, font=\scriptsize, inner sep=4pt},
+  hd/.style={font=\bfseries\scriptsize}]
+
+  \node[q=primary]   (a) at (0,0)      {\textbf{1. DECISION}\\What action will this change? If none: stop.};
+  \node[q=secondary] (b) at (4.3,0)    {\textbf{2. UNIT}\\One row is one \emph{what}? Student? Session? Sensor-hour?};
+  \node[q=tealhl]    (c) at (8.6,0)    {\textbf{3. TARGET}\\Exactly which quantity is predicted or measured?};
+  \node[q=greenhl]   (d) at (0,-2.6)   {\textbf{4. TIMING}\\What is knowable \emph{at prediction time}? Nothing later.};
+  \node[q=goldhl]    (e) at (4.3,-2.6) {\textbf{5. CRITERION}\\What number, at what level, means success?};
+  \node[q=purplehl]  (f) at (8.6,-2.6) {\textbf{6. BASELINE}\\What does the current, model-free approach achieve?};
+
+  \draw[-{Stealth[length=2mm]}, gray!50] (a) -- (b);
+  \draw[-{Stealth[length=2mm]}, gray!50] (b) -- (c);
+  \draw[-{Stealth[length=2mm]}, gray!50] (c.south) .. controls +(0,-0.8) and +(0,0.8) .. (d.north);
+  \draw[-{Stealth[length=2mm]}, gray!50] (d) -- (e);
+  \draw[-{Stealth[length=2mm]}, gray!50] (e) -- (f);
+\end{tikzpicture}}%
+{The six framing questions. Question~4 (timing) prevents the single most expensive mistake
+in applied machine learning --- training on information that will not exist when the model
+is actually used. Question~6 stops you celebrating a model that is worse than a rule of
+thumb.}{framing-six}
+
+\begin{alertbox}[Question 4 Deserves Special Fear]
+A model that predicts student failure using \emph{final attendance percentage}
+will look superb in testing and be useless in week~3, because final attendance is
+not known in week~3. This is called \term{leakage}, and it is treated in detail in
+\chref{wrangling} and \chref{evaluation}. It has ruined more student projects than
+any other single error.
+\end{alertbox}
+
+\section{Two Kinds of Metric}
+
+\begin{definitionbox}[Business Metric vs.\ Model Metric]
+A \term{model metric} scores the model against the data (accuracy, error, AUC). A
+\term{business metric} scores the project against the world (dropouts prevented,
+downtime avoided, breaches caught, cost saved). A project needs both, and they can
+move in opposite directions.
+\end{definitionbox}
+
+\begin{worked}[When a Better Model Is a Worse Project]
+A dropout-prediction model is improved from 88\% to 91\% accuracy. Is the project
+better off?
+
+\smallskip
+\textbf{The data.} 1{,}000 students, 100 of whom drop out. The department can fund
+50 interventions.
+
+\textbf{Model A} (88\% accurate) flags 60 students, of whom 40 truly drop out.\\
+\textbf{Model B} (91\% accurate) flags 20 students, of whom 18 truly drop out.
+
+\textbf{Model metric.} B wins on accuracy: it makes fewer mistakes overall,
+largely by predicting ``will not drop out'' more often --- which is right 90\% of
+the time by default.
+
+\textbf{Business metric.} The department can afford 50 interventions and each
+successful intervention retains one student. Model~A surfaces 40 real cases;
+Model~B surfaces 18. Under capacity of 50, Model~A retains up to 40 students,
+Model~B up to 18.
+
+\textbf{Conclusion.} Model~A is worth roughly twice as much despite being the
+worse model by accuracy. The mismatch arises because accuracy ignores both the
+class imbalance and the capacity constraint. \chref{evaluation} builds the metrics
+that would have caught this --- here, \emph{recall} at a fixed budget.
+\end{worked}
+
+\section{Where the Time Actually Goes}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=12.2cm, height=5.0cm,
+  xbar stacked, xmin=0, xmax=100,
+  bar width=15pt,
+  ytick={0,1}, yticklabels={{What students\\expect},{What projects\\actually need}},
+  yticklabel style={align=center, font=\scriptsize},
+  xlabel={\scriptsize share of project effort (\%)},
+  xtick={0,20,40,60,80,100},
+  tick label style={font=\scriptsize},
+  legend style={at={(0.5,-0.42)}, anchor=north, legend columns=5,
+                font=\scriptsize, draw=gray!40},
+  axis lines=left, enlarge y limits=0.55,
+]
+\addplot[fill=primary!70, draw=none]   coordinates {(10,0) (25,1)};
+\addplot[fill=secondary!65, draw=none] coordinates {(10,0) (35,1)};
+\addplot[fill=greenhl!65, draw=none]   coordinates {(60,0) (15,1)};
+\addplot[fill=goldhl!70, draw=none]    coordinates {(10,0) (10,1)};
+\addplot[fill=purplehl!60, draw=none]  coordinates {(10,0) (15,1)};
+\legend{Framing, Data prep, Modelling, Evaluation, Deployment}
+\end{axis}
+\end{tikzpicture}}%
+{Expected versus actual effort. Modelling --- the part that attracted you to the subject
+--- is typically the smallest phase. Framing and data preparation together consume most
+of a real project, which is why Chapters 2, 3 and 7 exist.}{effort-split}
+
+\begin{pitfall}[The Four Project Killers]
+\begin{tight}
+  \item \textbf{No decision attached.} If no action changes based on the output,
+        the project cannot succeed, however accurate it is.
+  \item \textbf{No baseline.} Without knowing what a simple rule achieves, you
+        cannot show your model is worth its complexity.
+  \item \textbf{Unavailable-at-prediction-time features.} See the alert above.
+  \item \textbf{A success criterion agreed only after seeing the results.} If the
+        target moves to wherever the model landed, the evaluation is theatre.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Problem Framing}
+\lensLA{\emph{Decision:} which students receive an outreach call in week 5.
+\emph{Unit:} one enrolled student in one course-offering. \emph{Target:} will the
+student withdraw or fail? \emph{Timing:} only data from weeks 1--4 may be used.
+\emph{Criterion:} catch at least 70\% of eventual failures while flagging no more
+than 20\% of the cohort, because staff can only call 20\%. \emph{Baseline:} flag
+everyone who missed two or more labs.}
+
+\lensPM{\emph{Decision:} whether to add a developer to a sprint at the mid-point.
+\emph{Unit:} one sprint for one team. \emph{Target:} will committed story points
+be delivered? \emph{Timing:} data up to day 5 of a 10-day sprint. \emph{Criterion:}
+beat the scrum master's own mid-sprint judgement, measured over 20 sprints.
+\emph{Baseline:} ``we finish if more than half the points are done by day 5.''}
+
+\lensIOT{\emph{Decision:} whether to schedule a motor for maintenance this week.
+\emph{Unit:} one motor on one day. \emph{Target:} will it fail within 30 days?
+\emph{Timing:} only telemetry up to and including today. \emph{Criterion:} prevent
+at least 80\% of unplanned failures with fewer than 5 unnecessary teardowns per
+100 motors per year. \emph{Baseline:} fixed-interval servicing every 90 days.}
+
+\lensSEC{\emph{Decision:} whether to force step-up authentication on a login.
+\emph{Unit:} one authentication attempt. \emph{Target:} is this attempt an account
+takeover? \emph{Timing:} only what is observable at the instant of the request.
+\emph{Criterion:} detect 90\% of takeovers while challenging under 1 in 500
+legitimate logins --- a false-positive budget set by the customer-experience team,
+not by the data scientist. \emph{Baseline:} challenge every login from a new
+country.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Writing a Frame]
+Take any dataset you have access to --- your own module grades will do --- and
+fill in this template before writing any analysis code. It takes ten minutes and
+saves days.
+
+\begin{lstlisting}[language=Python]
+FRAME = {
+    "decision":  "What action changes because of this output?",
+    "unit":      "One row is one ______.",
+    "target":    "Exactly what is predicted/measured, in what units?",
+    "timing":    "Which columns exist at prediction time? List them.",
+    "criterion": "Success = ______ above/below ______.",
+    "baseline":  "The no-model rule is ______, which achieves ______.",
+}
+
+for k, v in FRAME.items():
+    print(f"{k.upper():10s} {v}")
+    # Replace each value with your own answer, then re-read question 4.
+\end{lstlisting}
+
+\textbf{The test of a good frame:} hand it to someone outside the project. If they
+can tell you what the model outputs and how you would know it worked, the frame is
+done.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A team reports that model accuracy rose from 94\% to 96\% on a dataset
+        where 95\% of cases are negative. What should you ask before congratulating
+        them?
+  \item Why does CRISP-DM draw an arrow from deployment back to business
+        understanding, rather than ending at deployment?
+  \item A hospital wants to predict which patients will be readmitted within 30
+        days. Name one feature that would be a leakage error, and say why.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item CRISP-DM has six phases and is a loop; the back-steps are normal, not
+        failures.
+  \item Framing precedes data. Answer all six framing questions --- decision, unit,
+        target, timing, criterion, baseline --- before opening a file.
+  \item Timing (what is knowable at prediction time) prevents leakage, the most
+        expensive routine mistake in the field.
+  \item Model metrics and business metrics are different and can disagree. A
+        project is judged on the latter.
+  \item Modelling is the smallest phase. Framing and data preparation dominate.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} In CRISP-DM, which phase immediately follows data
+        preparation? (a)~Evaluation (b)~Modelling (c)~Deployment (d)~Business
+        understanding.
+  \item \textbf{(MCQ)} A feature that would not be available when the model runs
+        in production causes: (a)~overfitting (b)~leakage (c)~underfitting
+        (d)~class imbalance.
+  \item \textbf{(Short)} Give a definition of ``baseline'' and explain in one
+        sentence why a project without one cannot demonstrate value.
+  \item \textbf{(Short)} Describe a situation in which a model with higher accuracy
+        delivers lower business value than a model with lower accuracy.
+  \item \textbf{(Short)} Why is ``one row is one \emph{what}?'' a harder question
+        than it appears for IoT telemetry?
+  \item \textbf{(Applied)} Write a complete six-part frame for this request: ``We
+        want to use AI to stop our servers going down.''
+  \item \textbf{(Applied)} For the learning analytics lens above, propose a
+        \emph{different} success criterion that would be appropriate if the
+        department had unlimited staff, and explain how it changes which model you
+        would prefer.
+\end{reviewq}

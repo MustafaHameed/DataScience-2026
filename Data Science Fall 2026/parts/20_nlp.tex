@@ -1,0 +1,346 @@
+%=====================================================================
+\chapter{Text and Natural Language Processing}\label{ch:nlp}
+%=====================================================================
+\locator{4}{Part IV --- Deep Learning and Modern AI}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Apply} the standard text preprocessing pipeline and justify each step.
+  \item \textbf{Compute} TF-IDF and explain what it measures.
+  \item \textbf{Distinguish} sparse bag-of-words representations from dense embeddings.
+  \item \textbf{Build} a text classifier and evaluate it appropriately.
+  \item \textbf{Interpret} topic model output and state its limitations.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (cosine similarity --- the standard text metric),
+\chref{classification} (naive Bayes) and \chref{architectures} (embeddings and
+attention).
+\end{prereq}
+
+\begin{keyterms}
+corpus $\bullet$ token $\bullet$ tokenisation $\bullet$ stop words $\bullet$
+stemming $\bullet$ lemmatisation $\bullet$ bag of words $\bullet$ n-gram $\bullet$
+term frequency $\bullet$ inverse document frequency $\bullet$ TF-IDF $\bullet$
+sparse vs dense $\bullet$ word embedding $\bullet$ contextual embedding $\bullet$
+topic modelling $\bullet$ named entity recognition
+\end{keyterms}
+
+\section{Turning Words into Numbers}
+
+Every model in this book consumes an $n \times p$ matrix of numbers
+(\dsref{matrix-anatomy}). Text is not that. The entire first half of natural
+language processing is the problem of producing that matrix without throwing away
+the meaning.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  st/.style={rounded corners=3pt, draw=#1, fill=#1!9, text=#1!50!black,
+             text width=2.15cm, align=center, font=\tiny\bfseries, minimum height=1.0cm},
+  arr/.style={-{Stealth[length=2mm]}, gray!60, line width=0.9pt},
+  ex/.style={font=\tiny\ttfamily, text=gray!50!black, align=center, text width=2.4cm}]
+
+\node[st=secondary] (a) at (0,0)     {1. RAW TEXT};
+\node[st=primary]   (b) at (2.65,0)  {2. NORMALISE\\{\tiny lowercase, strip}};
+\node[st=tealhl]    (c) at (5.3,0)   {3. TOKENISE\\{\tiny split into units}};
+\node[st=goldhl]    (d) at (7.95,0)  {4. FILTER\\{\tiny stop words}};
+\node[st=purplehl]  (e) at (10.6,0)  {5. STEM /\\LEMMATISE};
+\node[st=accent]    (f) at (13.25,0) {6. VECTORISE};
+
+\foreach \x/\y in {a/b,b/c,c/d,d/e,e/f}{\draw[arr] (\x) -- (\y);}
+
+\node[ex] at (0,-1.35)     {"The Servers\\CRASHED again!"};
+\node[ex] at (2.65,-1.35)  {the servers\\crashed again};
+\node[ex] at (5.3,-1.35)   {[the, servers,\\crashed, again]};
+\node[ex] at (7.95,-1.35)  {[servers,\\crashed, again]};
+\node[ex] at (10.6,-1.35)  {[server,\\crash, again]};
+\node[ex] at (13.25,-1.35) {[0, 1, 0, 2,\\1, 0, ...]};
+
+\node[anchor=west, align=left, text width=13.4cm, font=\tiny, text=accent!75!black]
+     at (-1.1,-2.55)
+     {\textbf{Every step discards information, so every step is a decision.} Removing stop
+      words destroys negation --- ``not vulnerable'' becomes ``vulnerable''. Lowercasing
+      merges \texttt{US} and \texttt{us}, and in security merges an IP-adjacent token with
+      a common word. Stemming maps \emph{university} and \emph{universal} to the same
+      stem. Apply each step only if you can say what it buys you.};
+\end{tikzpicture}}%
+{The classical text preprocessing pipeline. Modern transformer models skip most of
+steps 2--5, using subword tokenisation directly --- but the classical pipeline is still
+what you want for fast, explainable, low-resource classifiers.}{nlp-pipeline}
+
+\section{Bag of Words and TF-IDF}
+
+\begin{definitionbox}[Bag of Words]
+Represent each document as a vector of word counts over a fixed vocabulary. Word
+order is discarded entirely --- hence ``bag''. Crude, and surprisingly effective for
+classification.
+\end{definitionbox}
+
+\begin{definitionbox}[TF-IDF]
+\[
+\text{tf-idf}(t, d) \;=\; \underbrace{\text{tf}(t,d)}_{\text{count in this doc}}
+\times
+\underbrace{\log\frac{N}{\text{df}(t)}}_{\text{rarity across the corpus}}
+\]
+A term scores highly when it is frequent \emph{in this document} and rare
+\emph{across the corpus} --- which is a good working definition of ``distinctive''.
+\end{definitionbox}
+
+\begin{worked}[Computing TF-IDF]
+A corpus of $N = 1000$ support tickets. Consider one ticket of 100 words.
+
+\smallskip
+\begin{center}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\textbf{Term} & \textbf{count} & \textbf{tf} & \textbf{docs containing} & \textbf{idf} \\
+\midrule
+the         & 8 & 0.08 & 1000 & $\log(1000/1000)=0$ \\
+server      & 4 & 0.04 & 300  & $\log(1000/300)=1.20$ \\
+kerberos    & 2 & 0.02 & 12   & $\log(1000/12)=4.42$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{TF-IDF scores:}
+\begin{tight}
+  \item \texttt{the}: $0.08 \times 0 = \mathbf{0}$ --- appears everywhere, so it
+        distinguishes nothing. Note that IDF has removed it \emph{automatically},
+        without any stop-word list.
+  \item \texttt{server}: $0.04 \times 1.20 = \mathbf{0.048}$
+  \item \texttt{kerberos}: $0.02 \times 4.42 = \mathbf{0.088}$
+\end{tight}
+
+\smallskip
+\textbf{The result that matters:} \texttt{kerberos} outranks \texttt{server}
+despite appearing half as often, because it is rare across the corpus and therefore
+tells you far more about which ticket this is. That is the whole idea, and it is
+why TF-IDF remains a strong baseline forty years on.
+\end{worked}
+
+\section{From Sparse to Dense}
+
+\begin{alertbox}[The Weakness of Bag of Words]
+In a TF-IDF space, \emph{server}, \emph{host} and \emph{machine} are three
+completely unrelated dimensions --- as unrelated as \emph{server} and
+\emph{banana}. The representation has no notion of meaning, only of spelling. A
+model trained on documents saying ``server'' will learn nothing applicable to
+documents saying ``host''.
+\end{alertbox}
+
+\begin{definitionbox}[Word Embedding]
+A dense vector of a few hundred dimensions, learned so that words appearing in
+similar contexts get similar vectors. Meaning becomes geometry: cosine similarity
+between embeddings measures semantic relatedness.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.6cm},
+  width=6.4cm, height=4.6cm,
+  axis lines=left, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+]
+\nextgroupplot[title={\color{accent}Sparse (TF-IDF): 20{,}000 dimensions},
+  xlabel={vocabulary index}, ylabel={weight},
+  xmin=0, xmax=40, ymin=0, ymax=1.1, ybar, bar width=2.2pt, xtick=\empty]
+\addplot[draw=accent, fill=accent!35] coordinates {
+ (4,0.62)(11,0.31)(19,0.88)(28,0.44)(35,0.21)};
+\node[font=\tiny, text=gray!55!black, align=center, anchor=north] at (axis cs:20,1.05)
+     {mostly zeros; each dimension\\is one exact word};
+
+\nextgroupplot[title={\color{greenhl}Dense (embedding): 300 dimensions},
+  xlabel={dimension}, ylabel={value},
+  xmin=0, xmax=40, ymin=-1.0, ymax=1.15, ybar, bar width=2.2pt, xtick=\empty]
+\addplot[draw=greenhl, fill=greenhl!35] coordinates {
+ (1,0.42)(2,-0.31)(3,0.18)(4,0.66)(5,-0.52)(6,0.24)(7,-0.14)(8,0.71)(9,-0.38)
+ (10,0.09)(11,0.55)(12,-0.62)(13,0.33)(14,0.12)(15,-0.45)(16,0.28)(17,0.61)
+ (18,-0.22)(19,0.37)(20,-0.51)(21,0.44)(22,0.16)(23,-0.33)(24,0.58)(25,-0.19)
+ (26,0.26)(27,0.48)(28,-0.41)(29,0.13)(30,0.35)(31,-0.28)(32,0.52)(33,0.07)
+ (34,-0.46)(35,0.39)(36,0.21)(37,-0.35)(38,0.63)(39,-0.11)(40,0.29)};
+\node[font=\tiny, text=gray!55!black, align=center, anchor=north] at (axis cs:20,1.1)
+     {every dimension used; similar words\\get similar vectors};
+\end{groupplot}
+\end{tikzpicture}}%
+{Sparse versus dense text representations. TF-IDF is interpretable but has no concept of
+synonymy; embeddings capture meaning but no single dimension means anything you can
+name.}{sparse-dense}
+
+\begin{conceptbox}[Static versus Contextual Embeddings]
+Early embeddings (word2vec, GloVe) give each word one fixed vector, so
+\emph{bank} in ``river bank'' and ``bank account'' share a vector --- a real
+limitation. Transformer models (\chref{architectures}) produce \emph{contextual}
+embeddings: the vector for a word depends on the sentence it is in. This is the
+main practical advance behind modern NLP, and it is what \chref{genai} builds on.
+\end{conceptbox}
+
+\section{Topic Modelling}
+
+\begin{definitionbox}[Topic Modelling]
+An unsupervised method (\chref{unsupervised} applied to text) that discovers
+recurring themes in a corpus. Each topic is a distribution over words; each
+document is a mixture of topics. Latent Dirichlet Allocation (LDA) is the classical
+method.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  t/.style={rounded corners=3pt, draw=#1, fill=#1!8, text width=3.2cm, align=left,
+            font=\tiny, inner sep=5pt},
+  hd/.style={rounded corners=3pt, fill=#1, text=white, font=\tiny\bfseries,
+             text width=3.2cm, align=center, minimum height=0.55cm}]
+
+\node[hd=secondary] at (0,0)   {Topic 1 (auto-named ``login'')};
+\node[t=secondary]  at (0,-1.3){%
+  \textbf{0.081}~password\\ \textbf{0.064}~reset\\ \textbf{0.052}~locked\\
+  \textbf{0.041}~account\\ \textbf{0.033}~expired};
+
+\node[hd=greenhl] at (3.7,0)   {Topic 2 (``network'')};
+\node[t=greenhl]  at (3.7,-1.3){%
+  \textbf{0.077}~vpn\\ \textbf{0.069}~connection\\ \textbf{0.048}~timeout\\
+  \textbf{0.040}~dropped\\ \textbf{0.031}~wifi};
+
+\node[hd=goldhl] at (7.4,0)    {Topic 3 (``hardware'')};
+\node[t=goldhl]  at (7.4,-1.3) {%
+  \textbf{0.073}~laptop\\ \textbf{0.061}~screen\\ \textbf{0.050}~battery\\
+  \textbf{0.038}~replace\\ \textbf{0.029}~keyboard};
+
+\node[hd=purplehl] at (11.1,0)  {Topic 4 (``???'')};
+\node[t=purplehl]  at (11.1,-1.3){%
+  \textbf{0.045}~please\\ \textbf{0.039}~thanks\\ \textbf{0.036}~urgent\\
+  \textbf{0.031}~asap\\ \textbf{0.028}~regards};
+
+\node[anchor=west, align=left, text width=13.4cm, font=\tiny, text=accent!75!black]
+     at (-1.75,-3.1)
+     {\textbf{Topic 4 is the lesson.} LDA found a genuine statistical pattern --- politeness
+      formulae --- that is not a topic in any useful sense. Topic models produce
+      \emph{word clusters}, and it is entirely on you to decide which are meaningful. The
+      labels above were written by a human; the algorithm supplied only the numbers.};
+\end{tikzpicture}}%
+{Output of a four-topic LDA on IT support tickets. Three topics are useful; the fourth is
+a statistical artefact. Never present topic model output without human
+inspection.}{topic-model}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Text Analytics}
+\lensLA{Analyse free-text reflections, forum posts and module feedback. Sentiment
+and topic trends across a semester reveal problems that numeric engagement data
+misses entirely --- a cohort can be clicking dutifully and telling you in prose that
+they are lost. \textbf{Two cautions:} student writing is identifiable even after
+anonymisation, and automated sentiment scoring of individuals is an ethical
+decision, not a technical one (\chref{ethics}).}
+
+\lensPM{Classify support tickets and requirement documents automatically, and mine
+retrospective notes for recurring themes. TF-IDF plus logistic regression is
+usually sufficient and takes an afternoon; it is also explainable, which matters
+when the classifier is routing work to people. Topic modelling over several years of
+retrospectives is a genuinely useful way to find problems the organisation keeps
+re-discovering.}
+
+\lensIOT{Text appears where you might not expect it: device logs, error strings and
+maintenance notes. Treating log lines as text --- tokenising, then clustering
+templates --- turns an unmanageable stream into a manageable set of message types,
+and a \emph{new} template appearing is itself an anomaly signal. Engineers'
+free-text maintenance records are often the only ground-truth labels available for
+predictive maintenance (\chref{iot}).}
+
+\lensSEC{Phishing and spam detection is the classic application: naive Bayes on
+TF-IDF remains fast enough for mail-gateway volumes and is still competitive.
+Beyond that, text classification applies to malware strings, command-line arguments
+and DNS names. Note the adversarial character: spammers deliberately misspell,
+insert homoglyphs and pad with innocuous text specifically to defeat tokenisation
+--- so preprocessing choices here are a security control, not a convenience.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[TF-IDF Classifier and Topics]
+\begin{lstlisting}[language=Python]
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.metrics import classification_report
+import numpy as np
+
+# --- 1. a strong, explainable text classifier in four lines -----------
+clf = make_pipeline(
+    TfidfVectorizer(ngram_range=(1, 2),      # unigrams + bigrams: "not vulnerable"
+                    min_df=3,                # ignore terms in fewer than 3 docs
+                    max_df=0.85,             # ignore terms in >85% of docs
+                    sublinear_tf=True),
+    LogisticRegression(max_iter=1000, class_weight="balanced"),
+).fit(train_texts, train_labels)
+
+print(classification_report(test_labels, clf.predict(test_texts), digits=3))
+
+# --- 2. WHY did it decide that? the great virtue of this approach -----
+vec, lr = clf.named_steps["tfidfvectorizer"], clf.named_steps["logisticregression"]
+terms = np.array(vec.get_feature_names_out())
+top = lr.coef_[0].argsort()
+print("most indicative of the positive class:", terms[top[-12:]][::-1])
+print("most indicative of the negative class:", terms[top[:12]])
+
+# --- 3. topic modelling: ALWAYS read the topics before believing them -
+counts = TfidfVectorizer(max_df=0.85, min_df=5).fit(all_texts)
+lda = LatentDirichletAllocation(n_components=6, random_state=0)
+lda.fit(counts.transform(all_texts))
+vocab = counts.get_feature_names_out()
+for k, comp in enumerate(lda.components_):
+    print(f"topic {k}:", ", ".join(vocab[i] for i in comp.argsort()[-8:][::-1]))
+    # Inspect each one. Expect at least one to be an artefact like Topic 4 above.
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A word appears in every document of a corpus. What is its IDF, and what
+        does that do to its TF-IDF score?
+  \item Give a concrete example where removing stop words would reverse the meaning
+        of a document.
+  \item Why does TF-IDF treat ``server'' and ``host'' as completely unrelated, and
+        what representation fixes it?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Text must become a numeric matrix; every preprocessing step trades
+        information for tractability and must be justified.
+  \item Bag of words discards order; TF-IDF weights terms by frequency in the
+        document and rarity in the corpus, and downweights common words
+        automatically.
+  \item Sparse representations are interpretable but blind to synonymy; dense
+        embeddings capture meaning as geometry but individual dimensions mean
+        nothing.
+  \item Contextual embeddings from transformers give a word a different vector in
+        each sentence, which is the main modern advance.
+  \item Topic models find word clusters, not topics. Human inspection is mandatory.
+  \item TF-IDF plus logistic regression remains a fast, strong, explainable baseline
+        --- try it before anything larger.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A term appearing in 1 of 1000 documents has an IDF of roughly:
+        (a)~0 (b)~1 (c)~3 (d)~7.
+  \item \textbf{(MCQ)} Which representation captures that ``laptop'' and ``notebook''
+        are related? (a)~bag of words (b)~TF-IDF (c)~word embeddings (d)~n-grams.
+  \item \textbf{(Short)} Explain in your own words what TF-IDF measures and why the
+        IDF term makes stop-word removal partly redundant.
+  \item \textbf{(Short)} Give two reasons why bigrams often improve a text classifier.
+  \item \textbf{(Short)} Why must topic model output be inspected by a human before
+        it is reported?
+  \item \textbf{(Applied)} Design a pipeline to classify 40{,}000 IT support tickets
+        into eight categories. State your preprocessing choices with a justification
+        for each, your representation, your model, and your evaluation metric ---
+        noting that the categories are heavily imbalanced.
+  \item \textbf{(Applied)} A phishing classifier trained on TF-IDF starts failing.
+        Investigation shows attackers now write ``pa55word'' and ``inv0ice''. Explain
+        why the model failed, and propose two changes that would make it more robust.
+\end{reviewq}

@@ -1,0 +1,398 @@
+%=====================================================================
+\chapter{Acquisition, Wrangling and Cleaning}\label{ch:wrangling}
+%=====================================================================
+\locator{2}{Part II --- From Data to Insight}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Select} an appropriate acquisition method and describe the risks each carries.
+  \item \textbf{Perform} the standard cleaning operations: deduplication, type repair, missing-value handling and outlier treatment.
+  \item \textbf{Choose} between join types and predict how each changes the row count.
+  \item \textbf{Encode} categorical variables and \textbf{scale} numeric ones without corrupting the measurement scale.
+  \item \textbf{Detect} and \textbf{prevent} data leakage --- the most expensive routine error in applied machine learning.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{data} (types, scales, quality dimensions, missingness mechanisms) and
+\chref{lifecycle} (framing question 4, on what is knowable at prediction time).
+\end{prereq}
+
+\begin{keyterms}
+ETL / ELT $\bullet$ API $\bullet$ web scraping $\bullet$ deduplication $\bullet$
+imputation $\bullet$ join (inner, left, outer) $\bullet$ one-hot encoding $\bullet$
+ordinal encoding $\bullet$ normalisation $\bullet$ standardisation $\bullet$
+binning $\bullet$ data leakage $\bullet$ pipeline
+\end{keyterms}
+
+\section{Where Data Comes From}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{2.9cm}p{5.0cm}p{6.7cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Source} & \textbf{Typical use} & \textbf{The risk you must manage} \\
+\midrule
+\endhead
+Database query & Internal transactional systems & The production database is not a playground; a careless join can lock tables \\
+File export (CSV, Excel) & One-off extracts, shared datasets & Silent type coercion --- Excel turns identifiers into dates and drops leading zeros \\
+REST API & SaaS platforms, VLE data, threat feeds & Rate limits, pagination, and schemas that change without notice \\
+Streaming (MQTT, Kafka) & IoT telemetry, live logs & Out-of-order and duplicate delivery; see \chref{dataeng} \\
+Web scraping & Public pages with no API & Legal and ethical limits, brittle selectors, and terms of service \\
+Manual entry / survey & Ground truth, labels, context & Human error, missingness that is rarely MCAR \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Before You Acquire Anything]
+Ask two questions that are not technical: \emph{am I permitted to use this data
+for this purpose}, and \emph{does it contain personal data}. Answering them after
+building the model is how projects get cancelled at the last stage.
+\chref{ethics} covers the substance; the point here is that acquisition is the
+moment to ask.
+\end{alertbox}
+
+\section{The Cleaning Sequence}
+
+Order matters. Doing these in the wrong sequence causes quiet corruption --- for
+example, imputing before deduplicating lets duplicated rows vote twice on the
+mean you impute with.
+
+\dsfig{%
+\begin{tikzpicture}[
+  st/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!8, text=#1!50!black,
+             text width=2.45cm, align=center, font=\scriptsize\bfseries, minimum height=1.0cm},
+  arr/.style={-{Stealth[length=2.2mm]}, primary!55, line width=1pt},
+  note/.style={font=\tiny\itshape, text=gray!55!black, align=center, text width=2.6cm}]
+
+  \node[st=primary]   (a) at (0,0)     {1. Audit\\(\chref{data})};
+  \node[st=secondary] (b) at (3.05,0)  {2. Fix types};
+  \node[st=tealhl]    (c) at (6.10,0)  {3. Deduplicate};
+  \node[st=greenhl]   (d) at (9.15,0)  {4. Join sources};
+  \node[st=goldhl]    (e) at (12.2,0)  {5. Handle missing};
+  \node[st=purplehl]  (f) at (3.05,-2.6){6. Treat outliers};
+  \node[st=accent]    (g) at (6.10,-2.6){7. Encode \& scale};
+  \node[st=primary]   (h) at (9.15,-2.6){8. Split\\train/test};
+
+  \foreach \x/\y in {a/b,b/c,c/d,d/e}{\draw[arr] (\x) -- (\y);}
+  \draw[arr] (e.south) .. controls +(0,-1.0) and +(0,1.0) .. (f.north);
+  \draw[arr] (f) -- (g);
+  \draw[arr] (g) -- (h);
+
+  \node[note] at (3.05,-1.15) {deduplicate \emph{before} imputing, or duplicates skew the fill value};
+  \node[note] at (12.2,-2.6) {\textbf{Steps 5--7 must be fitted on the training split only.}
+                              Fitting them on everything is leakage.};
+  \draw[-{Stealth[length=2mm]}, accent!70, dashed] (10.6,-2.6) -- (10.35,-2.6);
+\end{tikzpicture}}%
+{The cleaning sequence. The order is not arbitrary: each step assumes the previous one is
+done. The note on the right is the single most important rule in the chapter and is
+expanded in \S\ref{sec:leakage}.}{cleaning-sequence}
+
+\subsection{Handling Missing Values}
+
+\rowcolors{2}{white}{defbg}
+\begin{longtable}{@{}p{3.3cm}p{4.6cm}p{6.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Strategy} & \textbf{How} & \textbf{When it is appropriate} \\
+\midrule
+\endhead
+Drop rows & Remove any row with a missing value & Missingness is MCAR and rare ($<5\%$). Otherwise you are deleting a biased subset \\
+Drop column & Remove the feature entirely & More than roughly half missing and no reason to think absence is informative \\
+Mean / median fill & Replace with the column's centre & Numeric, MCAR or MAR, and the variable is not central to the model \\
+Forward fill & Carry the last observation forward & Time series with slow-changing values --- sensor telemetry especially \\
+Model-based & Predict the missing value from other columns & Valuable feature, MAR, enough data to justify the complexity \\
+Missing indicator & Add a boolean \texttt{was\_missing} column & \textbf{MNAR} --- the absence itself carries signal. Usually combined with a simple fill \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[The Default You Should Adopt]
+When unsure, add the missing indicator \emph{and} fill with the median. It costs
+one column, never destroys information, and lets the model decide whether absence
+matters. In learning analytics and security logging this is almost always the
+right call, because absence is rarely accidental (\chref{data}).
+\end{conceptbox}
+
+\section{Joining Data}
+
+Real projects always need more than one table. The join type decides how many rows
+survive, and choosing wrongly is a common source of silently wrong analyses.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+\foreach \i/\name/\desc [count=\c from 0] in {%
+  0/INNER/{only matching\\rows survive},
+  1/LEFT/{all of A; nulls\\where B missing},
+  2/OUTER/{everything from\\both sides}}{
+  \pgfmathsetmacro{\xo}{\c*4.6}
+  \begin{scope}[shift={(\xo,0)}]
+    \ifnum\i=0
+      \fill[gray!12] (-0.65,0) circle (1.0cm);
+      \fill[gray!12] (0.65,0) circle (1.0cm);
+      \begin{scope}\clip (-0.65,0) circle (1.0cm); \fill[primary!45] (0.65,0) circle (1.0cm);\end{scope}
+    \fi
+    \ifnum\i=1
+      \fill[primary!45] (-0.65,0) circle (1.0cm);
+      \fill[gray!12] (0.65,0) circle (1.0cm);
+      \begin{scope}\clip (-0.65,0) circle (1.0cm); \fill[primary!45] (0.65,0) circle (1.0cm);\end{scope}
+    \fi
+    \ifnum\i=2
+      \fill[primary!45] (-0.65,0) circle (1.0cm);
+      \fill[primary!45] (0.65,0) circle (1.0cm);
+    \fi
+    \draw[primary, line width=1pt] (-0.65,0) circle (1.0cm);
+    \draw[primary, line width=1pt] (0.65,0) circle (1.0cm);
+    \node[font=\scriptsize\bfseries, text=primary!60!black] at (-1.35,1.15) {A};
+    \node[font=\scriptsize\bfseries, text=primary!60!black] at (1.35,1.15) {B};
+    \node[font=\scriptsize\bfseries, text=primary] at (0,-1.5) {\name};
+    \node[align=center, text=gray!55!black, font=\tiny] at (0,-2.15) {\desc};
+  \end{scope}}
+
+\node[align=left, text width=13.5cm, font=\scriptsize, text=accent!70!black] at (4.6,-3.2)
+  {\textbf{Always check the row count before and after a join.} If it \emph{grew},
+   the key was not unique on one side and rows have been duplicated --- a
+   many-to-many join is almost never what you intended.};
+\end{tikzpicture}}%
+{The three joins you will use. The default in most tools is inner, which silently discards
+non-matching rows; if 300 of your 2{,}000 students have no VLE record, an inner join
+removes them and your sample is no longer the cohort.}{join-types}
+
+\section{Encoding and Scaling}
+
+\begin{definitionbox}[One-Hot vs.\ Ordinal Encoding]
+\term{One-hot encoding} turns a nominal variable with $k$ categories into $k$
+binary columns, preserving the fact that no order exists.
+\term{Ordinal encoding} maps categories to integers, and is correct \emph{only}
+when the categories genuinely have an order (low $<$ medium $<$ high).
+\end{definitionbox}
+
+\begin{definitionbox}[Normalisation vs.\ Standardisation]
+\term{Min--max normalisation} rescales to $[0,1]$:
+$x' = \dfrac{x - \min}{\max - \min}$.\\[3pt]
+\term{Standardisation} (z-score) centres and rescales by spread:
+$z = \dfrac{x - \bar{x}}{s}$, giving mean 0 and standard deviation 1.
+\end{definitionbox}
+
+\begin{worked}[Scaling the Student Vectors]
+From \chref{math}: $a = [92, 8, 12]$, $b = [45, 3, 0]$, with plausible ranges
+attendance $[0,100]$, quizzes $[0,10]$, posts $[0,25]$.
+
+\smallskip
+\textbf{Unscaled distance:} $\sqrt{47^2 + 5^2 + 12^2} = \sqrt{2378} \approx 48.8$,
+of which attendance contributed 93\%.
+
+\textbf{Min--max normalised:}\\
+$a' = [0.92,\; 0.80,\; 0.48]$, \quad $b' = [0.45,\; 0.30,\; 0.00]$.
+
+\textbf{Scaled distance:}
+$\sqrt{0.47^2 + 0.50^2 + 0.48^2} = \sqrt{0.2209 + 0.25 + 0.2304}
+= \sqrt{0.7013} \approx 0.837$.
+
+\smallskip
+\textbf{Contribution now:} attendance 31\%, quizzes 36\%, posts 33\% --- roughly
+equal, which is what ``these three features matter comparably'' actually means.
+Note this is a \emph{modelling decision}, not a correction: you have declared the
+three features equally important. If attendance really is more important, say so
+with a weight, deliberately.
+\end{worked}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{4.4cm}p{4.6cm}p{5.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Method needs scaling?} & \textbf{Because} & \textbf{Examples} \\
+\midrule
+\endhead
+\textbf{Yes --- essential} & Uses distances or gradients & k-NN, k-means, SVM, PCA, neural networks, ridge/lasso \\
+\textbf{No --- indifferent} & Splits on one feature at a time, so units are irrelevant & Decision trees, random forests, gradient boosting \\
+\bottomrule
+\end{longtable}
+
+\section{Data Leakage}\label{sec:leakage}
+
+\begin{definitionbox}[Data Leakage]
+\term{Leakage} occurs when information that would not be available at prediction
+time influences training. The model scores brilliantly in testing and fails in
+production, because it learned to use a fact from the future.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  blk/.style={rounded corners=3pt, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  lab/.style={font=\tiny, text=gray!55!black, align=center}]
+
+% ---- WRONG ----
+\node[font=\scriptsize\bfseries, text=accent, anchor=west] at (0,2.35) {\faIcon{times-circle}~WRONG: scale first, then split};
+\node[blk, fill=gray!18, text=gray!45!black, minimum width=7.2cm] (all1) at (3.6,1.6) {whole dataset};
+\node[blk, fill=accent!22, text=accent!60!black, minimum width=7.2cm] (sc1) at (3.6,0.7)
+     {compute mean \& sd from \emph{all} rows, scale};
+\node[blk, fill=primary!18, text=primary!60!black, minimum width=5.0cm] (tr1) at (2.5,-0.25) {train};
+\node[blk, fill=goldhl!25, text=goldhl!45!black, minimum width=2.0cm] (te1) at (6.2,-0.25) {test};
+\draw[-{Stealth[length=1.8mm]}, gray!60] (all1) -- (sc1);
+\draw[-{Stealth[length=1.8mm]}, gray!60] (sc1.south) -- (4.0,-0.25+0.43);
+\node[lab, text=accent, text width=4.2cm, anchor=west] at (7.5,0.7)
+     {the test set's mean has leaked into the training data};
+
+% ---- RIGHT ----
+\node[font=\scriptsize\bfseries, text=greenhl!55!black, anchor=west] at (0,-1.55)
+     {\faIcon{check-circle}~RIGHT: split first, then fit the scaler on train only};
+\node[blk, fill=gray!18, text=gray!45!black, minimum width=7.2cm] (all2) at (3.6,-2.3) {whole dataset};
+\node[blk, fill=primary!18, text=primary!60!black, minimum width=5.0cm] (tr2) at (2.5,-3.25) {train};
+\node[blk, fill=goldhl!25, text=goldhl!45!black, minimum width=2.0cm] (te2) at (6.2,-3.25) {test};
+\node[blk, fill=greenhl!22, text=greenhl!45!black, minimum width=5.0cm] (sc2) at (2.5,-4.2)
+     {fit scaler here};
+\node[blk, fill=greenhl!10, text=greenhl!45!black, minimum width=2.0cm] (ap2) at (6.2,-4.2)
+     {apply it here};
+\draw[-{Stealth[length=1.8mm]}, gray!60] (all2.south) -- (tr2.north);
+\draw[-{Stealth[length=1.8mm]}, gray!60] (all2.south) -- (te2.north);
+\draw[-{Stealth[length=1.8mm]}, gray!60] (tr2) -- (sc2);
+\draw[-{Stealth[length=1.8mm]}, greenhl!70] (sc2) -- (ap2);
+\node[lab, text=greenhl!55!black, text width=4.2cm, anchor=west] at (7.5,-4.2)
+     {the test set is never used to learn anything --- it only gets scored};
+\end{tikzpicture}}%
+{The most common leakage in student projects. Any transformation that \emph{learns}
+something from the data --- scaling, imputation, encoding, feature selection --- must be
+fitted on the training split alone and then applied to the test split.}{leakage-split}
+
+\begin{pitfall}[Five Leaks and How to Spot Them]
+\begin{tight}
+  \item \textbf{Fitting a scaler or imputer on the full dataset.} Fix: fit on train,
+        transform test. Use a \texttt{Pipeline} so it is impossible to forget.
+  \item \textbf{A feature computed after the outcome.}
+        \texttt{final\_attendance} to predict failure; \texttt{ticket\_close\_time}
+        to predict overrun. Fix: framing question 4.
+  \item \textbf{Random splitting of time-series data.} Training on Thursday to
+        predict Wednesday. Fix: split chronologically (\chref{timeseries}).
+  \item \textbf{Duplicate rows spanning the split.} The same student in both train
+        and test through a merge error. Fix: split by \emph{entity}, not by row.
+  \item \textbf{Feature selection on the whole dataset.} Choosing the top 20
+        correlated features before splitting has already consulted the test set.
+\end{tight}
+\textbf{The universal warning sign:} a model that is far more accurate than the
+problem plausibly allows. If your dropout classifier reaches 99\%, look for a
+leak before celebrating.
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Cleaning and Leakage}
+\lensLA{Joining registry to VLE data is a \emph{left} join from registry, never an
+inner join --- students with no VLE activity are precisely the at-risk group, and an
+inner join deletes them. Classic leak: using \texttt{total\_submissions\_in\_semester}
+to predict a week-4 outcome. Missing engagement data should be encoded with an
+indicator, not imputed, because it is MNAR.}
+
+\lensPM{Effort figures are self-reported and cluster on round numbers, so treat
+values as ordinal-ish rather than precise. Classic leak: including
+\texttt{actual\_completion\_date} or final story-point count when predicting
+mid-sprint completion. Deduplicate carefully --- the same work item often appears
+under two IDs after a project is re-scoped.}
+
+\lensIOT{Forward fill is the natural imputation for telemetry, because a
+temperature that was $70^\circ$ a second ago is probably still about $70^\circ$
+--- but cap how far it carries, or a dead sensor will appear healthy for hours.
+Classic leak: normalising the whole telemetry history including the future.
+Deduplicate on (device ID, timestamp): at-least-once delivery guarantees duplicates.}
+
+\lensSEC{Do \emph{not} remove outliers --- they are the attacks. Encode
+categorical fields such as protocol and port with one-hot, never ordinal, or the
+model will infer that port 443 is ``greater than'' port 80. Classic leak: features
+derived from the incident report, which by definition exists only after the attack
+was detected. Split chronologically, since a model trained on future attack
+patterns to detect past ones proves nothing.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[A Leak-Proof Cleaning Pipeline]
+The single best habit in applied machine learning: put every learned
+transformation inside a \texttt{Pipeline}, so it cannot be fitted on the test set
+by accident.
+
+\begin{lstlisting}[language=Python]
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+
+df = pd.read_csv("students.csv")
+y  = df.pop("failed")
+
+numeric     = ["attendance_pct", "quizzes_done", "forum_posts"]
+categorical = ["programme", "entry_route"]
+
+# 1. SPLIT FIRST -- before anything is learned from the data.
+X_tr, X_te, y_tr, y_te = train_test_split(
+    df, y, test_size=0.2, stratify=y, random_state=42)
+
+# 2. Declare transformations; nothing is fitted yet.
+prep = ColumnTransformer([
+    ("num", Pipeline([("impute", SimpleImputer(strategy="median",
+                                               add_indicator=True)),   # MNAR-safe
+                      ("scale",  StandardScaler())]), numeric),
+    ("cat", OneHotEncoder(handle_unknown="ignore"), categorical),
+])
+
+# 3. fit_transform on TRAIN, transform only on TEST.
+X_tr_ready = prep.fit_transform(X_tr)
+X_te_ready = prep.transform(X_te)      # <- .transform, never .fit_transform
+
+print(X_tr.shape, "->", X_tr_ready.shape)   # wider: one-hot + indicators
+\end{lstlisting}
+
+\textbf{Check your understanding:} what goes wrong if line 3's last call is
+changed to \texttt{fit\_transform}? Name the leak and the symptom you would see.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item You join 2{,}000 student rows to a VLE table and get 2{,}380 rows back.
+        What has happened, and what should you check?
+  \item Which of these need scaling before use: k-NN, random forest, k-means,
+        gradient boosting?
+  \item A model predicting 30-day equipment failure achieves 99.8\% accuracy on
+        held-out data. State the first three things you would check.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Acquisition method determines the failure modes you inherit; check
+        permission and personal-data status \emph{before} building.
+  \item Clean in order: audit, types, deduplicate, join, missing, outliers, encode
+        and scale, split.
+  \item Under MNAR, add a missing indicator rather than imputing away the signal.
+  \item Inner joins silently delete non-matching rows; always compare row counts
+        before and after.
+  \item One-hot for nominal, ordinal encoding only for genuinely ordered
+        categories. Scale for distance- and gradient-based methods; trees do not
+        care.
+  \item Leakage is the defining error of the field. Split first, fit
+        transformations on train only, and treat implausibly good results as a
+        symptom rather than a success.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which method is indifferent to feature scaling?
+        (a)~k-nearest neighbours (b)~k-means (c)~random forest (d)~support vector machine.
+  \item \textbf{(MCQ)} Fitting a \texttt{StandardScaler} on the full dataset before
+        splitting causes: (a)~underfitting (b)~leakage (c)~class imbalance
+        (d)~multicollinearity.
+  \item \textbf{(Short)} Explain when ordinal encoding is correct and give an example
+        where using it would be a serious error.
+  \item \textbf{(Short)} Why must forward fill be capped when imputing sensor
+        telemetry?
+  \item \textbf{(Short)} Describe two situations in which an inner join produces a
+        biased dataset without producing any error message.
+  \item \textbf{(Applied)} You must predict, at the end of week 4, which students
+        will fail. From this list, mark each feature usable or leaking and justify:
+        \texttt{weeks1\_4\_attendance}, \texttt{final\_exam\_mark},
+        \texttt{n\_submissions\_by\_week4}, \texttt{total\_semester\_logins},
+        \texttt{entry\_qualification}, \texttt{withdrew\_date}.
+  \item \textbf{(Applied)} Write the cleaning sequence you would apply to an IoT
+        dataset of 400 motors reporting every 10 seconds for a year, stating for
+        each step the specific decision you would take and why.
+\end{reviewq}

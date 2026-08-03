@@ -1,0 +1,204 @@
+%=====================================================================
+\chapter{Python Quick Reference}\label{app:python}
+%=====================================================================
+\normalfigures
+
+Everything here appears somewhere in the handout. This appendix collects it so you
+can work without paging back.
+
+\section{Setting Up}
+
+\begin{lstlisting}[language=bash]
+python -m venv .venv                      # one environment per project
+.\.venv\Scripts\Activate.ps1              # Windows PowerShell
+pip install pandas numpy scikit-learn matplotlib seaborn scipy statsmodels
+pip freeze > requirements.txt             # pin versions -- Chapter 29
+\end{lstlisting}
+
+\section{pandas --- Loading and Inspecting}
+
+\begin{lstlisting}[language=Python]
+import pandas as pd, numpy as np
+
+df = pd.read_csv("data.csv", parse_dates=["timestamp"])
+df = pd.read_parquet("data.parquet")      # faster, keeps dtypes
+
+df.shape            # (rows, columns)
+df.dtypes           # types -- check categories are not stored as numbers
+df.head(10)
+df.describe()       # numeric summary: count, mean, sd, quartiles
+df.describe(include="object")             # categorical summary
+df.info(memory_usage="deep")
+
+df.isna().mean().sort_values(ascending=False)   # % missing per column
+df.duplicated().sum()
+df.nunique().sort_values()                # few distinct + numeric => a category
+\end{lstlisting}
+
+\section{Selecting, Filtering, Grouping}
+
+\begin{lstlisting}[language=Python]
+df["col"]                    # one column (Series)
+df[["a", "b"]]               # several columns (DataFrame)
+df.loc[df.age > 30, ["a"]]   # filter rows by condition, select columns
+df.iloc[0:5, 0:3]            # by position
+
+df.query("age > 30 and programme == 'BSIT'")
+
+df.groupby("programme").agg(
+    n=("student_id", "size"),
+    mean_mark=("mark", "mean"),
+    pass_rate=("passed", "mean"),
+)
+
+df.pivot_table(index="programme", columns="year", values="mark", aggfunc="mean")
+pd.crosstab(df.programme, df.grade, normalize="index")   # row proportions
+\end{lstlisting}
+
+\section{Cleaning (Chapter 7)}
+
+\begin{lstlisting}[language=Python]
+df = df.drop_duplicates(subset=["student_id", "term"])    # deduplicate FIRST
+
+df["prior"] = df["prior"].fillna(df["prior"].median())
+df["prior_was_missing"] = df["prior"].isna().astype(int)  # MNAR: encode, don't hide
+
+df["temp"] = df["temp"].ffill(limit=6)                    # cap forward fill
+
+df = df.replace({"age": {0: np.nan, -1: np.nan}})         # placeholder values
+
+# joins -- ALWAYS compare row counts before and after
+before = len(df)
+df = df.merge(vle, on="student_id", how="left")           # left, not inner
+assert len(df) == before, "join changed row count -- key is not unique"
+
+# outliers: flag, do not silently delete
+q1, q3 = df.dur.quantile([.25, .75])
+iqr = q3 - q1
+df["outlier"] = ~df.dur.between(q1 - 1.5*iqr, q3 + 1.5*iqr)
+\end{lstlisting}
+
+\section{scikit-learn --- The Standard Workflow}
+
+\begin{lstlisting}[language=Python]
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+
+# 1. SPLIT FIRST -- before anything is learned (Chapter 7)
+X_tr, X_te, y_tr, y_te = train_test_split(
+    X, y, test_size=0.2, stratify=y, random_state=42)
+
+# 2. Pipeline: makes leakage structurally impossible
+prep = ColumnTransformer([
+    ("num", make_pipeline(SimpleImputer(strategy="median", add_indicator=True),
+                          StandardScaler()), numeric_cols),
+    ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols),
+])
+pipe = make_pipeline(prep, model)
+
+pipe.fit(X_tr, y_tr)          # fit on train
+pipe.predict(X_te)            # transform-only on test -- never fit_transform
+\end{lstlisting}
+
+\subsection*{Models by task}
+
+\begin{lstlisting}[language=Python]
+# --- regression (Chapter 12) ---
+from sklearn.linear_model import LinearRegression, RidgeCV, LassoCV
+from sklearn.ensemble import RandomForestRegressor, HistGradientBoostingRegressor
+
+# --- classification (Chapters 13, 15) ---
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB, MultinomialNB
+from sklearn.tree import DecisionTreeClassifier, export_text
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
+
+# --- unsupervised (Chapter 16) ---
+from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
+from sklearn.decomposition import PCA
+from sklearn.ensemble import IsolationForest
+
+# --- baselines. ALWAYS. (Chapter 11) ---
+from sklearn.dummy import DummyClassifier, DummyRegressor
+\end{lstlisting}
+
+\subsection*{Evaluation (Chapter 14)}
+
+\begin{lstlisting}[language=Python]
+from sklearn.metrics import (confusion_matrix, classification_report,
+                             roc_auc_score, average_precision_score,
+                             precision_recall_curve, mean_absolute_error,
+                             mean_squared_error, r2_score)
+
+tn, fp, fn, tp = confusion_matrix(y_te, y_pred).ravel()
+print(classification_report(y_te, y_pred, digits=3))
+
+proba = pipe.predict_proba(X_te)[:, 1]
+average_precision_score(y_te, proba)      # PR-AUC: use when positives are rare
+roc_auc_score(y_te, proba)                # ROC-AUC: flatters rare-event detectors
+
+# choose the threshold from costs, not from 0.5
+prec, rec, thr = precision_recall_curve(y_te, proba)
+
+# cross-validation -- match the scheme to the data
+StratifiedKFold(5, shuffle=True, random_state=0)   # imbalanced classes
+from sklearn.model_selection import GroupKFold, TimeSeriesSplit
+GroupKFold(5)          # many rows per student/device
+TimeSeriesSplit(5)     # anything temporal -- never random
+\end{lstlisting}
+
+\section{Time Series (Chapter 19)}
+
+\begin{lstlisting}[language=Python]
+s = df.set_index("date")["value"].asfreq("D")
+
+s.shift(1)                       # PAST. shift(-1) is the future -- a leak.
+s.shift(1).rolling(7).mean()     # shift FIRST, then roll: trailing window only
+s.rolling(7, center=True)        # <-- LEAK. never use center=True for features.
+
+s.diff(1); s.pct_change(7)
+s.resample("W").sum()
+
+from statsmodels.tsa.seasonal import seasonal_decompose
+seasonal_decompose(s, model="additive", period=7).plot()
+\end{lstlisting}
+
+\section{Plotting (Chapter 8)}
+
+\begin{lstlisting}[language=Python]
+import matplotlib.pyplot as plt, seaborn as sns
+
+df.hist(bins=30, figsize=(11, 7))                       # univariate
+sns.boxplot(data=df, x="programme", y="mark")           # numeric by category
+sns.scatterplot(data=df, x="attendance", y="mark", hue="programme")
+sns.heatmap(df.corr(numeric_only=True), annot=True, fmt=".2f",
+            cmap="RdBu_r", center=0)                    # diverging for signed
+sns.lmplot(data=df, x="hours", y="mark", hue="programme")   # per group -- Simpson's
+
+plt.tight_layout(); plt.savefig("fig.png", dpi=150, bbox_inches="tight")
+\end{lstlisting}
+
+\section{Reproducibility (Chapter 29)}
+
+\begin{lstlisting}[language=Python]
+import random, os
+SEED = 42
+random.seed(SEED); np.random.seed(SEED)
+os.environ["PYTHONHASHSEED"] = str(SEED)
+# every sklearn estimator: random_state=SEED
+\end{lstlisting}
+
+\begin{alertbox}[The Five Lines That Cause Most Bugs]
+\begin{tightnum}
+  \item \texttt{scaler.fit(X)} before \texttt{train\_test\_split} --- leakage.
+  \item \texttt{.fit\_transform(X\_test)} --- leakage.
+  \item \texttt{rolling(n, center=True)} in a feature --- leakage from the future.
+  \item \texttt{train\_test\_split} on time-series data --- trains on the future.
+  \item \texttt{accuracy\_score} on imbalanced data --- meaningless.
+\end{tightnum}
+\end{alertbox}

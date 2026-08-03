@@ -1,0 +1,369 @@
+%=====================================================================
+\chapter{Feature Engineering and Ensembles}\label{ch:features}
+%=====================================================================
+\locator{3}{Part III --- Machine Learning Core}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Construct} informative features from raw columns using ratios, aggregations, time deltas and domain knowledge.
+  \item \textbf{Apply} filter, wrapper and embedded methods of feature selection.
+  \item \textbf{Explain} how bagging reduces variance and boosting reduces bias.
+  \item \textbf{Distinguish} random forests from gradient boosting and choose between them.
+  \item \textbf{Interpret} feature importances, and state the traps in doing so.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{classification} (decision trees --- the base learner for every ensemble
+here) and \chref{evaluation} (you must be able to measure before you can improve).
+\end{prereq}
+
+\begin{keyterms}
+feature engineering $\bullet$ feature selection $\bullet$ filter / wrapper /
+embedded methods $\bullet$ curse of dimensionality $\bullet$ ensemble $\bullet$
+bagging $\bullet$ bootstrap $\bullet$ random forest $\bullet$ boosting $\bullet$
+gradient boosting $\bullet$ stacking $\bullet$ feature importance $\bullet$
+permutation importance
+\end{keyterms}
+
+\section{Features Beat Algorithms}
+
+\begin{conceptbox}[The Most Reliable Lesson in Applied Machine Learning]
+Given a fixed dataset, moving from logistic regression to a tuned gradient
+boosting machine might buy you two or three points of performance. Adding one good
+feature that encodes something a domain expert knows can buy you twenty. Spend your
+time accordingly.
+\end{conceptbox}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{2.9cm}p{4.7cm}p{6.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Technique} & \textbf{Construction} & \textbf{Example} \\
+\midrule
+\endhead
+Ratios & Divide one column by another & \texttt{submissions / days\_enrolled} normalises for late joiners \\
+Differences \& deltas & Subtract, or compare with a previous row & \texttt{this\_week\_logins $-$ last\_week\_logins} captures \emph{change}, which raw counts hide \\
+Aggregations & Group and summarise & mean, max and standard deviation of a sensor over a 1-hour window \\
+Time features & Extract components & hour of day, day of week, is\_weekend --- crucial in security and IoT \\
+Counts of rare events & Count occurrences in a window & failed logins in the last 5 minutes \\
+Binning & Convert numeric to ordinal & attendance into \{low, medium, high\} for a readable rule \\
+Interactions & Multiply two features & \texttt{low\_attendance $\times$ first\_generation} \\
+Domain flags & Encode expert rules & \texttt{missed\_two\_consecutive\_labs} \\
+\bottomrule
+\end{longtable}
+
+\begin{worked}[Turning Raw Logs into Features]
+You have one row per VLE click: \texttt{(student, timestamp, resource)}. A model
+needs one row per student, using weeks 1--4 only.
+
+\smallskip
+\textbf{Volume:} \texttt{n\_clicks}, \texttt{n\_distinct\_resources},
+\texttt{n\_active\_days}.
+
+\textbf{Recency:} \texttt{days\_since\_last\_click}. Frequently the single
+strongest predictor of disengagement --- and note it is unobtainable from any
+aggregate count.
+
+\textbf{Trend:} \texttt{clicks\_wk4 $-$ clicks\_wk1}, and the slope of a line
+fitted through the four weekly totals. A student at 200 clicks and falling is in
+more danger than one at 80 and steady, yet both have similar totals.
+
+\textbf{Rhythm:} \texttt{share\_of\_clicks\_after\_midnight},
+\texttt{n\_weekend\_days\_active}. Behavioural signatures, not effort measures.
+
+\textbf{Consistency:} standard deviation of daily clicks. Steady beats bursty.
+
+\smallskip
+\textbf{From three raw columns, twelve features} --- and the ones most likely to
+matter (recency, trend, consistency) do not appear in the raw data at all. This is
+what feature engineering is. Everything here uses only weeks 1--4, so framing
+question 4 (\chref{lifecycle}) is satisfied by construction.
+\end{worked}
+
+\section{Feature Selection}
+
+\begin{alertbox}[The Curse of Dimensionality]
+As the number of features grows, the volume of the feature space explodes and your
+data becomes sparse within it --- every point ends up roughly equidistant from
+every other, which destroys distance-based methods. More features is not more
+information; past a point it is more noise.
+\end{alertbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  m/.style={rounded corners=3pt, draw=#1, fill=#1!8, text width=3.9cm, align=center,
+            font=\scriptsize, inner sep=5pt, minimum height=2.9cm},
+  hd/.style={rounded corners=3pt, fill=#1, text=white, font=\scriptsize\bfseries,
+             text width=3.9cm, align=center, minimum height=0.6cm}]
+
+\node[hd=secondary] at (0,0)   {FILTER};
+\node[m=secondary]  at (0,-1.85) {%
+  Score each feature \emph{on its own}, before any model.\\[4pt]
+  \emph{correlation, chi-square, mutual information}\\[4pt]
+  {\color{greenhl!45!black}\textbf{+} very fast, model-agnostic}\\[2pt]
+  {\color{accent}\textbf{--} blind to combinations: two useless-alone features can be
+   decisive together}};
+
+\node[hd=greenhl] at (4.5,0)   {WRAPPER};
+\node[m=greenhl]  at (4.5,-1.85) {%
+  Try subsets, train a model on each, keep the best.\\[4pt]
+  \emph{forward selection, backward elimination, RFE}\\[4pt]
+  {\color{greenhl!45!black}\textbf{+} accounts for interactions; tailored to your model}\\[2pt]
+  {\color{accent}\textbf{--} expensive; overfits the selection set unless nested CV is used}};
+
+\node[hd=purplehl] at (9.0,0)  {EMBEDDED};
+\node[m=purplehl]  at (9.0,-1.85) {%
+  Selection happens \emph{during} training.\\[4pt]
+  \emph{lasso (\chref{regression}), tree importances, elastic net}\\[4pt]
+  {\color{greenhl!45!black}\textbf{+} nearly free; interactions handled}\\[2pt]
+  {\color{accent}\textbf{--} tied to one model family}};
+
+\node[align=left, text width=12.8cm, font=\tiny, text=gray!55!black] at (4.5,-4.0)
+     {\textbf{Practical recipe:} filter out the obviously useless (zero variance, $>90\%$
+      missing, near-duplicates), then let an embedded method do the real work. Reserve
+      wrappers for small feature sets where the extra compute is affordable. And run
+      selection \emph{inside} the cross-validation folds --- selecting on the full dataset
+      is leakage (\chref{wrangling}).};
+\end{tikzpicture}}%
+{Three families of feature selection. The choice is mostly a compute-versus-quality
+trade-off, but the leakage warning applies to all three equally.}{feature-selection}
+
+\section{Ensembles: Many Weak Models Beat One Strong One}
+
+\begin{definitionbox}[Ensemble]
+A model made of many models. Predictions are combined --- by voting for
+classification, averaging for regression. Ensembles work because individual models
+make \emph{different} mistakes, and averaging cancels the uncorrelated part of the
+error.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  d/.style={rounded corners=2pt, draw=#1, fill=#1!10, text=#1!50!black,
+            minimum width=1.5cm, minimum height=0.62cm, font=\tiny\bfseries},
+  arr/.style={-{Stealth[length=1.8mm]}, gray!60, line width=0.7pt}]
+
+% ---------------- BAGGING ----------------
+\node[font=\scriptsize\bfseries, text=greenhl!45!black, anchor=west] at (-0.6,2.6)
+     {BAGGING (e.g.\ Random Forest) --- models trained \emph{in parallel} on bootstrap samples};
+\node[d=primary, minimum width=1.9cm] (data1) at (0.4,1.4) {full data};
+\foreach \i in {1,2,3,4}{
+  \pgfmathsetmacro{\xx}{2.6+(\i-1)*1.75}
+  \node[d=greenhl] (s\i) at (\xx,1.9) {sample \i};
+  \node[d=greenhl] (t\i) at (\xx,0.95) {tree \i};
+  \draw[arr] (data1) -- (s\i);
+  \draw[arr] (s\i) -- (t\i);}
+\node[d=purplehl, minimum width=2.0cm] (vote) at (11.4,1.4) {vote / average};
+\foreach \i in {1,2,3,4}{\draw[arr] (t\i) -- (vote);}
+\node[font=\tiny\itshape, text=gray!55!black, text width=4.0cm, align=left] at (2.9,0.15)
+     {each tree sees a different random sample \emph{and} a random subset of features
+      $\Rightarrow$ their errors are decorrelated};
+\node[font=\tiny\bfseries, text=greenhl!45!black, anchor=west] at (7.6,0.15)
+     {reduces VARIANCE (fixes overfitting)};
+
+\draw[gray!35, line width=0.5pt] (-0.7,-0.65) -- (12.7,-0.65);
+
+% ---------------- BOOSTING ----------------
+\node[font=\scriptsize\bfseries, text=accent!75!black, anchor=west] at (-0.6,-1.1)
+     {BOOSTING (e.g.\ Gradient Boosting) --- models trained \emph{in sequence}, each fixing the last};
+\node[d=primary, minimum width=1.9cm] (data2) at (0.4,-2.3) {full data};
+\foreach \i in {1,2,3,4}{
+  \pgfmathsetmacro{\xx}{2.9+(\i-1)*2.0}
+  \node[d=accent] (b\i) at (\xx,-2.3) {tree \i};}
+\draw[arr] (data2) -- (b1);
+\foreach \i/\j in {1/2,2/3,3/4}{
+  \draw[-{Stealth[length=1.8mm]}, accent!70, line width=0.9pt] (b\i) -- (b\j);}
+\node[d=purplehl, minimum width=2.0cm] (sum) at (11.4,-2.3) {weighted sum};
+\draw[arr] (b4) -- (sum);
+\foreach \i in {1,2,3}{
+  \pgfmathsetmacro{\xx}{2.9+(\i-1)*2.0}
+  \node[font=\tiny, text=accent!70!black] at (\xx+1.0,-1.85) {residuals};}
+\node[font=\tiny\itshape, text=gray!55!black, text width=5.2cm, align=left] at (3.5,-3.35)
+     {tree $k+1$ is trained on what tree $k$ got \emph{wrong}, so the sequence
+      cannot be parallelised};
+\node[font=\tiny\bfseries, text=accent!75!black, anchor=west] at (9.0,-3.35)
+     {reduces BIAS (fixes underfitting)};
+\end{tikzpicture}}%
+{Bagging versus boosting. Bagging builds independent models and averages away their
+variance; boosting builds dependent models, each correcting its predecessor, and drives
+down bias. This is the distinction to remember.}{bagging-boosting}
+
+\subsection{Random Forests}
+
+\begin{definitionbox}[Random Forest]
+Bagging applied to decision trees, with one addition: at each split, only a random
+subset of features may be considered. Without that, every tree would pick the same
+dominant feature first and the trees would be near-identical --- defeating the
+whole purpose.
+\end{definitionbox}
+
+\subsection{Gradient Boosting}
+
+\begin{definitionbox}[Gradient Boosting]
+Fit a weak model. Compute its residuals. Fit the next weak model to those
+residuals. Add it to the ensemble, scaled by a \term{learning rate}. Repeat.
+Implementations you will meet: XGBoost, LightGBM, CatBoost.
+\end{definitionbox}
+
+\rowcolors{2}{white}{defbg}
+\begin{longtable}{@{}p{3.3cm}p{5.3cm}p{5.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{Random Forest} & \textbf{Gradient Boosting} \\
+\midrule
+\endhead
+Training & Parallel --- fast on many cores & Sequential --- slower \\
+Tuning & Forgiving; defaults usually fine & Sensitive; needs learning rate, depth, $n$ trees \\
+Overfitting & Resistant; more trees never hurts & Will overfit if over-trained; needs early stopping \\
+Typical accuracy & Very good & Usually the best on tabular data \\
+Choose it when & You want a strong result with little effort & You need maximum accuracy and can afford tuning \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[The Honest Default for Tabular Data]
+Start with a random forest. It is hard to misuse, needs no scaling, handles mixed
+types, and gives a strong number in one line. If that number is close enough to
+your success criterion, stop. Move to gradient boosting only when the remaining gap
+matters and you have the time to tune it properly.
+\end{conceptbox}
+
+\section{Reading Feature Importances --- Carefully}
+
+\begin{alertbox}[Three Traps in Feature Importance]
+\begin{tight}
+  \item \textbf{Correlated features split their importance.} If attendance and
+        lectures-watched correlate at 0.94, each may show half the importance it
+        deserves, making both look unimportant.
+  \item \textbf{Impurity-based importance is biased} towards high-cardinality
+        features. A near-unique ID column can appear highly ``important''.
+  \item \textbf{Importance is not causation.} A feature can be important to the
+        model because it is a proxy for something you must not act on
+        (\chref{ethics}).
+\end{tight}
+\textbf{Prefer permutation importance:} shuffle one column and measure how much
+performance drops. It is slower, model-agnostic, and measures what you actually
+mean by ``does this feature matter''.
+\end{alertbox}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Engineering Features}
+\lensLA{The highest-value features are almost never raw counts. Build
+\texttt{days\_since\_last\_activity}, the \emph{slope} of weekly engagement, and
+\texttt{consecutive\_missed\_labs}. A student's trajectory carries far more signal
+than their total. Use a random forest for accuracy, but keep a depth-3 tree beside
+it as the explanation you can defend to an appeals panel.}
+
+\lensPM{With 40 sprints, ensembles will overfit spectacularly. Engineer two or three
+strong features instead --- \texttt{points\_committed / historical\_velocity},
+\texttt{share\_of\_tasks\_with\_unresolved\_dependencies},
+\texttt{team\_changed\_since\_last\_sprint} --- and fit something simple. This is a
+domain where feature engineering does not merely beat algorithm choice; it is the
+only thing that works.}
+
+\lensIOT{Raw sensor values are weak; \emph{window statistics} are strong. Compute
+rolling mean, standard deviation, min, max, and rate of change over 1-minute,
+1-hour and 24-hour windows, plus frequency-domain features for vibration. This
+single step usually matters more than anything in \chref{architectures}. Gradient
+boosting on well-engineered window features is the standard, hard-to-beat baseline
+for predictive maintenance.}
+
+\lensSEC{Aggregate over time and entity: failed logins per account in 5 minutes,
+distinct destination ports per source in 1 minute, bytes-out to bytes-in ratio,
+deviation from that account's own 30-day baseline. The last is the key idea ---
+features relative to an entity's \emph{own} history detect compromise far better
+than absolute thresholds. Tree ensembles dominate here, but keep in mind that an
+adversary who learns which features you use will manipulate them
+(\chref{cybersecurity}).}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Engineer, Ensemble, Interpret]
+\begin{lstlisting}[language=Python]
+import pandas as pd, numpy as np
+from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
+from sklearn.inspection import permutation_importance
+from sklearn.model_selection import cross_val_score
+
+# --- 1. engineer from raw click logs -----------------------------------
+g = clicks.groupby("student")
+feats = pd.DataFrame({
+    "n_clicks":      g.size(),
+    "n_resources":   g.resource.nunique(),
+    "n_active_days": g.timestamp.apply(lambda s: s.dt.date.nunique()),
+    "days_since":    (CUTOFF - g.timestamp.max()).dt.days,      # recency: often the best
+    "night_share":   g.timestamp.apply(lambda s: (s.dt.hour < 5).mean()),
+    "daily_sd":      g.timestamp.apply(lambda s: s.dt.date.value_counts().std()),
+})
+# trend: is engagement rising or falling?
+weekly = clicks.groupby(["student", clicks.timestamp.dt.isocalendar().week]).size()
+feats["trend"] = weekly.groupby("student").apply(
+    lambda s: np.polyfit(range(len(s)), s.values, 1)[0] if len(s) > 1 else 0.0)
+
+# --- 2. ensembles ------------------------------------------------------
+rf  = RandomForestClassifier(n_estimators=400, random_state=0, n_jobs=-1)
+gb  = HistGradientBoostingClassifier(random_state=0)
+for name, m in [("random forest", rf), ("grad boosting", gb)]:
+    s = cross_val_score(m, X_tr, y_tr, cv=5, scoring="average_precision")
+    print(f"{name:14s} PR-AUC {s.mean():.3f} +/- {s.std():.3f}")
+
+# --- 3. interpret: permutation, NOT the built-in impurity importance ----
+rf.fit(X_tr, y_tr)
+perm = permutation_importance(rf, X_te, y_te, n_repeats=20,
+                              random_state=0, scoring="average_precision")
+order = perm.importances_mean.argsort()[::-1]
+for i in order[:8]:
+    print(f"  {feature_names[i]:24s} {perm.importances_mean[i]:+.4f}"
+          f" +/- {perm.importances_std[i]:.4f}")
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Explain in one sentence each how bagging and boosting reduce error, and
+        which component of error each targets.
+  \item Why does a random forest sample features at each split as well as sampling
+        rows?
+  \item A tree ensemble reports \texttt{student\_id} as the third most important
+        feature. What has gone wrong?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Good features beat clever algorithms. Ratios, deltas, window aggregations,
+        recency and trend usually outperform raw columns.
+  \item Feature selection comes in filter, wrapper and embedded flavours; run it
+        inside the cross-validation folds or it leaks.
+  \item Ensembles work because member models make different mistakes.
+  \item Bagging (random forest) trains in parallel and reduces variance; boosting
+        trains sequentially on residuals and reduces bias.
+  \item Random forest is the forgiving default; gradient boosting usually wins on
+        tabular data but needs tuning and early stopping.
+  \item Use permutation importance, and remember importance is neither causation
+        nor a licence to act.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Boosting principally reduces: (a)~variance (b)~bias
+        (c)~leakage (d)~dimensionality.
+  \item \textbf{(MCQ)} Which requires no feature scaling? (a)~SVM (b)~k-NN
+        (c)~random forest (d)~ridge regression.
+  \item \textbf{(Short)} Explain the curse of dimensionality and its effect on
+        distance-based methods.
+  \item \textbf{(Short)} Why can two features that are individually useless be
+        jointly decisive, and which selection family would miss this?
+  \item \textbf{(Short)} State two reasons to prefer permutation importance over
+        impurity-based importance.
+  \item \textbf{(Applied)} You have one row per network connection with columns
+        \texttt{src\_ip}, \texttt{dst\_port}, \texttt{bytes\_in},
+        \texttt{bytes\_out}, \texttt{timestamp}. Engineer eight features for
+        detecting compromised hosts, and say what each is meant to capture.
+  \item \textbf{(Applied)} A team's random forest scores PR-AUC 0.71 and their
+        gradient boosting machine 0.74 after two weeks of tuning. Advise them,
+        referring to effort, maintenance and the success criterion.
+\end{reviewq}

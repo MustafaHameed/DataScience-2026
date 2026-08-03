@@ -1,0 +1,401 @@
+%=====================================================================
+\chapter{Relationships and Causality}\label{ch:causality}
+%=====================================================================
+\locator{2}{Part II --- From Data to Insight}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why correlation does not imply causation, and name the four alternative explanations for any observed association.
+  \item \textbf{Identify} confounders, colliders and mediators in a described scenario.
+  \item \textbf{Design} a randomised controlled experiment (A/B test) with a defensible sample size.
+  \item \textbf{Select} an appropriate quasi-experimental design when randomisation is impossible.
+  \item \textbf{Distinguish} the questions prediction can answer from those that require causal inference.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{eda} (Simpson's paradox, which is confounding seen in a chart) and
+\chref{inference} (hypothesis testing, effect size, power).
+\end{prereq}
+
+\begin{keyterms}
+causation $\bullet$ confounder $\bullet$ collider $\bullet$ mediator $\bullet$
+reverse causation $\bullet$ spurious correlation $\bullet$ randomised controlled
+trial $\bullet$ A/B test $\bullet$ control group $\bullet$ counterfactual $\bullet$
+natural experiment $\bullet$ difference-in-differences $\bullet$ selection bias
+\end{keyterms}
+
+\section{The Four Explanations for Any Correlation}
+
+You observe that students who attend the optional revision session score higher.
+Before concluding the session helps, note that there are four possible
+explanations, and only one of them is the one you want.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  v/.style={circle, draw=#1, fill=#1!10, text=#1!50!black, minimum size=1.0cm,
+            font=\scriptsize\bfseries, inner sep=1pt},
+  ce/.style={-{Stealth[length=2.2mm]}, line width=1.1pt},
+  ttl/.style={font=\scriptsize\bfseries, align=center}]
+
+% --- 1. causation
+\begin{scope}[shift={(0,0)}]
+  \node[ttl, text=greenhl!50!black] at (1.1,1.6) {1. Real causation\\{\tiny (what you hoped)}};
+  \node[v=greenhl] (x1) at (0,0) {X};
+  \node[v=greenhl] (y1) at (2.2,0) {Y};
+  \draw[ce, greenhl] (x1) -- (y1);
+\end{scope}
+
+% --- 2. reverse
+\begin{scope}[shift={(3.9,0)}]
+  \node[ttl, text=goldhl!50!black] at (1.1,1.6) {2. Reverse causation\\{\tiny Y causes X}};
+  \node[v=goldhl] (x2) at (0,0) {X};
+  \node[v=goldhl] (y2) at (2.2,0) {Y};
+  \draw[ce, goldhl] (y2) -- (x2);
+\end{scope}
+
+% --- 3. confounding
+\begin{scope}[shift={(7.8,0)}]
+  \node[ttl, text=accent!70!black] at (1.1,1.6) {3. Confounding\\{\tiny Z causes both}};
+  \node[v=accent] (x3) at (0,0) {X};
+  \node[v=accent] (y3) at (2.2,0) {Y};
+  \node[v=accent] (z3) at (1.1,1.0) {Z};
+  \draw[ce, accent] (z3) -- (x3);
+  \draw[ce, accent] (z3) -- (y3);
+  \draw[dashed, gray!60] (x3) -- (y3);
+\end{scope}
+
+% --- 4. chance
+\begin{scope}[shift={(11.7,0)}]
+  \node[ttl, text=purplehl!60!black] at (1.1,1.6) {4. Chance\\{\tiny you tested enough things}};
+  \node[v=purplehl] (x4) at (0,0) {X};
+  \node[v=purplehl] (y4) at (2.2,0) {Y};
+  \draw[dashed, gray!60] (x4) -- (y4);
+  \node[font=\tiny, text=purplehl!60!black] at (1.1,-0.75) {see \chref{inference}};
+\end{scope}
+\end{tikzpicture}}%
+{The four explanations for an observed association. Data alone cannot distinguish them ---
+the same correlation coefficient is consistent with all four. Only a design can.}{four-explanations}
+
+\begin{worked}[Applying the Four to One Finding]
+\emph{``Students who attend revision sessions score 12 marks higher.''}
+
+\smallskip
+\textbf{1. Causation.} The session teaches them things. Plausible.
+
+\textbf{2. Reverse causation.} Students already doing well feel they can spare an
+evening; struggling students are behind on coursework and cannot. Also plausible,
+and it predicts the same correlation.
+
+\textbf{3. Confounding.} \emph{Conscientiousness} causes both attendance at
+optional sessions and higher marks. The session may contribute nothing. Highly
+plausible --- and it is the default explanation for almost every ``optional
+activity helps'' finding in education.
+
+\textbf{4. Chance.} If the department examined 30 optional activities, one showing
+a 12-mark gap is unremarkable.
+
+\smallskip
+\textbf{The 12 marks is not wrong; the interpretation is unsupported.} If the
+department cancels the session on the strength of a null finding, or expands it on
+the strength of this one, both decisions rest on nothing. What settles it is
+\emph{assignment}: decide who attends by a mechanism unrelated to the student.
+\end{worked}
+
+\section{Confounders, Colliders and Mediators}
+
+Three different roles a third variable can play. They look similar in a dataset
+and demand opposite treatment, which is why they are worth separating carefully.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  v/.style={circle, draw=#1, fill=#1!10, text=#1!50!black, minimum size=0.95cm,
+            font=\scriptsize\bfseries, inner sep=1pt},
+  ce/.style={-{Stealth[length=2.2mm]}, line width=1.1pt}]
+
+% confounder
+\begin{scope}[shift={(0,0)}]
+  \node[font=\scriptsize\bfseries, text=accent] at (1.3,2.0) {CONFOUNDER};
+  \node[v=accent] (z) at (1.3,1.15) {Z};
+  \node[v=primary] (x) at (0,0) {X};
+  \node[v=primary] (y) at (2.6,0) {Y};
+  \draw[ce, accent] (z) -- (x);  \draw[ce, accent] (z) -- (y);
+  \node[align=center, text width=4.0cm, font=\tiny, text=gray!55!black] at (1.3,-1.35)
+       {Z causes both. \textbf{Control for it} --- otherwise the X--Y association is fake.
+        \emph{Programme difficulty, in \dsref{simpsons}.}};
+\end{scope}
+
+% mediator
+\begin{scope}[shift={(5.0,0)}]
+  \node[font=\scriptsize\bfseries, text=greenhl!50!black] at (1.3,2.0) {MEDIATOR};
+  \node[v=greenhl] (m) at (1.3,1.15) {M};
+  \node[v=primary] (x2) at (0,0) {X};
+  \node[v=primary] (y2) at (2.6,0) {Y};
+  \draw[ce, greenhl] (x2) -- (m);  \draw[ce, greenhl] (m) -- (y2);
+  \node[align=center, text width=4.0cm, font=\tiny, text=gray!55!black] at (1.3,-1.35)
+       {X causes Y \emph{through} M. \textbf{Do not control for it} --- you would erase
+        the very effect you are measuring.};
+\end{scope}
+
+% collider
+\begin{scope}[shift={(10.0,0)}]
+  \node[font=\scriptsize\bfseries, text=purplehl] at (1.3,2.0) {COLLIDER};
+  \node[v=purplehl] (c) at (1.3,1.15) {C};
+  \node[v=primary] (x3) at (0,0) {X};
+  \node[v=primary] (y3) at (2.6,0) {Y};
+  \draw[ce, purplehl] (x3) -- (c);  \draw[ce, purplehl] (y3) -- (c);
+  \node[align=center, text width=4.0cm, font=\tiny, text=gray!55!black] at (1.3,-1.35)
+       {Both cause C. \textbf{Controlling for it creates} a spurious X--Y association
+        that does not exist.};
+\end{scope}
+\end{tikzpicture}}%
+{Three roles for a third variable. ``Control for everything you have'' is not a safe
+default: adjusting for a mediator hides a real effect, and adjusting for a collider
+manufactures a false one.}{confounder-collider}
+
+\begin{conceptbox}[A Collider You Will Meet]
+Suppose both \emph{technical skill} and \emph{interview preparation} independently
+increase the chance of being hired. Among \emph{hired} employees, the two become
+negatively correlated --- someone who got in with little preparation must have been
+very skilled. Studying only hired staff, you would ``discover'' that preparation
+harms skill. Selecting on the outcome (hiring) is conditioning on a collider, and
+it is the mechanism behind a great deal of survivorship bias.
+\end{conceptbox}
+
+\section{Experiments: The Gold Standard}
+
+\begin{definitionbox}[Randomised Controlled Trial]
+Units are assigned to treatment or control \emph{at random}. Randomisation makes
+the two groups equivalent in expectation on \emph{every} variable --- measured,
+unmeasured and unimagined --- so any difference in outcome can be attributed to the
+treatment.
+\end{definitionbox}
+
+\begin{conceptbox}[Why Randomisation Is So Powerful]
+Statistical control can only adjust for confounders you thought of and measured.
+Randomisation handles the ones you never knew existed. That is the whole argument,
+and it is why one small randomised study can outweigh a large observational one.
+\end{conceptbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  b/.style={rounded corners=3pt, draw=#1, fill=#1!9, text=#1!50!black,
+            text width=2.6cm, align=center, minimum height=0.95cm, font=\scriptsize\bfseries},
+  arr/.style={-{Stealth[length=2.2mm]}, gray!60, line width=1pt}]
+
+  \node[b=primary]   (pop) at (0,0)      {Eligible\\population};
+  \node[b=secondary] (smp) at (3.3,0)    {Random\\sample};
+  \node[b=greenhl]   (tr)  at (6.9,0.95) {TREATMENT\\new lab format};
+  \node[b=goldhl]    (ct)  at (6.9,-0.95){CONTROL\\old format};
+  \node[b=greenhl]   (o1)  at (10.3,0.95) {outcome\\$\bar{y}_T$};
+  \node[b=goldhl]    (o2)  at (10.3,-0.95){outcome\\$\bar{y}_C$};
+  \node[b=purplehl]  (eff) at (13.4,0)    {effect\\$= \bar{y}_T - \bar{y}_C$};
+
+  \draw[arr] (pop) -- (smp);
+  \draw[arr] (smp) -- (tr);
+  \draw[arr] (smp) -- (ct);
+  \draw[arr] (tr) -- (o1);
+  \draw[arr] (ct) -- (o2);
+  \draw[arr] (o1) -- (eff);
+  \draw[arr] (o2) -- (eff);
+
+  \node[font=\tiny\itshape, text=accent!80!black, align=center, text width=3.0cm] at (5.1,-2.15)
+       {\textbf{Randomise here.} This single step is what makes the final subtraction
+        a causal estimate rather than a correlation.};
+  \draw[-{Stealth[length=1.8mm]}, accent!70, dashed] (5.1,-1.55) -- (5.1,-0.35);
+\end{tikzpicture}}%
+{The structure of a randomised experiment. Everything hinges on the random assignment step:
+without it, the final difference confounds the treatment with whatever made people end up
+in each group.}{rct-structure}
+
+\subsection{Sizing an Experiment}
+
+\begin{worked}[How Many Students Do You Need?]
+You want to detect a 10 percentage-point rise in pass rate (from 68\% to 78\%) with
+80\% power at $\alpha = 0.05$.
+
+\smallskip
+For two proportions, a workable approximation is
+\[
+n \;\approx\; \frac{16 \,\bar{p}(1-\bar{p})}{\delta^2}
+\quad\text{per group, where } \delta \text{ is the difference to detect.}
+\]
+
+With $\bar{p} = 0.73$ and $\delta = 0.10$:
+\[
+n \approx \frac{16 \times 0.73 \times 0.27}{0.01}
+        = \frac{16 \times 0.1971}{0.01}
+        = \frac{3.154}{0.01} \approx 315 \text{ per group}
+\]
+
+\textbf{So 630 students in total} --- and the worked example in \chref{inference},
+which had 100 per group, was therefore never capable of detecting this effect. That
+is why its $p = 0.078$ told you almost nothing.
+
+\smallskip
+\textbf{Halve the effect you want to detect} ($\delta = 0.05$) and $n$ rises to
+about 1{,}260 per group: the sample scales with $1/\delta^2$. Small effects are
+extremely expensive to establish, which is worth knowing \emph{before} promising a
+stakeholder an answer.
+\end{worked}
+
+\section{When You Cannot Randomise}
+
+Often randomisation is impossible --- you cannot randomly assign students to be
+disadvantaged, or randomly expose half your servers to attack. Quasi-experimental
+designs recover part of the causal claim.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{3.5cm}p{5.2cm}p{5.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Design} & \textbf{Idea} & \textbf{Key assumption (state it explicitly)} \\
+\midrule
+\endhead
+Before/after & Compare the same units before and after a change & Nothing else changed at the same time --- usually false \\
+Difference-in-differences & Compare before/after change in a treated group against an untreated one & The two groups' trends would have moved in parallel without the treatment \\
+Matching & Pair each treated unit with a similar untreated one & All relevant confounders were measured and used in matching \\
+Regression discontinuity & Compare units just either side of a cutoff (e.g.\ a 40\% pass mark) & Units cannot precisely manipulate which side they land on \\
+Instrumental variable & Use something that shifts treatment but not the outcome directly & The instrument affects the outcome \emph{only} through the treatment \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Before/After Alone Is Not Evidence]
+``We deployed the new firewall rules and incidents fell 40\%'' is compatible with:
+the rules worked; attack volume fell for unrelated reasons; the reporting process
+changed; a seasonal trough. Add a comparison group that did \emph{not} receive the
+change and you have difference-in-differences --- a genuinely different quality of
+claim, for very little extra work.
+\end{alertbox}
+
+\section{Prediction Does Not Need Causation --- Until It Does}
+
+\begin{conceptbox}[The Distinction That Decides Your Method]
+For \textbf{prediction}, correlation is enough. A model that flags at-risk students
+using forum inactivity works whether or not inactivity \emph{causes} failure.
+
+For \textbf{intervention}, correlation is useless. Forcing students to post on the
+forum will not help if inactivity was merely a symptom. The moment anyone asks
+``so what should we do?'', you have left prediction and entered causal inference
+--- and Parts III and IV, which are entirely about prediction, will not answer it.
+\end{conceptbox}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Causal Claims}
+\lensLA{\emph{Confounder:} prior attainment causes both engagement and final marks,
+so any ``engagement helps'' finding must adjust for it. \emph{Design:} randomise
+\emph{which students are offered} the intervention, not who takes it --- then
+compare by offer (intention to treat), which stays causal even though uptake is
+voluntary. \emph{Ethical constraint:} you may not withhold a support service
+believed to work, so stepped-wedge designs, where everyone eventually receives it,
+are the norm.}
+
+\lensPM{\emph{Confounder:} project complexity causes both the choice of methodology
+and the risk of overrun, so ``agile projects succeed more'' is almost always
+confounded --- simple projects get agile. \emph{Design:} randomising methodology
+across projects is rarely feasible; difference-in-differences across teams that
+adopted a practice at different times is the practical alternative.
+\emph{Collider warning:} studying only \emph{completed} projects conditions on
+survival and will mislead you.}
+
+\lensIOT{\emph{Confounder:} ambient temperature drives both cooling-fan speed and
+failure rate. \emph{Advantage:} devices are far easier to randomise than people ---
+push a firmware change to a random half of the fleet and you have a true RCT, with
+no consent problem and thousands of units. This makes IoT one of the few domains
+where clean causal evidence is cheap, and it is badly under-exploited.}
+
+\lensSEC{\emph{Reverse causation:} do more security tools cause fewer incidents, or
+do organisations that suffer incidents buy more tools? Both, which makes
+cross-sectional comparisons nearly meaningless. \emph{Design:} A/B test detection
+rules on randomly split traffic. \emph{Collider warning:} analysing only
+\emph{detected} attacks conditions on detection, so you will systematically
+conclude that attacks look like the ones your current tools already catch.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Simulating a Confounder]
+The clearest way to understand confounding is to build one and watch it fool you.
+
+\begin{lstlisting}[language=Python]
+import numpy as np, pandas as pd
+rng = np.random.default_rng(7)
+n = 2000
+
+# Z = conscientiousness. It causes BOTH attendance and marks.
+Z = rng.normal(0, 1, n)
+
+attends = (Z + rng.normal(0, 0.6, n)) > 0.3        # caused by Z
+mark    = 55 + 9*Z + rng.normal(0, 5, n)           # caused by Z ONLY
+#          note: `attends` does NOT appear in `mark` -- zero true effect
+
+df = pd.DataFrame({"Z": Z, "attends": attends, "mark": mark})
+
+naive = df[df.attends].mark.mean() - df[~df.attends].mark.mean()
+print(f"naive 'effect' of attending: {naive:+.2f} marks")   # ~ +10, and entirely fake
+
+# Adjust for the confounder by comparing within strata of Z:
+df["band"] = pd.qcut(df.Z, 5)
+adj = (df.groupby("band", observed=True)
+         .apply(lambda g: g[g.attends].mark.mean() - g[~g.attends].mark.mean(),
+                include_groups=False)
+         .mean())
+print(f"after adjusting for Z:       {adj:+.2f} marks")     # ~ 0, the truth
+\end{lstlisting}
+
+\textbf{The lesson:} the naive comparison reports a large, highly significant
+effect of a variable that has no effect at all. No amount of extra data would have
+corrected it --- only the adjustment did.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Ice cream sales correlate with drowning deaths. Name the confounder and
+        classify the association using \dsref{four-explanations}.
+  \item You want to know whether a support programme helps. Why is comparing
+        participants with non-participants insufficient, even with a large sample?
+  \item A study of hired employees finds that interview preparation correlates
+        negatively with technical skill. What is the likely explanation?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Any correlation admits four explanations: causation, reverse causation,
+        confounding and chance. Data alone cannot separate them.
+  \item Control for confounders; do \emph{not} control for mediators or colliders
+        --- adjusting for a collider creates associations that are not there.
+  \item Randomisation balances confounders you never thought of, which is why an
+        RCT beats a much larger observational study.
+  \item Required sample size scales as $1/\delta^2$: detecting small effects is
+        disproportionately expensive.
+  \item When randomisation is impossible, quasi-experimental designs work --- but
+        each rests on an assumption you must state.
+  \item Prediction tolerates correlation; intervention requires causation. Know
+        which question you are being asked.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Adjusting for which type of variable \emph{creates} a
+        spurious association? (a)~Confounder (b)~Mediator (c)~Collider
+        (d)~Instrument.
+  \item \textbf{(MCQ)} To detect an effect half as large, the required sample size
+        multiplies by roughly: (a)~2 (b)~4 (c)~8 (d)~$\sqrt{2}$.
+  \item \textbf{(Short)} Explain in three sentences why randomisation defeats
+        confounders that were never measured.
+  \item \textbf{(Short)} State the key assumption of difference-in-differences and
+        give one situation where it plainly fails.
+  \item \textbf{(Short)} Why is analysing only \emph{detected} attacks a collider
+        problem, and what does it do to your conclusions?
+  \item \textbf{(Applied)} A university reports that students using the new mobile
+        app achieve 6 marks more on average. Design a study --- randomised if
+        possible, quasi-experimental if not --- that would support a causal claim.
+        State your sample size reasoning and the assumption your design relies on.
+  \item \textbf{(Applied)} An operations team says ``since we introduced automated
+        patching, incidents are down 35\%''. List three alternative explanations and
+        describe the smallest change to their analysis that would make the claim
+        credible.
+\end{reviewq}

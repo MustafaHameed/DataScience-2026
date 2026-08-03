@@ -1,0 +1,398 @@
+%=====================================================================
+\chapter{Describing Data: Centre, Spread and Shape}\label{ch:descriptive}
+%=====================================================================
+\locator{1}{Part I --- Foundations of Data}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Compute} and \textbf{choose between} the mean, median and mode for a given variable.
+  \item \textbf{Compute} range, variance, standard deviation and the interquartile range, and say what each is robust to.
+  \item \textbf{Read} a boxplot and identify outliers by the $1.5 \times \text{IQR}$ rule.
+  \item \textbf{Recognise} skew from a histogram and predict how it displaces the mean relative to the median.
+  \item \textbf{Identify} which common distribution a variable plausibly follows and why that matters.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{data} (measurement scales --- they decide which summary is legal) and
+\chref{math} (summation notation).
+\end{prereq}
+
+\begin{keyterms}
+mean $\bullet$ median $\bullet$ mode $\bullet$ range $\bullet$ variance $\bullet$
+standard deviation $\bullet$ quartile $\bullet$ interquartile range $\bullet$
+outlier $\bullet$ skewness $\bullet$ normal, uniform, binomial, Poisson and
+long-tailed distributions $\bullet$ robustness
+\end{keyterms}
+
+\section{Why Summarise at All}
+
+You cannot look at 400{,}000 rows. A summary replaces a dataset with a handful of
+numbers that preserve what matters and discard what does not --- and the entire
+skill lies in knowing which is which. Every summary is a deliberate loss of
+information.
+
+\section{Measures of Centre}
+
+\begin{definitionbox}[Mean, Median, Mode]
+The \term{mean} $\bar{x} = \frac{1}{n}\sum_{i=1}^{n} x_i$ is the arithmetic
+average.\\[2pt]
+The \term{median} is the middle value when the data is sorted (the average of the
+two middle values if $n$ is even).\\[2pt]
+The \term{mode} is the most frequently occurring value --- the only centre that
+is meaningful for nominal data.
+\end{definitionbox}
+
+\begin{worked}[When the Mean Lies]
+Response times in milliseconds for seven API calls:
+$$12,\; 14,\; 15,\; 15,\; 17,\; 19,\; 8400$$
+
+\textbf{Mean:} $(12+14+15+15+17+19+8400)/7 = 8492/7 \approx 1213$~ms.
+
+\textbf{Median:} sorted, the 4th of 7 values is $15$~ms.
+
+\textbf{Mode:} $15$~ms.
+
+\smallskip
+\textbf{Interpretation.} The mean of 1213~ms describes not a single one of the
+seven calls. Six were under 20~ms; one timed out. Reporting ``average response
+time is 1.2 seconds'' would be technically correct and completely misleading.
+
+\textbf{The rule this illustrates:} the mean is \term{sensitive} to extreme
+values, the median is \term{robust} to them. Report the median for anything with a
+long tail --- response times, salaries, session durations, file sizes --- which in
+practice is most operational data you will ever meet.
+\end{worked}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{2.0cm}p{3.0cm}p{4.0cm}p{5.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Measure} & \textbf{Valid for} & \textbf{Robust to outliers?} & \textbf{Use when} \\
+\midrule
+\endhead
+Mean & Interval, ratio & No --- one value can move it arbitrarily & Data is roughly symmetric and you need to do further arithmetic \\
+Median & Ordinal, interval, ratio & Yes --- unaffected by how extreme the extremes are & Data is skewed, or outliers are present and genuine \\
+Mode & Any, including nominal & Yes & The variable is categorical, or you want the most typical case \\
+\bottomrule
+\end{longtable}
+
+\section{Measures of Spread}
+
+Two datasets can share a mean and be nothing alike. Spread is what distinguishes
+``every server responds in about 40~ms'' from ``servers respond in 5~ms or 200~ms
+depending on the day''.
+
+\begin{definitionbox}[Variance and Standard Deviation]
+The \term{sample variance} is
+\[
+s^2 \;=\; \frac{1}{n-1}\sum_{i=1}^{n}\left(x_i - \bar{x}\right)^2
+\]
+and the \term{standard deviation} is $s = \sqrt{s^2}$. The standard deviation is
+the more useful of the two because it is expressed in the \emph{same units} as the
+data.
+\end{definitionbox}
+
+\begin{conceptbox}[Why Divide by $n-1$?]
+Because $\bar{x}$ was itself estimated from the same data, the deviations are very
+slightly too small on average. Dividing by $n-1$ rather than $n$ corrects the
+bias. For large $n$ the difference is negligible; for the small samples you will
+meet in project management data it is not.
+\end{conceptbox}
+
+\begin{definitionbox}[Quartiles and the Interquartile Range]
+Sort the data. \term{Q1} is the value below which 25\% falls, \term{Q2} is the
+median, \term{Q3} is the value below which 75\% falls. The \term{interquartile
+range} is $\text{IQR} = Q3 - Q1$: the width of the middle half of the data. Like
+the median, it is robust.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+% ---- the box ----
+\def\qone{2.4} \def\med{4.0} \def\qthree{6.2}
+\def\wlo{0.8}  \def\whi{8.5}
+\draw[fill=secondary!12, draw=secondary, line width=1.1pt] (\qone,-0.55) rectangle (\qthree,0.55);
+\draw[primary, line width=1.8pt] (\med,-0.55) -- (\med,0.55);
+\draw[secondary, line width=1.1pt] (\qone,0) -- (\wlo,0);
+\draw[secondary, line width=1.1pt] (\qthree,0) -- (\whi,0);
+\draw[secondary, line width=1.1pt] (\wlo,-0.3) -- (\wlo,0.3);
+\draw[secondary, line width=1.1pt] (\whi,-0.3) -- (\whi,0.3);
+% outliers
+\foreach \x in {10.1, 10.9}
+  \fill[accent] (\x,0) circle (2.2pt);
+
+% ---- labels ----
+\node[text=primary, font=\scriptsize\bfseries] at (\med,0.95) {median};
+\node[text=secondary!60!black] at (\qone,-0.95) {Q1};
+\node[text=secondary!60!black] at (\qthree,-0.95) {Q3};
+\node[text=secondary!60!black, align=center] at (\wlo,-1.05) {lower\\whisker};
+\node[text=secondary!60!black, align=center] at (\whi,-1.05) {upper\\whisker};
+\node[text=accent, align=center, font=\scriptsize\bfseries] at (10.5,0.95) {outliers};
+
+% IQR brace
+\draw[decorate, decoration={brace, amplitude=4pt}, gray!65]
+     (\qone,0.68) -- (\qthree,0.68)
+     node[midway, above=4pt, text=gray!55!black] {IQR $=Q3-Q1$: the middle 50\%};
+
+% whisker rule
+\draw[decorate, decoration={brace, amplitude=4pt, mirror}, gray!65]
+     (\qthree,-1.55) -- (\whi,-1.55)
+     node[midway, below=4pt, text=gray!55!black] {up to $1.5\times$IQR};
+
+\draw[-{Stealth[length=2mm]}, gray!55] (-0.2,-2.15) -- (11.4,-2.15);
+\node[text=gray!55!black] at (11.4,-2.5) {value};
+\end{tikzpicture}}%
+{Anatomy of a boxplot. The box holds the middle 50\% of the data, the whiskers reach the
+furthest point within $1.5\times$IQR of the box, and anything beyond is drawn individually
+as a candidate outlier. A boxplot shows centre, spread, skew and outliers in one
+object.}{boxplot-anatomy}
+
+\begin{definitionbox}[The $1.5 \times$ IQR Rule]
+A value is flagged as a candidate \term{outlier} if it lies below
+$Q1 - 1.5\,\text{IQR}$ or above $Q3 + 1.5\,\text{IQR}$. ``Candidate'' is the
+operative word: the rule identifies unusual values, not wrong ones.
+\end{definitionbox}
+
+\begin{worked}[Applying the Outlier Rule]
+Login durations (minutes) for one account over ten sessions:
+$$4,\;5,\;6,\;6,\;7,\;8,\;9,\;11,\;14,\;96$$
+
+\textbf{Q1} (25th percentile) $= 6$. \quad \textbf{Q3} (75th percentile) $= 11$.
+
+\textbf{IQR} $= 11 - 6 = 5$.
+
+\textbf{Fences:} lower $= 6 - 1.5(5) = -1.5$; upper $= 11 + 1.5(5) = 18.5$.
+
+\textbf{Flagged:} 96 only.
+
+\smallskip
+\textbf{And now the part that matters.} What you do next depends entirely on
+domain, not statistics:
+\begin{tight}
+  \item \emph{Learning analytics:} probably a student who left a tab open. Cap or
+        remove.
+  \item \emph{Cybersecurity:} a 96-minute session on an account that normally runs
+        6 minutes is precisely what you are paid to notice. \textbf{Do not
+        remove it.} In \chref{unsupervised} the outlier becomes the target.
+\end{tight}
+Never delete outliers because a rule flagged them. Investigate, decide, and record
+the decision.
+\end{worked}
+
+\section{Shape: Skew and the Distributions You Will Meet}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=3 by 1, horizontal sep=0.85cm},
+  width=5.5cm, height=4.0cm,
+  axis lines=left, ymin=0, ytick=\empty,
+  tick label style={font=\tiny}, title style={font=\scriptsize\bfseries},
+  xlabel style={font=\tiny}, enlarge x limits=0.02,
+]
+% --- right skew
+\nextgroupplot[title={\color{accent}Right-skewed (positive)}, xmin=0, xmax=8, xlabel={value}]
+\addplot[draw=accent!70, fill=accent!14, line width=0.9pt, domain=0.05:8, samples=140]
+  {2.6*exp(-(ln(x)-0.55)^2/(2*0.55^2))/(x*0.55*2.5066)};
+\draw[greenhl, line width=1pt, dashed] (axis cs:1.73,0) -- (axis cs:1.73,1.05);
+\draw[primary, line width=1pt] (axis cs:2.02,0) -- (axis cs:2.02,1.05);
+\node[font=\tiny, greenhl!60!black, anchor=east] at (axis cs:1.65,1.18) {median};
+\node[font=\tiny, primary, anchor=west] at (axis cs:2.1,1.18) {mean};
+\node[font=\tiny, text=gray!55!black, align=center] at (axis cs:5.6,0.72)
+     {tail pulls\\the mean right};
+
+% --- symmetric
+\nextgroupplot[title={\color{greenhl}Symmetric}, xmin=-4, xmax=4, xlabel={value}]
+\addplot[draw=greenhl!70, fill=greenhl!14, line width=0.9pt, domain=-4:4, samples=140]
+  {exp(-x^2/2)/2.5066};
+\draw[primary, line width=1.2pt] (axis cs:0,0) -- (axis cs:0,0.42);
+\node[font=\tiny, primary, align=center, anchor=south] at (axis cs:0,0.43)
+     {mean = median\\= mode};
+
+% --- left skew
+\nextgroupplot[title={\color{secondary}Left-skewed (negative)}, xmin=0, xmax=8, xlabel={value}]
+\addplot[draw=secondary!70, fill=secondary!14, line width=0.9pt, domain=0.05:7.95, samples=140]
+  {2.6*exp(-(ln(8-x)-0.55)^2/(2*0.55^2))/((8-x)*0.55*2.5066)};
+\draw[greenhl, line width=1pt, dashed] (axis cs:6.27,0) -- (axis cs:6.27,1.05);
+\draw[primary, line width=1pt] (axis cs:5.98,0) -- (axis cs:5.98,1.05);
+\node[font=\tiny, primary, anchor=east] at (axis cs:5.9,1.18) {mean};
+\node[font=\tiny, greenhl!60!black, anchor=west] at (axis cs:6.35,1.18) {median};
+\end{groupplot}
+\end{tikzpicture}}%
+{Skew and what it does to the centre. The mean is dragged towards the long tail; the
+median stays put. If mean and median differ substantially, the distribution is skewed and
+you should report the median.}{skewness}
+
+\begin{conceptbox}[A Diagnostic You Can Do in Your Head]
+Compare the mean and the median.
+If $\bar{x} \gg \text{median}$, the data is right-skewed --- there is a long tail
+of large values. If $\bar{x} \ll \text{median}$, it is left-skewed. If they are
+close, it is roughly symmetric. This one comparison tells you more about a variable
+than any single number.
+\end{conceptbox}
+
+\subsection{Four Distributions Worth Recognising}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=4 by 1, horizontal sep=0.65cm},
+  width=4.4cm, height=3.5cm,
+  axis lines=left, ymin=0, ytick=\empty,
+  tick label style={font=\tiny}, title style={font=\tiny\bfseries},
+]
+\nextgroupplot[title={Normal}, xmin=-4, xmax=4]
+\addplot[draw=primary, fill=primary!15, line width=0.9pt, domain=-4:4, samples=100]
+  {exp(-x^2/2)/2.5066};
+
+\nextgroupplot[title={Uniform}, xmin=-0.5, xmax=4.5, ymax=0.35]
+\addplot[draw=secondary, fill=secondary!15, line width=0.9pt] coordinates
+  {(0,0) (0,0.25) (4,0.25) (4,0)};
+
+\nextgroupplot[title={Binomial ($n{=}10$, $p{=}0.3$)}, xmin=-0.6, xmax=9, ybar,
+               bar width=4pt, ymax=0.30]
+\addplot[draw=greenhl, fill=greenhl!30] coordinates
+  {(0,0.028) (1,0.121) (2,0.233) (3,0.267) (4,0.200) (5,0.103) (6,0.037) (7,0.009) (8,0.001)};
+
+\nextgroupplot[title={Long-tailed}, xmin=0, xmax=8]
+\addplot[draw=accent, fill=accent!15, line width=0.9pt, domain=0.05:8, samples=140]
+  {2.6*exp(-(ln(x)-0.35)^2/(2*0.75^2))/(x*0.75*2.5066)};
+\end{groupplot}
+\end{tikzpicture}}%
+{Four shapes you will meet constantly. Recognising which one a variable follows tells you
+which summary to report, which model assumptions are safe, and whether ``three standard
+deviations'' means anything.}{four-distributions}
+
+\rowcolors{2}{white}{defbg}
+\begin{longtable}{@{}p{2.4cm}p{5.0cm}p{7.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Distribution} & \textbf{Arises when} & \textbf{You will meet it as} \\
+\midrule
+\endhead
+Normal & Many small independent effects add up & Exam marks, measurement error, sensor noise around a set point \\
+Uniform & Every value equally likely & Random IDs, hash outputs, a well-shuffled sample \\
+Binomial & $n$ independent yes/no trials with fixed probability & Number of quizzes passed out of 10; number of packets dropped out of 1000 \\
+Poisson & Counts of rare events in a fixed window & Failed logins per minute; defects per release; sensor faults per day \\
+Long-tailed & Multiplicative effects, ``rich get richer'' & Response times, file sizes, session lengths, incident cost \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Not Everything Is Normal]
+The normal distribution is the default assumption of a great deal of classical
+statistics, and a great deal of operational data violates it badly. Response times
+cannot be negative and have a long right tail; counts of rare security events are
+Poisson, not normal. Applying a rule like ``flag anything beyond three standard
+deviations'' to a long-tailed variable will flag a large fraction of perfectly
+normal traffic. \chref{inference} returns to when normality can be assumed
+anyway.
+\end{alertbox}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Summarising a Variable}
+\lensLA{Time spent on an assignment is strongly right-skewed: most students take
+2--4 hours, a few take thirty. Report the \emph{median} hours, not the mean, or
+every published figure will overstate typical effort and demoralise students who
+compare themselves to it. The IQR is the honest measure of ``how much do students
+vary''.}
+
+\lensPM{Task completion times are right-skewed for the same reason: a task can
+overrun without limit but cannot finish in less than zero. This is why
+median-based forecasting beats mean-based estimation, and why experienced
+estimators quote ranges (Q1--Q3) rather than points. A sprint planned on mean
+velocity will miss more often than it hits.}
+
+\lensIOT{Sensor readings around a controlled set point are approximately normal,
+so the standard deviation is meaningful and a $3\sigma$ rule is defensible.
+Battery life and time-between-failures are long-tailed, so it is not. The same
+fleet therefore needs different summaries for different channels --- do not apply
+one rule across the telemetry.}
+
+\lensSEC{Failed logins per minute per account is a Poisson count, usually with a
+mode of zero. The mean is a poor description and the standard deviation is nearly
+meaningless. What matters is the \emph{tail}: the 99.9th percentile, and how far
+above it a given account sits. Note also that the outlier you would delete in the
+learning-analytics lens is the alert you would escalate here.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Centre, Spread and Shape in Eight Lines]
+\begin{lstlisting}[language=Python]
+import numpy as np, pandas as pd
+
+rt = pd.Series([12, 14, 15, 15, 17, 19, 8400])   # response times (ms)
+
+print("mean   :", rt.mean())        # 1213.1  <- describes nothing
+print("median :", rt.median())      # 15.0    <- describes six of seven
+print("std    :", rt.std())         # huge, and equally misleading
+print("IQR    :", rt.quantile(.75) - rt.quantile(.25))
+
+q1, q3 = rt.quantile(.25), rt.quantile(.75)
+iqr = q3 - q1
+outliers = rt[(rt < q1 - 1.5*iqr) | (rt > q3 + 1.5*iqr)]
+print("flagged:", list(outliers))
+
+# The skew diagnostic you can do in your head:
+print("mean >> median ?", rt.mean() > 2 * rt.median())   # True => right-skewed
+\end{lstlisting}
+
+\textbf{R equivalent} (the repo's existing Quarto labs use this style):
+\begin{lstlisting}[language=R]
+rt <- c(12, 14, 15, 15, 17, 19, 8400)
+summary(rt)          # min, Q1, median, mean, Q3, max in one call
+IQR(rt)
+boxplot(rt, horizontal = TRUE)
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A variable has mean 45 and median 12. What shape is it, and which figure
+        would you publish?
+  \item For the data $2, 4, 4, 5, 9$: compute the mean, the median and the sample
+        standard deviation.
+  \item Why is the mode the only measure of centre available for the variable
+        \texttt{protocol} $\in$ \{TCP, UDP, ICMP\}?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item The mean is sensitive to extremes; the median and IQR are robust. Skewed
+        data should be summarised by the median.
+  \item Standard deviation is variance in the original units, which is why it is
+        the one usually reported.
+  \item The $1.5\times$IQR rule identifies \emph{candidate} outliers. Whether to
+        remove them is a domain decision, never a statistical one --- in security
+        they are the target.
+  \item Comparing mean with median is a free, instant diagnostic of skew.
+  \item Normal, uniform, binomial, Poisson and long-tailed shapes each imply
+        different valid summaries. Assuming normality by default is a common and
+        costly error.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which measure of centre is unaffected by a single extreme
+        value? (a)~Mean (b)~Median (c)~Variance (d)~Standard deviation.
+  \item \textbf{(MCQ)} If mean $>$ median, the distribution is: (a)~left-skewed
+        (b)~symmetric (c)~right-skewed (d)~uniform.
+  \item \textbf{(Short)} State the $1.5\times$IQR rule and explain why its output
+        should be called ``candidates'' rather than ``outliers''.
+  \item \textbf{(Short)} Why is variance divided by $n-1$ rather than $n$ for a
+        sample?
+  \item \textbf{(Short)} Give one variable from IoT telemetry that is
+        approximately normal and one that is long-tailed, and say how your
+        reporting differs between them.
+  \item \textbf{(Applied)} Session durations (minutes) for one user:
+        $3, 4, 4, 5, 5, 6, 7, 9, 12, 140$. Compute Q1, Q3, IQR and the fences;
+        identify flagged values; then argue both for keeping and for removing the
+        140, naming the domain in which each argument wins.
+  \item \textbf{(Applied)} A dashboard reports ``average time on task: 47
+        minutes'' for an online course. Explain what could be wrong with this
+        headline and propose two better numbers to display alongside it.
+\end{reviewq}

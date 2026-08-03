@@ -1,0 +1,381 @@
+%=====================================================================
+\chapter{Data: Types, Sources and Quality}\label{ch:data}
+%=====================================================================
+\locator{1}{Part I --- Foundations of Data}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Classify} data as structured, semi-structured or unstructured, and state what each implies for storage and analysis.
+  \item \textbf{Assign} a variable to its correct measurement scale --- nominal, ordinal, interval or ratio --- and explain which operations that permits.
+  \item \textbf{Evaluate} a dataset against the six dimensions of data quality.
+  \item \textbf{Distinguish} the three mechanisms of missingness and explain why the distinction changes what you may do about it.
+  \item \textbf{Describe} the characteristic data of each of the four running domains.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{lifecycle} --- the framing questions, especially ``one row is one what?'',
+which this chapter makes precise.
+\end{prereq}
+
+\begin{keyterms}
+observation $\bullet$ feature $\bullet$ structured / semi-structured / unstructured
+$\bullet$ nominal, ordinal, interval, ratio $\bullet$ tidy data $\bullet$ metadata
+$\bullet$ provenance $\bullet$ data quality dimensions $\bullet$ MCAR, MAR, MNAR
+$\bullet$ granularity
+\end{keyterms}
+
+\section{The Shape of a Dataset}
+
+\begin{definitionbox}[Observation and Feature]
+An \term{observation} (row, record, example, instance) is one thing you measured.
+A \term{feature} (column, variable, attribute, field) is one property measured
+about every thing. The number of observations is written $n$; the number of
+features $p$.
+\end{definitionbox}
+
+The apparently trivial question ``what is one row?'' is the source of more
+confusion than any other in applied work, because the same underlying reality
+admits several answers.
+
+\begin{worked}[The Same Data, Four Granularities]
+A university has swipe-card records for lecture attendance.
+
+\begin{tight}
+  \item \emph{One row per swipe:} $n \approx 400{,}000$. Features: student, room,
+        timestamp. This is the raw \term{granularity}.
+  \item \emph{One row per student per lecture:} $n \approx 120{,}000$. Feature:
+        attended yes/no.
+  \item \emph{One row per student per week:} $n \approx 24{,}000$. Feature:
+        lectures attended out of 5.
+  \item \emph{One row per student:} $n \approx 2{,}000$. Feature: overall
+        attendance percentage.
+\end{tight}
+
+\textbf{Why it matters.} If the frame says ``predict which \emph{student} fails'',
+the modelling table must have one row per student --- so the other three must be
+aggregated up. Every aggregation destroys information (row 4 cannot tell you
+\emph{when} attendance collapsed) and every disaggregation invents none. Choose
+the coarsest granularity that still contains the signal, and do the aggregation
+deliberately rather than by accident.
+\end{worked}
+
+\section{Three Kinds of Data}
+
+\dsfig{%
+\begin{tikzpicture}[
+  b/.style={rounded corners=4pt, draw=#1, line width=1.2pt, fill=#1!7,
+            text width=4.4cm, align=center, font=\scriptsize, inner sep=6pt},
+  ttl/.style={font=\bfseries\small}]
+
+  \node[b=primary] (s) at (0,0) {%
+    {\color{primary}\bfseries\small \faIcon{table}~STRUCTURED}\\[3pt]
+    Fixed schema, rows and columns.\\[2pt]
+    \emph{Tables, CSV, SQL databases, spreadsheets}\\[3pt]
+    {\color{primary!60!black}Ready for analysis; roughly 20\% of the world's data}};
+
+  \node[b=secondary] (m) at (5.3,0) {%
+    {\color{secondary}\bfseries\small \faIcon{code}~SEMI-STRUCTURED}\\[3pt]
+    Tags or keys, but no fixed schema.\\[2pt]
+    \emph{JSON, XML, logs, sensor payloads}\\[3pt]
+    {\color{secondary!60!black}Must be flattened before most analysis}};
+
+  \node[b=tealhl] (u) at (10.6,0) {%
+    {\color{tealhl}\bfseries\small \faIcon{file-image}~UNSTRUCTURED}\\[3pt]
+    No predefined structure at all.\\[2pt]
+    \emph{Text, images, audio, video, PDFs}\\[3pt]
+    {\color{tealhl!60!black}Needs deep learning (Part IV) to become features}};
+
+  \draw[-{Stealth[length=2.5mm]}, gray!45, line width=6pt, opacity=0.35]
+        (-2.4,-1.75) -- (13.0,-1.75);
+  \node[font=\scriptsize\itshape, text=gray!60!black] at (5.3,-2.15)
+       {increasing volume ~~$\longrightarrow$~~ increasing effort to make usable};
+\end{tikzpicture}}%
+{The three kinds of data. Most organisational data is not the tidy table beginners picture;
+the majority is semi-structured logs and unstructured documents, which is why Chapters 7,
+20 and 23 exist.}{data-kinds}
+
+\section{Measurement Scales}
+
+Knowing that a column contains numbers is not enough. Postcodes are numbers you
+must never average; temperatures in Celsius are numbers you may average but must
+not double.
+
+\begin{definitionbox}[The Four Measurement Scales]
+\term{Nominal} --- named categories, no order (blood group, protocol, department).\\
+\term{Ordinal} --- ordered categories, unequal or unknown gaps (grade A/B/C, severity low/medium/high).\\
+\term{Interval} --- numeric, equal gaps, \emph{arbitrary zero} (Celsius, calendar year).\\
+\term{Ratio} --- numeric, equal gaps, \emph{true zero} (count, duration, bytes, kelvin).
+\end{definitionbox}
+
+\rowcolors{2}{white}{defbg}
+\begin{longtable}{@{}p{2.0cm}p{2.6cm}p{2.3cm}p{3.0cm}p{4.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Scale} & \textbf{Legal operations} & \textbf{Centre} & \textbf{Example} & \textbf{Nonsense you must avoid} \\
+\midrule
+\endhead
+Nominal & $=$, $\neq$ & Mode & TCP / UDP / ICMP & ``the average protocol is 1.7'' \\
+Ordinal & $=$, $<$, $>$ & Median & Low / Med / High risk & ``High is exactly twice Medium'' \\
+Interval & $+$, $-$ & Mean & Temperature in $^\circ$C & ``$20^\circ$C is twice as hot as $10^\circ$C'' \\
+Ratio & $+$, $-$, $\times$, $\div$ & Mean & Packets per second & (none --- all operations valid) \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The Encoded-Category Trap]
+The moment you encode \texttt{\{TCP, UDP, ICMP\}} as \texttt{\{1, 2, 3\}} so a
+model will accept it, every algorithm downstream will happily compute that
+$\text{UDP} - \text{TCP} = \text{TCP}$ and that ICMP is ``larger'' than the others.
+This is why \chref{wrangling} teaches one-hot encoding: it preserves the nominal
+scale instead of silently promoting it to ratio.
+\end{alertbox}
+
+\section{Tidy Data}
+
+\begin{definitionbox}[Tidy Data]
+A dataset is \term{tidy} when (1) each variable forms a column, (2) each
+observation forms a row, and (3) each type of observational unit forms a table.
+Almost every analysis tool assumes tidy input, and almost no real dataset arrives
+that way.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  hdr/.style={fill=accent!18, draw=accent!60, text=accent!50!black, font=\scriptsize\bfseries,
+              minimum width=1.55cm, minimum height=0.48cm},
+  cel/.style={fill=white, draw=gray!45, minimum width=1.55cm, minimum height=0.48cm},
+  ghdr/.style={fill=greenhl!18, draw=greenhl!60, text=greenhl!45!black, font=\scriptsize\bfseries,
+              minimum width=1.35cm, minimum height=0.48cm},
+  gcel/.style={fill=white, draw=gray!45, minimum width=1.35cm, minimum height=0.48cm}]
+
+% ---- messy (wide) ----
+\node[font=\bfseries\small, text=accent] at (2.3,1.35) {Messy: weeks hidden in column names};
+\foreach \c/\t in {0/student, 1/wk1, 2/wk2, 3/wk3}
+  \node[hdr] at (\c*1.55,0.65) {\t};
+\foreach \r/\a/\b/\c/\d in {0/S101/5/4/2, 1/S102/3/0/0}{
+  \pgfmathsetmacro{\yy}{0.65-(\r+1)*0.48}
+  \node[cel] at (0,\yy) {\a}; \node[cel] at (1.55,\yy) {\b};
+  \node[cel] at (3.10,\yy) {\c}; \node[cel] at (4.65,\yy) {\d};}
+
+\draw[-{Stealth[length=3mm]}, primary!60, line width=2pt] (5.6,-0.1) -- (7.0,-0.1);
+\node[font=\scriptsize\itshape, text=primary!70!black] at (6.3,0.35) {tidy};
+
+% ---- tidy (long) ----
+\node[font=\bfseries\small, text=greenhl!50!black] at (9.6,1.35) {Tidy: week is a variable};
+\foreach \c/\t in {0/student, 1/week, 2/attended}
+  \node[ghdr] at (7.9+\c*1.35,0.65) {\t};
+\foreach \r/\a/\b/\c in {0/S101/1/5, 1/S101/2/4, 2/S101/3/2, 3/S102/1/3, 4/S102/2/0, 5/S102/3/0}{
+  \pgfmathsetmacro{\yy}{0.65-(\r+1)*0.48}
+  \node[gcel] at (7.9,\yy) {\a}; \node[gcel] at (9.25,\yy) {\b}; \node[gcel] at (10.6,\yy) {\c};}
+\end{tikzpicture}}%
+{Messy versus tidy layout of the same attendance data. On the left, \emph{week} is not a
+variable but three column names, so you cannot filter, group or plot by it. Reshaping to
+the right is the single most common preparation step in real projects.}{tidy-data}
+
+\section{Data Quality}
+
+\begin{definitionbox}[The Six Dimensions of Data Quality]
+\term{Completeness} --- is anything missing?
+\term{Accuracy} --- does it match reality?
+\term{Consistency} --- do different sources agree?
+\term{Timeliness} --- is it current enough for the decision?
+\term{Validity} --- does it satisfy the rules of its own schema?
+\term{Uniqueness} --- is each real-world entity represented once?
+\end{definitionbox}
+
+\begin{worked}[Auditing a Student Records Extract]
+An extract of 2{,}000 student records is handed over. Applying the six dimensions
+in order:
+
+\smallskip
+\textbf{Completeness:} \texttt{prior\_qualification} is empty for 640 rows (32\%).
+Not fatal, but no model may treat it as reliably present.
+
+\textbf{Accuracy:} 12 students have \texttt{age = 0}. Compare against date of
+birth: these are placeholder values, not newborns.
+
+\textbf{Consistency:} the registry lists 2{,}000 students; the VLE lists 2{,}043.
+The extra 43 are staff test accounts. Left in, they would be modelled as students
+who never fail.
+
+\textbf{Timeliness:} \texttt{attendance\_pct} was computed in week 12 but the
+model is to run in week 4. This is a \emph{framing} violation (\chref{lifecycle},
+question 4), discovered here.
+
+\textbf{Validity:} 3 rows carry \texttt{final\_grade = "Z"}, which is not in the
+permitted grade set.
+
+\textbf{Uniqueness:} 8 students appear twice, having transferred between
+programmes. Deduplicating naively by student ID would silently drop one of their
+two enrolments.
+
+\smallskip
+\textbf{Verdict:} the dataset is usable, but only after documented decisions on
+each of the six. The audit takes an afternoon; skipping it costs weeks.
+\end{worked}
+
+\subsection{Missing Data: Three Mechanisms}
+
+Why a value is missing determines what you are allowed to do about it. This is
+one of the few places in the course where a philosophical distinction has an
+immediate practical consequence.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{2.6cm}p{5.4cm}p{6.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Mechanism} & \textbf{Meaning} & \textbf{Example and consequence} \\
+\midrule
+\endhead
+MCAR \newline \emph{completely at random} & Missingness is unrelated to anything, observed or not & A sensor drops packets when the network is congested, independent of the reading. Dropping those rows is safe, just wasteful. \\
+MAR \newline \emph{at random} & Missingness depends on \emph{observed} variables & Part-time students skip the optional survey more often. Missingness is predictable from \texttt{enrolment\_type}, so imputation conditional on it is defensible. \\
+MNAR \newline \emph{not at random} & Missingness depends on the \emph{unobserved value itself} & Students who are failing stop submitting the self-assessment. The missingness \emph{is} the signal. Imputing it destroys the very information you needed. \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[The MNAR Rule of Thumb]
+If you suspect MNAR, do not impute --- \emph{encode}. Add a boolean column
+\texttt{was\_missing} and let the model use the fact of absence as a feature. In
+learning analytics and in security logging, absence is very often the strongest
+signal in the dataset.
+\end{conceptbox}
+
+\section{Provenance and Metadata}
+
+\begin{definitionbox}[Provenance]
+The documented history of a dataset: where it came from, who produced it, when,
+under what definitions, and what has been done to it since. A dataset without
+provenance is an anecdote.
+\end{definitionbox}
+
+Minimum metadata to record for every dataset you use in this course:
+\begin{tight}
+  \item Source system and extraction date.
+  \item The definition of each column, \emph{in the words of the people who
+        generate it} --- ``active user'' means something specific and probably
+        surprising.
+  \item Known quality issues and the decisions you took about them.
+  \item Licence and permitted use, especially for personal data
+        (see \chref{ethics}).
+\end{tight}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Characteristic Data}
+\lensLA{\emph{Structured:} enrolment records, grades, demographics.
+\emph{Semi-structured:} VLE clickstream (JSON events with timestamps).
+\emph{Unstructured:} forum posts, essay submissions. \emph{Key quality risk:}
+uniqueness --- one human may hold several accounts across systems, and joining
+them wrongly either fragments or fabricates a student. \emph{Typical missingness:}
+MNAR, because disengaged students stop generating data at exactly the moment you
+most need it.}
+
+\lensPM{\emph{Structured:} issue trackers, timesheets, commit counts.
+\emph{Semi-structured:} CI/CD pipeline logs. \emph{Unstructured:} retrospective
+notes, requirement documents. \emph{Key quality risk:} accuracy --- effort is
+self-reported and rounded to comfortable numbers. \emph{Typical missingness:} MAR,
+since teams under pressure log less, and ``under pressure'' is itself observable
+from the sprint data.}
+
+\lensIOT{\emph{Structured:} time-stamped numeric telemetry, one row per sensor
+per interval. \emph{Semi-structured:} MQTT payloads with device-specific fields.
+\emph{Unstructured:} camera and audio streams. \emph{Key quality risk:} validity
+and timeliness --- clock drift across a fleet makes timestamps disagree, and a
+reading that arrives two hours late is not the same as a reading that is on time.
+\emph{Typical missingness:} MCAR from packet loss, but MNAR when a failing sensor
+stops reporting --- and the failing ones are the ones you care about.}
+
+\lensSEC{\emph{Structured:} NetFlow records, authentication events.
+\emph{Semi-structured:} syslog, firewall and SIEM logs. \emph{Unstructured:}
+malware binaries, phishing email bodies. \emph{Key quality risk:} completeness and
+consistency --- log sources fail silently, and an attacker's first act is often to
+clear or disable logging. \emph{Typical missingness:} MNAR by design, because the
+adversary is deliberately creating the gap.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[A Ten-Minute Data Audit]
+Run this on any new dataset before doing anything else.
+
+\begin{lstlisting}[language=Python]
+import pandas as pd
+
+def audit(df):
+    print(f"shape: {df.shape[0]} rows x {df.shape[1]} columns\n")
+
+    print("-- completeness (% missing) --")
+    print((df.isna().mean() * 100).round(1).sort_values(ascending=False), "\n")
+
+    print("-- uniqueness --")
+    print(f"duplicate rows: {df.duplicated().sum()}\n")
+
+    print("-- validity: candidate placeholder values --")
+    for c in df.select_dtypes("number"):
+        odd = df[c].isin([0, -1, -999]).sum()
+        if odd:
+            print(f"  {c}: {odd} rows equal 0/-1/-999")
+
+    print("\n-- scale check: how many distinct values? --")
+    print(df.nunique().sort_values())   # few distinct + numeric => probably nominal
+
+audit(pd.read_csv("your_data.csv"))
+\end{lstlisting}
+
+\textbf{Read the last output carefully.} A numeric column with only four distinct
+values is almost certainly a category wearing a number's clothing.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Classify each by measurement scale: (a)~student ID, (b)~satisfaction on a
+        1--5 Likert scale, (c)~CPU temperature in $^\circ$C, (d)~number of failed
+        logins.
+  \item A sensor reports \texttt{-999} when it cannot obtain a reading. What are
+        the two things that will go wrong if you leave those values in and compute
+        a mean? What is the missingness mechanism most likely to be?
+  \item Attendance data is stored one row per swipe. Your frame requires one row
+        per student per week. Is that aggregation or disaggregation, and what
+        information is lost?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item An observation is a row, a feature is a column, and deciding what one row
+        represents (granularity) is a framing decision, not a technical one.
+  \item Data is structured, semi-structured or unstructured; most real data is not
+        the first.
+  \item The measurement scale --- nominal, ordinal, interval, ratio --- determines
+        which operations are meaningful. Encoding a category as a number does not
+        make arithmetic on it valid.
+  \item Tidy data means one variable per column, one observation per row. Most
+        data arrives untidy.
+  \item Quality has six dimensions; audit all six before modelling.
+  \item Missingness is MCAR, MAR or MNAR. Under MNAR, encode the absence rather
+        than imputing it --- the gap is the signal.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which is a ratio-scale variable? (a)~Calendar year
+        (b)~Temperature in $^\circ$C (c)~Number of packets sent (d)~Severity rated
+        low/medium/high.
+  \item \textbf{(MCQ)} JSON log events are best described as: (a)~structured
+        (b)~semi-structured (c)~unstructured (d)~tidy.
+  \item \textbf{(Short)} Explain why it is invalid to say ``$20^\circ$C is twice as
+        warm as $10^\circ$C'' but valid to say ``200 packets is twice as many as
+        100''.
+  \item \textbf{(Short)} Define MNAR and give an example from cybersecurity in
+        which the missingness itself is the most informative feature available.
+  \item \textbf{(Short)} A dataset has no provenance record. List two specific
+        risks this creates for a project that reaches deployment.
+  \item \textbf{(Applied)} You are given swipe-card, VLE-clickstream and grade data
+        for 2{,}000 students. Design the granularity of your modelling table for the
+        frame ``predict in week 4 whether a student will fail'', and list the
+        aggregations required to get there.
+  \item \textbf{(Applied)} For an IoT fleet of 400 motors reporting every 10
+        seconds, audit the dataset against all six quality dimensions: for each,
+        state one concrete check you would run.
+\end{reviewq}

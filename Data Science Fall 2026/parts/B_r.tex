@@ -1,0 +1,187 @@
+%=====================================================================
+\chapter{R and Tidyverse Quick Reference}\label{app:r}
+%=====================================================================
+\normalfigures
+
+R remains the better tool for exploratory statistics, and the department's existing
+Quarto lab materials use it. This appendix gives the equivalent of Appendix~A.
+
+\section{Setup}
+
+\begin{lstlisting}[language=R]
+install.packages(c("tidyverse", "tidymodels", "GGally", "janitor", "here"))
+library(tidyverse)     # dplyr, ggplot2, tidyr, readr, purrr
+library(tidymodels)    # recipes, parsnip, rsample, yardstick
+set.seed(42)           # reproducibility -- Chapter 29
+\end{lstlisting}
+
+\section{Loading and Inspecting}
+
+\begin{lstlisting}[language=R]
+df <- read_csv("data.csv")
+df <- janitor::clean_names(df)      # snake_case column names
+
+dim(df); glimpse(df); summary(df)
+skimr::skim(df)                     # the best single overview available in R
+
+df %>% summarise(across(everything(), ~ mean(is.na(.)))) %>%
+       pivot_longer(everything()) %>% arrange(desc(value))   # % missing
+df %>% count(programme, sort = TRUE)
+sum(duplicated(df))
+\end{lstlisting}
+
+\section{Wrangling with dplyr}
+
+\begin{lstlisting}[language=R]
+df %>%
+  filter(age > 18, !is.na(mark)) %>%
+  mutate(passed  = mark >= 40,
+         band    = cut(attendance, c(0, 50, 75, 100),
+                       labels = c("low", "medium", "high")),
+         mark_z  = (mark - mean(mark)) / sd(mark)) %>%
+  select(student_id, programme, mark, passed, band) %>%
+  arrange(desc(mark))
+
+df %>%
+  group_by(programme) %>%
+  summarise(n         = n(),
+            mean_mark = mean(mark, na.rm = TRUE),
+            median    = median(mark, na.rm = TRUE),   # report this if skewed
+            iqr       = IQR(mark, na.rm = TRUE),
+            pass_rate = mean(passed), .groups = "drop")
+
+# joins -- check the row count, exactly as in pandas
+before <- nrow(df)
+df <- left_join(df, vle, by = "student_id")     # left, not inner
+stopifnot(nrow(df) == before)
+
+# tidy data (Chapter 3): wide -> long
+df %>% pivot_longer(starts_with("wk"), names_to = "week", values_to = "attended")
+\end{lstlisting}
+
+\section{Descriptive and Inferential Statistics}
+
+\begin{lstlisting}[language=R]
+mean(x); median(x); sd(x); var(x); IQR(x)
+quantile(x, c(.25, .5, .75))
+
+# outlier fences -- Chapter 5
+q <- quantile(x, c(.25, .75)); iqr <- IQR(x)
+x[x < q[1] - 1.5*iqr | x > q[2] + 1.5*iqr]
+
+t.test(mark ~ group, data = df)                  # two-sample
+prop.test(c(68, 79), c(100, 100))                # two proportions -- Chapter 9
+cor(df$attendance, df$mark, use = "complete.obs")
+cor.test(df$attendance, df$mark)
+
+# effect size -- report WITH the p-value, never instead of it
+effectsize::cohens_d(mark ~ group, data = df)
+
+# power -- run BEFORE the study, not after (Chapter 10)
+pwr::pwr.2p.test(h = pwr::ES.h(0.78, 0.68), power = 0.8, sig.level = 0.05)
+\end{lstlisting}
+
+\section{Modelling}
+
+\begin{lstlisting}[language=R]
+# --- base R: excellent diagnostics, which is why R is kept for this ----
+m <- lm(mark ~ attendance + quizzes + days_absent, data = df)
+summary(m)                     # coefficients, R^2, F
+par(mfrow = c(2, 2)); plot(m)  # residuals vs fitted, Q-Q, scale-location, leverage
+                               # -- the four plots of Chapter 12, free
+confint(m)
+broom::tidy(m); broom::glance(m)
+
+g <- glm(passed ~ attendance + quizzes, data = df, family = binomial)
+exp(coef(g))                   # odds ratios -- Chapter 13
+
+# --- tidymodels: the pipeline equivalent of scikit-learn --------------
+split <- initial_split(df, prop = 0.8, strata = passed)   # stratified
+tr <- training(split); te <- testing(split)
+
+rec <- recipe(passed ~ ., data = tr) %>%
+  step_impute_median(all_numeric_predictors()) %>%
+  step_normalize(all_numeric_predictors()) %>%
+  step_dummy(all_nominal_predictors())        # fitted on TRAIN only
+
+mod <- logistic_reg() %>% set_engine("glm")
+wf  <- workflow() %>% add_recipe(rec) %>% add_model(mod)
+
+folds <- vfold_cv(tr, v = 5, strata = passed)
+fit_resamples(wf, folds, metrics = metric_set(pr_auc, roc_auc)) %>%
+  collect_metrics()
+
+final <- fit(wf, tr)
+augment(final, te) %>% pr_auc(truth = passed, .pred_TRUE)
+augment(final, te) %>% conf_mat(truth = passed, estimate = .pred_class)
+\end{lstlisting}
+
+\section{Plotting with ggplot2}
+
+\begin{lstlisting}[language=R]
+ggplot(df, aes(mark)) + geom_histogram(bins = 30)
+
+ggplot(df, aes(programme, mark)) +
+  geom_boxplot() + geom_jitter(width = .15, alpha = .25)   # show the points too
+
+ggplot(df, aes(attendance, mark, colour = programme)) +
+  geom_point(alpha = .6) +
+  geom_smooth(method = "lm") +
+  facet_wrap(~ programme) +          # per group: guards against Simpson's paradox
+  labs(title = "Mark against attendance, by programme",
+       x = "attendance (%)", y = "final mark") +
+  theme_minimal()
+
+GGally::ggpairs(select(df, where(is.numeric)))   # the whole EDA pass in one line
+
+ggsave("fig.png", width = 8, height = 5, dpi = 150)
+\end{lstlisting}
+
+\section{Quarto}
+
+\begin{lstlisting}[language=R]
+# report.qmd
+# ---
+# title: "Analysis"
+# format: html
+# execute:
+#   echo: false
+#   warning: false
+# ---
+quarto::quarto_render("report.qmd")
+\end{lstlisting}
+
+\begin{conceptbox}[When to Reach for R Rather Than Python]
+Use R for exploratory statistics, regression diagnostics (\texttt{plot(m)} gives
+all four residual plots of \chref{regression} in one line), classical hypothesis
+testing, and any report where the narrative and the analysis belong in one Quarto
+document. Use Python for production pipelines, deep learning and anything that must
+be deployed as a service. Both are professional choices; using the wrong one for
+the task is not.
+\end{conceptbox}
+
+\section{Python $\leftrightarrow$ R Translation}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{6.6cm}p{7.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{pandas / scikit-learn} & \textbf{tidyverse / tidymodels} \\
+\midrule
+\endhead
+\texttt{pd.read\_csv("f.csv")} & \texttt{read\_csv("f.csv")} \\
+\texttt{df.shape} & \texttt{dim(df)} \\
+\texttt{df.head()} & \texttt{head(df)} / \texttt{glimpse(df)} \\
+\texttt{df[df.a > 5]} & \texttt{filter(df, a > 5)} \\
+\texttt{df[["a","b"]]} & \texttt{select(df, a, b)} \\
+\texttt{df.assign(c=df.a+df.b)} & \texttt{mutate(df, c = a + b)} \\
+\texttt{df.groupby("g").mean()} & \texttt{df \%>\% group\_by(g) \%>\% summarise(...)} \\
+\texttt{df.merge(x, how="left")} & \texttt{left\_join(df, x)} \\
+\texttt{df.sort\_values("a")} & \texttt{arrange(df, a)} \\
+\texttt{pd.melt / .pivot} & \texttt{pivot\_longer / pivot\_wider} \\
+\texttt{train\_test\_split(stratify=y)} & \texttt{initial\_split(strata = y)} \\
+\texttt{Pipeline / ColumnTransformer} & \texttt{recipe() \%>\% step\_*()} \\
+\texttt{cross\_val\_score} & \texttt{fit\_resamples()} \\
+\texttt{classification\_report} & \texttt{conf\_mat() / metric\_set()} \\
+\bottomrule
+\end{longtable}

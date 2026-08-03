@@ -1,0 +1,416 @@
+%=====================================================================
+\chapter{Supervised Learning I: Regression}\label{ch:regression}
+%=====================================================================
+\locator{3}{Part III --- Machine Learning Core}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Fit} and \textbf{interpret} a simple and a multiple linear regression, including the meaning of each coefficient.
+  \item \textbf{Compute} and \textbf{interpret} MAE, RMSE and $R^2$, and choose between them.
+  \item \textbf{Check} the assumptions of linear regression using a residual plot.
+  \item \textbf{Explain} how ridge and lasso regularisation control overfitting, and what distinguishes them.
+  \item \textbf{Recognise} when a linear model is the wrong tool.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (gradient descent, dot products), \chref{mlfundamentals}
+(train/test, bias--variance) and \chref{eda} (correlation, multicollinearity).
+\end{prereq}
+
+\begin{keyterms}
+regression $\bullet$ intercept $\bullet$ coefficient $\bullet$ residual $\bullet$
+least squares $\bullet$ MAE $\bullet$ MSE $\bullet$ RMSE $\bullet$ $R^2$ $\bullet$
+homoscedasticity $\bullet$ polynomial regression $\bullet$ regularisation
+$\bullet$ ridge (L2) $\bullet$ lasso (L1)
+\end{keyterms}
+
+\section{The Simplest Useful Model}
+
+\begin{definitionbox}[Simple Linear Regression]
+Predict a continuous target $y$ from one feature $x$ using a straight line:
+\[
+\hat{y} = w_0 + w_1 x
+\]
+where $w_0$ is the \term{intercept} (the prediction when $x=0$) and $w_1$ is the
+\term{slope} (the change in $\hat{y}$ per one-unit change in $x$).
+\end{definitionbox}
+
+\begin{definitionbox}[Residual and Least Squares]
+The \term{residual} for observation $i$ is $e_i = y_i - \hat{y}_i$ --- the vertical
+gap between the point and the line. \term{Least squares} chooses $w_0$ and $w_1$ to
+minimise $\sum_i e_i^2$.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=11.8cm, height=6.0cm,
+  xlabel={\scriptsize attendance (\%)}, ylabel={\scriptsize final mark},
+  xmin=25, xmax=100, ymin=25, ymax=95,
+  axis lines=left, grid=major, grid style={gray!18},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  legend style={font=\tiny, draw=gray!40, at={(0.02,0.98)}, anchor=north west},
+]
+% fitted line: yhat = 22 + 0.62 x
+\addplot[primary, line width=1.4pt, domain=28:98] {22 + 0.62*x};
+\addlegendentry{$\hat{y} = 22 + 0.62x$}
+
+% residual segments
+\foreach \x/\y in {35/52, 44/44, 52/60, 58/50, 66/70, 72/58, 80/78, 86/68, 92/86, 95/74}{
+  \pgfmathsetmacro{\yh}{22+0.62*\x}
+  \edef\tmp{\noexpand\draw[accent!70, line width=0.7pt, dashed]
+            (axis cs:\x,\y) -- (axis cs:\x,\yh);}\tmp}
+
+\addplot[only marks, mark=*, mark size=1.9pt, primary!80] coordinates {
+ (35,52)(44,44)(52,60)(58,50)(66,70)(72,58)(80,78)(86,68)(92,86)(95,74)};
+\addlegendentry{observations}
+
+\node[font=\tiny, accent!80!black, anchor=west] at (axis cs:59,44)
+     {residual $e_i = y_i - \hat{y}_i$};
+\draw[-{Stealth[length=1.6mm]}, accent!70] (axis cs:58.5,45.5) -- (axis cs:58,49);
+\node[font=\tiny\itshape, text=gray!55!black, align=center, anchor=north east]
+     at (axis cs:99,40) {least squares minimises\\the sum of the \emph{squared}\\dashed lengths};
+\end{axis}
+\end{tikzpicture}}%
+{Simple linear regression. The fitted line minimises the sum of squared residuals ---
+squaring, rather than taking absolute values, is what makes large errors
+disproportionately costly and gives the closed-form solution.}{regression-line}
+
+\subsection{Interpreting the Coefficients}
+
+\begin{worked}[Reading a Multiple Regression]
+A model predicting final mark from three features returns:
+\[
+\hat{y} \;=\; 18.4 \;+\; 0.41\,(\text{attendance\%}) \;+\; 2.15\,(\text{quizzes}) \;-\; 1.62\,(\text{days\_since\_login})
+\]
+
+\smallskip
+\textbf{Intercept 18.4:} the predicted mark for a student with 0\% attendance, 0
+quizzes and 0 days since last login. This combination is impossible, so the
+intercept here is a mathematical anchor, not a meaningful quantity. Report it, do
+not interpret it.
+
+\textbf{$+0.41$ on attendance:} each additional percentage point of attendance is
+associated with 0.41 more marks, \emph{holding quizzes and recency constant}. Those
+five words are the whole meaning of a multiple-regression coefficient.
+
+\textbf{$+2.15$ on quizzes:} each extra quiz completed is worth 2.15 marks, again
+holding the others fixed. Note this coefficient is larger than attendance's, but
+that does \emph{not} make quizzes more important --- quizzes range 0--10 while
+attendance ranges 0--100. Over their full ranges, attendance contributes up to 41
+marks and quizzes up to 21.5.
+
+\textbf{$-1.62$ on days since login:} each day of absence costs 1.62 marks. The
+negative sign is a sanity check that passed.
+
+\smallskip
+\textbf{The causal warning.} None of this says that forcing a student to attend
+would raise their mark by 0.41 per point. These are associations, conditional on
+the other variables in the model (\chref{causality}).
+\end{worked}
+
+\begin{alertbox}[Coefficient Size Is Not Importance]
+To compare importance across features, either standardise the features first
+(\chref{wrangling}) so all coefficients are on the same scale, or report the effect
+over each feature's realistic range. Comparing raw coefficients on different units
+is meaningless and is a standard exam trap.
+\end{alertbox}
+
+\section{Measuring Regression Error}
+
+\begin{definitionbox}[Three Error Metrics]
+\[
+\text{MAE} = \frac{1}{n}\sum_{i}\left|y_i - \hat{y}_i\right|
+\qquad
+\text{RMSE} = \sqrt{\frac{1}{n}\sum_{i}\left(y_i - \hat{y}_i\right)^2}
+\qquad
+R^2 = 1 - \frac{\sum_i (y_i-\hat{y}_i)^2}{\sum_i (y_i-\bar{y})^2}
+\]
+MAE and RMSE are in the units of $y$; $R^2$ is the proportion of variance explained
+and is unitless.
+\end{definitionbox}
+
+\begin{worked}[MAE versus RMSE, and Why the Choice Matters]
+Two models predict resolution time (minutes) for five tickets. True values:
+$10, 12, 15, 20, 25$.
+
+\smallskip
+\textbf{Model A errors:} $3, 3, 3, 3, 3$ \quad (consistently a little off)\\
+\textbf{Model B errors:} $0, 0, 0, 0, 15$ \quad (perfect except one disaster)
+
+\smallskip
+\textbf{MAE:} A $= 15/5 = 3.0$. \quad B $= 15/5 = 3.0$. \emph{Identical.}
+
+\textbf{RMSE:} A $= \sqrt{45/5} = \sqrt{9} = 3.0$. \quad
+B $= \sqrt{225/5} = \sqrt{45} \approx 6.7$.
+
+\smallskip
+\textbf{Interpretation.} MAE says the two models are equally good. RMSE says B is
+more than twice as bad, because squaring punishes the single 15-minute error far
+more than five 3-minute ones.
+
+\textbf{Which is right?} It depends entirely on the cost of a large error:
+\begin{tight}
+  \item \emph{Ticket triage:} a 15-minute miss on one ticket is no worse than three
+        5-minute misses. Use MAE.
+  \item \emph{Predicting remaining life of a turbine:} one catastrophic
+        underestimate is far worse than many small ones. Use RMSE.
+\end{tight}
+Choosing the metric is a business decision, made at framing time
+(\chref{lifecycle}), not a technical default.
+\end{worked}
+
+\section{Checking the Assumptions}
+
+Linear regression makes assumptions, and the residual plot checks nearly all of
+them at once. Producing it should be automatic.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=3 by 1, horizontal sep=0.9cm},
+  width=5.35cm, height=3.9cm,
+  axis lines=middle, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+  xmin=0, xmax=10, ymin=-4.2, ymax=4.2, xtick=\empty, ytick=\empty,
+  xlabel={$\hat{y}$}, ylabel={residual},
+]
+\nextgroupplot[title={\color{greenhl}Good: random scatter}]
+\addplot[only marks, mark=*, mark size=1pt, greenhl!80] coordinates {
+ (0.8,1.2)(1.5,-0.9)(2.2,0.4)(2.9,-1.6)(3.6,1.8)(4.3,-0.3)(5.0,0.9)(5.7,-1.9)
+ (6.4,1.4)(7.1,-0.6)(7.8,0.2)(8.5,-1.3)(9.2,1.0)(1.9,-2.0)(6.8,2.1)(4.7,-2.2)};
+\draw[gray!60, dashed] (axis cs:0,0) -- (axis cs:10,0);
+
+\nextgroupplot[title={\color{accent}Bad: curved pattern}]
+\addplot[only marks, mark=*, mark size=1pt, accent!80] coordinates {
+ (0.8,2.6)(1.5,1.6)(2.2,0.6)(2.9,-0.4)(3.6,-1.4)(4.3,-2.1)(5.0,-2.4)(5.7,-2.2)
+ (6.4,-1.5)(7.1,-0.5)(7.8,0.7)(8.5,1.9)(9.2,3.0)};
+\draw[gray!60, dashed] (axis cs:0,0) -- (axis cs:10,0);
+\node[font=\tiny, accent!80!black, align=center] at (axis cs:5,3.4) {relationship is\\not linear};
+
+\nextgroupplot[title={\color{goldhl!60!black}Bad: fanning out}]
+\addplot[only marks, mark=*, mark size=1pt, goldhl] coordinates {
+ (0.8,0.2)(1.5,-0.3)(2.2,0.4)(2.9,-0.5)(3.6,0.9)(4.3,-1.0)(5.0,1.4)(5.7,-1.5)
+ (6.4,2.1)(7.1,-2.2)(7.8,2.8)(8.5,-3.0)(9.2,3.6)(9.5,-3.5)};
+\draw[gray!60, dashed] (axis cs:0,0) -- (axis cs:10,0);
+\node[font=\tiny, goldhl!50!black, align=center] at (axis cs:3.2,3.3) {heteroscedastic:\\error grows with $\hat{y}$};
+\end{groupplot}
+\end{tikzpicture}}%
+{Residual plots. Only the left panel is acceptable. A curve means the relationship is
+non-linear; a fan means the error variance changes with the prediction, so your confidence
+intervals are wrong even if the coefficients are not.}{residual-plots}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{3.3cm}p{4.8cm}p{6.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Assumption} & \textbf{Check} & \textbf{If violated} \\
+\midrule
+\endhead
+Linearity & Residuals vs.\ fitted show no pattern & Add polynomial terms, transform, or use a tree-based model \\
+Independence & Domain knowledge; residuals vs.\ time & Use time-series methods (\chref{timeseries}) \\
+Homoscedasticity & Residual spread constant across $\hat{y}$ & Log-transform $y$, or use weighted least squares \\
+Normal residuals & Q--Q plot or histogram of residuals & Only matters for confidence intervals, not for prediction \\
+No multicollinearity & Correlation matrix; variance inflation factor & Drop one of the pair, or use ridge \\
+\bottomrule
+\end{longtable}
+
+\section{Polynomial Regression and Overfitting}
+
+Adding powers of $x$ lets a linear model fit curves --- $\hat{y} = w_0 + w_1 x +
+w_2 x^2 + \dots$ is still \emph{linear in the parameters}, so the same machinery
+applies. It is also the fastest way to overfit ever devised.
+
+\section{Regularisation: Ridge and Lasso}
+
+\begin{definitionbox}[Ridge (L2) and Lasso (L1)]
+Both add a penalty on coefficient size to the loss:
+\[
+\text{Ridge: } \sum_i e_i^2 + \lambda \sum_j w_j^2
+\qquad\qquad
+\text{Lasso: } \sum_i e_i^2 + \lambda \sum_j \left|w_j\right|
+\]
+$\lambda$ controls the strength. Ridge \emph{shrinks} coefficients towards zero;
+lasso can set them \emph{exactly} to zero, performing feature selection.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.45cm},
+  width=6.6cm, height=4.6cm,
+  axis lines=left, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+  legend style={font=\tiny, draw=gray!40},
+]
+\nextgroupplot[title={Ridge: coefficients shrink together},
+  xlabel={$\lambda \longrightarrow$}, ylabel={coefficient value},
+  xmin=0, xmax=10, ymin=-1.2, ymax=3.2, xtick=\empty,
+  legend style={at={(0.99,0.99)}, anchor=north east}]
+\addplot[primary, line width=1.1pt, domain=0:10, samples=60]  {2.9/(1+0.42*x)};
+\addplot[greenhl, line width=1.1pt, domain=0:10, samples=60]  {1.7/(1+0.42*x)};
+\addplot[goldhl, line width=1.1pt, domain=0:10, samples=60]   {0.8/(1+0.42*x)};
+\addplot[accent, line width=1.1pt, domain=0:10, samples=60]   {-0.9/(1+0.42*x)};
+\draw[gray!55, dashed] (axis cs:0,0) -- (axis cs:10,0);
+\node[font=\tiny, text=gray!55!black, align=center, anchor=south east] at (axis cs:9.8,1.6)
+     {approach zero,\\never reach it};
+
+\nextgroupplot[title={Lasso: coefficients hit zero and stay},
+  xlabel={$\lambda \longrightarrow$},
+  xmin=0, xmax=10, ymin=-1.2, ymax=3.2, xtick=\empty]
+\addplot[primary, line width=1.1pt] coordinates {(0,2.9)(10,1.05)};
+\addplot[greenhl, line width=1.1pt] coordinates {(0,1.7)(6.4,0)(10,0)};
+\addplot[goldhl, line width=1.1pt]  coordinates {(0,0.8)(3.1,0)(10,0)};
+\addplot[accent, line width=1.1pt]  coordinates {(0,-0.9)(4.6,0)(10,0)};
+\draw[gray!55, dashed] (axis cs:0,0) -- (axis cs:10,0);
+\addplot[only marks, mark=*, mark size=1.5pt, black] coordinates {(3.1,0)(4.6,0)(6.4,0)};
+\node[font=\tiny, text=gray!55!black, align=center, anchor=south east] at (axis cs:9.8,1.7)
+     {features are\\removed entirely};
+\end{groupplot}
+\end{tikzpicture}}%
+{Ridge versus lasso as the penalty strength grows. Ridge keeps every feature but makes
+each less influential; lasso eliminates features one by one, which is why it doubles as
+automatic feature selection.}{ridge-lasso}
+
+\begin{conceptbox}[Which One to Reach For]
+\begin{tight}
+  \item \textbf{Ridge} when features are correlated and you believe most of them
+        matter a little. It handles multicollinearity gracefully.
+  \item \textbf{Lasso} when you suspect most features are irrelevant and want a
+        short, explainable model. Common with wide clickstream or log-derived
+        feature sets.
+  \item \textbf{Elastic net} (both penalties) when you cannot decide, which is
+        often.
+\end{tight}
+Regularisation requires scaled features (\chref{wrangling}) --- otherwise the
+penalty falls hardest on whichever feature happens to have small units.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Interpreting the intercept} when $x=0$ is impossible.
+  \item \textbf{Comparing raw coefficients} across features on different scales.
+  \item \textbf{Reporting $R^2$ alone.} $R^2$ never decreases when you add a
+        feature, even a random one. Use adjusted $R^2$, or better, validation RMSE.
+  \item \textbf{Extrapolating.} A model fitted on attendance 30--95\% says nothing
+        about 5\%.
+  \item \textbf{Regularising unscaled features.} The penalty becomes arbitrary.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Regression}
+\lensLA{Predict final mark from week-4 engagement. Report RMSE in marks --- a
+figure a programme director understands --- rather than $R^2$. Expect $R^2$ around
+0.35--0.5: human outcomes are genuinely noisy, and a claimed 0.95 almost certainly
+indicates leakage. Lasso is useful for reducing 300 clickstream features to the
+handful you can defend in a meeting.}
+
+\lensPM{Predict task effort in hours from historical features. Use MAE, because
+project managers think in ``typically wrong by about 4 hours'' and because effort
+data is long-tailed enough that RMSE would be dominated by two disastrous
+projects. Beware heteroscedasticity: large tasks have much larger absolute errors,
+so consider modelling $\log(\text{hours})$ instead.}
+
+\lensIOT{Predict remaining useful life of a component from sensor trends. Here
+RMSE is right, since one large underestimate means an unplanned stoppage. Check
+the residual plot for curvature --- degradation is usually non-linear, accelerating
+near failure, so a straight line will systematically over-predict life at exactly
+the moment accuracy matters most.}
+
+\lensSEC{Regression is less common here than classification, but it appears in
+capacity and risk forecasting: predicting expected alert volume for staffing, or
+expected breach cost for insurance. Residuals will fan out badly (heteroscedastic)
+because incident cost is long-tailed --- model the log, and report a prediction
+interval rather than a point estimate.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Fit, Diagnose, Regularise]
+\begin{lstlisting}[language=Python]
+import numpy as np, matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression, RidgeCV, LassoCV
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+# --- fit ---------------------------------------------------------------
+lin = LinearRegression().fit(X_tr, y_tr)
+pred = lin.predict(X_te)
+
+print("MAE :", mean_absolute_error(y_te, pred))          # typical error
+print("RMSE:", mean_squared_error(y_te, pred) ** 0.5)    # penalises big misses
+print("R2  :", r2_score(y_te, pred))
+
+for name, coef in zip(feature_names, lin.coef_):
+    print(f"  {name:24s} {coef:+.3f}")
+
+# --- diagnose: ALWAYS plot residuals vs fitted -------------------------
+plt.scatter(pred, y_te - pred, s=12)
+plt.axhline(0, ls="--", c="grey")
+plt.xlabel("predicted"); plt.ylabel("residual"); plt.show()
+# curve  -> non-linear;  fan -> heteroscedastic;  random cloud -> fine
+
+# --- regularise (note: scaling is mandatory) ---------------------------
+ridge = make_pipeline(StandardScaler(), RidgeCV(alphas=np.logspace(-3, 3, 25)))
+lasso = make_pipeline(StandardScaler(), LassoCV(cv=5, random_state=0))
+ridge.fit(X_tr, y_tr); lasso.fit(X_tr, y_tr)
+
+kept = (lasso[-1].coef_ != 0).sum()
+print(f"lasso kept {kept} of {X_tr.shape[1]} features")
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A model has MAE 4.0 and RMSE 11.0. What does the gap between them tell you
+        about the error distribution?
+  \item In $\hat{y} = 30 + 0.5x_1 + 12x_2$, is $x_2$ twelve times more important
+        than $x_1$? Explain.
+  \item Your residual plot shows a clear fan shape widening to the right. Name the
+        violation and give one remedy.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Linear regression fits $\hat{y} = w_0 + \sum_j w_j x_j$ by minimising
+        squared residuals.
+  \item A coefficient is the change in $\hat{y}$ per unit of that feature
+        \emph{holding the others constant} --- and is an association, not a causal
+        effect.
+  \item MAE treats all errors equally; RMSE punishes large ones. Choose from the
+        cost of being badly wrong.
+  \item $R^2$ never falls when features are added, so never use it alone for model
+        selection.
+  \item The residual plot checks linearity and homoscedasticity at a glance.
+        Produce it every time.
+  \item Ridge shrinks coefficients; lasso zeroes them and thereby selects features.
+        Both require scaled inputs.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which metric most heavily penalises a single very large
+        error? (a)~MAE (b)~RMSE (c)~$R^2$ (d)~median absolute error.
+  \item \textbf{(MCQ)} Lasso differs from ridge principally because it can:
+        (a)~handle non-linearity (b)~set coefficients exactly to zero
+        (c)~work without scaling (d)~fit faster.
+  \item \textbf{(Short)} Explain why $R^2$ should not be used to decide whether to
+        add a feature.
+  \item \textbf{(Short)} A residual plot shows a clear parabola. What is wrong and
+        what are two options for fixing it?
+  \item \textbf{(Short)} Why must features be standardised before ridge or lasso?
+  \item \textbf{(Applied)} Given $\hat{y} = 12.0 + 0.55\,(\text{attendance}) +
+        1.9\,(\text{quizzes}) - 0.8\,(\text{days\_absent})$, predict the mark for a
+        student with attendance 70\%, 6 quizzes, 3 days absent. Then state, in one
+        sentence each, the correct and the incorrect interpretation of the
+        attendance coefficient.
+  \item \textbf{(Applied)} You are predicting remaining useful life for turbine
+        components. Argue for a specific error metric, predict what the residual
+        plot will look like and why, and say what you would do about it.
+\end{reviewq}

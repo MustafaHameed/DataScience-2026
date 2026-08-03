@@ -1,0 +1,391 @@
+%=====================================================================
+\chapter{Machine Learning Fundamentals}\label{ch:mlfundamentals}
+%=====================================================================
+\locator{3}{Part III --- Machine Learning Core}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} supervised, unsupervised, semi-supervised and reinforcement learning, and match a problem to the right one.
+  \item \textbf{Explain} the purpose of the train/validation/test split and why the test set may be used only once.
+  \item \textbf{Diagnose} overfitting and underfitting from a learning curve.
+  \item \textbf{Describe} the bias--variance trade-off and how model complexity moves along it.
+  \item \textbf{Justify} why a baseline must precede any model.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (vectors, loss, gradient descent), \chref{wrangling} (splitting and
+leakage) and \chref{descriptive}.
+\end{prereq}
+
+\begin{keyterms}
+supervised / unsupervised / reinforcement learning $\bullet$ label $\bullet$
+training, validation and test sets $\bullet$ generalisation $\bullet$ overfitting
+$\bullet$ underfitting $\bullet$ bias $\bullet$ variance $\bullet$ learning curve
+$\bullet$ hyperparameter $\bullet$ baseline $\bullet$ no free lunch
+\end{keyterms}
+
+\section{What Learning Means Here}
+
+\begin{definitionbox}[Machine Learning, Operationally]
+A program learns from experience $E$ with respect to task $T$ and performance
+measure $P$ if its performance on $T$, measured by $P$, improves with $E$.
+(Mitchell, 1997.) In practice: $E$ is your training data, $T$ is the prediction
+you framed in \chref{lifecycle}, and $P$ is the metric of \chref{evaluation}.
+\end{definitionbox}
+
+The crucial word is \term{generalisation}. Memorising the training data is trivial
+and worthless; the goal is performance on data the model has never seen. Everything
+in this chapter exists to protect that distinction.
+
+\section{The Four Paradigms}
+
+\dsfig{%
+\begin{tikzpicture}[
+  box/.style={rounded corners=4pt, draw=#1, line width=1.1pt, fill=#1!8,
+              text width=3.15cm, align=center, font=\scriptsize, inner sep=5pt},
+  child/.style={rounded corners=2pt, draw=#1, fill=#1!5, text=#1!50!black,
+                text width=2.9cm, align=center, font=\tiny, inner sep=3pt},
+  arr/.style={-{Stealth[length=2.2mm]}, primary!50, line width=0.9pt}]
+
+\node[box=primary] (root) at (5.85,1.5) {{\color{primary}\bfseries\small \faIcon{brain}~Machine Learning}\\[2pt]
+       {\tiny how much supervision is available?}};
+
+\node[box=secondary] (sup) at (0,-0.9) {{\color{secondary}\bfseries SUPERVISED}\\[2pt]
+      labelled data\\$(x_i, y_i)$};
+\node[box=goldhl] (semi) at (3.9,-0.9) {{\color{goldhl!60!black}\bfseries SEMI-SUPERVISED}\\[2pt]
+      a few labels,\\many unlabelled};
+\node[box=greenhl] (uns) at (7.8,-0.9) {{\color{greenhl!50!black}\bfseries UNSUPERVISED}\\[2pt]
+      no labels at all};
+\node[box=purplehl] (rl) at (11.7,-0.9) {{\color{purplehl}\bfseries REINFORCEMENT}\\[2pt]
+      rewards from\\an environment};
+
+\foreach \n in {sup,semi,uns,rl}{\draw[arr] (root) -- (\n);}
+
+\node[child=secondary] (cls) at (-1.6,-2.9) {Classification\\\emph{will this fail?}};
+\node[child=secondary] (reg) at (1.6,-2.9)  {Regression\\\emph{how long until?}};
+\node[child=greenhl] (clu) at (6.2,-2.9)    {Clustering\\\emph{which groups?}};
+\node[child=greenhl] (dim) at (9.4,-2.9)    {Dimensionality\\reduction, anomalies};
+\draw[arr] (sup) -- (cls); \draw[arr] (sup) -- (reg);
+\draw[arr] (uns) -- (clu); \draw[arr] (uns) -- (dim);
+
+\node[font=\tiny\itshape, text=gray!55!black, text width=3.2cm, align=center] at (3.9,-2.9)
+     {labelling is the expensive part; this is why it matters};
+\node[font=\tiny\itshape, text=gray!55!black, text width=3.0cm, align=center] at (11.7,-2.9)
+     {covered in \chref{agentic}, not Part III};
+\end{tikzpicture}}%
+{The learning paradigms, organised by how much supervision the data provides. Chapters
+12--15 cover the supervised branch; \chref{unsupervised} covers the unsupervised
+one.}{ml-paradigms}
+
+\begin{conceptbox}[The Question That Picks Your Paradigm]
+\emph{Do I have examples of the right answer?} If yes, supervised. If no, but you
+want structure, unsupervised. If you have a few answers and lots of unlabelled
+data, semi-supervised. If the answer only emerges from acting and seeing what
+happens, reinforcement.
+
+In practice the binding constraint is almost never the algorithm --- it is whether
+anyone will pay to label 5{,}000 examples.
+\end{conceptbox}
+
+\section{The Three-Way Split}
+
+\begin{definitionbox}[Training, Validation and Test Sets]
+\term{Training set} (typically 60--70\%): the model learns its parameters here.\\
+\term{Validation set} (15--20\%): you compare models and tune hyperparameters here.\\
+\term{Test set} (15--20\%): used \textbf{once}, at the very end, to estimate real-world
+performance.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+\node[rounded corners=3pt, fill=primary!16, draw=primary, minimum width=7.3cm,
+      minimum height=0.75cm, text=primary!55!black, font=\scriptsize\bfseries] at (3.65,0) {TRAINING (65\%)};
+\node[rounded corners=3pt, fill=goldhl!22, draw=goldhl, minimum width=2.2cm,
+      minimum height=0.75cm, text=goldhl!45!black, font=\scriptsize\bfseries] at (8.4,0) {VALID.\ (17\%)};
+\node[rounded corners=3pt, fill=accent!15, draw=accent, minimum width=2.2cm,
+      minimum height=0.75cm, text=accent!70!black, font=\scriptsize\bfseries] at (10.9,0) {TEST (18\%)};
+
+\node[align=center, text width=7.3cm, font=\tiny, text=gray!55!black] at (3.65,-1.0)
+     {fit parameters here\\\emph{used thousands of times}};
+\node[align=center, text width=2.5cm, font=\tiny, text=gray!55!black] at (8.4,-1.0)
+     {choose model \& hyperparameters\\\emph{used dozens of times}};
+\node[align=center, text width=2.5cm, font=\tiny, text=accent!70!black] at (10.9,-1.0)
+     {\textbf{used ONCE}\\\emph{ever}};
+
+\node[align=left, text width=13.0cm, font=\tiny, text=accent!70!black] at (4.9,-2.2)
+     {\textbf{Why only once?} Every time you look at the test score and change something,
+      you are fitting to it --- slowly, by hand. After twenty such peeks the test set has
+      become a second validation set and no longer estimates anything honest. This is
+      leakage through the researcher rather than through the code, and it is just as
+      damaging.};
+\draw[decorate, decoration={brace, amplitude=4pt, mirror}, accent!60]
+     (9.8,-0.45) -- (12.0,-0.45);
+\end{tikzpicture}}%
+{The three-way split and the discipline it demands. The validation set exists precisely so
+that the test set can stay untouched --- without it, every tuning decision contaminates
+your final estimate.}{three-way-split}
+
+\begin{alertbox}[Stratify, and Split by Entity]
+When classes are imbalanced, use a \emph{stratified} split so each part keeps the
+same class proportions --- otherwise a rare class may be absent from the test set
+entirely. And when rows are grouped (many readings per device, many sessions per
+user), split by \emph{device} or \emph{user}, not by row: the same entity appearing
+in both train and test is leakage (\chref{wrangling}).
+\end{alertbox}
+
+\section{Overfitting, Underfitting and the Learning Curve}
+
+\begin{definitionbox}[Overfitting and Underfitting]
+\term{Overfitting}: the model has learned the noise as well as the signal. Training
+error is low, validation error is high. \\
+\term{Underfitting}: the model is too simple to capture the signal. Both errors are
+high.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=3 by 1, horizontal sep=0.95cm},
+  width=5.35cm, height=4.2cm,
+  axis lines=left, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+  xmin=0, xmax=10, ymin=0, ymax=10, xtick=\empty, ytick=\empty,
+]
+\nextgroupplot[title={\color{secondary}Underfit (high bias)}]
+\addplot[only marks, mark=*, mark size=1pt, gray!70] coordinates {
+ (0.7,2.2)(1.4,4.1)(2.1,5.6)(2.8,6.9)(3.5,7.7)(4.2,8.2)(4.9,8.3)(5.6,8.0)
+ (6.3,7.2)(7.0,6.1)(7.7,4.6)(8.4,3.0)(9.1,1.6)};
+\addplot[secondary, line width=1.3pt, domain=0.4:9.4] {5.4};
+\node[font=\tiny, secondary!60!black, align=center] at (axis cs:5,1.2) {misses the shape};
+
+\nextgroupplot[title={\color{greenhl}Good fit}]
+\addplot[only marks, mark=*, mark size=1pt, gray!70] coordinates {
+ (0.7,2.2)(1.4,4.1)(2.1,5.6)(2.8,6.9)(3.5,7.7)(4.2,8.2)(4.9,8.3)(5.6,8.0)
+ (6.3,7.2)(7.0,6.1)(7.7,4.6)(8.4,3.0)(9.1,1.6)};
+\addplot[greenhl, line width=1.3pt, domain=0.4:9.4, samples=80]
+  {-0.33*(x-4.75)^2 + 8.4};
+\node[font=\tiny, greenhl!55!black, align=center] at (axis cs:5,1.2) {signal, not noise};
+
+\nextgroupplot[title={\color{accent}Overfit (high variance)}]
+\addplot[only marks, mark=*, mark size=1pt, gray!70] coordinates {
+ (0.7,2.2)(1.4,4.1)(2.1,5.6)(2.8,6.9)(3.5,7.7)(4.2,8.2)(4.9,8.3)(5.6,8.0)
+ (6.3,7.2)(7.0,6.1)(7.7,4.6)(8.4,3.0)(9.1,1.6)};
+\addplot[accent, line width=1.1pt, smooth] coordinates {
+ (0.7,2.2)(1.4,4.1)(2.1,5.6)(2.8,6.9)(3.5,7.7)(4.2,8.2)(4.9,8.3)(5.6,8.0)
+ (6.3,7.2)(7.0,6.1)(7.7,4.6)(8.4,3.0)(9.1,1.6)};
+\node[font=\tiny, accent!80!black, align=center] at (axis cs:5,1.2) {learns every wobble};
+\end{groupplot}
+\end{tikzpicture}}%
+{The same 13 points fitted three ways. The overfitted curve passes through every point and
+has zero training error --- and would predict badly for any new observation.}{over-underfit}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.5cm},
+  width=6.6cm, height=4.7cm,
+  axis lines=left, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+  legend style={font=\tiny, draw=gray!40},
+]
+% --- error vs complexity
+\nextgroupplot[title={Error against model complexity},
+  xlabel={model complexity $\longrightarrow$}, ylabel={error},
+  xmin=0, xmax=10, ymin=0, ymax=10, xtick=\empty, ytick=\empty,
+  legend style={at={(0.5,0.99)}, anchor=north}]
+\addplot[primary, line width=1.3pt, domain=0.4:9.6, samples=80] {7.5*exp(-0.42*x)+0.35};
+\addlegendentry{training error}
+\addplot[accent, line width=1.3pt, domain=0.4:9.6, samples=80]
+  {7.5*exp(-0.42*x)+0.35 + 0.115*x^2};
+\addlegendentry{validation error}
+\draw[greenhl, dashed, line width=1pt] (axis cs:4.1,0) -- (axis cs:4.1,9.0);
+\node[font=\tiny, greenhl!55!black, anchor=south] at (axis cs:4.1,9.0) {sweet spot};
+\node[font=\tiny, secondary!60!black, align=center] at (axis cs:1.5,1.0) {underfit};
+\node[font=\tiny, accent!80!black, align=center] at (axis cs:8.2,2.0) {overfit};
+
+% --- learning curve
+\nextgroupplot[title={Learning curve: error against training set size},
+  xlabel={training examples $\longrightarrow$}, ylabel={error},
+  xmin=0, xmax=10, ymin=0, ymax=10, xtick=\empty, ytick=\empty,
+  legend style={at={(0.99,0.99)}, anchor=north east}]
+\addplot[primary, line width=1.3pt, domain=0.5:9.6, samples=80] {1.1+0.9*ln(x+1)};
+\addlegendentry{training}
+\addplot[accent, line width=1.3pt, domain=0.5:9.6, samples=80] {9.3-2.2*ln(x+1)};
+\addlegendentry{validation}
+\draw[decorate, decoration={brace, amplitude=4pt, mirror}, gray!65]
+     (axis cs:9.0,3.5) -- (axis cs:9.0,6.1)
+     node[midway, right=4pt, font=\tiny, text=gray!55!black, align=left] {persistent gap\\= overfitting;\\more data will help};
+\end{groupplot}
+\end{tikzpicture}}%
+{Two diagnostic plots you should produce for every model. Left: where a given complexity
+sits on the trade-off. Right: whether more data would help --- a gap that is still closing
+says collect more; two curves that have converged high say the model is too
+simple.}{learning-curves}
+
+\begin{definitionbox}[The Bias--Variance Trade-off]
+\term{Bias} is error from wrong assumptions --- the model is too rigid to represent
+the truth. \term{Variance} is error from sensitivity to the particular training
+sample --- fit it again on different data and you get a very different model. Total
+expected error decomposes as
+\[
+\text{Error} = \text{Bias}^2 + \text{Variance} + \text{irreducible noise}
+\]
+Simple models have high bias and low variance; complex models the reverse.
+\end{definitionbox}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{3.4cm}p{5.0cm}p{5.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Symptom} & \textbf{Diagnosis} & \textbf{What to do} \\
+\midrule
+\endhead
+Train error high, validation error similarly high & Underfitting (high bias) & More complex model, better features, train longer, less regularisation \\
+Train error low, validation error much higher & Overfitting (high variance) & More data, simpler model, more regularisation (\chref{features}), early stopping \\
+Both low and close & Good fit & Stop. Verify once on the test set \\
+Validation \emph{better} than train & Suspect a bug & Usually a leak or a mis-specified split \\
+\bottomrule
+\end{longtable}
+
+\section{Baselines and the No Free Lunch Theorem}
+
+\begin{conceptbox}[Always Build the Baseline First]
+Before any model, compute what a trivial rule achieves:
+\begin{tight}
+  \item \emph{Classification:} always predict the majority class.
+  \item \emph{Regression:} always predict the mean.
+  \item \emph{Time series:} predict that tomorrow equals today.
+  \item \emph{Domain rule:} whatever the humans currently do.
+\end{tight}
+A model that does not beat all four is not a result. This takes five minutes and
+has saved more student projects than any algorithm.
+\end{conceptbox}
+
+\begin{definitionbox}[No Free Lunch]
+Averaged over all possible problems, no algorithm outperforms any other. There is
+no universally best model --- only models better suited to the structure of a
+particular problem. This is why \chref{evaluation} exists, and why ``which
+algorithm is best?'' is not a well-formed question.
+\end{definitionbox}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Setting Up a Learning Problem}
+\lensLA{\emph{Paradigm:} supervised classification --- labels exist because past
+outcomes are recorded. \emph{Split:} by student, and stratified, since failures are
+the minority. \emph{Baseline:} ``flag anyone who missed two labs'', which is what
+staff already do; beat that or the model adds nothing. \emph{Overfitting risk:}
+high, because $n$ is small (one cohort) and $p$ is large (hundreds of clickstream
+features).}
+
+\lensPM{\emph{Paradigm:} supervised, but with painfully few rows --- a team may have
+40 completed sprints, ever. \emph{Split:} chronological, never random: predicting
+March from April is meaningless. \emph{Baseline:} last sprint's velocity.
+\emph{Overfitting risk:} severe. With $n=40$, prefer a two-feature model you can
+explain over a tuned gradient-boosting machine you cannot.}
+
+\lensIOT{\emph{Paradigm:} supervised for predictive maintenance if failure records
+exist; unsupervised anomaly detection if they do not --- which is the common case,
+since well-maintained equipment rarely fails. \emph{Split:} by device \emph{and}
+chronologically. \emph{Baseline:} fixed-interval servicing. \emph{Data:} abundant
+rows but very few positive labels, so the effective sample size is the failure
+count, not the row count.}
+
+\lensSEC{\emph{Paradigm:} supervised where labelled attacks exist, unsupervised
+otherwise; in practice both, side by side. \emph{Split:} strictly chronological ---
+training on 2026 attacks to detect 2025 ones proves nothing. \emph{Baseline:} the
+existing signature rules. \emph{Special difficulty:} the data distribution is
+actively changed by an adversary, so the i.i.d.\ assumption underlying all of Part
+III is false here. \chref{cybersecurity} confronts this directly.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Split, Baseline, Diagnose]
+\begin{lstlisting}[language=Python]
+import numpy as np
+from sklearn.model_selection import train_test_split, learning_curve
+from sklearn.dummy import DummyClassifier
+from sklearn.tree import DecisionTreeClassifier
+import matplotlib.pyplot as plt
+
+X, y = ...   # your features and labels
+
+# 1. Stratified split -- keeps the rare class present everywhere.
+X_tr, X_te, y_tr, y_te = train_test_split(
+    X, y, test_size=0.2, stratify=y, random_state=42)
+
+# 2. BASELINE FIRST. Never skip this.
+base = DummyClassifier(strategy="most_frequent").fit(X_tr, y_tr)
+print(f"baseline accuracy: {base.score(X_tr, y_tr):.3f}")
+
+# 3. Overfitting demonstration: an unconstrained tree memorises.
+deep = DecisionTreeClassifier().fit(X_tr, y_tr)
+print(f"deep tree  train {deep.score(X_tr, y_tr):.3f}")   # ~1.000 -- memorised
+shallow = DecisionTreeClassifier(max_depth=3).fit(X_tr, y_tr)
+print(f"depth-3    train {shallow.score(X_tr, y_tr):.3f}")
+
+# 4. Learning curve: would more data help?
+sizes, tr_sc, va_sc = learning_curve(
+    DecisionTreeClassifier(max_depth=5), X_tr, y_tr, cv=5,
+    train_sizes=np.linspace(0.1, 1.0, 8))
+plt.plot(sizes, tr_sc.mean(1), label="training")
+plt.plot(sizes, va_sc.mean(1), label="validation")
+plt.xlabel("training examples"); plt.ylabel("accuracy"); plt.legend(); plt.show()
+\end{lstlisting}
+
+\textbf{Read the curve:} still converging $\Rightarrow$ collect more data.
+Converged with a gap $\Rightarrow$ regularise. Converged with no gap but low
+$\Rightarrow$ the model is too simple or the features are inadequate.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A model scores 0.99 on training and 0.61 on validation. Name the problem
+        and give two remedies.
+  \item Why can the test set be used only once, and what exactly goes wrong on the
+        twentieth use?
+  \item You have 400 sensor readings from each of 10 machines. Should you split by
+        row or by machine? Justify.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Learning means \emph{generalising}, not memorising. Everything here
+        protects that distinction.
+  \item Choose the paradigm by asking whether examples of the right answer exist;
+        labelling cost usually decides the project.
+  \item Train fits parameters, validation chooses models, test is used once.
+        Stratify for imbalance and split by entity when rows are grouped.
+  \item Overfitting is low train / high validation error; underfitting is both
+        high. Learning curves tell you which, and whether more data would help.
+  \item Bias--variance: simple models are rigid and stable, complex ones are
+        flexible and jumpy. The best model is at the balance point, not at either
+        end.
+  \item Build the baseline before the model. No free lunch means there is no
+        universally best algorithm.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} High training accuracy with much lower validation accuracy
+        indicates: (a)~underfitting (b)~overfitting (c)~high bias (d)~leakage only.
+  \item \textbf{(MCQ)} A simple, rigid model typically has: (a)~high bias, low
+        variance (b)~low bias, high variance (c)~both high (d)~both low.
+  \item \textbf{(Short)} Explain the role of the validation set and why it is
+        needed given that a test set already exists.
+  \item \textbf{(Short)} State two sensible baselines for a regression problem and
+        one for a time series.
+  \item \textbf{(Short)} What does a learning curve whose two lines have converged
+        at a high error tell you? What would you do next?
+  \item \textbf{(Applied)} You have 40 sprints of project data and 60 candidate
+        features. Explain the specific overfitting danger, and describe the model
+        and validation strategy you would choose instead of a complex learner.
+  \item \textbf{(Applied)} A colleague reports 99.4\% accuracy detecting network
+        intrusions where 0.6\% of traffic is malicious. Explain why this number is
+        uninformative, name the baseline it must be compared against, and state
+        what you would ask to see instead.
+\end{reviewq}

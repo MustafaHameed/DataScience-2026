@@ -1,0 +1,469 @@
+%=====================================================================
+\chapter{Deep Architectures}\label{ch:architectures}
+%=====================================================================
+\locator{4}{Part IV --- Deep Learning and Modern AI}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what convolution does and why it suits grid-structured data.
+  \item \textbf{Describe} how recurrent networks carry state across a sequence, and why LSTMs were needed.
+  \item \textbf{State} the core idea of attention and why it displaced recurrence.
+  \item \textbf{Use} an autoencoder for compression and anomaly detection.
+  \item \textbf{Apply} transfer learning and justify it on a small dataset.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{neuralnets} --- neurons, layers, activations, backpropagation. Everything
+here is that machinery with the connections arranged differently.
+\end{prereq}
+
+\begin{keyterms}
+convolution $\bullet$ kernel / filter $\bullet$ feature map $\bullet$ pooling
+$\bullet$ CNN $\bullet$ recurrent network $\bullet$ hidden state $\bullet$ LSTM
+$\bullet$ GRU $\bullet$ attention $\bullet$ self-attention $\bullet$ transformer
+$\bullet$ embedding $\bullet$ autoencoder $\bullet$ latent space $\bullet$ transfer
+learning $\bullet$ fine-tuning
+\end{keyterms}
+
+\section{Architecture Is Inductive Bias}
+
+\begin{conceptbox}[The Idea Behind This Chapter]
+A fully connected network treats every input the same way and must learn all
+structure from data. An \emph{architecture} builds a structural assumption into the
+wiring: convolution assumes nearby pixels are related; recurrence assumes order
+matters; attention assumes any element may relate to any other. Choosing an
+architecture is choosing which assumption to give the model for free --- which is
+why the right one needs far less data.
+\end{conceptbox}
+
+\section{Convolutional Networks}
+
+\begin{definitionbox}[Convolution]
+Slide a small matrix of weights --- a \term{kernel} or \term{filter} --- across the
+input, computing a dot product at each position. The output is a \term{feature map}
+showing where in the input that pattern occurs. The same weights are reused at
+every position, which is called \term{weight sharing}.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  c/.style={draw=gray!55, minimum size=0.44cm, inner sep=0pt, font=\tiny},
+  k/.style={draw=accent, fill=accent!16, minimum size=0.44cm, inner sep=0pt, font=\tiny},
+  o/.style={draw=greenhl, fill=greenhl!14, minimum size=0.44cm, inner sep=0pt, font=\tiny}]
+
+% input grid 5x5
+\node[font=\scriptsize\bfseries, text=primary] at (1.1,2.7) {input};
+\foreach \r in {0,...,4}{\foreach \cc in {0,...,4}{
+  \pgfmathsetmacro{\v}{mod(\r*3+\cc*2,5)}
+  \pgfmathtruncatemacro{\vi}{\v}
+  \node[c] at (\cc*0.45, 2.2-\r*0.45) {\vi};}}
+% highlight receptive field
+\draw[accent, line width=1.3pt] (-0.24,2.44) rectangle (1.11,1.09);
+
+% kernel
+\node[font=\scriptsize\bfseries, text=accent!75!black] at (3.5,2.7) {kernel $3{\times}3$};
+\foreach \r in {0,...,2}{\foreach \cc in {0,...,2}{
+  \node[k] at (3.0+\cc*0.45, 2.2-\r*0.45) {\ifnum\r=1 1\else 0\fi};}}
+\node[font=\tiny, text=gray!55!black, align=center, text width=2.2cm] at (3.45,0.35)
+     {this one detects\\horizontal edges};
+
+% output
+\node[font=\scriptsize\bfseries, text=greenhl!45!black] at (6.7,2.7) {feature map};
+\foreach \r in {0,...,2}{\foreach \cc in {0,...,2}{
+  \node[o] at (6.2+\cc*0.45, 2.2-\r*0.45) {};}}
+\draw[greenhl, line width=1.3pt] (5.98,2.44) rectangle (6.43,1.99);
+
+\draw[-{Stealth[length=2mm]}, gray!60] (1.35,1.75) -- (2.75,1.75);
+\draw[-{Stealth[length=2mm]}, gray!60] (4.3,1.75) -- (5.9,1.75);
+\node[font=\tiny, text=gray!55!black] at (2.05,2.0) {$\otimes$};
+\node[font=\tiny, text=gray!55!black] at (5.1,2.0) {$=$};
+
+\node[align=left, text width=6.2cm, font=\tiny, text=gray!55!black, anchor=north west]
+     at (8.0,2.6)
+     {\textbf{Why this matters:}\\[3pt]
+      $\bullet$ \textbf{Weight sharing} --- the same 9 weights are used everywhere, so a
+      $5{\times}5$ input needs 9 parameters, not 225.\\[3pt]
+      $\bullet$ \textbf{Translation invariance} --- an edge is detected wherever it
+      appears.\\[3pt]
+      $\bullet$ \textbf{Locality} --- each output depends only on a small neighbourhood,
+      which is exactly true for images and for sensor grids.\\[3pt]
+      Stacking convolutions builds a hierarchy: edges $\rightarrow$ textures
+      $\rightarrow$ parts $\rightarrow$ objects.};
+\end{tikzpicture}}%
+{Convolution. One small kernel slides over the whole input, so the network learns
+\emph{what} to look for rather than \emph{where} --- a massive reduction in parameters
+compared with a fully connected layer.}{convolution}
+
+\begin{definitionbox}[Pooling]
+Downsample a feature map by taking the maximum (or mean) over small windows. This
+shrinks the representation, reduces computation and grants a little tolerance to
+small shifts in position.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  st/.style={rounded corners=3pt, draw=#1, fill=#1!9, text=#1!50!black,
+             text width=1.85cm, align=center, font=\tiny\bfseries, minimum height=1.5cm},
+  arr/.style={-{Stealth[length=2mm]}, gray!60, line width=0.9pt}]
+
+\node[st=secondary] (a) at (0,0)    {INPUT\\{\tiny $224{\times}224{\times}3$}};
+\node[st=primary]   (b) at (2.25,0) {CONV\\+ ReLU};
+\node[st=goldhl]    (c) at (4.5,0)  {POOL\\{\tiny halve size}};
+\node[st=primary]   (d) at (6.75,0) {CONV\\+ ReLU};
+\node[st=goldhl]    (e) at (9.0,0)  {POOL};
+\node[st=purplehl]  (f) at (11.25,0){FLATTEN\\+ DENSE};
+\node[st=accent]    (g) at (13.5,0) {SOFTMAX\\{\tiny $k$ classes}};
+
+\foreach \x/\y in {a/b,b/c,c/d,d/e,e/f,f/g}{\draw[arr] (\x) -- (\y);}
+
+\node[font=\tiny\itshape, text=gray!55!black, align=center, text width=3.4cm] at (2.3,-1.35)
+     {early layers:\\edges and colours};
+\node[font=\tiny\itshape, text=gray!55!black, align=center, text width=3.4cm] at (7.5,-1.35)
+     {middle layers:\\textures and parts};
+\node[font=\tiny\itshape, text=gray!55!black, align=center, text width=3.0cm] at (12.4,-1.35)
+     {late layers:\\whole objects};
+\draw[-{Stealth[length=2.4mm]}, primary!30, line width=5pt, opacity=0.4]
+      (-0.9,-1.95) -- (14.4,-1.95);
+\node[font=\tiny\bfseries, text=primary!60!black] at (6.7,-2.28)
+     {representations become more abstract and more task-specific from left to right};
+\end{tikzpicture}}%
+{A typical CNN pipeline. The left-hand layers learn generic visual features that transfer
+to almost any image task --- which is precisely what makes transfer learning
+work.}{cnn-pipeline}
+
+\section{Recurrent Networks}
+
+\begin{definitionbox}[Recurrent Neural Network]
+An RNN processes a sequence one element at a time, maintaining a \term{hidden
+state} $h_t$ that summarises everything seen so far:
+\[
+h_t = f(W_x x_t + W_h h_{t-1} + b)
+\]
+The same weights are applied at every timestep --- weight sharing across
+\emph{time} rather than across space.
+\end{definitionbox}
+
+\begin{alertbox}[Why Plain RNNs Fail]
+Backpropagating through 100 timesteps multiplies 100 gradients together. If they
+are slightly below 1, the product vanishes and the network cannot learn long-range
+dependencies; slightly above 1 and it explodes. In practice a plain RNN forgets
+anything more than roughly ten steps back --- which is useless for a sentence, a
+session or a day of telemetry.
+\end{alertbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  cell/.style={rounded corners=3pt, draw=primary, fill=primary!10, text=primary!55!black,
+               minimum width=1.25cm, minimum height=1.0cm, font=\tiny\bfseries},
+  gate/.style={circle, draw=#1, fill=#1!16, text=#1!50!black, minimum size=0.6cm,
+               inner sep=0pt, font=\tiny\bfseries},
+  arr/.style={-{Stealth[length=1.8mm]}, gray!65, line width=0.8pt}]
+
+% unrolled RNN
+\node[font=\scriptsize\bfseries, text=primary, anchor=west] at (-0.9,1.85) {RNN unrolled through time};
+\foreach \t in {1,2,3,4}{
+  \pgfmathsetmacro{\xx}{(\t-1)*2.35}
+  \node[cell] (c\t) at (\xx,0.55) {$h_\t$};
+  \node[font=\tiny, text=secondary!55!black] (i\t) at (\xx,-0.75) {$x_\t$};
+  \node[font=\tiny, text=accent!70!black] (o\t) at (\xx,1.75) {$\hat{y}_\t$};
+  \draw[arr] (i\t) -- (c\t);
+  \draw[arr] (c\t) -- (o\t);}
+\foreach \a/\b in {1/2,2/3,3/4}{
+  \draw[arr, primary!65, line width=1pt] (c\a) -- (c\b);}
+\node[font=\tiny, text=primary!60!black] at (1.17,0.9) {state};
+\node[font=\tiny\itshape, text=gray!55!black, anchor=west, text width=3.4cm] at (7.6,0.55)
+     {the same weights are reused at every step};
+
+% LSTM cell
+\begin{scope}[shift={(0,-3.6)}]
+  \node[font=\scriptsize\bfseries, text=greenhl!45!black, anchor=west] at (-0.9,1.7)
+       {LSTM cell: three gates control what is kept};
+  \node[rounded corners=5pt, draw=greenhl, fill=greenhl!6, minimum width=6.6cm,
+        minimum height=2.0cm] (box) at (2.9,0.35) {};
+  \node[gate=accent]   (fg) at (1.0,0.75)  {$f$};
+  \node[gate=secondary](ig) at (2.9,0.75)  {$i$};
+  \node[gate=goldhl]   (og) at (4.8,0.75)  {$o$};
+  \node[font=\tiny, text=accent!70!black, align=center]    at (1.0,-0.25) {forget\\gate};
+  \node[font=\tiny, text=secondary!55!black, align=center] at (2.9,-0.25) {input\\gate};
+  \node[font=\tiny, text=goldhl!45!black, align=center]    at (4.8,-0.25) {output\\gate};
+
+  \draw[arr, greenhl!70, line width=1.2pt] (-0.5,1.15) -- (6.3,1.15);
+  \node[font=\tiny, text=greenhl!45!black, anchor=south] at (6.0,1.2) {cell state};
+  \node[font=\tiny\itshape, text=gray!55!black, anchor=west, text width=5.6cm] at (7.0,0.35)
+       {The cell state runs straight through with only additive edits, so gradients
+        survive hundreds of steps. The gates \emph{learn} what to forget, what to store
+        and what to expose --- which is why an LSTM can remember something from the start
+        of a session.};
+\end{scope}
+\end{tikzpicture}}%
+{Top: an RNN unrolled, carrying state forward. Bottom: an LSTM cell, whose gated cell state
+provides an uninterrupted path for gradients and solves the forgetting problem.}{rnn-lstm}
+
+\section{Attention and Transformers}
+
+\begin{definitionbox}[Attention]
+Instead of compressing a sequence into one hidden state, attention lets every
+position look directly at every other position and decide how much each one
+matters. Each output is a weighted average of all inputs, where the model
+\emph{learns} the weights from the content.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  tok/.style={rounded corners=2pt, draw=primary!60, fill=primary!10, text=primary!55!black,
+              minimum width=1.25cm, minimum height=0.5cm, font=\tiny}]
+
+\foreach \i/\w in {0/The, 1/server, 2/that, 3/we, 4/patched, 5/crashed}{
+  \node[tok] (t\i) at (\i*1.55,0) {\w};}
+
+% attention weights from "crashed"
+\node[rounded corners=2pt, draw=accent, fill=accent!16, text=accent!70!black,
+      minimum width=1.25cm, minimum height=0.5cm, font=\tiny\bfseries] at (5*1.55,0) {crashed};
+
+\foreach \i/\wt/\op in {0/0.05/0.12, 1/0.62/0.85, 2/0.04/0.10, 3/0.03/0.08, 4/0.26/0.45}{
+  \draw[-{Stealth[length=1.6mm]}, accent, opacity=\op, line width=2.0pt]
+       (5*1.55,-0.3) .. controls +(0,-0.8) and +(0,-0.8) .. (\i*1.55,-0.3);
+  \node[font=\tiny, text=accent!70!black, opacity=\op] at (\i*1.55,-1.5) {\wt};}
+
+\node[font=\tiny\itshape, text=gray!55!black, anchor=north, align=center, text width=11cm]
+     at (3.9,-2.0)
+     {To interpret \emph{crashed}, the model attends most to \emph{server} (0.62) and
+      \emph{patched} (0.26) --- and it learned that, rather than being told. The distance
+      between \emph{server} and \emph{crashed} is irrelevant: attention reaches any
+      position in one step, where an RNN would need five.};
+
+\node[anchor=west, align=left, text width=13.2cm, font=\tiny, text=primary!60!black]
+     at (-1.0,-3.6)
+     {\textbf{Why this displaced recurrence:} (1) no vanishing gradient over distance ---
+      every position is one hop away; (2) all positions compute in \emph{parallel}, where
+      an RNN must go step by step, which is what made training on internet-scale text
+      feasible. The cost is that attention compares every pair, so compute grows with the
+      square of sequence length.};
+\end{tikzpicture}}%
+{Self-attention. Each token's representation is rebuilt as a weighted blend of all tokens,
+with the weights learned from content. This mechanism is the basis of every model in
+Chapters 20--22.}{attention}
+
+\begin{conceptbox}[Transformer, in Three Sentences]
+A transformer is a stack of blocks, each containing self-attention followed by a
+small feed-forward network, with residual connections and normalisation to keep
+training stable. Because the mechanism has no inherent notion of order, position
+information is added explicitly to each token's embedding. Everything in
+\chref{genai} and \chref{agentic} is built on this one design.
+\end{conceptbox}
+
+\section{Autoencoders}
+
+\begin{definitionbox}[Autoencoder]
+A network trained to reproduce its own input through a narrow \term{bottleneck}. It
+must therefore learn a compressed \term{latent} representation that keeps only what
+matters. Trained only on normal data, it reconstructs normal inputs well and
+anomalous inputs badly --- so reconstruction error becomes an anomaly score.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  l/.style={rounded corners=2pt, draw=#1, fill=#1!12, text=#1!50!black,
+            minimum width=0.75cm, font=\tiny\bfseries},
+  arr/.style={-{Stealth[length=1.8mm]}, gray!60, line width=0.8pt}]
+
+\node[l=secondary, minimum height=2.4cm] (i) at (0,0)    {};
+\node[l=primary,   minimum height=1.7cm] (e1) at (1.5,0) {};
+\node[l=primary,   minimum height=1.0cm] (e2) at (3.0,0) {};
+\node[l=accent,    minimum height=0.5cm] (z) at (4.5,0)  {};
+\node[l=primary,   minimum height=1.0cm] (d1) at (6.0,0) {};
+\node[l=primary,   minimum height=1.7cm] (d2) at (7.5,0) {};
+\node[l=greenhl,   minimum height=2.4cm] (o) at (9.0,0)  {};
+
+\foreach \a/\b in {i/e1,e1/e2,e2/z,z/d1,d1/d2,d2/o}{\draw[arr] (\a) -- (\b);}
+
+\node[font=\tiny, text=secondary!55!black, align=center] at (0,-1.6)  {input\\$x$};
+\node[font=\tiny, text=accent!70!black, align=center]    at (4.5,-1.6){latent $z$\\{\tiny bottleneck}};
+\node[font=\tiny, text=greenhl!45!black, align=center]   at (9.0,-1.6){output\\$\hat{x}$};
+\node[font=\tiny\bfseries, text=primary!55!black] at (2.25,1.55) {ENCODER};
+\node[font=\tiny\bfseries, text=primary!55!black] at (6.75,1.55) {DECODER};
+
+\draw[{Stealth[length=1.8mm]}-{Stealth[length=1.8mm]}, purplehl, line width=1pt]
+     (0,-2.15) -- (9.0,-2.15);
+\node[font=\tiny\bfseries, text=purplehl] at (4.5,-2.45)
+     {loss = reconstruction error $\|x - \hat{x}\|$ --- and \emph{also} the anomaly score};
+
+\node[anchor=west, align=left, text width=3.5cm, font=\tiny, text=gray!55!black] at (10.0,0)
+     {Train only on normal data. A reading the network has never seen its like of
+      reconstructs badly, and the error flags it.};
+\end{tikzpicture}}%
+{An autoencoder. The bottleneck forces a compressed representation; the reconstruction
+error that trains it also serves, at inference time, as an unsupervised anomaly score ---
+which is why this architecture recurs in Chapters 25 and 26.}{autoencoder}
+
+\section{Transfer Learning}
+
+\begin{definitionbox}[Transfer Learning]
+Take a model already trained on a large general dataset, keep its learned feature
+extractor, and re-train only the final layers on your small specific dataset.
+Because early layers learn generic structure (\dsref{cnn-pipeline}), they transfer.
+\end{definitionbox}
+
+\begin{worked}[Why Transfer Learning Changes What Is Possible]
+You must classify 800 photographs of industrial components as defective or sound.
+
+\smallskip
+\textbf{From scratch:} a usable CNN has millions of parameters. With 800 images it
+will memorise them within a few epochs. Realistic accuracy: poor, and unstable
+between runs.
+
+\textbf{With transfer learning:} take a network pre-trained on ImageNet (1.2 million
+images, 1{,}000 categories). Freeze everything but the last block. Replace the
+1{,}000-way output with a 2-way one. Now you are fitting a few thousand parameters,
+not a few million --- and the frozen layers already detect edges, textures, corners
+and surface irregularities, which is most of what ``defective'' means visually.
+
+\smallskip
+\textbf{Typical outcome:} 800 images is comfortably enough, training takes minutes
+on a laptop rather than days on a GPU cluster, and the result is far more stable.
+
+\textbf{The general rule:} unless you have hundreds of thousands of labelled
+examples, do not train a deep vision or language model from scratch. Fine-tune.
+This is the single most practical technique in this chapter.
+\end{worked}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{2.9cm}p{4.0cm}p{3.4cm}p{4.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Architecture} & \textbf{Assumes} & \textbf{Input} & \textbf{Use for} \\
+\midrule
+\endhead
+Feed-forward (MLP) & Nothing about structure & Fixed-length vectors & Tabular data (but see \chref{features}) \\
+CNN & Nearby values are related & Images, spectrograms, sensor grids & Vision, audio, some time series \\
+RNN / LSTM / GRU & Order matters; recent past matters most & Sequences & Older sequence work; still fine for short series \\
+Transformer & Any element may relate to any other & Sequences, text, images & Language, and increasingly everything else \\
+Autoencoder & Normal data lies on a low-dimensional manifold & Anything & Compression, denoising, \textbf{anomaly detection} \\
+\bottomrule
+\end{longtable}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Choosing an Architecture}
+\lensLA{An \textbf{LSTM or small transformer} over the weekly clickstream
+\emph{sequence} captures trajectory --- ``engaged then collapsed'' versus ``steadily
+low'' --- which aggregate features flatten away. Worth the complexity only if you
+have several cohorts of history; with one cohort, the engineered trend features of
+\chref{features} are both better and defensible.}
+
+\lensPM{No deep architecture is appropriate at this data scale. The one legitimate
+use is a \textbf{pre-trained language model} applied to unstructured text ---
+clustering requirement documents, or classifying retrospective notes by theme.
+That is transfer learning doing the work, not your 40 sprints.}
+
+\lensIOT{\textbf{CNNs on spectrograms} are the standard for vibration and acoustic
+monitoring: convert the waveform to a time--frequency image and the problem becomes
+a vision problem, with all of transfer learning available. \textbf{Autoencoders}
+handle the harder case where no failures have ever been recorded --- train on normal
+operation and score reconstruction error. Both must then be shrunk to fit an edge
+device (\chref{cloudedge}).}
+
+\lensSEC{\textbf{Autoencoders and sequence models} over session logs detect
+behaviour that no signature covers. CNNs applied to raw malware bytes treated as an
+image are a real and effective technique. But note the adversarial exposure: an
+attacker who can query your model can craft inputs that sit just inside the normal
+region, and deep models are more susceptible to this than simple ones ---
+\chref{cybersecurity} covers the defences.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Transfer Learning and an Autoencoder]
+\begin{lstlisting}[language=Python]
+# ---------- 1. Transfer learning: 800 images is enough ------------------
+from tensorflow import keras
+
+base = keras.applications.MobileNetV2(
+    input_shape=(224, 224, 3), include_top=False, weights="imagenet")
+base.trainable = False                       # freeze the learned features
+
+model = keras.Sequential([
+    base,
+    keras.layers.GlobalAveragePooling2D(),
+    keras.layers.Dropout(0.3),
+    keras.layers.Dense(1, activation="sigmoid"),
+])
+model.compile(optimizer=keras.optimizers.Adam(1e-3),
+              loss="binary_crossentropy", metrics=["AUC"])
+# model.fit(train_ds, validation_data=val_ds, epochs=15)
+
+# Then unfreeze the top block and fine-tune at a LOW learning rate:
+# base.trainable = True
+# for layer in base.layers[:-20]: layer.trainable = False
+# model.compile(optimizer=keras.optimizers.Adam(1e-5), ...)   # 1e-5, not 1e-3
+
+# ---------- 2. Autoencoder for unsupervised anomaly detection ----------
+import numpy as np
+n_feat = X_normal.shape[1]
+ae = keras.Sequential([
+    keras.layers.Dense(32, activation="relu", input_shape=(n_feat,)),
+    keras.layers.Dense(8,  activation="relu"),        # bottleneck
+    keras.layers.Dense(32, activation="relu"),
+    keras.layers.Dense(n_feat),                       # reconstruct
+])
+ae.compile(optimizer="adam", loss="mse")
+ae.fit(X_normal, X_normal, epochs=50, validation_split=0.1, verbose=0)
+#      ^^^^^^^^^ input and target are the same, and only NORMAL data is used
+
+err = np.mean((X_all - ae.predict(X_all, verbose=0))**2, axis=1)
+threshold = np.percentile(err[is_normal], 99)      # set on normal data only
+print("flagged:", (err > threshold).sum())
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A $3\times3$ convolution kernel is applied to a $32\times32$ image. How many
+        weights does the kernel have, and how many would a fully connected layer
+        producing the same number of outputs need (roughly)?
+  \item Why can attention relate the first and hundredth word of a sentence more
+        easily than an LSTM can?
+  \item You have 600 labelled images. Argue for transfer learning over training from
+        scratch in three sentences.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item An architecture encodes a structural assumption, which is why the right one
+        needs far less data.
+  \item Convolution shares one small kernel across all positions, giving locality,
+        translation invariance and a huge parameter saving.
+  \item RNNs carry a hidden state through time but forget; LSTMs add gates and an
+        additive cell state so gradients survive.
+  \item Attention lets every position consult every other in one step and computes
+        in parallel --- the two reasons transformers displaced recurrence.
+  \item Autoencoders compress through a bottleneck; their reconstruction error is a
+        ready-made unsupervised anomaly score.
+  \item Transfer learning makes deep models viable on small datasets, and should be
+        your default for images and text.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Weight sharing in a CNN means: (a)~layers share a learning
+        rate (b)~the same kernel is applied at every position (c)~neurons share
+        biases (d)~the model is smaller after pooling.
+  \item \textbf{(MCQ)} The main practical advantage of transformers over LSTMs in
+        training is: (a)~fewer parameters (b)~parallel computation across positions
+        (c)~no need for data (d)~guaranteed convergence.
+  \item \textbf{(Short)} Explain the vanishing gradient problem in RNNs and how the
+        LSTM cell state addresses it.
+  \item \textbf{(Short)} Describe how an autoencoder detects anomalies without ever
+        seeing an anomaly during training.
+  \item \textbf{(Short)} Why does fine-tuning use a much lower learning rate than
+        the initial training of the added layers?
+  \item \textbf{(Applied)} You must detect bearing faults from vibration waveforms
+        sampled at 20 kHz, with 3{,}000 labelled recordings. Propose an architecture
+        and a preprocessing step, and justify both.
+  \item \textbf{(Applied)} For each of CNN, LSTM, transformer and autoencoder, name
+        one of the four course domains where it is the natural choice, and state the
+        structural assumption that makes it so.
+\end{reviewq}

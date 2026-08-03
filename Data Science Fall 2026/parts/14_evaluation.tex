@@ -1,0 +1,435 @@
+%=====================================================================
+\chapter{Model Evaluation and Selection}\label{ch:evaluation}
+%=====================================================================
+\locator{3}{Part III --- Machine Learning Core}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Build} a confusion matrix and derive accuracy, precision, recall, specificity and $F_1$ from it.
+  \item \textbf{Explain} why accuracy is misleading under class imbalance, and choose an appropriate metric instead.
+  \item \textbf{Read} an ROC curve and a precision--recall curve, and say which to use when.
+  \item \textbf{Select} a decision threshold from the costs of the two error types.
+  \item \textbf{Apply} k-fold cross-validation and explain why it beats a single split.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{probability} (the base-rate arithmetic --- precision \emph{is} the posterior
+computed there), \chref{mlfundamentals} (splits) and \chref{classification}
+(thresholds).
+\end{prereq}
+
+\begin{keyterms}
+confusion matrix $\bullet$ true/false positive and negative $\bullet$ accuracy
+$\bullet$ precision $\bullet$ recall (sensitivity) $\bullet$ specificity $\bullet$
+$F_1$ score $\bullet$ ROC curve $\bullet$ AUC $\bullet$ precision--recall curve
+$\bullet$ class imbalance $\bullet$ threshold tuning $\bullet$ k-fold
+cross-validation $\bullet$ stratification
+\end{keyterms}
+
+\section{Why This Chapter Is the Hinge of Part III}
+
+You cannot improve what you cannot measure, and you cannot choose between the
+models of \chref{classification} without a number that reflects what you actually
+care about. Every remaining chapter of this book assumes you can evaluate honestly.
+Most published failures of applied machine learning are failures of evaluation, not
+of algorithms.
+
+\section{The Confusion Matrix}
+
+\begin{definitionbox}[Confusion Matrix]
+A table cross-tabulating predictions against truth. For two classes it has four
+cells: \term{true positives} (TP), \term{false positives} (FP), \term{false
+negatives} (FN) and \term{true negatives} (TN). Every classification metric is
+some ratio of these four numbers.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+\node[rounded corners=3pt, fill=primary, text=white, font=\scriptsize\bfseries,
+      minimum width=5.6cm, minimum height=0.6cm] at (3.0,2.35) {ACTUAL TRUTH};
+\node[font=\scriptsize\bfseries, text=primary] at (1.4,1.72) {Positive};
+\node[font=\scriptsize\bfseries, text=primary] at (4.6,1.72) {Negative};
+\node[rotate=90, font=\scriptsize\bfseries, text=white, fill=primary, rounded corners=3pt,
+      minimum width=3.5cm, minimum height=0.6cm] at (-1.85,-0.15) {MODEL SAYS};
+\node[font=\scriptsize\bfseries, text=primary, align=center, text width=1.3cm] at (-0.85,0.85) {Positive};
+\node[font=\scriptsize\bfseries, text=primary, align=center, text width=1.3cm] at (-0.85,-1.15) {Negative};
+
+\node[rounded corners=3pt, fill=greenhl!16, draw=greenhl, minimum width=3.0cm,
+      minimum height=1.6cm, align=center] at (1.4,0.85)
+     {{\color{greenhl!45!black}\bfseries TRUE POSITIVE}\\[2pt]{\tiny caught it, correctly}};
+\node[rounded corners=3pt, fill=accent!13, draw=accent, minimum width=3.0cm,
+      minimum height=1.6cm, align=center] at (4.6,0.85)
+     {{\color{accent}\bfseries FALSE POSITIVE}\\[2pt]{\tiny false alarm}\\{\tiny (Type I)}};
+\node[rounded corners=3pt, fill=accent!13, draw=accent, minimum width=3.0cm,
+      minimum height=1.6cm, align=center] at (1.4,-1.15)
+     {{\color{accent}\bfseries FALSE NEGATIVE}\\[2pt]{\tiny missed it}\\{\tiny (Type II)}};
+\node[rounded corners=3pt, fill=greenhl!16, draw=greenhl, minimum width=3.0cm,
+      minimum height=1.6cm, align=center] at (4.6,-1.15)
+     {{\color{greenhl!45!black}\bfseries TRUE NEGATIVE}\\[2pt]{\tiny correctly ignored}};
+
+% --- metric formulas, tied to the cells
+\node[anchor=north west, align=left, text width=6.6cm] at (6.7,2.1) {%
+  {\color{primary}\bfseries Accuracy} $=\dfrac{\text{TP}+\text{TN}}{\text{all}}$
+  \quad{\tiny how often right overall}\\[6pt]
+  {\color{greenhl!45!black}\bfseries Precision} $=\dfrac{\text{TP}}{\text{TP}+\text{FP}}$
+  \quad{\tiny of those flagged, how many were real}\\[6pt]
+  {\color{secondary}\bfseries Recall} $=\dfrac{\text{TP}}{\text{TP}+\text{FN}}$
+  \quad{\tiny of the real ones, how many we caught}\\[6pt]
+  {\color{goldhl!50!black}\bfseries Specificity} $=\dfrac{\text{TN}}{\text{TN}+\text{FP}}$
+  \quad{\tiny of the negatives, how many left alone}\\[6pt]
+  {\color{purplehl}\bfseries $F_1$} $=2\cdot\dfrac{\text{prec}\cdot\text{rec}}{\text{prec}+\text{rec}}$
+  \quad{\tiny harmonic mean of the two}};
+
+\node[align=left, text width=13.2cm, font=\tiny, text=gray!55!black] at (5.0,-2.8)
+     {\textbf{Memory aid.} Precision reads \emph{down} the ``model says positive'' row:
+      \emph{when I raise an alarm, am I right?} Recall reads \emph{across} the ``actually
+      positive'' column: \emph{of everything I should have caught, how much did I?}};
+\end{tikzpicture}}%
+{The confusion matrix and the five metrics derived from it. Learn which cells each metric
+uses; every question in this chapter reduces to that.}{confusion-matrix}
+
+\begin{worked}[The Same Model, Five Metrics]
+An intrusion detector is run on 10{,}000 sessions, of which 100 are genuine
+attacks. It flags 190 sessions, of which 80 are real attacks.
+
+\smallskip
+\textbf{Fill in the four cells:}
+\begin{tight}
+  \item TP $= 80$ (flagged and real)
+  \item FP $= 190 - 80 = 110$ (flagged, not real)
+  \item FN $= 100 - 80 = 20$ (real, not flagged)
+  \item TN $= 10{,}000 - 80 - 110 - 20 = 9{,}790$
+\end{tight}
+
+\smallskip
+\textbf{Accuracy} $= \dfrac{80 + 9790}{10000} = \dfrac{9870}{10000} = \mathbf{98.7\%}$
+
+\textbf{Precision} $= \dfrac{80}{80+110} = \dfrac{80}{190} = \mathbf{42.1\%}$
+
+\textbf{Recall} $= \dfrac{80}{80+20} = \dfrac{80}{100} = \mathbf{80.0\%}$
+
+\textbf{Specificity} $= \dfrac{9790}{9790+110} = \mathbf{98.9\%}$
+
+\textbf{$F_1$} $= 2 \times \dfrac{0.421 \times 0.800}{0.421 + 0.800}
+= 2 \times \dfrac{0.337}{1.221} = \mathbf{0.552}$
+
+\smallskip
+\textbf{The headline number is the useless one.} 98.7\% accuracy sounds superb ---
+but a model that flags \emph{nothing at all} scores 99.0\% here, beating it.
+Accuracy is dominated by the 9{,}900 easy negatives.
+
+The informative pair is precision 42\% and recall 80\%: we catch four attacks in
+five, and roughly three in five alarms are wasted analyst time. Whether that is
+acceptable is the expected-value question of \chref{probability}, and it is the
+only version of the result worth reporting.
+\end{worked}
+
+\begin{alertbox}[The Accuracy Paradox]
+When one class is rare, always compute the majority-class baseline first. If 99\%
+of traffic is benign, ``predict benign'' scores 99\%. Any accuracy figure below
+that is worse than doing nothing, and any figure just above it may be worthless.
+Report precision and recall, or a metric built from them.
+\end{alertbox}
+
+\section{Trading Precision Against Recall}
+
+\begin{conceptbox}[They Move in Opposite Directions]
+Lower the threshold: you flag more things, so recall rises and precision falls.
+Raise it: precision rises and recall falls. You cannot maximise both, so you must
+decide which error is more expensive --- and that is a domain decision, made with
+the stakeholder.
+\end{conceptbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.5cm},
+  width=6.6cm, height=5.0cm,
+  axis lines=left, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+  legend style={font=\tiny, draw=gray!40},
+]
+\nextgroupplot[title={Metrics against threshold},
+  xlabel={decision threshold}, ylabel={score},
+  xmin=0, xmax=1, ymin=0, ymax=1.05,
+  legend style={at={(0.5,-0.30)}, anchor=north, legend columns=3}]
+\addplot[greenhl, line width=1.2pt, domain=0.03:0.97, samples=60] {0.06+0.88*x^0.75};
+\addlegendentry{precision}
+\addplot[secondary, line width=1.2pt, domain=0.03:0.97, samples=60] {1-0.93*x^1.7};
+\addlegendentry{recall}
+\addplot[purplehl, line width=1.2pt, dashed, domain=0.03:0.97, samples=60]
+  {2*((0.06+0.88*x^0.75)*(1-0.93*x^1.7))/((0.06+0.88*x^0.75)+(1-0.93*x^1.7))};
+\addlegendentry{$F_1$}
+\draw[accent, dashed, line width=0.9pt] (axis cs:0.5,0) -- (axis cs:0.5,1.0);
+\node[font=\tiny, accent, anchor=south, rotate=90] at (axis cs:0.5,0.06) {default 0.5};
+
+\nextgroupplot[title={ROC curve},
+  xlabel={false positive rate ($1-$specificity)}, ylabel={true positive rate (recall)},
+  xmin=0, xmax=1, ymin=0, ymax=1.05,
+  legend style={at={(0.99,0.16)}, anchor=south east}]
+\addplot[gray!60, dashed, line width=0.9pt] coordinates {(0,0)(1,1)};
+\addlegendentry{random (AUC 0.5)}
+\addplot[greenhl, line width=1.4pt, domain=0:1, samples=90] {x^0.22};
+\addlegendentry{good (AUC 0.90)}
+\addplot[goldhl, line width=1.2pt, domain=0:1, samples=90] {x^0.52};
+\addlegendentry{fair (AUC 0.70)}
+\addplot[accent, only marks, mark=*, mark size=1.7pt] coordinates {(0.011,0.80)};
+\node[font=\tiny, accent, anchor=west] at (axis cs:0.055,0.78) {worked example};
+\node[font=\tiny, text=gray!55!black, anchor=north west] at (axis cs:0.03,0.99) {perfect $\rightarrow$};
+\end{groupplot}
+\end{tikzpicture}}%
+{Left: every metric depends on the threshold, so quoting one without the threshold is
+incomplete. Right: the ROC curve sweeps all thresholds at once; AUC is the area beneath
+it.}{precision-recall-roc}
+
+\begin{definitionbox}[ROC, AUC and the PR Curve]
+The \term{ROC curve} plots recall against false-positive rate across all
+thresholds. \term{AUC} is the area under it: the probability that the model ranks a
+random positive above a random negative. 0.5 is chance, 1.0 is perfect.\\[3pt]
+The \term{precision--recall curve} plots precision against recall instead.
+\end{definitionbox}
+
+\begin{alertbox}[Use PR, Not ROC, When Positives Are Rare]
+ROC's $x$-axis is the false-positive \emph{rate} --- FP divided by the huge number
+of negatives. With 9{,}900 negatives, 110 false positives is a rate of 0.011, which
+looks negligible on an ROC plot even though it means 58\% of your alerts are wrong.
+ROC curves flatter rare-event detectors badly. The PR curve, which uses precision
+directly, does not. In cybersecurity, fraud and predictive maintenance, report the
+PR curve.
+\end{alertbox}
+
+\section{Choosing the Threshold from Costs}
+
+\begin{worked}[Setting a Threshold with Money]
+A dropout-prediction model is to drive outreach calls.
+\begin{tight}
+  \item Cost of a false positive: one wasted 20-minute call $\approx$ \$15.
+  \item Cost of a false negative: a student lost, worth $\approx$ \$4{,}000 in fees
+        and outcomes.
+\end{tight}
+The ratio is roughly 1:267 --- a miss is 267 times more costly than a false alarm.
+
+\smallskip
+\textbf{Consequence.} You should accept a great many false alarms to avoid one
+miss. Optimise recall subject to a staffing limit, not $F_1$ (which weights
+precision and recall equally and would be the wrong objective here).
+
+\textbf{Total expected cost at threshold $t$:}
+\[
+C(t) = 15 \times \text{FP}(t) + 4000 \times \text{FN}(t)
+\]
+Evaluate on the validation set across a grid of $t$ and pick the minimum.
+
+\smallskip
+\begin{center}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\textbf{Threshold} & \textbf{FP} & \textbf{FN} & \textbf{Cost} & \\
+\midrule
+0.10 & 420 & \phantom{0}4 & \$22{,}300 & \\
+0.20 & 210 & \phantom{0}9 & \$39{,}150 & \\
+0.30 & 120 & 16 & \$65{,}800 & \\
+0.50 & \phantom{0}48 & 31 & \$124{,}720 & \emph{the default} \\
+0.05 & 780 & \phantom{0}2 & \$19{,}700 & $\leftarrow$ \textbf{minimum} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The optimum is 0.05}, not 0.5 --- a threshold that flags roughly a third of
+the cohort. That is only workable if staff can handle the volume, which is why the
+real constraint is usually written as ``maximise recall subject to flagging at most
+20\% of students''. Either way, the default threshold was ten times too high and
+cost six times more.
+\end{worked}
+
+\section{Cross-Validation}
+
+\begin{definitionbox}[k-Fold Cross-Validation]
+Split the training data into $k$ equal folds. Train on $k-1$ and validate on the
+held-out one; repeat $k$ times so every fold is held out exactly once. Report the
+mean and standard deviation of the $k$ scores.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+\foreach \r in {1,...,5}{
+  \pgfmathsetmacro{\yy}{-(\r-1)*0.72}
+  \node[anchor=east, font=\tiny, text=gray!55!black] at (-0.25,\yy) {fold \r};
+  \foreach \c in {1,...,5}{
+    \pgfmathsetmacro{\xx}{(\c-1)*2.15}
+    \ifnum\c=\r
+      \node[rounded corners=2pt, fill=goldhl!30, draw=goldhl, minimum width=2.0cm,
+            minimum height=0.56cm, font=\tiny\bfseries, text=goldhl!45!black] at (\xx,\yy) {VALIDATE};
+    \else
+      \node[rounded corners=2pt, fill=primary!12, draw=primary!50, minimum width=2.0cm,
+            minimum height=0.56cm, font=\tiny, text=primary!55!black] at (\xx,\yy) {train};
+    \fi}
+  \node[anchor=west, font=\tiny, text=gray!55!black] at (9.3,\yy)
+       {score$_\r$};}
+
+\draw[decorate, decoration={brace, amplitude=4pt}, gray!60]
+     (10.55,0.3) -- (10.55,-3.18)
+     node[midway, right=5pt, align=left, font=\tiny, text=gray!55!black]
+     {report \textbf{mean} $\pm$ \textbf{sd}\\[2pt]
+      a large sd means the\\estimate is unstable ---\\usually too little data};
+
+\node[anchor=north west, align=left, text width=10.5cm, font=\tiny, text=accent!75!black]
+     at (-1.1,-3.75)
+     {\textbf{Every fold must repeat the whole pipeline.} Scaling, imputation and feature
+      selection are refitted inside each fold, on that fold's training part only. Fitting
+      them once outside the loop leaks the validation data into training --- the error of
+      \dsref{leakage-split}, hidden one level deeper.};
+\end{tikzpicture}}%
+{Five-fold cross-validation. Every observation is used for validation exactly once, so the
+performance estimate uses all the data and comes with a measure of its own
+stability.}{cross-validation}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{3.6cm}p{5.0cm}p{5.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Variant} & \textbf{What it does} & \textbf{Use when} \\
+\midrule
+\endhead
+k-fold ($k=5$ or $10$) & Standard random folds & The default for independent rows \\
+Stratified k-fold & Preserves class proportions in every fold & Always, for classification --- especially imbalanced \\
+Group k-fold & Keeps all rows of an entity in one fold & Multiple rows per student, device or user \\
+Time-series split & Trains on the past, validates on the future & Any temporal data (\chref{timeseries}) \\
+Leave-one-out & $k = n$ & Very small datasets; expensive and high-variance \\
+\bottomrule
+\end{longtable}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Reporting accuracy on imbalanced data.} Always compare to the
+        majority baseline first.
+  \item \textbf{Quoting a metric without its threshold.} ``Precision 0.9'' is
+        meaningless alone.
+  \item \textbf{Using ROC-AUC for rare positives.} Use PR-AUC.
+  \item \textbf{Random cross-validation on time series or grouped rows.} Use
+        \texttt{TimeSeriesSplit} or \texttt{GroupKFold}.
+  \item \textbf{Tuning against the test set.} That is what the validation folds are
+        for; the test set is used once (\chref{mlfundamentals}).
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Choosing a Metric}
+\lensLA{\textbf{Optimise recall} at a fixed staffing budget. A missed at-risk
+student is far costlier than an unnecessary supportive phone call, as the worked
+example quantified. Report precision alongside it so staff know what proportion of
+calls will find someone who was fine --- if that proportion is too embarrassing,
+the programme will quietly stop making the calls regardless of what your metric
+says.}
+
+\lensPM{\textbf{Use $F_1$ or balanced accuracy}: over- and under-forecasting a
+sprint carry roughly comparable costs, so neither error dominates. Beware tiny
+validation folds --- with 40 sprints, 5-fold cross-validation validates on eight
+sprints at a time, so report the standard deviation across folds and expect it to
+be large.}
+
+\lensIOT{\textbf{Optimise recall, then constrain precision by maintenance
+capacity.} A missed failure stops a line; an unnecessary inspection costs an hour.
+But note the second constraint: too many false alarms and technicians begin
+ignoring the system, which converts a precision problem into a recall problem in
+the real world. Use PR curves, since failures are rare.}
+
+\lensSEC{\textbf{Use the PR curve and report precision at fixed recall}, e.g.
+``precision 0.42 at 80\% recall''. ROC-AUC will look excellent and mean nothing,
+for the reason in the alert box above. Also track \emph{alerts per analyst per
+hour} --- a metric that appears in no textbook and decides whether the system is
+used. And set the threshold from the cost ratio, not from 0.5, because in this
+domain the two errors differ by orders of magnitude.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Evaluate Honestly]
+\begin{lstlisting}[language=Python]
+import numpy as np
+from sklearn.metrics import (confusion_matrix, classification_report,
+                             roc_auc_score, average_precision_score,
+                             precision_recall_curve)
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+
+# --- 0. BASELINE FIRST -------------------------------------------------
+print("majority-class accuracy:", max(np.mean(y_te), 1 - np.mean(y_te)))
+
+# --- 1. the four cells -------------------------------------------------
+proba = model.predict_proba(X_te)[:, 1]
+pred  = (proba > 0.5).astype(int)
+tn, fp, fn, tp = confusion_matrix(y_te, pred).ravel()
+print(f"TP={tp}  FP={fp}  FN={fn}  TN={tn}")
+print(classification_report(y_te, pred, digits=3))
+
+# --- 2. threshold-free comparison; prefer PR-AUC when positives are rare
+print("ROC-AUC:", roc_auc_score(y_te, proba))
+print("PR-AUC :", average_precision_score(y_te, proba))   # <- the honest one
+
+# --- 3. choose the threshold from COSTS, not from 0.5 ------------------
+COST_FP, COST_FN = 15, 4000
+best_t, best_cost = 0.5, float("inf")
+for t in np.linspace(0.01, 0.95, 95):
+    p = (proba > t).astype(int)
+    _, fp_, fn_, _ = confusion_matrix(y_te, p).ravel()[[0,1,2,3]]
+    cost = COST_FP*fp_ + COST_FN*fn_
+    if cost < best_cost:
+        best_t, best_cost = t, cost
+print(f"cost-optimal threshold {best_t:.2f} (cost ${best_cost:,.0f})")
+
+# --- 4. cross-validate, stratified, whole pipeline inside the folds ----
+cv = StratifiedKFold(5, shuffle=True, random_state=0)
+s = cross_val_score(pipeline, X_tr, y_tr, cv=cv, scoring="average_precision")
+print(f"CV PR-AUC {s.mean():.3f} +/- {s.std():.3f}")
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A dataset is 97\% negative. A model scores 96.5\% accuracy. Is it any good?
+  \item Of 500 flagged transactions, 60 were fraudulent; 20 frauds were missed.
+        Compute precision and recall.
+  \item You are told ``AUC is 0.94'' for a detector where 0.2\% of events are
+        attacks. What do you ask for instead, and why?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Every classification metric is a ratio of the four confusion-matrix cells.
+  \item Accuracy is dominated by the majority class; under imbalance it is
+        actively misleading. Always compute the majority baseline first.
+  \item Precision answers ``when I alarm, am I right?''; recall answers ``of the
+        real cases, how many did I catch?'' They trade off against each other.
+  \item ROC-AUC is threshold-free but flatters rare-event detectors; prefer PR-AUC
+        when positives are rare.
+  \item The 0.5 threshold is a default. Choose it by minimising expected cost, or
+        by maximising recall subject to a capacity constraint.
+  \item Cross-validate with stratification, group by entity, respect time order,
+        and refit the entire pipeline inside each fold.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Precision is: (a)~TP/(TP+FN) (b)~TP/(TP+FP)
+        (c)~(TP+TN)/all (d)~TN/(TN+FP).
+  \item \textbf{(MCQ)} When positives make up 0.5\% of the data, the most
+        informative curve is: (a)~ROC (b)~precision--recall (c)~learning curve
+        (d)~residual plot.
+  \item \textbf{(Short)} Explain the accuracy paradox with a numeric example.
+  \item \textbf{(Short)} Why must feature scaling be refitted inside every
+        cross-validation fold?
+  \item \textbf{(Short)} Give a scenario where you would deliberately accept a
+        precision of 0.2, and justify it.
+  \item \textbf{(Applied)} A model tested on 20{,}000 records with 400 positives
+        flags 900 records, 300 of which are true positives. Build the full confusion
+        matrix and compute accuracy, precision, recall, specificity and $F_1$.
+        Then state which two numbers you would put in an executive summary and why.
+  \item \textbf{(Applied)} For the same model, a false positive costs \$8 and a
+        false negative costs \$1{,}200. Explain how you would find the optimal
+        threshold, and predict whether it will be above or below 0.5, with reasoning.
+\end{reviewq}

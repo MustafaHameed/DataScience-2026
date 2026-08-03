@@ -1,0 +1,362 @@
+%=====================================================================
+\chapter{Exploratory Data Analysis and Visualisation}\label{ch:eda}
+%=====================================================================
+\locator{2}{Part II --- From Data to Insight}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Conduct} a structured EDA: univariate, then bivariate, then multivariate.
+  \item \textbf{Select} the correct chart for a given pair of variable types.
+  \item \textbf{Read} a correlation heatmap and recognise multicollinearity.
+  \item \textbf{Identify} the common visualisation anti-patterns and explain the distortion each causes.
+  \item \textbf{Design} a dashboard around the decision it supports rather than the data available.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{descriptive} (centre, spread, shape) and \chref{wrangling} (you cannot
+explore data you have not cleaned).
+\end{prereq}
+
+\begin{keyterms}
+exploratory data analysis $\bullet$ univariate, bivariate, multivariate $\bullet$
+histogram $\bullet$ boxplot $\bullet$ scatterplot $\bullet$ correlation matrix
+$\bullet$ heatmap $\bullet$ small multiples $\bullet$ multicollinearity $\bullet$
+Simpson's paradox $\bullet$ data-ink $\bullet$ dashboard
+\end{keyterms}
+
+\section{What EDA Is For}
+
+\begin{definitionbox}[Exploratory Data Analysis]
+The systematic use of summaries and graphics to understand a dataset's structure,
+find its problems and generate hypotheses --- \emph{before} any model is fitted.
+Its output is not a chart; it is a list of things you now know and things you now
+suspect.
+\end{definitionbox}
+
+EDA answers four questions, in order:
+\begin{tightnum}
+  \item What does each variable look like on its own? (distribution, outliers, missingness)
+  \item How do pairs of variables relate? (correlation, group differences)
+  \item Does anything change when a third variable is held constant? (confounding)
+  \item Is anything here that should not be? (impossible values, leaks, duplicates)
+\end{tightnum}
+
+\section{Choosing the Right Chart}
+
+The choice is almost entirely determined by the \emph{types} of the variables
+involved --- which is why \chref{data} came first.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  cell/.style={rounded corners=2pt, draw=#1, fill=#1!8, text=#1!50!black,
+               text width=3.0cm, align=center, minimum height=1.25cm, font=\scriptsize},
+  hd/.style={rounded corners=2pt, fill=primary, text=white,
+             text width=3.0cm, align=center, minimum height=0.7cm, font=\scriptsize\bfseries},
+  rh/.style={rounded corners=2pt, fill=primary!75, text=white,
+             text width=2.4cm, align=center, minimum height=1.25cm, font=\scriptsize\bfseries}]
+
+\node[hd] at (2.6,0)  {ONE variable};
+\node[hd] at (5.9,0)  {TWO: num vs num};
+\node[hd] at (9.2,0)  {TWO: num vs category};
+\node[hd] at (12.5,0) {MANY variables};
+
+\node[rh] at (-0.35,-1.25) {NUMERIC};
+\node[cell=secondary] at (2.6,-1.25)  {\textbf{Histogram}\\shape, skew, modes\\\emph{+ boxplot for outliers}};
+\node[cell=greenhl]   at (5.9,-1.25)  {\textbf{Scatterplot}\\form, strength,\\direction, outliers};
+\node[cell=goldhl]    at (9.2,-1.25)  {\textbf{Boxplot by group}\\or violin plot\\\emph{compare distributions}};
+\node[cell=purplehl]  at (12.5,-1.25) {\textbf{Correlation heatmap}\\or pair plot};
+
+\node[rh] at (-0.35,-2.85) {CATEGORICAL};
+\node[cell=secondary] at (2.6,-2.85)  {\textbf{Bar chart}\\of counts\\\emph{never a pie chart}};
+\node[cell=greenhl]   at (5.9,-2.85)  {\textbf{Grouped bar}\\or mosaic plot};
+\node[cell=goldhl]    at (9.2,-2.85)  {\textbf{Stacked / grouped bar}\\proportions per group};
+\node[cell=purplehl]  at (12.5,-2.85) {\textbf{Small multiples}\\one panel per level};
+
+\node[rh] at (-0.35,-4.45) {OVER TIME};
+\node[cell=secondary] at (2.6,-4.45)  {\textbf{Line chart}\\trend and seasonality};
+\node[cell=greenhl]   at (5.9,-4.45)  {\textbf{Dual line}\\(shared axis only if\\units match)};
+\node[cell=goldhl]    at (9.2,-4.45)  {\textbf{Line per group}\\max $\sim$5 lines};
+\node[cell=purplehl]  at (12.5,-4.45) {\textbf{Heatmap}\\time $\times$ entity};
+\end{tikzpicture}}%
+{Chart selection by variable type. Almost every ``which chart should I use?'' question is
+answered by identifying the types involved and reading off this grid.}{chart-selection}
+
+\begin{alertbox}[Why Not a Pie Chart]
+Humans compare lengths accurately and angles badly. A bar chart lets a reader rank
+six categories at a glance; a pie chart of the same data does not. Reserve pies
+for the one case they handle well: two or three parts of an obvious whole.
+\end{alertbox}
+
+\section{Bivariate Exploration}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=4 by 1, horizontal sep=0.62cm},
+  width=4.35cm, height=3.6cm,
+  axis lines=left, tick label style={font=\tiny},
+  title style={font=\tiny\bfseries}, xtick=\empty, ytick=\empty,
+  xmin=0, xmax=10, ymin=0, ymax=10,
+]
+\nextgroupplot[title={\color{greenhl}strong positive, linear}]
+\addplot[only marks, mark=*, mark size=1pt, greenhl!80] coordinates {
+ (1,1.6)(1.7,2.1)(2.3,3.4)(3,3.2)(3.6,4.6)(4.2,4.2)(5,5.5)(5.6,5.2)
+ (6.3,6.8)(7,6.4)(7.6,7.9)(8.3,7.6)(9,8.8)(2.6,2.6)(6.8,7.4)};
+\addplot[primary, line width=0.8pt, domain=0.8:9.2] {0.92*x+0.6};
+
+\nextgroupplot[title={\color{accent}strong, but not linear}]
+\addplot[only marks, mark=*, mark size=1pt, accent!80] coordinates {
+ (1,8.6)(1.7,6.4)(2.3,4.8)(3,3.6)(3.6,2.6)(4.2,2.0)(5,1.6)(5.6,1.8)
+ (6.3,2.4)(7,3.4)(7.6,4.8)(8.3,6.4)(9,8.4)(2.6,4.0)(6.8,3.0)};
+\node[font=\tiny, accent!80!black, align=center] at (axis cs:5,9.0) {$r \approx 0$ !};
+
+\nextgroupplot[title={\color{secondary}no relationship}]
+\addplot[only marks, mark=*, mark size=1pt, secondary!80] coordinates {
+ (1,5.2)(1.7,2.4)(2.3,7.8)(3,4.1)(3.6,8.6)(4.2,2.2)(5,6.4)(5.6,3.2)
+ (6.3,7.2)(7,4.6)(7.6,1.8)(8.3,6.0)(9,3.6)(2.6,5.8)(6.8,8.2)};
+
+\nextgroupplot[title={\color{purplehl}one point drives $r$}]
+\addplot[only marks, mark=*, mark size=1pt, purplehl!80] coordinates {
+ (1,4.6)(1.5,5.2)(2,4.2)(2.4,5.6)(2.8,4.8)(3.2,5.4)(3.6,4.4)(4,5.0)(4.4,4.6)};
+\addplot[only marks, mark=*, mark size=2.2pt, accent] coordinates {(9,9.2)};
+\addplot[primary, line width=0.8pt, domain=0.8:9.2] {0.62*x+3.3};
+\node[font=\tiny, accent, anchor=east] at (axis cs:8.6,9.2) {leverage};
+\end{groupplot}
+\end{tikzpicture}}%
+{Four scatterplots. The second has a perfect relationship and a correlation near zero; the
+fourth has a correlation near 0.9 created entirely by one point. This is why you plot the
+data before trusting any correlation coefficient.}{scatter-patterns}
+
+\begin{definitionbox}[Pearson Correlation]
+$r$ measures the strength and direction of a \emph{linear} relationship, on a scale
+from $-1$ to $+1$. Zero means no \emph{linear} relationship --- it does not mean no
+relationship, as \dsref{scatter-patterns} shows.
+\end{definitionbox}
+
+\begin{worked}[Reading a Correlation Matrix]
+An engagement dataset gives these correlations with the target
+\texttt{final\_mark}:
+
+\smallskip
+\begin{center}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Feature} & \textbf{$r$ with mark} & \textbf{$r$ with attendance} \\
+\midrule
+attendance\_pct     & 0.62 & 1.00 \\
+lectures\_watched   & 0.58 & 0.94 \\
+quizzes\_done       & 0.55 & 0.41 \\
+forum\_posts        & 0.21 & 0.18 \\
+days\_since\_login  & $-0.49$ & $-0.73$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Reading 1 --- predictive strength.} Attendance is the strongest single
+predictor at $r = 0.62$. Squaring it, $r^2 = 0.38$: attendance alone accounts for
+about 38\% of the variation in marks. Useful, but 62\% is elsewhere.
+
+\textbf{Reading 2 --- multicollinearity.} \texttt{attendance\_pct} and
+\texttt{lectures\_watched} correlate at 0.94 with \emph{each other}. They are
+nearly the same variable measured twice. Including both adds almost no information
+and makes the coefficients of a linear model unstable and uninterpretable
+(\chref{regression}). Keep one.
+
+\textbf{Reading 3 --- the weak feature.} \texttt{forum\_posts} at $r = 0.21$ looks
+negligible. Do not drop it yet: correlation only sees linear effects, and a
+feature that is weak alone can be valuable in combination (\chref{features}).
+
+\textbf{Reading 4 --- sign.} \texttt{days\_since\_login} is negative, as it should
+be. A positive sign here would have signalled a data error worth chasing.
+\end{worked}
+
+\section{The Third Variable}
+
+\begin{alertbox}[Simpson's Paradox]
+A relationship visible in aggregated data can \emph{reverse} when the data is
+split by a third variable. A university may show that students who use the online
+tutorials score \emph{lower} overall --- while within every individual programme,
+tutorial users score higher. The aggregate is dominated by the fact that harder
+programmes both recommend tutorials more and mark more severely.
+
+The practical instruction: whenever you show a relationship, ask what the obvious
+grouping variable is, and re-plot within groups before you present it.
+\chref{causality} treats this properly as confounding.
+\end{alertbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.4cm},
+  width=6.6cm, height=4.6cm,
+  axis lines=left, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+  xmin=0, xmax=10, ymin=25, ymax=85,
+  xlabel={tutorial hours used}, ylabel={final mark},
+]
+\nextgroupplot[title={\color{accent}Aggregated: looks harmful}]
+\addplot[only marks, mark=*, mark size=1.1pt, secondary!70] coordinates {
+ (0.6,72)(1.1,74)(1.5,70)(1.9,76)(2.4,73)(2.8,78)(3.2,75)(1.3,71)(2.1,77)(0.9,69)};
+\addplot[only marks, mark=triangle*, mark size=1.3pt, goldhl] coordinates {
+ (6.2,48)(6.8,52)(7.3,46)(7.9,54)(8.4,50)(8.9,56)(9.3,52)(7.1,49)(8.1,53)(6.5,45)};
+\addplot[accent, line width=1.2pt, domain=0.4:9.5] {77 - 3.4*x};
+\node[font=\tiny, accent, anchor=north east] at (axis cs:9.6,80) {overall trend: negative};
+
+\nextgroupplot[title={\color{greenhl}Split by programme: helpful in both}]
+\addplot[only marks, mark=*, mark size=1.1pt, secondary!70] coordinates {
+ (0.6,72)(1.1,74)(1.5,70)(1.9,76)(2.4,73)(2.8,78)(3.2,75)(1.3,71)(2.1,77)(0.9,69)};
+\addplot[secondary, line width=1.2pt, domain=0.4:3.4] {68.5 + 2.4*x};
+\addplot[only marks, mark=triangle*, mark size=1.3pt, goldhl] coordinates {
+ (6.2,48)(6.8,52)(7.3,46)(7.9,54)(8.4,50)(8.9,56)(9.3,52)(7.1,49)(8.1,53)(6.5,45)};
+\addplot[goldhl, line width=1.2pt, domain=6.0:9.5] {32 + 2.3*x};
+\node[font=\tiny, secondary!60!black, anchor=west] at (axis cs:3.4,80) {Programme A};
+\node[font=\tiny, goldhl!50!black, anchor=west] at (axis cs:5.0,36) {Programme B};
+\end{groupplot}
+\end{tikzpicture}}%
+{Simpson's paradox. The same points, plotted twice. Aggregated, tutorial use appears to
+lower marks; within each programme it raises them. Programme is a confounder --- students
+on the harder programme use tutorials more \emph{and} score lower for unrelated
+reasons.}{simpsons}
+
+\section{Visualisation Anti-Patterns}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{4.2cm}p{5.2cm}p{5.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Anti-pattern} & \textbf{The distortion} & \textbf{The fix} \\
+\midrule
+\endhead
+Truncated $y$-axis on a bar chart & Bar length no longer encodes value; a 2\% change looks like a doubling & Bars must start at zero. Use a line chart if you need to zoom \\
+Dual $y$-axes & The apparent correlation depends entirely on where you set the two scales & Two stacked panels sharing an $x$-axis \\
+3-D effects & Perspective makes near bars look larger & Never use them \\
+Rainbow colour scale & Not perceptually uniform; invents boundaries that are not in the data & Sequential (light-to-dark) for magnitude, diverging for signed \\
+Red/green as the only cue & Invisible to about 1 in 12 men & Add shape or position; use blue/orange \\
+Too many lines & Above five series nothing is legible & Small multiples, or highlight one and grey the rest \\
+Averaging away the shape & A single mean hides bimodality entirely & Show the distribution: histogram, boxplot or strip plot \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[One Test for Any Chart]
+Cover the title and hand it to a colleague. If they cannot state the main message
+in one sentence within about ten seconds, the chart is not finished. This test
+catches more problems than any style guide.
+\end{conceptbox}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Exploratory Analysis}
+\lensLA{Plot engagement over the weeks of the semester as one line per student,
+faintly, with the cohort median in bold --- the ``spaghetti plot''. The
+\emph{shape} of individual disengagement (a cliff in week 5 versus a slow decline)
+is invisible in any average and is exactly what the intervention design needs.
+Always split by programme before presenting: Simpson's paradox is endemic in
+education data.}
+
+\lensPM{Plot estimated against actual effort as a scatterplot with the $y=x$ line
+drawn. The systematic gap above that line \emph{is} the estimation bias, and it is
+far more persuasive to a team than any summary statistic. A cumulative flow diagram
+shows where work piles up; a burn-down chart alone does not.}
+
+\lensIOT{With 400 devices you cannot plot 400 lines. Use a heatmap of device
+$\times$ time with colour as the reading: a failing sensor appears as a stripe, a
+site-wide outage as a vertical band. This one chart replaces 400 line charts and
+reveals patterns none of them would show individually.}
+
+\lensSEC{Log-scale nearly everything --- counts of events per source are long-tailed,
+and a linear axis renders all but the largest invisible. Plot volume by hour of day
+to establish the normal diurnal rhythm, because \emph{deviation from the rhythm} is
+more informative than raw volume. Never truncate an axis on a security chart: it is
+how a small anomaly is made to look like a crisis, and how a real one gets missed.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[A Standard EDA Pass]
+\begin{lstlisting}[language=Python]
+import pandas as pd, matplotlib.pyplot as plt, seaborn as sns
+
+df = pd.read_csv("students.csv")
+
+# --- 1. univariate: shape of every numeric column ---------------------
+df.select_dtypes("number").hist(bins=30, figsize=(11, 7))
+plt.tight_layout(); plt.show()
+
+# --- 2. bivariate: relationships and multicollinearity ----------------
+corr = df.select_dtypes("number").corr()
+sns.heatmap(corr, annot=True, fmt=".2f", cmap="RdBu_r",
+            center=0, vmin=-1, vmax=1)   # diverging scale for signed values
+plt.show()
+
+# Flag pairs that are nearly the same variable measured twice.
+import numpy as np
+high = (corr.abs() > 0.85) & (corr.abs() < 1.0)
+print("multicollinear pairs:",
+      [(a, b) for a in corr.index for b in corr.columns
+       if high.loc[a, b] and a < b])
+
+# --- 3. the third variable: always check before presenting ------------
+sns.lmplot(data=df, x="tutorial_hours", y="final_mark",
+           hue="programme", height=4)    # per-group, not aggregated
+plt.show()
+\end{lstlisting}
+
+\textbf{R equivalent}, matching the repo's existing \texttt{mtcars} EDA lab:
+\begin{lstlisting}[language=R]
+library(tidyverse); library(GGally)
+ggpairs(select(df, where(is.numeric)))
+ggplot(df, aes(tutorial_hours, final_mark, colour = programme)) +
+  geom_point() + geom_smooth(method = "lm")
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Two features correlate at $r = 0.96$ with each other. What is this called
+        and what should you do before fitting a linear model?
+  \item A scatterplot shows a clear U-shape and $r = 0.02$. Is there a relationship?
+  \item You must compare failure rates across 40 servers over 30 days. Which chart,
+        and why not 40 line charts?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item EDA runs univariate $\rightarrow$ bivariate $\rightarrow$ multivariate, and
+        its output is knowledge and hypotheses, not pictures.
+  \item Chart choice follows from variable types; the grid in
+        \dsref{chart-selection} answers almost every case.
+  \item Pearson's $r$ measures \emph{linear} association only, and is easily
+        dominated by a single high-leverage point. Always plot before trusting it.
+  \item Correlations above about 0.85 between features signal multicollinearity;
+        keep one of the pair.
+  \item Simpson's paradox means an aggregate relationship can reverse within
+        groups. Always check the obvious grouping variable.
+  \item Truncated axes, dual axes, 3-D effects and rainbow scales are distortions,
+        not styles.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Pearson's $r$ of 0 means: (a)~no relationship (b)~no linear
+        relationship (c)~the variables are independent (d)~the data is normal.
+  \item \textbf{(MCQ)} For comparing the distribution of a numeric variable across
+        five categories, the best chart is: (a)~pie chart (b)~stacked bar
+        (c)~boxplot by group (d)~3-D column chart.
+  \item \textbf{(Short)} Explain why a bar chart must start at zero but a line
+        chart need not.
+  \item \textbf{(Short)} Define multicollinearity and state one concrete problem it
+        causes.
+  \item \textbf{(Short)} Describe Simpson's paradox in two sentences and give an
+        example from any domain.
+  \item \textbf{(Applied)} You are handed a dataset of 15{,}000 login events with
+        columns \texttt{user}, \texttt{timestamp}, \texttt{source\_ip},
+        \texttt{success}, \texttt{duration\_s}. Write the EDA plan: list the charts
+        you would produce, in order, and state what each is meant to reveal.
+  \item \textbf{(Applied)} A manager presents a chart with a truncated $y$-axis
+        showing incidents ``up 300\%'' (from 4 to 12). Rewrite the chart
+        specification honestly, and say what additional context the reader needs.
+\end{reviewq}

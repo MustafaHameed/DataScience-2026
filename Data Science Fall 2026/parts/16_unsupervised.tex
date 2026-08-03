@@ -1,0 +1,436 @@
+%=====================================================================
+\chapter{Unsupervised Learning and Anomaly Detection}\label{ch:unsupervised}
+%=====================================================================
+\locator{3}{Part III --- Machine Learning Core}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Run} and \textbf{interpret} k-means, hierarchical and density-based clustering, and choose between them.
+  \item \textbf{Select} the number of clusters using the elbow and silhouette methods.
+  \item \textbf{Explain} what PCA does and read a scree plot.
+  \item \textbf{Choose} an anomaly detection method appropriate to the data and the definition of ``anomalous''.
+  \item \textbf{Evaluate} unsupervised results despite having no labels.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (distance and scaling --- clustering is distance, so unscaled features
+will decide your clusters for you) and \chref{evaluation}.
+\end{prereq}
+
+\begin{keyterms}
+clustering $\bullet$ k-means $\bullet$ centroid $\bullet$ inertia $\bullet$ elbow
+method $\bullet$ silhouette score $\bullet$ hierarchical clustering $\bullet$
+dendrogram $\bullet$ DBSCAN $\bullet$ dimensionality reduction $\bullet$ PCA
+$\bullet$ explained variance $\bullet$ t-SNE / UMAP $\bullet$ anomaly detection
+$\bullet$ isolation forest $\bullet$ association rules
+\end{keyterms}
+
+\section{Learning Without Answers}
+
+Unsupervised learning finds structure when no labels exist. That describes most
+real data: nobody has labelled which of your 12{,}000 accounts are compromised, or
+which students form meaningful behavioural groups. This chapter is also the direct
+technical foundation of \chref{cybersecurity}, where the anomaly is the target.
+
+\section{k-Means Clustering}
+
+\begin{definitionbox}[k-Means]
+Choose $k$. Place $k$ centroids at random. Repeat until stable: (1) assign each
+point to its nearest centroid; (2) move each centroid to the mean of its assigned
+points. It minimises \term{inertia} --- the total squared distance from points to
+their own centroid.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=4 by 1, horizontal sep=0.5cm},
+  width=4.25cm, height=3.7cm,
+  axis lines=left, xtick=\empty, ytick=\empty,
+  title style={font=\tiny\bfseries},
+  xmin=0, xmax=10, ymin=0, ymax=10,
+]
+\nextgroupplot[title={1. random centroids}]
+\addplot[only marks, mark=*, mark size=0.9pt, gray!60] coordinates {
+ (1.4,7.9)(2.2,8.6)(1.8,7.1)(2.9,8.2)(2.4,6.9)(1.1,8.4)
+ (7.6,7.8)(8.4,8.5)(7.9,6.9)(8.8,7.4)(7.2,8.6)(8.2,6.4)
+ (4.6,2.1)(5.4,1.4)(4.9,2.9)(5.9,2.4)(4.2,1.6)(5.6,3.1)};
+\addplot[only marks, mark=x, mark size=3pt, accent, line width=1.2pt]
+  coordinates {(3.2,4.2)(6.1,5.4)(5.0,7.0)};
+
+\nextgroupplot[title={2. assign to nearest}]
+\addplot[only marks, mark=*, mark size=0.9pt, secondary] coordinates {
+ (1.4,7.9)(2.2,8.6)(1.8,7.1)(2.9,8.2)(2.4,6.9)(1.1,8.4)};
+\addplot[only marks, mark=*, mark size=0.9pt, greenhl] coordinates {
+ (7.6,7.8)(8.4,8.5)(7.9,6.9)(8.8,7.4)(7.2,8.6)(8.2,6.4)};
+\addplot[only marks, mark=*, mark size=0.9pt, goldhl] coordinates {
+ (4.6,2.1)(5.4,1.4)(4.9,2.9)(5.9,2.4)(4.2,1.6)(5.6,3.1)};
+\addplot[only marks, mark=x, mark size=3pt, accent, line width=1.2pt]
+  coordinates {(3.2,4.2)(6.1,5.4)(5.0,7.0)};
+
+\nextgroupplot[title={3. move centroids}]
+\addplot[only marks, mark=*, mark size=0.9pt, secondary] coordinates {
+ (1.4,7.9)(2.2,8.6)(1.8,7.1)(2.9,8.2)(2.4,6.9)(1.1,8.4)};
+\addplot[only marks, mark=*, mark size=0.9pt, greenhl] coordinates {
+ (7.6,7.8)(8.4,8.5)(7.9,6.9)(8.8,7.4)(7.2,8.6)(8.2,6.4)};
+\addplot[only marks, mark=*, mark size=0.9pt, goldhl] coordinates {
+ (4.6,2.1)(5.4,1.4)(4.9,2.9)(5.9,2.4)(4.2,1.6)(5.6,3.1)};
+\addplot[only marks, mark=x, mark size=3pt, accent, line width=1.2pt]
+  coordinates {(2.1,7.9)(7.9,7.6)(5.1,2.3)};
+\draw[-{Stealth[length=1.4mm]}, accent!60, dashed] (axis cs:3.2,4.2) -- (axis cs:2.1,7.9);
+\draw[-{Stealth[length=1.4mm]}, accent!60, dashed] (axis cs:6.1,5.4) -- (axis cs:7.9,7.6);
+\draw[-{Stealth[length=1.4mm]}, accent!60, dashed] (axis cs:5.0,7.0) -- (axis cs:5.1,2.3);
+
+\nextgroupplot[title={4. converged}]
+\addplot[only marks, mark=*, mark size=0.9pt, secondary] coordinates {
+ (1.4,7.9)(2.2,8.6)(1.8,7.1)(2.9,8.2)(2.4,6.9)(1.1,8.4)};
+\addplot[only marks, mark=*, mark size=0.9pt, greenhl] coordinates {
+ (7.6,7.8)(8.4,8.5)(7.9,6.9)(8.8,7.4)(7.2,8.6)(8.2,6.4)};
+\addplot[only marks, mark=*, mark size=0.9pt, goldhl] coordinates {
+ (4.6,2.1)(5.4,1.4)(4.9,2.9)(5.9,2.4)(4.2,1.6)(5.6,3.1)};
+\addplot[only marks, mark=x, mark size=3pt, accent, line width=1.2pt]
+  coordinates {(2.0,7.85)(8.0,7.6)(5.1,2.25)};
+\end{groupplot}
+\end{tikzpicture}}%
+{k-means in four steps. Assignment and update alternate until nothing moves. Because the
+starting positions are random, different runs can converge differently --- which is why
+\texttt{n\_init} exists and why you should fix the random seed.}{kmeans-steps}
+
+\subsection{Choosing $k$}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.5cm},
+  width=6.6cm, height=4.4cm,
+  axis lines=left, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+]
+\nextgroupplot[title={Elbow method: inertia against $k$},
+  xlabel={number of clusters $k$}, ylabel={inertia},
+  xmin=0.5, xmax=9.5, ymin=0, ymax=105, xtick={1,...,9}]
+\addplot[primary, line width=1.3pt, mark=*, mark size=1.6pt] coordinates {
+ (1,100)(2,52)(3,26)(4,21)(5,17.5)(6,15)(7,13.2)(8,11.8)(9,10.8)};
+\draw[accent, dashed, line width=1pt] (axis cs:3,0) -- (axis cs:3,26);
+\node[font=\tiny, accent, anchor=west] at (axis cs:3.25,40) {elbow at $k=3$};
+\node[font=\tiny, text=gray!55!black, anchor=west, align=left] at (axis cs:4.6,72)
+     {inertia always falls\\as $k$ rises --- at $k=n$\\it reaches zero, which\\is why you
+      cannot just\\minimise it};
+
+\nextgroupplot[title={Silhouette score against $k$},
+  xlabel={number of clusters $k$}, ylabel={mean silhouette},
+  xmin=0.5, xmax=9.5, ymin=0, ymax=0.85, xtick={2,...,9}]
+\addplot[greenhl, line width=1.3pt, mark=*, mark size=1.6pt] coordinates {
+ (2,0.52)(3,0.71)(4,0.58)(5,0.46)(6,0.41)(7,0.36)(8,0.33)(9,0.30)};
+\addplot[accent, only marks, mark=*, mark size=2.4pt] coordinates {(3,0.71)};
+\node[font=\tiny, accent, anchor=west] at (axis cs:3.3,0.71) {maximum at $k=3$};
+\node[font=\tiny, text=gray!55!black, anchor=west, align=left] at (axis cs:5.0,0.68)
+     {this one has a genuine\\maximum, so it is the\\more reliable of the two};
+\end{groupplot}
+\end{tikzpicture}}%
+{Two ways to choose $k$. Inertia falls monotonically, so the elbow is a judgement call;
+the silhouette score has a true maximum and is the better default. Both should agree with
+a domain reason for the number you pick.}{choosing-k}
+
+\begin{definitionbox}[Silhouette Score]
+For each point, compare $a$ (mean distance to its own cluster) with $b$ (mean
+distance to the nearest other cluster): $s = \dfrac{b-a}{\max(a,b)}$. Near $+1$
+means well-clustered, near $0$ means on a boundary, negative means probably in the
+wrong cluster. Average over all points.
+\end{definitionbox}
+
+\section{Hierarchical Clustering and DBSCAN}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}p{2.5cm}p{3.5cm}p{3.6cm}p{4.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{k-means} & \textbf{Hierarchical} & \textbf{DBSCAN} \\
+\midrule
+\endhead
+Needs $k$? & Yes, in advance & No --- cut the dendrogram anywhere & No \\
+Cluster shape & Spherical only & Any & \textbf{Any} \\
+Outliers & Forced into a cluster & Forced into a cluster & \textbf{Labelled as noise} \\
+Scales to large $n$? & Yes & No ($O(n^2)$ or worse) & Moderately \\
+Key parameter & $k$ & linkage, cut height & \texttt{eps}, \texttt{min\_samples} \\
+Use when & Large data, roughly round groups & You want the hierarchy itself & Irregular shapes, or you need outliers identified \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Why DBSCAN Matters for This Course]
+DBSCAN defines clusters as dense regions and labels everything else \emph{noise}.
+For cybersecurity and IoT that is not a side-effect --- it is the output you want.
+The points k-means would have swept into the nearest cluster are precisely the
+sessions or devices you were looking for.
+\end{conceptbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+% dendrogram
+\draw[primary, line width=1pt] (0,0) -- (0,1.0) -- (1.0,1.0) -- (1.0,0);
+\draw[primary, line width=1pt] (2.0,0) -- (2.0,0.7) -- (3.0,0.7) -- (3.0,0);
+\draw[primary, line width=1pt] (0.5,1.0) -- (0.5,2.0) -- (2.5,2.0) -- (2.5,0.7);
+\draw[primary, line width=1pt] (4.0,0) -- (4.0,1.4) -- (5.0,1.4) -- (5.0,0);
+\draw[primary, line width=1pt] (1.5,2.0) -- (1.5,3.1) -- (4.5,3.1) -- (4.5,1.4);
+\foreach \x/\l in {0/A, 1/B, 2/C, 3/D, 4/E, 5/F}
+  \node[font=\tiny, anchor=north] at (\x,-0.05) {\l};
+
+\draw[accent, dashed, line width=1.1pt] (-0.6,1.7) -- (5.6,1.7);
+\node[font=\tiny, text=accent, anchor=west] at (5.65,1.7) {cut here $\Rightarrow$ 3 clusters};
+\draw[accent!50, dashed, line width=0.9pt] (-0.6,2.6) -- (5.6,2.6);
+\node[font=\tiny, text=accent!60, anchor=west] at (5.65,2.6) {cut here $\Rightarrow$ 2 clusters};
+
+\node[font=\tiny, text=gray!55!black, rotate=90, anchor=south] at (-0.85,1.5) {distance};
+\node[font=\scriptsize\bfseries, text=primary] at (2.5,3.6) {Dendrogram (hierarchical)};
+
+% DBSCAN illustration
+\begin{scope}[shift={(9.6,0)}]
+  \node[font=\scriptsize\bfseries, text=primary] at (0,3.6) {DBSCAN: dense core vs.\ noise};
+  \foreach \x/\y in {-1.5/0.6, -1.1/1.1, -0.7/0.5, -1.3/1.6, -0.8/1.4, -1.7/1.2,
+                     -0.5/1.0, -1.2/0.2, -0.4/1.7}
+    \fill[greenhl] (\x,\y) circle (1.6pt);
+  \foreach \x/\y in {1.0/1.9, 1.5/2.3, 1.2/1.4, 1.8/1.7, 0.8/2.4, 1.6/1.0, 2.0/2.2}
+    \fill[secondary] (\x,\y) circle (1.6pt);
+  \foreach \x/\y in {0.1/0.1, 2.4/0.3, -0.2/2.9, 2.7/3.0}
+    {\draw[accent, line width=1pt] (\x,\y) circle (2.4pt);}
+  \node[font=\tiny, text=accent, anchor=west] at (-2.0,-0.35)
+       {\faIcon{circle}~open circles = \textbf{noise} --- k-means would have hidden these};
+\end{scope}
+\end{tikzpicture}}%
+{Left: a dendrogram, where the number of clusters is chosen after the fact by cutting at a
+chosen height. Right: DBSCAN separates dense regions from noise, which makes it a
+clustering algorithm and an outlier detector at once.}{dendrogram-dbscan}
+
+\section{Dimensionality Reduction}
+
+\begin{definitionbox}[Principal Component Analysis]
+PCA finds new axes --- \term{principal components} --- that are linear combinations
+of the original features, ordered so that the first captures the most variance, the
+second the most of what remains, and so on. Keeping the first few gives a
+lower-dimensional representation that preserves most of the structure.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.5cm},
+  width=6.6cm, height=4.6cm,
+  axis lines=left, tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+]
+\nextgroupplot[title={PCA finds the directions of variance},
+  xlabel={feature 1}, ylabel={feature 2},
+  xmin=-4, xmax=4, ymin=-4, ymax=4, xtick=\empty, ytick=\empty]
+\addplot[only marks, mark=*, mark size=1pt, primary!60] coordinates {
+ (-2.8,-2.2)(-2.2,-1.9)(-1.9,-1.2)(-1.4,-1.4)(-1.0,-0.5)(-0.6,-0.9)(-0.2,0.1)
+ (0.3,-0.3)(0.7,0.6)(1.1,0.4)(1.6,1.2)(2.0,1.0)(2.5,1.9)(2.9,1.6)
+ (-1.6,-0.3)(1.3,-0.2)(-0.4,0.9)(0.9,1.4)};
+\draw[-{Stealth[length=2.4mm]}, accent, line width=1.5pt] (axis cs:0,-0.15) -- (axis cs:3.0,2.0);
+\draw[-{Stealth[length=2.4mm]}, greenhl, line width=1.3pt] (axis cs:0,-0.15) -- (axis cs:-1.0,1.35);
+\node[font=\tiny, accent, anchor=west] at (axis cs:2.0,2.6) {PC1: most variance};
+\node[font=\tiny, greenhl!55!black, anchor=east] at (axis cs:-1.1,1.9) {PC2};
+
+\nextgroupplot[title={Scree plot: how many components to keep},
+  xlabel={component}, ylabel={variance explained (\%)},
+  xmin=0.4, xmax=8.6, ymin=0, ymax=62, xtick={1,...,8}, ybar, bar width=8pt]
+\addplot[draw=primary, fill=primary!35] coordinates {
+ (1,54)(2,22)(3,9)(4,5)(5,4)(6,3)(7,2)(8,1)};
+\draw[accent, dashed, line width=1pt] (axis cs:2.5,0) -- (axis cs:2.5,58);
+\node[font=\tiny, accent, anchor=west, align=left] at (axis cs:2.65,45)
+     {keep 2 components:\\76\% of the variance};
+\end{groupplot}
+\end{tikzpicture}}%
+{PCA. Left: the components are the directions along which the data actually varies, not
+the original axes. Right: the scree plot shows where adding components stops buying much,
+which is how the number to keep is chosen.}{pca}
+
+\begin{alertbox}[PCA Requires Scaling, and Destroys Interpretability]
+PCA maximises variance, so an unscaled feature measured in bytes will dominate one
+measured in seconds regardless of importance --- always standardise first. And the
+components are mixtures: ``PC1'' has no meaning a stakeholder can act on. Use PCA
+for compression, visualisation and noise reduction, not when you must explain
+which feature drove a decision.
+\end{alertbox}
+
+\begin{conceptbox}[t-SNE and UMAP: For Looking, Not for Modelling]
+These produce striking 2-D pictures of high-dimensional data by preserving local
+neighbourhoods. Two cautions: distances \emph{between} clusters in the picture are
+not meaningful, and the layout changes with the random seed and the perplexity
+setting. Use them to generate hypotheses, never as evidence, and never as features
+for a downstream model.
+\end{conceptbox}
+
+\section{Anomaly Detection}
+
+\begin{definitionbox}[Anomaly Detection]
+Identifying observations that differ markedly from the majority. It is the
+unsupervised counterpart to the rare-class classification of \chref{evaluation},
+used when labelled examples of the rare class are unavailable --- which is the norm
+for novel attacks and for equipment that has not yet failed.
+\end{definitionbox}
+
+\rowcolors{2}{white}{defbg}
+\begin{longtable}{@{}p{3.2cm}p{5.0cm}p{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Method} & \textbf{Idea} & \textbf{Best for} \\
+\midrule
+\endhead
+Statistical ($z$, IQR) & Beyond $3\sigma$ or $1.5\times$IQR & Single variables that are roughly normal. Fails badly on long tails (\chref{descriptive}) \\
+Distance / k-NN & Far from its nearest neighbours & Moderate dimensions; needs scaling \\
+Density (LOF, DBSCAN) & In a sparse region relative to its neighbourhood & Clusters of differing density \\
+Isolation Forest & Randomly split; anomalies get isolated in few splits & \textbf{The strong default} --- fast, scales well, high dimensions \\
+Autoencoder & Train to reconstruct normal data; high reconstruction error = anomaly & Complex or sequential data (\chref{architectures}) \\
+Time-series residual & Forecast the next value; large error = anomaly & Telemetry and log volumes (\chref{timeseries}) \\
+\bottomrule
+\end{longtable}
+
+\begin{worked}[Evaluating Clusters Without Labels]
+You cluster 12{,}000 user accounts into $k=4$ and must decide whether the result is
+useful. There are no labels, so accuracy is unavailable.
+
+\smallskip
+\textbf{1. Internal validity.} Silhouette $= 0.61$. Above about 0.5 the structure is
+reasonably well separated. Compare against $k=3$ and $k=5$.
+
+\textbf{2. Stability.} Re-run on a random 80\% subsample, five times. If cluster
+memberships shuffle wildly between runs, the structure is an artefact of the
+sample, not of the population. This test is skipped far too often.
+
+\textbf{3. Profile the clusters.} Compute the mean of every feature per cluster and
+compare against the overall mean. Cluster 3 has 4$\times$ the failed-login rate,
+2$\times$ the distinct destination ports and half the session duration.
+
+\textbf{4. External validation --- the decisive test.} Do the clusters relate to
+something you did \emph{not} cluster on? If cluster 3 also contains 70\% of the
+accounts later confirmed compromised, the clustering has found something real.
+
+\smallskip
+\textbf{Verdict:} steps 1--2 say the clusters are statistically sound; steps 3--4
+say whether they are \emph{useful}. A clustering can pass the first pair and fail
+the second, in which case it is a mathematically valid answer to a question nobody
+asked.
+\end{worked}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Finding Structure Without Labels}
+\lensLA{Cluster students on engagement patterns to discover learner \emph{types} ---
+steady, bursty, front-loaded, disengaging --- which no one had defined in advance
+and which support different interventions. Use $k$-means with silhouette selection,
+then profile each cluster in plain language. \textbf{Ethical caution:} these
+clusters must never become permanent labels attached to students
+(\chref{ethics}); they describe a semester's behaviour, not a person.}
+
+\lensPM{Cluster past projects to find natural categories of work, giving better
+reference classes for estimation than the official project taxonomy. With only
+dozens of projects, hierarchical clustering is preferable to k-means --- the
+dendrogram itself is the useful output, because a manager can see \emph{why} two
+projects were grouped and overrule it.}
+
+\lensIOT{Cluster devices by behavioural signature to find fleet sub-populations
+that need different maintenance regimes. More importantly, use \emph{isolation
+forests on window features} for anomaly detection: you cannot supervise a failure
+mode that has never occurred, and this is the standard approach when there are no
+positive labels at all. Establish each device's own baseline --- fleet-wide
+thresholds miss a device that is abnormal only for itself.}
+
+\lensSEC{This is the chapter's home domain. Unsupervised methods detect \emph{novel}
+attacks that no signature covers --- precisely what supervised models trained on
+past attacks cannot do. Use DBSCAN or isolation forests for user and entity
+behaviour analytics, scoring each account against its own 30-day profile. Remember
+the base rate from \chref{probability}: an anomaly score is not a verdict, and
+tuning contamination too high will bury your analysts.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Cluster, Reduce, Detect]
+\begin{lstlisting}[language=Python]
+import numpy as np, matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.decomposition import PCA
+from sklearn.ensemble import IsolationForest
+from sklearn.metrics import silhouette_score
+
+Xs = StandardScaler().fit_transform(X)      # MANDATORY -- clustering is distance
+
+# --- choose k by silhouette, not by eye --------------------------------
+for k in range(2, 9):
+    km = KMeans(n_clusters=k, n_init=10, random_state=0).fit(Xs)
+    print(f"k={k}  inertia={km.inertia_:9.1f}  silhouette={silhouette_score(Xs, km.labels_):.3f}")
+
+# --- stability check: do the clusters survive resampling? --------------
+rng = np.random.default_rng(0)
+for _ in range(3):
+    idx = rng.choice(len(Xs), size=int(0.8*len(Xs)), replace=False)
+    km2 = KMeans(n_clusters=4, n_init=10, random_state=0).fit(Xs[idx])
+    print("  subsample silhouette:", round(silhouette_score(Xs[idx], km2.labels_), 3))
+
+# --- PCA for visualisation and for the scree plot ----------------------
+p = PCA().fit(Xs)
+print("variance explained:", (p.explained_variance_ratio_[:5]*100).round(1))
+proj = PCA(n_components=2).fit_transform(Xs)
+
+# --- anomaly detection with no labels at all ---------------------------
+iso = IsolationForest(contamination=0.01, random_state=0).fit(Xs)
+score = -iso.score_samples(Xs)              # higher = more anomalous
+top = np.argsort(score)[::-1][:20]
+print("20 most anomalous rows:", top)
+
+plt.scatter(proj[:,0], proj[:,1], s=6, c=score, cmap="viridis")
+plt.colorbar(label="anomaly score"); plt.xlabel("PC1"); plt.ylabel("PC2"); plt.show()
+\end{lstlisting}
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why does inertia always fall as $k$ increases, and what does that imply
+        about using it alone to choose $k$?
+  \item You need clusters of irregular shape and want outliers identified rather
+        than absorbed. Which algorithm, and why not k-means?
+  \item PCA on unscaled data returns a first component that is almost entirely one
+        feature. What happened?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item k-means is fast and requires $k$ in advance; it assumes spherical clusters
+        and forces every point into one.
+  \item Choose $k$ by silhouette (which has a true maximum) supported by the elbow
+        and by a domain reason.
+  \item Hierarchical clustering gives a dendrogram you can cut anywhere; DBSCAN
+        finds arbitrary shapes and labels noise explicitly.
+  \item PCA re-expresses data along directions of maximum variance; the scree plot
+        says how many components to keep. Scale first; expect to lose
+        interpretability.
+  \item t-SNE and UMAP are for looking, not for modelling.
+  \item Isolation forests are the strong default for anomaly detection when no
+        labels exist. Validate clusters by internal score, stability, profiling and
+        an external variable.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which algorithm explicitly labels points as noise?
+        (a)~k-means (b)~PCA (c)~DBSCAN (d)~hierarchical clustering.
+  \item \textbf{(MCQ)} A silhouette score of $-0.2$ for a point means:
+        (a)~it is well clustered (b)~it is on a boundary (c)~it is probably in the
+        wrong cluster (d)~it is an outlier.
+  \item \textbf{(Short)} Explain why PCA requires standardised features.
+  \item \textbf{(Short)} Give two reasons not to use a t-SNE plot as evidence in a
+        report.
+  \item \textbf{(Short)} Why is unsupervised anomaly detection the right tool for
+        novel attacks, when supervised classification is not?
+  \item \textbf{(Applied)} You cluster 8{,}000 IoT devices and get four clusters
+        with silhouette 0.44. Describe the full validation procedure you would run
+        before presenting the result, including what would make you discard it.
+  \item \textbf{(Applied)} A scree plot shows components explaining 41\%, 19\%,
+        14\%, 6\%, 5\%, 4\%, \dots\ of variance. How many components would you keep
+        and why? What would you check before using the reduced representation in a
+        model that must be explained to auditors?
+\end{reviewq}
