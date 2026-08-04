@@ -8,8 +8,20 @@ This edition replaces the thirteen separate handouts used in Spring 2026
 (archived unchanged in `../Data Science Spring 2026/`). Appendix F maps each
 old handout to the chapters that now cover it.
 
-**Current build:** 259 pages · 103 figures, all numbered, captioned and listed ·
+**Current build:** 260 pages · 103 figures, all numbered, captioned and listed ·
 zero LaTeX errors, zero undefined references, zero overfull boxes.
+
+Figure conventions worth knowing before you edit one:
+
+- Multi-item comparison figures use a **2×2 grid** (or 3+2 for five items), not a
+  single row. A four-across row forces a 3.9 cm column and a `\tiny` font, which
+  then overflows the text block and gets shrunk again by `\dsfitw`.
+- Wide explanatory notes inside a figure are `\scriptsize` and anchored
+  `north west`, so they hang *below* their coordinate and cannot grow upwards
+  into the diagram.
+- Front-matter figures are numbered `F.n`; part-opener maps are `Pn.1`. Chapter
+  figures use the normal `chapter.n`. `\locator` restores chapter numbering, so
+  every chapter file is unaffected.
 
 ## Build
 
