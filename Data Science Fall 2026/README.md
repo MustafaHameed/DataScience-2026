@@ -8,8 +8,16 @@ This edition replaces the thirteen separate handouts used in Spring 2026
 (archived unchanged in `../Data Science Spring 2026/`). Appendix F maps each
 old handout to the chapters that now cover it.
 
-**Current build:** 260 pages · 103 figures, all numbered, captioned and listed ·
-zero LaTeX errors, zero undefined references, zero overfull boxes.
+**Current build:** 262 pages · 103 figures, all numbered, captioned and listed ·
+zero LaTeX errors, zero undefined references, zero undefined font shapes, zero
+overfull boxes, zero underfull boxes.
+
+The log still carries `Infinite glue shrinkage found in box being split` once
+per longtable that spans a page break. That is upstream behaviour in current
+longtable, not a fault in this document — a bare `report` with one long table
+reproduces it. TeX drops the offending shrink component and the rules and
+repeated headers come out correct, so `build.ps1` filters the line out of its
+error count. Do not chase it.
 
 Figure conventions worth knowing before you edit one:
 
@@ -31,9 +39,9 @@ Figure conventions worth knowing before you edit one:
 ```
 
 Requires MiKTeX (or TeX Live) with `pgfplots`, `tcolorbox`, `fontawesome5`,
-`booktabs`, `longtable`, `float` and `caption`. `latexmk` handles the multiple
-passes needed to resolve the table of contents, list of figures and
-cross-references.
+`booktabs`, `longtable`, `ragged2e`, `needspace`, `float` and `caption`.
+`latexmk` handles the multiple passes needed to resolve the table of contents,
+list of figures and cross-references.
 
 Equivalent manual build:
 
@@ -41,8 +49,17 @@ Equivalent manual build:
 latexmk -pdf -interaction=nonstopmode DataScience_Fall2026_Handout.tex
 ```
 
-`build.ps1` prints a report afterwards: page count, error count, undefined
-references and overfull hboxes.
+`latexmk` is a Perl script and MiKTeX ships no interpreter, so `build.ps1`
+borrows the `perl.exe` bundled with Git for Windows (or Strawberry Perl) when
+none is on `PATH`. Without that, `latexmk` fails with *could not find the script
+engine 'perl'*.
+
+`build.ps1` prints a report afterwards: page count, errors, undefined
+references, overfull hboxes and vboxes, underfull boxes, font warnings and
+PDF-string warnings. Every one of them should read `0`; it exits non-zero if any
+error survives, so it is safe to use as a gate. It also refuses to report on a
+log older than half an hour, so a build that never ran cannot masquerade as a
+clean one.
 
 ## Layout
 
@@ -110,3 +127,52 @@ Rules:
   `\dsref{label}`.
 - Checkpoint answers go in `parts/D_answers.tex`, keyed by chapter.
 - New terms go in `parts/E_glossary.tex`.
+
+### Tables
+
+- **Paragraph columns use `L{<width>}`, never `p{<width>}`.** `L` is `p` set
+  ragged right, with hyphens made expensive. The 183 paragraph columns in this
+  handout are mostly under 4 cm; justifying them produced rivers, 111 underfull
+  lines and column heads reading `Legal opera-tions`. All 56 longtables follow
+  the same skeleton:
+
+  ```latex
+  \rowcolors{2}{white}{lightbg}
+  \begin{longtable}{@{}L{3.4cm}L{4.4cm}L{6.4cm}@{}}
+  \toprule
+  \rowcolor{primary!15}
+  \textbf{Head} & \textbf{Head} & \textbf{Head} \\
+  \midrule
+  \endhead
+  ...rows...
+  \bottomrule
+  \end{longtable}
+  ```
+
+- Column widths must sum to about **15.0 cm for three columns**, 15.6 cm for
+  two, 15.8 cm for five — the text block is 16.2 cm and `\tabcolsep` eats
+  roughly 0.42 cm between each pair. Check the widest single word in each head
+  against its column: `\textbf{Hyperparameter}` needs 3.15 cm and silently
+  overflowed a 3.0 cm column for several editions.
+
+### Typography rules living in `dshandout.sty`
+
+- **Part and chapter kickers are medium-weight small caps, not bold.** Latin
+  Modern Roman has no `T1/lmr/bx/sc`, so `\bfseries\textsc` had been silently
+  losing the small caps for the whole run. `\mdseries` plus microtype tracking
+  gives the letterspaced kicker the design was always asking for. Do not put
+  `\bfseries` back in a `\titleformat` label that also uses `\textsc`.
+- **`\_` carries an `\allowbreak`.** `snake_case` identifiers appear inline in
+  the prose about eighty times and TeX has no break point inside one. A line may
+  now break after an underscore, with no hyphen inserted. Maths is exempt.
+- **Widows and orphans are forbidden** (`\widowpenalty`/`\clubpenalty` at
+  10000); `\brokenpenalty` is deliberately left finite at 4000, because
+  forbidding a break after a hyphenated line as well leaves TeX no legal break
+  at all on some figure-heavy pages.
+- **A section that opens straight into a tall figure needs
+  `\Needspace*{0.4\textheight}` before it.** Otherwise the heading strands
+  itself at the foot of a page, the float has nowhere to go, and it prints over
+  the footer rule. Section 19.4 is the worked instance.
+- **Maths in a heading needs `\texorpdfstring`.** PDF bookmarks are plain
+  strings and cannot hold a math shift; the navigation pane goes down to
+  subsection level, so subsection titles are in scope too.

@@ -1,11 +1,11 @@
-# Build the Data Science Fall 2026 master handout.
+# Build the HEC AI / Data Science curriculum map.
 #   .\build.ps1          normal build
 #   .\build.ps1 -Clean   remove aux files first
 param([switch]$Clean)
 
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$main = 'DataScience_Fall2026_Handout'
+$main = 'HEC_AI_DS_Curriculum_Map'
 
 # latexmk is a Perl script. MiKTeX ships the script but not an interpreter, and
 # a plain PowerShell session usually has no perl on PATH even when Git for
@@ -27,22 +27,16 @@ if (-not (Get-Command perl -ErrorAction SilentlyContinue)) {
     }
 }
 
-# latexmk narrates progress on stderr ("Missing input file ... .toc" on the
-# first pass of a clean build, and similar). Windows PowerShell turns any
-# stderr line from a native exe into an ErrorRecord, which $ErrorActionPreference
-# = 'Stop' then treats as fatal. Relax the preference around the native calls
-# only, and judge success by the exit code instead.
+# latexmk narrates progress on stderr. Windows PowerShell turns any stderr line
+# from a native exe into an ErrorRecord, which $ErrorActionPreference = 'Stop'
+# then treats as fatal. Relax the preference around the native calls only, and
+# judge success by the exit code instead.
 function Invoke-Latexmk {
     param([string[]]$Arguments)
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     $errFile = [System.IO.Path]::GetTempFileName()
     try {
-        # Out-Host, not bare output: the caller wants the exit code back, not
-        # latexmk's several hundred lines of chatter. stderr goes to a file so
-        # that routine progress notes ("Missing input file ... .toc" on the
-        # first pass of a clean build) are not rendered as red error blocks;
-        # it is replayed in full if the build actually fails.
         & latexmk @Arguments 2> $errFile | Out-Host
         $code = $LASTEXITCODE
         if ($code -ne 0 -and (Get-Item $errFile).Length -gt 0) {
@@ -64,17 +58,12 @@ Write-Host "Building $main.pdf ..." -ForegroundColor Cyan
 $latexmkExit = Invoke-Latexmk @('-pdf', '-interaction=nonstopmode', '-file-line-error', $main)
 
 $log = "$main.log"
-if ($latexmkExit -ne 0 -and -not (Test-Path $log)) {
-    Write-Host "latexmk failed (exit $latexmkExit) and wrote no log." -ForegroundColor Red
-    exit $latexmkExit
-}
 if (-not (Test-Path $log)) {
-    Write-Host 'No log file was produced; nothing to report.' -ForegroundColor Red
+    Write-Host "latexmk failed (exit $latexmkExit) and wrote no log." -ForegroundColor Red
     exit 1
 }
 
-# A stale log from an earlier run would make a failed build look clean, so make
-# the report refuse to speak for a log it did not just produce.
+# A stale log would make a failed build look clean.
 $logAge = (Get-Date) - (Get-Item $log).LastWriteTime
 if ($logAge.TotalMinutes -gt 30) {
     Write-Host "Log is $([int]$logAge.TotalMinutes) minutes old - this build produced nothing." -ForegroundColor Red
@@ -82,9 +71,7 @@ if ($logAge.TotalMinutes -gt 30) {
 }
 
 # "Infinite glue shrinkage found in box being split" is upstream longtable
-# behaviour whenever a table spans a page break: TeX drops the shrink component
-# and the rules and repeated headers still come out correct. Filter it out so
-# that real errors stay visible.
+# behaviour whenever a table spans a page break. Filter it out.
 $errors = Select-String -Path $log -Pattern '^!|^.*:\d+: ' -ErrorAction SilentlyContinue |
           Where-Object { $_.Line -notmatch 'Infinite glue shrinkage' }
 $undef     = Select-String -Path $log -Pattern 'undefined references|Reference .* undefined' -ErrorAction SilentlyContinue

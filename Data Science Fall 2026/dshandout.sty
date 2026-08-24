@@ -22,6 +22,12 @@
 \RequirePackage[utf8]{inputenc}
 \RequirePackage{textcomp}
 \RequirePackage{microtype}
+% Latin Modern Roman has no bold small-caps shape (T1/lmr/bx/sc does not
+% exist), so asking for bold small caps silently loses the caps. The part and
+% chapter kickers therefore use medium-weight small caps, letterspaced --
+% which is what a kicker wants anyway. Tracking needs microtype's tracking
+% feature, which is available under pdfTeX.
+\SetTracking{encoding=*, shape=sc}{45}
 \RequirePackage{graphicx}
 \RequirePackage{tikz}
 \usetikzlibrary{shapes,shapes.geometric,shapes.misc,arrows.meta,positioning,calc,fit,
@@ -37,6 +43,10 @@
 \RequirePackage{longtable}
 \RequirePackage{array}
 \RequirePackage{tabularx}
+% ragged2e, not the kernel's \raggedright: \RaggedRight caps the stretch it
+% allows and keeps hyphenation on, so a 2.5 cm column comes out with a soft
+% right edge instead of a saw-toothed one.
+\RequirePackage{ragged2e}
 \RequirePackage{xcolor}
 \RequirePackage{fancyhdr}
 \RequirePackage{titlesec}
@@ -53,7 +63,13 @@
 % introduces them, so a float must never drift past its own section heading.
 \RequirePackage[section]{placeins}
 \RequirePackage{emptypage}
-\RequirePackage[hidelinks]{hyperref}
+% A section heading must not be stranded at the foot of a page: the float that
+% follows it has nowhere to go and prints over the footer. \Needspace reserves
+% room for the heading plus the first few lines or the top of the first figure.
+\RequirePackage{needspace}
+% hidelinks is deliberately not used: the \hypersetup below turns colourlinks
+% on, which would override it anyway. Links are coloured, never boxed.
+\RequirePackage{hyperref}
 \RequirePackage{bookmark}
 
 %---------------------------------------------------------------------
@@ -62,7 +78,36 @@
 \setlength{\parskip}{3pt plus 1pt minus 1pt}
 \setlength{\parindent}{0pt}
 \setlength{\emergencystretch}{3em}
+% A single line of a paragraph stranded at the top or bottom of a page is the
+% most common way a printed handout loses a reader mid-argument. Forbid it
+% outright; there is enough stretch elsewhere on the page to absorb the cost.
+\widowpenalty=10000
+\clubpenalty=10000
+\displaywidowpenalty=10000
+% brokenpenalty stays finite: forbidding a break after a hyphenated line
+% outright leaves TeX no legal break at all on some figure-heavy pages.
+\brokenpenalty=4000
 \renewcommand{\arraystretch}{1.15}
+
+% Table paragraph columns in this handout are narrow (often under 4 cm) and hold
+% ordinary prose. Justifying them opens rivers and forces hundreds of underfull
+% lines, so every one of them is set ragged right. Use L{<width>} wherever you
+% would otherwise write p{<width>}; the L type also restores the row-break
+% command, which a >{...} declaration would otherwise shadow.
+%
+% ragged2e allows only 2 em of stretch, which in a 2.5 cm column is tight
+% enough that TeX reaches for a hyphen on almost every line -- "Legal opera-
+% tions" in a column head. Widen the allowance and make hyphens expensive, so
+% they appear only for words that genuinely will not fit.
+\setlength{\RaggedRightRightskip}{0pt plus 4em}
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash\hyphenpenalty=2000\relax}p{#1}}
+
+% snake_case identifiers appear inline in the prose throughout, and TeX has no
+% break point inside one, so a long identifier near the end of a line forces an
+% overfull box. Allow a break after an underscore. No hyphen is inserted, so the
+% identifier stays readable across the break; maths is left alone.
+\let\dsunderscore\_
+\renewcommand{\_}{\dsunderscore\ifmmode\else\allowbreak\fi}
 
 % Float placement: make LaTeX far more willing to keep a figure on the page
 % that discusses it, rather than deferring it to a float page later.
@@ -99,8 +144,22 @@
 \definecolor{lensIOT}{HTML}{117864}  % IoT                 -- teal
 \definecolor{lensSEC}{HTML}{922B21}  % Cybersecurity       -- red
 
-\hypersetup{colorlinks=true, linkcolor=primary, urlcolor=secondary,
-            citecolor=primary, bookmarksnumbered=true}
+\hypersetup{
+  colorlinks=true, linkcolor=primary, urlcolor=secondary, citecolor=primary,
+  % The printed table of contents stops at section level (tocdepth=1), but the
+  % PDF navigation pane is free, so let it go one level deeper. Parts and
+  % chapters open by default; sections stay folded until wanted.
+  bookmarksnumbered=true, bookmarksdepth=2,
+  bookmarksopen=true, bookmarksopenlevel=1,
+  % Document properties, so the file identifies itself in a reader's title bar,
+  % in search results and in a library catalogue.
+  pdftitle={Data Science --- From Foundations to Intelligent Systems},
+  % pdfauthor={},   % <- add the instructor or department here
+  pdfsubject={Unified lecture handout for the BSIT Data Science course, Fall 2026},
+  pdfkeywords={data science, machine learning, deep learning, generative AI,
+               MLOps, IoT analytics, cybersecurity analytics, learning analytics,
+               statistics, BSIT, lecture handout},
+  pdfdisplaydoctitle=true}
 
 %---------------------------------------------------------------------
 % Code listings
@@ -148,11 +207,11 @@
 %---------------------------------------------------------------------
 \titleformat{\part}[display]
   {\centering\normalfont\huge\bfseries\color{primary}}
-  {\Large\textsc{Part \thepart}}{12pt}{\Huge}[\vspace{6pt}{\color{secondary}\rule{0.7\textwidth}{1.5pt}}]
+  {\Large\mdseries\textsc{Part \thepart}}{12pt}{\Huge}[\vspace{6pt}{\color{secondary}\rule{0.7\textwidth}{1.5pt}}]
 
 \titleformat{\chapter}[display]
   {\normalfont\huge\bfseries\color{primary}}
-  {\raggedright\normalsize\textsc{\color{secondary}Chapter \thechapter}}{4pt}{\Large\raggedright}
+  {\raggedright\normalsize\mdseries\textsc{\color{secondary}Chapter \thechapter}}{4pt}{\Large\raggedright}
   [\vspace{3pt}{\color{secondary}\rule{\textwidth}{1.2pt}}]
 \titlespacing*{\chapter}{0pt}{-18pt}{14pt}
 

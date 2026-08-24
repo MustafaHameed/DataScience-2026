@@ -1,0 +1,235 @@
+%=====================================================================
+%  hecmap.sty
+%  Style for the HEC AI / Data Science curriculum comparison map.
+%
+%  Deliberately a sibling of dshandout.sty (same palette, same
+%  typographic decisions) but much smaller: this document is tables,
+%  comparison cards and one pathway diagram, not a teaching handout.
+%=====================================================================
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{hecmap}[2026/08/24 HEC AI/DS curriculum map style]
+
+%---------------------------------------------------------------------
+% Packages
+%---------------------------------------------------------------------
+\RequirePackage[margin=2.2cm,top=2.4cm,bottom=2.2cm]{geometry}
+\RequirePackage{lmodern}
+\RequirePackage[T1]{fontenc}
+\RequirePackage{textcomp}
+\RequirePackage{microtype}
+% Latin Modern Roman has no bold small-caps shape, so a kicker that asks
+% for both silently loses the caps. Kickers are medium-weight small caps,
+% letterspaced, exactly as in dshandout.sty.
+\SetTracking{encoding=*, shape=sc}{45}
+\RequirePackage{graphicx}
+\RequirePackage{tikz}
+\usetikzlibrary{shapes,shapes.geometric,shapes.misc,arrows.meta,positioning,
+                calc,fit,backgrounds,decorations.pathreplacing,patterns}
+\RequirePackage{colortbl}
+\RequirePackage{enumitem}
+\RequirePackage{booktabs}
+\RequirePackage{longtable}
+\RequirePackage{array}
+\RequirePackage{ragged2e}
+\RequirePackage{xcolor}
+\RequirePackage{fancyhdr}
+\RequirePackage{titlesec}
+\RequirePackage[most]{tcolorbox}
+\RequirePackage{amsmath,amssymb}
+\RequirePackage{multirow}
+\RequirePackage{fontawesome5}
+\RequirePackage{float}
+\RequirePackage{caption}
+\RequirePackage{needspace}
+\RequirePackage{hyperref}
+\RequirePackage{bookmark}
+
+%---------------------------------------------------------------------
+% Spacing and line breaking
+%---------------------------------------------------------------------
+\setlength{\parskip}{3pt plus 1pt minus 1pt}
+\setlength{\parindent}{0pt}
+\setlength{\emergencystretch}{3em}
+\widowpenalty=10000
+\clubpenalty=10000
+\displaywidowpenalty=10000
+\brokenpenalty=4000
+\renewcommand{\arraystretch}{1.2}
+
+% Narrow paragraph columns hold prose, not running text: set them ragged
+% right with expensive hyphens. Use L{<width>} in place of p{<width>}.
+\setlength{\RaggedRightRightskip}{0pt plus 4em}
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash\hyphenpenalty=2000\relax}p{#1}}
+% Same, but centred and small -- for the status matrix.
+\newcolumntype{C}[1]{>{\centering\arraybackslash\small}p{#1}}
+
+%---------------------------------------------------------------------
+% Palette -- identical to dshandout.sty so the two documents read as
+% one family.
+%---------------------------------------------------------------------
+\definecolor{primary}{HTML}{1A5276}
+\definecolor{secondary}{HTML}{2E86C1}
+\definecolor{accent}{HTML}{E74C3C}
+\definecolor{lightbg}{HTML}{EBF5FB}
+\definecolor{defbg}{HTML}{FDF2E9}
+\definecolor{greenhl}{HTML}{27AE60}
+\definecolor{purplehl}{HTML}{8E44AD}
+\definecolor{goldhl}{HTML}{B7950B}
+\definecolor{tealhl}{HTML}{117A65}
+\definecolor{neutral}{HTML}{707B7C}
+
+% One fixed colour per HEC edition, used everywhere -- in tables, in the
+% pathway diagram, in the cards. The reader learns the edition by colour.
+\definecolor{ed2017}{HTML}{922B21}   % 2017 -- red
+\definecolor{ed2023}{HTML}{1F618D}   % 2023 -- blue
+\definecolor{ed2025}{HTML}{117864}   % 2025 -- teal
+
+\hypersetup{
+  colorlinks=true, linkcolor=primary, urlcolor=secondary, citecolor=primary,
+  bookmarksnumbered=true, bookmarksdepth=2,
+  bookmarksopen=true, bookmarksopenlevel=1,
+  pdftitle={The AI and Data Science Course Cluster Across Three HEC Curricula},
+  pdfsubject={Comparison of HEC 2017, 2023 and 2025 computing curricula for the
+              AI, machine learning, data science, data mining, deep learning and
+              NLP course group, with a pathway and semester scheme for BSIT and
+              BSCS (IT specialization)},
+  pdfkeywords={HEC curriculum, BSIT, BSCS, artificial intelligence, machine
+               learning, data science, data mining, deep learning, natural
+               language processing, NCRC, specialization, Pakistan},
+  pdfdisplaydoctitle=true}
+
+%---------------------------------------------------------------------
+% Running heads
+%---------------------------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{primary}{\textbf{HEC AI \& Data Science Curriculum Map}}}
+\fancyhead[R]{\small\textcolor{primary}{\nouppercase{\leftmark}}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.5pt}
+\renewcommand{\footrulewidth}{0.3pt}
+\renewcommand{\sectionmark}[1]{\markboth{\thesection~~#1}{}}
+
+%---------------------------------------------------------------------
+% Headings
+%---------------------------------------------------------------------
+\titleformat{\section}[display]
+  {\normalfont\Large\bfseries\color{primary}}
+  {\normalsize\mdseries\textsc{\color{secondary}Part \thesection}}{3pt}{\LARGE}
+  [\vspace{2pt}{\color{secondary}\rule{\textwidth}{1.1pt}}]
+\titlespacing*{\section}{0pt}{0pt}{12pt}
+
+\titleformat{\subsection}{\large\bfseries\color{primary}}{\thesubsection}{0.6em}{}
+  [\vspace{1pt}{\color{secondary!35}\titlerule}]
+\titleformat{\subsubsection}{\normalsize\bfseries\color{secondary}}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\subsection}{0pt}{13pt}{6pt}
+\titlespacing*{\subsubsection}{0pt}{9pt}{4pt}
+
+% report numbers sections as <chapter>.<section>, and this document has no
+% chapters, so every heading would read "Part 0.2". Number them flat.
+\renewcommand{\thesection}{\arabic{section}}
+\renewcommand{\thesubsection}{\thesection.\arabic{subsection}}
+\setcounter{tocdepth}{2}
+\setcounter{secnumdepth}{3}
+
+%---------------------------------------------------------------------
+% Boxes
+%---------------------------------------------------------------------
+\newtcolorbox{finding}[1][]{
+  enhanced, breakable,
+  colback=lightbg, colframe=secondary,
+  colbacktitle=secondary, coltitle=white,
+  title={\faIcon{lightbulb}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!15},
+  top=4pt, bottom=4pt, left=8pt, right=8pt}
+
+\newtcolorbox{warnbox}[1][]{
+  enhanced, breakable,
+  colback=red!4, colframe=accent,
+  colbacktitle=accent, coltitle=white,
+  title={\faIcon{exclamation-triangle}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=8pt, right=8pt}
+
+\newtcolorbox{recbox}[1][]{
+  enhanced, breakable,
+  colback=green!4, colframe=greenhl,
+  colbacktitle=greenhl, coltitle=white,
+  title={\faIcon{check-circle}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!12},
+  top=4pt, bottom=4pt, left=8pt, right=8pt}
+
+\newtcolorbox{notebox}[1][]{
+  enhanced, breakable,
+  colback=defbg, colframe=goldhl,
+  colbacktitle=goldhl, coltitle=white,
+  title={\faIcon{info-circle}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=8pt, right=8pt}
+
+%---------------------------------------------------------------------
+% The course card -- one per course in the cluster. Three rows, one per
+% HEC edition, always in the same order and the same colours.
+%
+%   \begin{coursecard}{Course name}{one-line what-it-is}
+%     \edrow{2017}{status}{detail}
+%     \edrow{2023}{status}{detail}
+%     \edrow{2025}{status}{detail}
+%     \verdict{what actually changed}
+%   \end{coursecard}
+%---------------------------------------------------------------------
+\newtcolorbox{coursecard}[2]{
+  enhanced, breakable,
+  colback=white, colframe=primary!70!black,
+  colbacktitle=primary!70!black, coltitle=white,
+  title={\faIcon{book-open}~#1 \normalfont\itshape\footnotesize\;---\;#2},
+  fonttitle=\bfseries\small,
+  boxrule=0.6pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!12},
+  top=4pt, bottom=4pt, left=5pt, right=5pt}
+
+% One edition row inside a card. #1 = 2017|2023|2025, #2 = status, #3 = detail.
+\newcommand{\edrow}[3]{%
+  \begin{tcolorbox}[enhanced, breakable, nobeforeafter,
+    colback=ed#1!4, colframe=ed#1, boxrule=0pt, leftrule=3.5pt, arc=1.5pt,
+    top=2.5pt, bottom=2.5pt, left=6pt, right=6pt,
+    before skip=3pt, after skip=3pt]
+    {\color{ed#1}\bfseries\small #1}\;\;{\color{ed#1}\bfseries\footnotesize #2}%
+    \par\vspace{1.5pt}\small #3
+  \end{tcolorbox}}
+
+% The one-line judgement that closes a card.
+\newcommand{\verdict}[1]{%
+  \par\vspace{3pt}%
+  {\small\color{primary}\faIcon{arrow-circle-right}~\textbf{What changed:}}\;{\small #1}\par}
+
+%---------------------------------------------------------------------
+% Small helpers
+%---------------------------------------------------------------------
+\newcommand{\term}[1]{\textbf{\textcolor{primary}{#1}}}
+\newcommand{\yr}[1]{{\color{ed#1}\bfseries #1}}
+% Status glyphs for the big matrix.
+\newcommand{\stcore}{{\color{greenhl}\faIcon{check-circle}}}
+\newcommand{\stelec}{{\color{goldhl}\faIcon{adjust}}}
+\newcommand{\stabsent}{{\color{accent}\faIcon{times-circle}}}
+\newcommand{\stpg}{{\color{purplehl}\faIcon{graduation-cap}}}
+
+\newcommand{\dsfig}[3]{%
+  \begin{figure}[htbp]
+    \centering
+    \resizebox{\ifdim\width>\linewidth \linewidth\else \width\fi}{!}{#1}
+    \caption{#2}\label{fig:#3}
+  \end{figure}}
+\captionsetup{font=small, labelfont={bf,color=primary}, skip=6pt,
+              justification=centering, width=0.92\linewidth}
+
+\newenvironment{tight}
+  {\begin{itemize}[leftmargin=1.3em, itemsep=2pt, topsep=2pt, parsep=0pt]}
+  {\end{itemize}}
+\newenvironment{tightnum}
+  {\begin{enumerate}[leftmargin=1.5em, itemsep=2pt, topsep=2pt, parsep=0pt]}
+  {\end{enumerate}}
+
+\endinput
