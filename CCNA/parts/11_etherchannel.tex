@@ -1,0 +1,294 @@
+\chapter{EtherChannel and LACP}\label{ch:etherchannel}
+\bp{2.1}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why bundling links needs a protocol rather than just
+        more cables, in terms of what spanning tree would otherwise do.
+  \item \textbf{Configure} a layer 2 EtherChannel with LACP, and a layer 3
+        EtherChannel between routed ports.
+  \item \textbf{Verify} a bundle and read the flags in \cmd{show etherchannel
+        summary}.
+  \item \textbf{Diagnose} the parameter mismatches that stop a bundle forming ---
+        the single most common EtherChannel fault.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{trunking} for trunks and allowed VLAN lists; \chref{vlans} for access
+ports.
+\end{prereq}
+
+\begin{keyterms}
+EtherChannel $\bullet$ port channel $\bullet$ LACP $\bullet$ PAgP $\bullet$
+active $\bullet$ passive $\bullet$ on $\bullet$ load balancing $\bullet$
+bundle $\bullet$ suspended port $\bullet$ layer 3 EtherChannel
+\end{keyterms}
+
+\section{Why bundling needs a protocol}
+
+Run two cables between a pair of switches and you do not get twice the bandwidth.
+You get a loop, and spanning tree (\chref{stp}) blocks one of them --- so you
+have paid for two links and can use one.
+
+\begin{definitionbox}[EtherChannel]
+An \term{EtherChannel} bundles two to eight physical links into one logical
+interface, the \term{port channel}. Spanning tree sees a single link and does not
+block any member, so all of the bandwidth is usable, and if one member fails the
+others carry on without a topology change.
+\end{definitionbox}
+
+\begin{conceptbox}[Load balancing is per conversation, not per packet]
+Frames are distributed across members by hashing fields from the frame --- source
+MAC, destination MAC, source and destination IP, or a combination. Every frame
+in one conversation hashes the same way, so a conversation always takes one
+member link.
+
+The consequence catches people out: a single large file transfer between two
+hosts gets \emph{one member's worth} of bandwidth, not the whole bundle. Four
+1~Gbps links do not give one server a 4~Gbps transfer. They give you 4~Gbps of
+aggregate capacity across many conversations, which is a different thing. When
+somebody complains that a new EtherChannel ``did not make the backup faster'',
+this is why.
+\end{conceptbox}
+
+\section{The negotiation protocols}
+
+\begin{longtable}{@{}L{2.6cm}L{2.6cm}L{4.2cm}L{5.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Protocol} & \textbf{Modes} & \textbf{Forms a bundle with} & \textbf{Notes} \\
+\midrule
+\endhead
+\textbf{LACP} \newline 802.3ad & \cmd{active}, \cmd{passive} &
+active--active, active--passive. \textbf{Not} passive--passive &
+Open standard. Use this. Passive waits to be asked; two waiters never speak \\
+\rowcolor{lightbg}
+\textbf{PAgP} & \cmd{desirable}, \cmd{auto} &
+desirable--desirable, desirable--auto. \textbf{Not} auto--auto &
+Cisco proprietary. Same trap: two \cmd{auto} ends form nothing \\
+\textbf{Static} & \cmd{on} & on--on only &
+No negotiation and no safety net. A mismatch here creates a loop rather than
+failing cleanly \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Never mix \cmd{on} with a negotiating mode]
+\cmd{on} at one end and \cmd{active} at the other does not form a bundle, and
+worse, the \cmd{on} end starts forwarding on every member immediately while the
+far end still treats them as individual links. That is a loop, built by hand.
+Either both ends negotiate, or both ends are \cmd{on}. LACP \cmd{active} at both
+ends is the right default.
+\end{alertbox}
+
+\section{Configuring a layer 2 EtherChannel}
+
+\begin{conceptbox}[The rule that governs everything: members must match]
+Every member port in a bundle, \emph{at both ends}, must agree on:
+\begin{tight}
+  \item speed and duplex;
+  \item switch mode --- all access, or all trunk;
+  \item if trunking: the same native VLAN and the same allowed VLAN list;
+  \item if access: the same access VLAN.
+\end{tight}
+One port that disagrees is suspended and stays out of the bundle. Configure the
+port channel interface and let the settings inherit downward, rather than
+configuring each member separately --- that is how you avoid the mismatch in the
+first place.
+\end{conceptbox}
+
+\begin{config}{a two-member LACP trunk bundle, both ends}
+! Put the physical members into the channel group first. Creating
+! the group creates the Port-channel interface automatically.
+interface range GigabitEthernet0/1 - 2
+ description Member of Po1 - uplink to SW2
+ shutdown
+ channel-group 1 mode active
+ no shutdown
+exit
+!
+! Now configure the logical interface. Settings applied here
+! propagate to every member, which is what keeps them matching.
+interface Port-channel1
+ description Uplink bundle to SW2
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk native vlan 999
+ switchport trunk allowed vlan 10,20,30
+!
+! Hash on both source and destination IP for a better spread than
+! the default source-MAC-only on many platforms.
+port-channel load-balance src-dst-ip
+\end{config}
+
+\begin{verify}{SW1}{show etherchannel summary}
+Flags:  D - down        P - bundled in port-channel
+        I - stand-alone s - suspended
+        H - Hot-standby (LACP only)
+        R - Layer3      S - Layer2
+        U - in use      f - failed to allocate aggregator
+        M - not in use, minimum links not met
+        u - unsuitable for bundling
+        w - waiting to be aggregated
+        d - default port
+
+Number of channel-groups in use: 1
+Number of aggregators:           1
+
+Group  Port-channel  Protocol    Ports
+------+-------------+-----------+-----------------------------------------------
+1      Po1(SU)         LACP      Gi0/1(P)    Gi0/2(P)
+\end{verify}
+
+Read the flags. \cmd{Po1(SU)} means layer \textbf{S}witched and \textbf{U}sed ---
+healthy. Each member showing \cmd{(P)} is bundled. The ones to worry about are
+\cmd{(I)} stand-alone, \cmd{(s)} suspended and \cmd{(D)} down.
+
+\begin{longtable}{@{}C{2.0cm}L{13.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Flag} & \textbf{What it is telling you} \\
+\midrule
+\endhead
+\cmd{(P)} & Bundled and forwarding. What you want \\
+\rowcolor{lightbg}
+\cmd{(I)} & Stand-alone --- the port is up but is not in the bundle. Usually the
+far end is not running a compatible mode \\
+\cmd{(s)} & Suspended --- the port's parameters do not match the others. Compare
+speed, duplex, mode, native VLAN and allowed list \\
+\rowcolor{lightbg}
+\cmd{(D)} & Down. A physical problem; go back to \chref{physical} \\
+\cmd{(SU)} & On the port channel: layer 2, in use \\
+\rowcolor{lightbg}
+\cmd{(RU)} & On the port channel: layer 3, in use \\
+\bottomrule
+\end{longtable}
+
+\section{A layer 3 EtherChannel}
+
+Between two multilayer switches you may want the bundle routed rather than
+switched.
+
+\begin{config}{a routed bundle}
+interface Port-channel2
+ description Routed bundle to Core2
+ ! no switchport makes this a routed interface -- do it BEFORE
+ ! adding an address, or the address command is rejected.
+ no switchport
+ ip address 10.255.0.1 255.255.255.252
+!
+interface range GigabitEthernet0/23 - 24
+ no switchport
+ channel-group 2 mode active
+ no shutdown
+\end{config}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Passive--passive or auto--auto.} Neither end initiates and no
+        bundle forms. The ports stay up as individual links, which spanning tree
+        then blocks --- so you get a working network and half the bandwidth you
+        paid for.
+  \item \textbf{Mismatched allowed VLAN lists.} A favourite: the bundle forms,
+        one VLAN is missing from one end, and only that VLAN breaks.
+  \item \textbf{Configuring members individually.} Configure
+        \cmd{interface Port-channel1}; let it inherit.
+  \item \textbf{Adding \cmd{no switchport} after the IP address.} On a layer 3
+        bundle the order matters.
+  \item \textbf{Expecting one flow to use the whole bundle.} It never will.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[The bundle formed with one member instead of four.]
+A new four-link bundle shows only \cmd{Gi0/1} bundled; the other three are
+suspended.
+
+\begin{verify}{SW1}{show etherchannel summary | begin Group}
+Group  Port-channel  Protocol    Ports
+------+-------------+-----------+-----------------------------------------------
+1      Po1(SU)         LACP      Gi0/1(P)  Gi0/2(s)  Gi0/3(s)  Gi0/4(s)
+\end{verify}
+
+\begin{verify}{SW1}{show interfaces GigabitEthernet0/2 switchport | include Access|Trunking|Mode}
+Administrative Mode: static access
+Operational Mode: static access
+Access Mode VLAN: 1 (default)
+Trunking Native Mode VLAN: 1 (default)
+\end{verify}
+
+\textbf{Diagnosis.} \cmd{Gi0/1} was configured as a trunk before being added to
+the group, and the others were left as access ports in VLAN 1. Members must agree
+on switch mode, so the three that disagree with the first are suspended. The
+\cmd{(s)} flag is the whole diagnosis; the second command identifies which
+parameter differs.
+
+\textbf{Fix.} Do not fix the members one by one --- that invites the same fault
+again. Apply the trunk configuration to \cmd{interface Port-channel1} and let it
+propagate, then confirm all four show \cmd{(P)}. If a member still refuses,
+compare speed and duplex next.
+\end{breakfix}
+
+\begin{lab}{Bundle four links and break them}{Packet Tracer}
+\textbf{Topology.} Two switches joined by four Ethernet links; one PC on each.
+
+\begin{tasks}
+  \item Cable all four links with no EtherChannel configured. Run
+        \cmd{show spanning-tree} and record how many are forwarding and how many
+        are blocking. Explain the result.
+  \item Configure \cmd{Po1} with LACP \cmd{active} at both ends, trunked, native
+        VLAN 999, allowed 10 and 20. Verify with \cmd{show etherchannel summary}.
+  \item Re-run \cmd{show spanning-tree}. How many logical links does it now see?
+  \item Shut one member. Confirm traffic continues and that spanning tree does
+        not reconverge.
+  \item Set one member's access VLAN to 20 by configuring the physical port
+        directly. Record the flag it earns and explain it.
+  \item Change one end to \cmd{passive} while the other is also \cmd{passive}.
+        Record what the bundle does.
+  \item \textbf{Extension.} Build a layer 3 EtherChannel between two multilayer
+        switches with a /30 and prove you can ping across it.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Two switches are configured \cmd{channel-group 1 mode passive} at both
+        ends. What happens, and what does spanning tree do about it?
+  \item A member port shows \cmd{(s)}. Name three parameters you would compare
+        and the command that shows them.
+  \item Why does adding a second member to a bundle not double the speed of a
+        single file copy?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item An EtherChannel makes several links look like one, so spanning tree
+        blocks none of them.
+  \item LACP \cmd{active} at both ends is the sensible default. Passive--passive
+        and auto--auto form nothing; \cmd{on} mixed with a negotiating mode
+        builds a loop.
+  \item Members must match on speed, duplex, switch mode, native VLAN and allowed
+        list. Configure the port channel interface and let it inherit.
+  \item Read \cmd{show etherchannel summary} by its flags: \cmd{(P)} bundled,
+        \cmd{(s)} suspended for a mismatch, \cmd{(I)} stand-alone, \cmd{(D)} down.
+  \item Load balancing is per conversation. One flow uses one member.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which LACP mode combination forms a bundle?
+        (a)~passive/passive (b)~active/passive (c)~auto/auto (d)~on/active
+  \item \textbf{(MCQ)} A member shows the \cmd{(s)} flag. What does it mean?
+        (a)~it is bundled (b)~it is suspended because its parameters differ
+        (c)~it is down (d)~it is a layer 3 port
+  \item \textbf{(Short)} Explain why mixing \cmd{on} with \cmd{active} is more
+        dangerous than a combination that simply fails to bundle.
+  \item \textbf{(Short)} A backup job runs at 1~Gbps across a four-member 1~Gbps
+        bundle. Explain to the person who ordered the extra links why this is
+        expected behaviour and what would actually help.
+  \item \textbf{(Applied)} Write the full configuration, both ends, for a
+        three-member LACP trunk carrying VLANs 10, 20 and 30 with native VLAN
+        999, and list the four \cmd{show} outputs you would capture to prove it
+        is healthy.
+\end{reviewq}

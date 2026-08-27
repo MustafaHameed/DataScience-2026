@@ -1,0 +1,328 @@
+\chapter{Rapid PVST+ and the Protection Features}\label{ch:stp}
+\bp{2.5}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what a layer 2 loop does to a network, and why it is
+        worse than any layer 3 failure.
+  \item \textbf{Predict} the root bridge, root ports and designated ports for a
+        given topology, and \textbf{influence} the outcome deliberately.
+  \item \textbf{Configure} Rapid PVST+, root primary and secondary, PortFast,
+        BPDU guard, root guard and loop guard.
+  \item \textbf{Diagnose} an unexpected root bridge, an errdisabled port and a
+        port that will not leave blocking.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ethernet} for flooding --- which is what makes a loop catastrophic ---
+and \chref{trunking} for trunks between switches.
+\end{prereq}
+
+\begin{keyterms}
+BPDU $\bullet$ root bridge $\bullet$ bridge ID $\bullet$ bridge priority
+$\bullet$ root port $\bullet$ designated port $\bullet$ alternate port $\bullet$
+path cost $\bullet$ Rapid PVST+ $\bullet$ PortFast $\bullet$ BPDU guard
+$\bullet$ root guard $\bullet$ loop guard $\bullet$ errdisable
+\end{keyterms}
+
+\section{Why a layer 2 loop is fatal}
+
+\begin{conceptbox}[Three things happen at once, and none of them stops]
+An IP packet carries a TTL that decrements at each router, so a routing loop
+eventually discards the packet. \textbf{An Ethernet frame has no TTL.} A frame
+caught in a switching loop circulates until somebody unplugs something.
+
+\begin{tight}
+  \item \textbf{Broadcast storm.} A single broadcast is flooded, arrives back,
+        and is flooded again --- multiplying without limit until the links
+        saturate.
+  \item \textbf{MAC table instability.} The same source address arrives on two
+        ports repeatedly, so the table is rewritten constantly and unicast
+        forwarding becomes unreliable (see the flap message in \chref{ethernet}).
+  \item \textbf{Duplicate frame delivery.} Hosts receive multiple copies, which
+        breaks protocols that assume they will not.
+\end{tight}
+The network does not degrade gracefully; it stops, usually within seconds. This
+is why spanning tree exists and why it is on by default.
+\end{conceptbox}
+
+\section{How the tree is chosen}
+
+\begin{definitionbox}[Bridge ID and root election]
+Every switch has a \term{bridge ID}: a 4-bit priority, plus a 12-bit extended
+system ID carrying the VLAN number, plus its MAC address. The switch with the
+\textbf{lowest bridge ID wins} and becomes the \term{root bridge}.
+
+Default priority is 32768. Because the extended system ID adds the VLAN number,
+the effective priority in VLAN 10 is $32768+10=32778$. Priorities are configured
+in steps of 4096.
+\end{definitionbox}
+
+\begin{alertbox}[Left alone, the oldest switch wins]
+If every switch keeps the default priority, the election is decided by the lowest
+MAC address --- which usually means the oldest device in the building becomes the
+root of your network. That is almost never where you want traffic to converge.
+\textbf{Always set the root deliberately.}
+\end{alertbox}
+
+\begin{conceptbox}[Then every port takes a role]
+Once the root is known:
+\begin{tight}
+  \item Each non-root switch picks its \term{root port} --- the one port with the
+        lowest cumulative path cost to the root. It forwards.
+  \item Each segment picks a \term{designated port} --- the port on that segment
+        closest to the root. It forwards.
+  \item Everything else becomes an \term{alternate} (or backup) port and
+        \textbf{blocks}. That is the loop being broken.
+\end{tight}
+Ties are broken by lowest sender bridge ID, then lowest sender port ID.
+\end{conceptbox}
+
+\begin{longtable}{@{}L{4.4cm}C{3.0cm}L{7.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Link speed} & \textbf{Cost} & \textbf{Note} \\
+\midrule
+\endhead
+10 Mbps   & 100 & Legacy \\
+\rowcolor{lightbg}
+100 Mbps  & 19  & \\
+1 Gbps    & 4   & \\
+\rowcolor{lightbg}
+10 Gbps   & 2   & Costs are cumulative along the path to the root \\
+\bottomrule
+\end{longtable}
+
+\section{Configuring Rapid PVST+}
+
+\term{Rapid PVST+} runs one rapid spanning tree instance per VLAN. It converges
+in seconds rather than the 30--50 of the original standard, and it is what the
+blueprint names.
+
+\begin{config}{Rapid PVST+ with a deliberate root}
+! Run rapid per-VLAN spanning tree.
+spanning-tree mode rapid-pvst
+!
+! On the switch that SHOULD be root for these VLANs:
+spanning-tree vlan 10,20,30 root primary
+!
+! On the switch that should take over if it fails:
+!   spanning-tree vlan 10,20,30 root secondary
+!
+! The macro above simply sets a priority. You can be explicit:
+!   spanning-tree vlan 10 priority 4096
+\end{config}
+
+\begin{verify}{SW1}{show spanning-tree vlan 10}
+VLAN0010
+  Spanning tree enabled protocol rstp
+  Root ID    Priority    4106
+             Address     00d0.58a1.0200
+             This bridge is the root
+             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    4106   (priority 4096 sys-id-ext 10)
+             Address     00d0.58a1.0200
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg FWD 4         128.1    P2p
+Gi0/2               Desg FWD 4         128.2    P2p
+\end{verify}
+
+Two things to read first: \cmd{This bridge is the root} --- is it the switch you
+intended? --- and the priority, \cmd{4106}, which is $4096+10$ and confirms the
+extended system ID is doing what it should.
+
+\begin{verify}{SW2}{show spanning-tree vlan 10}
+VLAN0010
+  Spanning tree enabled protocol rstp
+  Root ID    Priority    4106
+             Address     00d0.58a1.0200
+             Cost        4
+             Port        1 (GigabitEthernet0/1)
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Root FWD 4         128.1    P2p
+Gi0/2               Altn BLK 4         128.2    P2p
+\end{verify}
+
+\cmd{Gi0/2} is \cmd{Altn BLK} --- alternate, blocking. That is the loop being
+broken, and it is a healthy state, not a fault.
+
+\section{The protection features}
+
+Topic \tp{2.5} names PortFast, root guard, loop guard and BPDU guard explicitly.
+
+\begin{longtable}{@{}L{2.8cm}L{5.6cm}L{6.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Feature} & \textbf{What it does} & \textbf{Put it where} \\
+\midrule
+\endhead
+\textbf{PortFast} & Skips listening and learning; the port forwards immediately &
+Access ports with an end device. Saves ~30 s on boot and stops DHCP timing out \\
+\rowcolor{lightbg}
+\textbf{BPDU guard} & Errdisables the port if a BPDU arrives &
+The same access ports. A BPDU there means somebody plugged in a switch \\
+\textbf{Root guard} & Ignores superior BPDUs; puts the port in root-inconsistent
+state & Ports facing downstream switches you do not want becoming root \\
+\rowcolor{lightbg}
+\textbf{Loop guard} & Blocks a port that stops receiving BPDUs rather than
+letting it forward & Root and alternate ports on trunks, where a unidirectional
+link would otherwise create a loop \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[PortFast and BPDU guard belong together]
+PortFast on its own is a loop waiting to happen: it tells a port to forward
+immediately, so if somebody plugs a switch into it the loop is live before
+spanning tree can react. BPDU guard is the safety catch --- the instant a BPDU
+arrives, the port is shut. Configure them as a pair, always.
+\end{alertbox}
+
+\begin{config}{protection, per port and globally}
+! Per access port.
+interface range GigabitEthernet0/5 - 20
+ switchport mode access
+ switchport access vlan 10
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+!
+! Or globally, which applies to every access port automatically --
+! far harder to forget on the next port somebody configures.
+spanning-tree portfast default
+spanning-tree portfast bpduguard default
+!
+! On a trunk facing a downstream switch that must never be root:
+interface GigabitEthernet0/23
+ spanning-tree guard root
+!
+! Loop guard, globally on all point-to-point links.
+spanning-tree loopguard default
+\end{config}
+
+\begin{verify}{SW1}{show interfaces status err-disabled}
+Port      Name               Status       Reason               Err-disabled Vlans
+Gi0/7                        err-disabled bpduguard
+\end{verify}
+
+\begin{conceptbox}[Recovering an errdisabled port]
+Manually: \cmd{shutdown} then \cmd{no shutdown} on the interface --- after
+removing whatever caused it. Automatically:
+
+\begin{config}{automatic recovery from BPDU guard}
+errdisable recovery cause bpduguard
+errdisable recovery interval 300
+\end{config}
+
+Automatic recovery is a convenience, not a fix. If a rogue switch is still
+plugged in the port will simply errdisable again every five minutes.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Leaving the root election to chance.} The oldest switch wins, and
+        your traffic detours through the wiring closet nobody has visited in ten
+        years.
+  \item \textbf{PortFast without BPDU guard.} See above.
+  \item \textbf{PortFast on a trunk to another switch.} It is for edge ports.
+        There is a \cmd{portfast trunk} variant for specific cases, but the
+        default answer is no.
+  \item \textbf{Treating a blocking port as broken.} \cmd{Altn BLK} is spanning
+        tree working.
+  \item \textbf{Forgetting spanning tree is per VLAN.} A change to VLAN 10 does
+        nothing for VLAN 20. Always name the VLANs.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[After a new switch was added, traffic takes a strange path.]
+An access switch was installed in a spare closet. Since then, throughput between
+two core switches has halved and \cmd{show spanning-tree vlan 10} on the core
+reports that it is no longer the root.
+
+\begin{verify}{CORE1}{show spanning-tree vlan 10 | include Root ID|Priority|Address}
+  Root ID    Priority    32778
+             Address     0011.2233.4455
+             Cost        19
+\end{verify}
+
+\textbf{Diagnosis.} The root's priority is 32778 --- the default of $32768+10$ ---
+and the MAC address is not the core's. The new access switch shipped with default
+priority and a lower MAC address than the core, so it won the election. Every
+VLAN's traffic now converges on a small access switch connected by a 100~Mbps
+link, which is where the cost of 19 comes from and why throughput halved.
+
+\textbf{Fix.} Two steps, and do both. Set the intended root explicitly on the
+core: \cmd{spanning-tree vlan 10,20,30 root primary}, and the secondary on the
+other core switch. Then stop it happening again: apply
+\cmd{spanning-tree guard root} on the core ports facing access switches, so a
+switch advertising a superior BPDU is ignored rather than obeyed.
+\end{breakfix}
+
+\begin{lab}{Steer the tree, then protect it}{Packet Tracer}
+\textbf{Topology.} Three switches cabled in a triangle --- deliberately looped ---
+with PCs on two of them.
+
+\begin{tasks}
+  \item Cable the triangle with no spanning tree changes. Identify the root from
+        \cmd{show spanning-tree} and explain \emph{why} that switch won.
+  \item Record which port on which switch is blocking.
+  \item Set \cmd{SW1} as \cmd{root primary} and \cmd{SW2} as \cmd{root secondary}
+        for VLAN 1. Re-check and record what moved.
+  \item Disconnect the link between \cmd{SW1} and \cmd{SW3}. Time how long
+        traffic takes to recover and note which port changed role.
+  \item Enable PortFast and BPDU guard on an access port, then plug a switch into
+        it. Record the log message and the port status, then recover the port.
+  \item Enable \cmd{spanning-tree guard root} on \cmd{SW1}'s port to \cmd{SW3},
+        then try to make \cmd{SW3} root by lowering its priority. Record what
+        happens instead.
+  \item \textbf{Extension.} Time how long the network takes to recover from a
+        link failure under \cmd{spanning-tree mode pvst}, then repeat under
+        \cmd{rapid-pvst} and compare the two figures.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Three switches have default priorities and MAC addresses ending
+        \cmd{...0100}, \cmd{...0050} and \cmd{...0200}. Which is root, and why?
+  \item A port shows \cmd{Altn BLK}. Is this a fault? Justify your answer.
+  \item Why must PortFast and BPDU guard be configured together?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item An Ethernet frame has no TTL, so a layer 2 loop never self-clears. A
+        broadcast storm takes the network down in seconds.
+  \item Lowest bridge ID becomes root; bridge ID is priority plus VLAN plus MAC.
+        Set it deliberately or the oldest switch wins.
+  \item Root port per switch, designated port per segment, everything else
+        blocks.
+  \item Rapid PVST+ runs one rapid instance per VLAN. Configure it, and remember
+        every command is per VLAN.
+  \item PortFast with BPDU guard on access ports; root guard facing downstream
+        switches; loop guard on trunks. Errdisable is recovered by
+        \cmd{shutdown}/\cmd{no shutdown} after removing the cause.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} What is the effective priority of a switch in VLAN 20 with
+        a configured priority of 8192? (a)~8192 (b)~8212 (c)~28692 (d)~32788
+  \item \textbf{(MCQ)} Which feature errdisables a port when a BPDU is received?
+        (a)~PortFast (b)~BPDU guard (c)~root guard (d)~loop guard
+  \item \textbf{(Short)} Explain why a layer 2 loop is more damaging than a
+        routing loop.
+  \item \textbf{(Short)} A port is in \cmd{root-inconsistent} state. Which feature
+        put it there, and what was it protecting against?
+  \item \textbf{(Applied)} You inherit a three-switch network where the root is a
+        random access switch and no protection features are configured. Write the
+        commands to make the core the root, provide a backup root, and prevent
+        recurrence --- and say in what order you would apply them on a live
+        network, with a reason.
+\end{reviewq}

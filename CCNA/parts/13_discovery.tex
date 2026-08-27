@@ -1,0 +1,264 @@
+\chapter{CDP, LLDP and Documenting a Network}\label{ch:discovery}
+\bp{2.3}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what discovery protocols advertise and what they cannot
+        tell you.
+  \item \textbf{Configure} CDP and LLDP, including disabling them where they
+        should not run.
+  \item \textbf{Validate} a network diagram against the devices themselves, which
+        is precisely what topic \tp{2.3} asks.
+  \item \textbf{Use} discovery output to find a mismatch --- native VLAN, duplex
+        or an undocumented device.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{trunking} for native VLANs, \chref{physical} for duplex, \chref{cli} for
+filtering output.
+\end{prereq}
+
+\begin{keyterms}
+CDP $\bullet$ LLDP $\bullet$ LLDP-MED $\bullet$ neighbour $\bullet$ holdtime
+$\bullet$ advertisement $\bullet$ capability code $\bullet$ platform $\bullet$
+local interface $\bullet$ port ID
+\end{keyterms}
+
+\begin{examnote}[The verb here is \emph{validate}]
+Topic \tp{2.3} is ``validate the accuracy of network documentation using CDP and
+LLDP''. It is not asking you to describe the protocols. It is asking you to take
+a diagram that claims \cmd{SW1 Gi0/1} connects to \cmd{R1 Gi0/0}, and prove from
+the devices whether that is true. Expect to be shown a diagram and some
+\cmd{show cdp neighbors} output that contradicts it.
+\end{examnote}
+
+\section{Two protocols, one job}
+
+\begin{longtable}{@{}L{3.0cm}L{5.6cm}L{6.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{CDP} & \textbf{LLDP} \\
+\midrule
+\endhead
+Standard & Cisco proprietary & IEEE 802.1AB, open \\
+\rowcolor{lightbg}
+Default state & On (most Cisco platforms) & Off (most Cisco platforms) \\
+Timers & Advertise 60~s, hold 180~s & Advertise 30~s, hold 120~s \\
+\rowcolor{lightbg}
+Sees & Cisco devices & Anything that speaks LLDP, including other vendors,
+printers and phones \\
+Voice extension & --- & LLDP-MED, used to tell phones their voice VLAN \\
+\bottomrule
+\end{longtable}
+
+Run both in a mixed estate: CDP for the Cisco gear, LLDP for everything else.
+
+\begin{definitionbox}[What a neighbour advertisement carries]
+Device identifier, the local and remote interface, the platform and capabilities,
+and depending on the protocol and platform: IP address, IOS version, native VLAN,
+duplex and power requirements.
+
+Crucially, a neighbour is \textbf{directly connected at layer 2}. A device two
+switches away never appears. That is exactly what makes the output usable as
+evidence of physical cabling.
+\end{definitionbox}
+
+\section{Reading the output}
+
+\begin{verify}{SW1}{show cdp neighbors}
+Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                  S - Switch, H - Host, I - IGMP, r - Repeater, P - Phone
+
+Device ID    Local Intrfce   Holdtme   Capability   Platform    Port ID
+R1           Gig 0/1          142        R S I      C1111       Gig 0/0/0
+SW2          Gig 0/2          167        S I        WS-C2960    Gig 0/1
+SW3          Gig 0/3          121        S I        WS-C2960    Gig 0/24
+AP-EAST      Gig 0/10         155        H          AIR-AP2802  Gig 0
+\end{verify}
+
+Read it as four columns that matter: \textbf{Device ID} (who), \textbf{Local
+Intrfce} (my port), \textbf{Port ID} (their port), \textbf{Capability} (what kind
+of device). Those four are the cabling diagram, taken from the devices rather
+than from a drawing somebody updated in 2019.
+
+\begin{verify}{SW1}{show cdp neighbors detail}
+-------------------------
+Device ID: R1
+Entry address(es):
+  IP address: 10.0.0.1
+Platform: Cisco C1111-4P,  Capabilities: Router Switch IGMP
+Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/0/0
+Holdtime : 142 sec
+
+Version :
+Cisco IOS XE Software, Version 17.09.04a
+
+Duplex: full
+Native VLAN: 999
+\end{verify}
+
+\cmd{detail} adds the IP address, the software version, the duplex and the native
+VLAN --- which is how a native VLAN mismatch gets caught before it causes a
+security incident.
+
+\begin{config}{running both protocols, and switching them off where they do not belong}
+! CDP is on by default; LLDP is not.
+lldp run
+!
+! Turn CDP off on a port facing anything you do not control.
+! Advertising your platform and IOS version to a guest network,
+! an ISP handoff or an untrusted uplink is free reconnaissance.
+interface GigabitEthernet0/24
+ description ISP handoff - no discovery
+ no cdp enable
+ no lldp transmit
+ no lldp receive
+!
+! Globally, if policy demands it:
+!   no cdp run
+\end{config}
+
+\begin{alertbox}[Do not disable it everywhere on principle]
+There is a reflex to switch CDP off across the estate ``for security''. Weigh it
+properly: internally, CDP and LLDP are how you validate cabling, how phones learn
+their voice VLAN (\chref{edgehost}), and how native VLAN and duplex mismatches
+are detected. Disable them on untrusted edges --- ISP links, guest ports, DMZ
+segments --- and leave them running inside.
+\end{alertbox}
+
+\section{Validating a diagram}
+
+\begin{worked}[The diagram says one thing, the switch says another]
+The documentation claims:
+
+\begin{tight}
+  \item \cmd{SW1 Gi0/2} $\rightarrow$ \cmd{SW2 Gi0/1}
+  \item \cmd{SW1 Gi0/3} $\rightarrow$ \cmd{SW3 Gi0/1}
+\end{tight}
+
+The output above shows \cmd{Gi0/2} to \cmd{SW2 Gi0/1} --- correct --- but
+\cmd{Gi0/3} to \cmd{SW3 \textbf{Gig 0/24}}, not \cmd{Gi0/1}.
+
+\textbf{What that means in practice.} Somebody re-patched \cmd{SW3} and did not
+update the diagram. It may be harmless. It may not: if \cmd{SW3 Gi0/24} is
+configured as an access port while \cmd{Gi0/1} was the trunk, the uplink is
+carrying one VLAN instead of all of them, and the fault will surface later as
+``the new VLAN does not work on the third floor''.
+
+\textbf{What to do.} Correct the diagram, then check that the port actually in use
+carries the configuration the design intended. Discovery output tells you what is
+plugged in; it does not tell you whether the port is configured correctly. That
+is a second check.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Expecting to see non-adjacent devices.} Neighbours are one hop.
+        A device that does not appear may simply be further away.
+  \item \textbf{Concluding a device is absent when CDP is off.} A non-Cisco
+        switch, or one with CDP disabled, is invisible to CDP and may still be
+        there. Cross-check with LLDP and the MAC address table.
+  \item \textbf{Trusting stale entries.} Holdtime counts down from 180~s. An
+        entry can persist for three minutes after a device is unplugged.
+  \item \textbf{Forgetting \cmd{lldp run}.} Without it, \cmd{show lldp neighbors}
+        is empty and you may wrongly conclude nothing is connected.
+  \item \textbf{Reading the port columns backwards.} \cmd{Local Intrfce} is
+        yours; \cmd{Port ID} is theirs.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[An undocumented switch appears in the discovery table.]
+An audit of \cmd{SW1} shows a neighbour that is not on any diagram:
+
+\begin{verify}{SW1}{show cdp neighbors GigabitEthernet0/14 detail}
+-------------------------
+Device ID: Switch
+Entry address(es):
+Platform: cisco WS-C2960-8TC-L,  Capabilities: Switch IGMP
+Interface: GigabitEthernet0/14,  Port ID (outgoing port): FastEthernet0/1
+Holdtime : 131 sec
+
+Version :
+Cisco IOS Software, C2960 Software, Version 12.2(55)SE
+\end{verify}
+
+\textbf{Diagnosis.} An eight-port switch with the default hostname \cmd{Switch},
+no management address, and a decade-old IOS version, connected to an access port
+--- somebody has plugged a desk switch into a wall socket to get more ports. It is
+unmanaged, it participates in spanning tree, and it can influence the root
+election (\chref{stp}).
+
+\textbf{Fix.} Short term: confirm what is downstream of it before unplugging
+anything, because there are probably users behind it. Long term, this is exactly
+what \cmd{spanning-tree bpduguard} on access ports is for --- with it configured,
+the port would have errdisabled the moment the switch was connected and the
+problem would have announced itself instead of being found in an audit months
+later.
+\end{breakfix}
+
+\begin{lab}{Draw the network from the devices}{Packet Tracer}
+\textbf{Topology.} Four switches and a router, cabled by your instructor or a
+partner without telling you how, plus a deliberately wrong diagram.
+
+\begin{tasks}
+  \item Using only \cmd{show cdp neighbors} from each device, draw the physical
+        topology. Do not look at the cables.
+  \item Compare your drawing with the supplied diagram and list every
+        discrepancy.
+  \item Run \cmd{show cdp neighbors detail} on one link and record the IOS
+        version, duplex and native VLAN of the neighbour.
+  \item Create a native VLAN mismatch on one trunk and find the resulting log
+        message.
+  \item Enable \cmd{lldp run} everywhere and compare \cmd{show lldp neighbors}
+        with the CDP view. Account for any difference.
+  \item Disable CDP on one port and confirm the neighbour disappears --- noting
+        how long it takes.
+  \item \textbf{Extension.} Write a short procedure a junior technician could
+        follow to validate a patching change using discovery output alone.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item \cmd{show cdp neighbors} lists a device you know is three switches away.
+        What must be true?
+  \item You unplug a device and it still appears in the table. Why, and for how
+        long?
+  \item Which single command would tell you a neighbour's IOS version and native
+        VLAN?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item CDP is Cisco and on by default; LLDP is open and off by default. Run both
+        in a mixed estate.
+  \item Neighbours are directly connected only --- which is what makes the output
+        evidence of cabling.
+  \item \cmd{Local Intrfce} is your port, \cmd{Port ID} is theirs. Those two
+        columns plus the device name are the diagram.
+  \item \cmd{detail} adds IP, version, duplex and native VLAN, and catches
+        mismatches before they cause incidents.
+  \item Disable discovery on untrusted edges, not everywhere. Holdtime means
+        entries persist for minutes after a device is removed.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which command enables LLDP globally?
+        (a)~\cmd{lldp enable} (b)~\cmd{lldp run} (c)~\cmd{lldp transmit}
+        (d)~\cmd{no lldp disable}
+  \item \textbf{(MCQ)} In \cmd{show cdp neighbors}, which column names the port
+        on the \emph{remote} device?
+        (a)~Local Intrfce (b)~Port ID (c)~Platform (d)~Capability
+  \item \textbf{(Short)} Give two reasons to leave CDP running inside a network
+        and one reason to disable it at an edge.
+  \item \textbf{(Short)} A diagram says two switches are connected. Neither
+        appears in the other's CDP table. Give three explanations.
+  \item \textbf{(Applied)} You are handed a network with no documentation.
+        Describe a repeatable procedure, naming the commands, to produce an
+        accurate physical topology diagram and state two things your procedure
+        cannot establish.
+\end{reviewq}

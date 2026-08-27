@@ -1,0 +1,305 @@
+\chapter{The Routing Table and How a Router Decides}\label{ch:routingtable}
+\bp{3.1}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Read} every column and code in \cmd{show ip route}.
+  \item \textbf{Apply} the longest prefix match rule to determine which entry a
+        given packet uses.
+  \item \textbf{Explain} administrative distance and predict which source wins
+        when two protocols offer the same prefix.
+  \item \textbf{Distinguish} the three reasons a packet is dropped: no route, a
+        route to null, and an unreachable next hop.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ipv4} for prefixes and masks --- this chapter is unreadable without
+fluent subnetting. \chref{trunking} for SVIs as gateways.
+\end{prereq}
+
+\begin{keyterms}
+routing table $\bullet$ prefix $\bullet$ next hop $\bullet$ exit interface
+$\bullet$ administrative distance $\bullet$ metric $\bullet$ longest prefix match
+$\bullet$ directly connected $\bullet$ local route $\bullet$ default route
+$\bullet$ gateway of last resort $\bullet$ null0
+\end{keyterms}
+
+\section{Reading the table}
+
+\begin{verify}{R1}{show ip route}
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       O - OSPF, IA - OSPF inter area, N1 - OSPF NSSA external type 1
+       E1 - OSPF external type 1, E2 - OSPF external type 2
+       * - candidate default, U - per-user static route
+
+Gateway of last resort is 203.0.113.1 to network 0.0.0.0
+
+S*    0.0.0.0/0 [1/0] via 203.0.113.1
+      10.0.0.0/8 is variably subnetted, 4 subnets, 2 masks
+O        10.1.0.0/16 [110/20] via 10.255.0.2, 00:14:22, GigabitEthernet0/1
+C        10.255.0.0/30 is directly connected, GigabitEthernet0/1
+L        10.255.0.1/32 is directly connected, GigabitEthernet0/1
+S        10.9.9.0/24 [1/0] via 10.255.0.2
+      192.168.10.0/24 is directly connected, Vlan10
+C        192.168.10.0/24 is directly connected, Vlan10
+L        192.168.10.1/32 is directly connected, Vlan10
+\end{verify}
+
+\begin{longtable}{@{}L{3.0cm}L{12.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Element} & \textbf{What it tells you} \\
+\midrule
+\endhead
+Code letter & Where the route came from. \cmd{C} connected, \cmd{L} local,
+\cmd{S} static, \cmd{O} OSPF \\
+\rowcolor{lightbg}
+Prefix and mask & The destination network this entry covers \\
+\cmd{[110/20]} & \textbf{Administrative distance / metric.} 110 is OSPF's
+distance; 20 is OSPF's cost for this path \\
+\rowcolor{lightbg}
+\cmd{via 10.255.0.2} & The next hop --- the neighbouring router to hand the
+packet to \\
+Interface & The exit interface \\
+\rowcolor{lightbg}
+\cmd{00:14:22} & How long the route has been in the table. A route that keeps
+resetting is flapping \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[C and L are not the same thing]
+\cmd{C} is the \emph{subnet} on a directly connected interface --- the range the
+router can reach by ARP. \cmd{L} is a \cmd{/32} host route for the router's
+\emph{own} address on that interface, so that traffic addressed to the router
+itself is delivered locally rather than forwarded.
+
+You do not configure \cmd{L} routes; the router creates one for every address you
+give an interface. They appear in every table and are not a fault.
+\end{conceptbox}
+
+\section{Rule one: longest prefix match}
+
+\begin{conceptbox}[The most specific route wins, regardless of anything else]
+When several entries could carry a packet, the router uses the one with the
+\textbf{longest prefix} --- the most 1 bits in the mask. Administrative distance
+and metric never override this; they only choose between entries with the
+\emph{same} prefix length.
+\end{conceptbox}
+
+\begin{worked}[Which entry carries the packet?]
+Using the table above, a packet for \cmd{10.9.9.20}:
+
+\begin{tightnum}
+  \item \cmd{0.0.0.0/0} --- matches everything. Prefix length 0.
+  \item \cmd{10.1.0.0/16} --- does \cmd{10.9.9.20} fall inside? The /16 covers
+        \cmd{10.1.0.0}--\cmd{10.1.255.255}. No.
+  \item \cmd{10.9.9.0/24} --- covers \cmd{10.9.9.0}--\cmd{10.9.9.255}. Yes.
+        Prefix length 24.
+\end{tightnum}
+
+Two entries match: the default and the /24. The /24 is longer, so the packet goes
+\cmd{via 10.255.0.2}. Note that the default route has a \emph{better}
+administrative distance (1 versus 1 --- equal here) and it still loses, because
+prefix length is decided first.
+
+Now a packet for \cmd{172.20.5.1}: only \cmd{0.0.0.0/0} matches, so it takes the
+gateway of last resort.
+\end{worked}
+
+\section{Rule two: administrative distance}
+
+\begin{definitionbox}[Administrative distance]
+\term{Administrative distance} ranks the trustworthiness of a route's
+\emph{source}. When two sources offer the same prefix at the same length, the
+lower distance is installed and the other is discarded --- it does not even
+appear in the table.
+\end{definitionbox}
+
+\begin{longtable}{@{}L{5.4cm}C{2.6cm}L{7.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Source} & \textbf{Distance} & \textbf{Note} \\
+\midrule
+\endhead
+Connected & 0 & Nothing beats seeing it yourself \\
+\rowcolor{lightbg}
+Static & 1 & You said so, so the router believes you \\
+eBGP & 20 & \\
+\rowcolor{lightbg}
+OSPF & 110 & The only dynamic protocol in this exam \\
+RIP & 120 & Legacy \\
+\rowcolor{lightbg}
+Unreachable / unusable & 255 & Never installed \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Why a static route beats OSPF, and when that bites]
+A static route at distance 1 will always displace an OSPF route at 110 for the
+same prefix. That is usually what you want --- until the static route's path
+fails. OSPF would have re-routed; the static route sits there pointing at a dead
+path, because a static route has no way of knowing anything is wrong beyond the
+directly connected interface.
+
+The deliberate use of this is the \term{floating static route}: a backup static
+configured with a distance \emph{higher} than the dynamic protocol, so it stays
+out of the table until the dynamic route disappears. That is \chref{static}.
+\end{conceptbox}
+
+\section{Three ways a packet dies}
+
+\begin{longtable}{@{}L{3.6cm}L{5.2cm}L{6.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Cause} & \textbf{What the router does} & \textbf{How you see it} \\
+\midrule
+\endhead
+No matching route & Drops the packet and sends ICMP unreachable &
+\cmd{U} in ping output; \cmd{show ip route} has no entry and no default \\
+\rowcolor{lightbg}
+Route points to \cmd{Null0} & Silently discards & An entry
+\cmd{via Null0}. Often deliberate, for summarisation or blackholing \\
+Next hop unreachable & Route exists but cannot be resolved to a next hop &
+Route is in the table; pings fail; \cmd{show ip route} for the next hop shows
+nothing \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[A route in the table is not proof of reachability]
+The presence of an entry means the router knows where it \emph{would} send the
+packet. It says nothing about whether the next hop is alive, whether the far end
+has a route back, or whether an access list drops it en route.
+
+Confirm with an extended ping sourced from the relevant interface
+(\chref{transport}) --- that tests the return path too, which a route entry never
+does.
+\end{alertbox}
+
+\begin{verify}{R1}{show ip route 10.9.9.20}
+Routing entry for 10.9.9.0/24
+  Known via "static", distance 1, metric 0
+  Routing Descriptor Blocks:
+  * 10.255.0.2
+      Route metric is 0, traffic share count is 1
+\end{verify}
+
+Querying a specific address rather than reading the whole table is faster and is
+what the exam expects when it asks which entry would be used.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Comparing metrics across protocols.} An OSPF cost of 20 and a RIP
+        hop count of 2 are not comparable. Administrative distance decides first,
+        and only then does metric compare \emph{within} one protocol.
+  \item \textbf{Thinking a better distance beats a longer prefix.} It does not.
+        Prefix length is decided first, always.
+  \item \textbf{Missing the gateway of last resort line.} If it says
+        \cmd{not set}, there is no default and anything unmatched is dropped.
+  \item \textbf{Reading \cmd{L} entries as duplicates.} They are the router's own
+        addresses and belong there.
+  \item \textbf{Assuming symmetry.} Traffic reaching a destination does not mean
+        the reply can return. Most one-way faults are a missing reverse route.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[The route is there and the ping still fails.]
+Users on \cmd{192.168.10.0/24} cannot reach \cmd{10.9.9.0/24}. \cmd{R1} has the
+route:
+
+\begin{verify}{R1}{show ip route 10.9.9.0}
+Routing entry for 10.9.9.0/24
+  Known via "static", distance 1, metric 0
+  Routing Descriptor Blocks:
+  * 10.255.0.2
+\end{verify}
+
+A ping from \cmd{R1} to \cmd{10.9.9.20} succeeds. A ping from a user's PC fails.
+
+\textbf{Diagnosis.} The difference between the two pings is the source address.
+\cmd{R1}'s own ping is sourced from \cmd{10.255.0.1}, which the far end knows
+about because it is the link between them. The PC's traffic is sourced from
+\cmd{192.168.10.x}, and the far router has no route back to that subnet. The
+forward path is fine; the return path does not exist.
+
+\textbf{Confirm it} without leaving \cmd{R1}, using an extended ping that borrows
+the user's source address:
+
+\begin{verify}{R1}{ping 10.9.9.20 source Vlan10}
+Sending 5, 100-byte ICMP Echos to 10.9.9.20, timeout is 2 seconds:
+Packet sent with a source address of 192.168.10.1
+.....
+Success rate is 0 percent (0/5)
+\end{verify}
+
+Same destination, different source, opposite result --- which is proof, not
+inference.
+
+\textbf{Fix.} Add a route on the far router back to \cmd{192.168.10.0/24}. Then
+re-run the same extended ping and expect five exclamation marks.
+\end{breakfix}
+
+\begin{lab}{Read the table, then predict the path}{Packet Tracer}
+\textbf{Topology.} Three routers in a line, a LAN on each end, and a second path
+between the outer two.
+
+\begin{tasks}
+  \item Address everything and confirm the connected routes appear. Identify
+        every \cmd{C} and \cmd{L} entry and explain each \cmd{L}.
+  \item Add static routes so the two LANs can reach each other. Record the
+        distance and metric shown.
+  \item Add a default route on one router. Note the \cmd{S*} and the
+        \emph{gateway of last resort} line.
+  \item Write down, before testing, which entry a packet to each of four
+        addresses would use. Verify each with \cmd{show ip route <address>}.
+  \item Add a second, more specific route for one destination and confirm it wins
+        over the less specific one, regardless of distance.
+  \item Remove the reverse route on the far router and reproduce the one-way
+        fault above using \cmd{ping ... source}.
+  \item \textbf{Extension.} Add a route pointing to \cmd{Null0} for an unused
+        prefix and observe how traffic to it fails compared with having no route
+        at all.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A table contains \cmd{10.0.0.0/8} via OSPF and \cmd{10.5.0.0/16} via a
+        static route. Which carries a packet to \cmd{10.5.1.1}, and why?
+  \item Both OSPF and a static route offer \cmd{192.168.50.0/24}. Which is
+        installed, and what happens to the other?
+  \item A route exists but pings fail. Name three causes and the single command
+        that distinguishes the most common one.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item One table, many sources. \cmd{C} connected, \cmd{L} the router's own
+        address, \cmd{S} static, \cmd{O} OSPF.
+  \item \cmd{[distance/metric]}. Distance ranks the source; metric ranks paths
+        within one protocol and is never compared across protocols.
+  \item Longest prefix match decides first. Distance only breaks ties between
+        equal-length prefixes.
+  \item Connected 0, static 1, OSPF 110. A static route displaces OSPF and will
+        not fail over unless you make it float.
+  \item A route in the table proves intent, not reachability. Test the return
+        path with an extended ping.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A router has \cmd{0.0.0.0/0}, \cmd{172.16.0.0/16} and
+        \cmd{172.16.8.0/24}. Which carries a packet to \cmd{172.16.8.50}?
+        (a)~the default (b)~the /16 (c)~the /24 (d)~it is dropped
+  \item \textbf{(MCQ)} What is the administrative distance of a static route?
+        (a)~0 (b)~1 (c)~110 (d)~120
+  \item \textbf{(Short)} Explain the difference between a \cmd{C} and an \cmd{L}
+        entry and why both exist.
+  \item \textbf{(Short)} Why can an OSPF cost never be compared with a RIP hop
+        count?
+  \item \textbf{(Applied)} A router shows a static route to a remote subnet, and
+        pings from the router succeed while pings from its LAN fail. Explain the
+        likely cause, the exact command that would prove it, and the fix ---
+        including which device you would change.
+\end{reviewq}

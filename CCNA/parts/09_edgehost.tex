@@ -1,0 +1,318 @@
+\chapter{Edge-Host Connectivity: PoE, Voice, APs and IoT}\label{ch:edgehost}
+\bp{2.2}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Configure} an access port correctly for each of the five device
+        types the blueprint names.
+  \item \textbf{Explain} how a data VLAN and a voice VLAN share one cable, and
+        why that is not a trunk in the ordinary sense.
+  \item \textbf{Configure} and verify Power over Ethernet, including budget and
+        per-port limits.
+  \item \textbf{Diagnose} the faults peculiar to edge ports: a phone that gets no
+        power, an AP that sees only one VLAN, and a device in the wrong VLAN
+        because it was plugged into the wrong socket.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{vlans} for VLANs and access ports. \chref{cli} for interface ranges.
+\end{prereq}
+
+\begin{keyterms}
+Power over Ethernet $\bullet$ PoE, PoE+, UPoE $\bullet$ power budget $\bullet$
+voice VLAN $\bullet$ data VLAN $\bullet$ standalone AP $\bullet$ controller-based
+AP $\bullet$ LWAPP/CAPWAP $\bullet$ IoT appliance $\bullet$ errdisable
+\end{keyterms}
+
+\begin{examnote}[Read topic 2.2 carefully --- it lists the devices]
+Topic \tp{2.2} is ``configure Layer 2 switch port attributes for edge-host
+connectivity (VLAN, PoE, port channel, and LACP)'' and then names five
+categories: desktops, printers and IoT appliances; wireless access points,
+standalone and controller-based; VoIP phones; virtualised hosts; and network
+appliances. The exam expects a different port configuration for several of them,
+so learn them as five cases rather than one.
+\end{examnote}
+
+\section{Power over Ethernet}
+
+\begin{definitionbox}[PoE]
+\term{Power over Ethernet} delivers electrical power over the same twisted pair
+that carries data, so a phone, camera or access point needs one cable rather than
+two. The switch negotiates with the device and supplies only what it asks for.
+\end{definitionbox}
+
+\begin{longtable}{@{}L{3.0cm}C{2.4cm}C{2.4cm}L{7.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Standard} & \textbf{Per port} & \textbf{Name} & \textbf{Typically powers} \\
+\midrule
+\endhead
+802.3af & 15.4 W & PoE & IP phone, basic AP, door sensor \\
+\rowcolor{lightbg}
+802.3at & 30 W & PoE+ & Modern AP, PTZ camera \\
+802.3bt & 60--90 W & UPoE, PoE++ & Multi-radio AP, display, thin client \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The budget is the constraint, not the port]
+A switch has a total power budget shared across all ports --- often far less than
+the number of ports times the maximum per port. A 24-port PoE+ switch with a
+370~W budget cannot deliver 30~W to all 24. When the budget is exhausted the
+switch stops powering \emph{new} devices, so the symptom is ``the phone I plugged
+in this morning works, the one I plugged in this afternoon does not'', and
+nothing in the port configuration looks wrong.
+
+Check \cmd{show power inline} before you check anything else.
+\end{alertbox}
+
+\begin{config}{PoE on an access port}
+interface GigabitEthernet0/10
+ description AP in the east corridor
+ switchport mode access
+ switchport access vlan 10
+ ! auto is the default: negotiate and give the device what it asks for.
+ power inline auto
+ ! Cap a port that must never take more than a phone's worth.
+ ! power inline auto max 15400
+ no shutdown
+!
+! Never power this port -- a data-only port that must not energise.
+interface GigabitEthernet0/24
+ power inline never
+\end{config}
+
+\begin{verify}{SW1}{show power inline}
+Available:370.0(w)  Used:71.5(w)  Remaining:298.5(w)
+
+Interface Admin  Oper       Power   Device              Class Max
+                            (Watts)
+--------- ------ ---------- ------- ------------------- ----- ----
+Gi0/1     auto   on         6.3     IP Phone 7960       2     15.4
+Gi0/2     auto   on         6.3     IP Phone 7960       2     15.4
+Gi0/10    auto   on         28.6    AIR-AP2802I         4     30.0
+Gi0/11    auto   off        0.0     n/a                 n/a   30.0
+Gi0/24    never  off        0.0     n/a                 n/a   0.0
+\end{verify}
+
+Read the top line first. \cmd{Remaining} is what decides whether the next device
+you plug in will power up at all.
+
+\section{Voice VLANs: two VLANs, one cable}
+
+An IP phone has a small switch inside it: the cable from the wall goes into the
+phone, and the PC plugs into the back of the phone. Both need network access, and
+they should not be in the same VLAN --- voice needs its own subnet for quality
+and for security.
+
+\begin{conceptbox}[How one access port carries two VLANs]
+The port is configured with a \term{data VLAN} and a \term{voice VLAN}. The
+switch tells the phone, over CDP or LLDP-MED, which VLAN ID to tag its own
+traffic with. The phone tags voice frames and passes the PC's frames through
+untagged.
+
+So the switch sees tagged voice traffic and untagged data traffic on one access
+port. Strictly this is a trunk carrying two VLANs, but it is configured as an
+access port and Cisco calls it a \term{multi-VLAN access port}. Do not configure
+\cmd{switchport mode trunk} here --- the voice VLAN command does what is needed,
+and a real trunk would change how the PC's untagged traffic is handled.
+\end{conceptbox}
+
+\begin{config}{a desk port for a phone with a PC behind it}
+interface GigabitEthernet0/1
+ description Desk 1 - phone with PC daisy-chained
+ switchport mode access
+ switchport access vlan 10
+ switchport voice vlan 30
+ ! The PC should forward immediately rather than waiting for
+ ! spanning tree -- see chapter on Rapid PVST+.
+ spanning-tree portfast
+ power inline auto
+ no shutdown
+\end{config}
+
+\begin{verify}{SW1}{show interfaces GigabitEthernet0/1 switchport}
+Name: Gi0/1
+Switchport: Enabled
+Administrative Mode: static access
+Operational Mode: static access
+Access Mode VLAN: 10 (Staff)
+Voice VLAN: 30 (Voice)
+\end{verify}
+
+\section{Access points, standalone and controller-based}
+
+The blueprint distinguishes the two, and the distinction changes the port
+configuration completely.
+
+\begin{longtable}{@{}L{3.8cm}L{5.4cm}L{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Standalone (autonomous)} & \textbf{Controller-based (lightweight)} \\
+\midrule
+\endhead
+Where the config lives & On the AP itself & On the wireless LAN controller \\
+\rowcolor{lightbg}
+What crosses the wire & Each SSID's traffic in its own VLAN & All client traffic
+tunnelled to the controller in CAPWAP \\
+Switch port & \textbf{Trunk}, carrying every SSID's VLAN & \textbf{Access port},
+in the AP management VLAN \\
+\rowcolor{lightbg}
+Scales to & A handful of APs & Hundreds \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The most common AP misconfiguration]
+Configuring a lightweight AP's port as a trunk, or a standalone AP's port as an
+access port. Both leave the AP reachable --- it will get an address and appear
+healthy --- while clients on some or all SSIDs get nothing. If wireless users on
+one SSID work and another SSID does not, look at the switch port before you touch
+the wireless configuration.
+\end{alertbox}
+
+\begin{config}{both kinds of access point}
+! Lightweight AP: one access port in the AP management VLAN.
+! Client traffic is tunnelled to the controller, so no client
+! VLANs need to exist on this switch at all.
+interface GigabitEthernet0/10
+ description Lightweight AP - CAPWAP to WLC
+ switchport mode access
+ switchport access vlan 50
+ power inline auto
+ spanning-tree portfast
+!
+! Standalone AP: a trunk, because the AP bridges each SSID
+! into a different VLAN and tags them itself.
+interface GigabitEthernet0/11
+ description Standalone AP - SSIDs in VLANs 10 and 20
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk native vlan 50
+ switchport trunk allowed vlan 10,20,50
+ power inline auto
+\end{config}
+
+\section{Printers, IoT appliances and virtualised hosts}
+
+\begin{tight}
+  \item \textbf{Printers and IoT appliances} --- ordinary access ports. Put them
+        in their own VLAN: they are rarely patched, often speak plaintext
+        protocols, and are a favourite foothold. Add port security
+        (\chref{l2security}) because they never move.
+  \item \textbf{Virtualised hosts} --- a server running virtual machines usually
+        needs a \emph{trunk}, because each VM may sit in a different VLAN and the
+        hypervisor's virtual switch tags accordingly. This is the one ``end
+        device'' that is not an access port.
+  \item \textbf{Network appliances} --- firewalls, load balancers and the like.
+        Read the vendor's requirement; most want a trunk, some want several
+        access ports.
+\end{tight}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{PortFast on a port that leads to a switch.} PortFast skips the
+        spanning tree listening and learning states. On an edge port that is
+        correct; on a port leading to another switch it can create a loop. Use
+        BPDU guard alongside it (\chref{stp}).
+  \item \textbf{Assuming the phone's PC port is in the voice VLAN.} It is not ---
+        untagged traffic from the PC lands in the data VLAN, which is the whole
+        point.
+  \item \textbf{Ignoring the power class.} A class 4 device on a switch with only
+        802.3af ports will not power up, however correct the configuration looks.
+  \item \textbf{Trunking to a lightweight AP.} See the warning above.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[Half the wireless users work; the other half get no address.]
+Users on the \cmd{Staff} SSID are fine. Users on \cmd{Guest} associate to the
+wireless network but never receive an IP address. The AP is reachable and its
+configuration has not changed.
+
+\begin{verify}{SW1}{show interfaces GigabitEthernet0/11 trunk}
+Port        Mode         Encapsulation  Status        Native vlan
+Gi0/11      on           802.1q         trunking      50
+
+Port        Vlans allowed on trunk
+Gi0/11      10,50
+\end{verify}
+
+\textbf{Diagnosis.} This is a standalone AP, correctly trunked, but the allowed
+VLAN list carries 10 and 50 only. VLAN 20 --- the Guest SSID's VLAN --- is not
+permitted on the trunk, so Guest clients associate at the radio (which the AP
+handles alone) and then have no path to the DHCP server. Association succeeding
+while addressing fails is the signature of a VLAN that does not reach the wire.
+
+\textbf{Fix.} Add the missing VLAN to the trunk:
+\cmd{switchport trunk allowed vlan add 20}. Note \cmd{add} --- without it you
+replace the whole list and drop VLANs 10 and 50, taking down the users who were
+working. Confirm with \cmd{show interfaces trunk}, then have a Guest client
+renew.
+\end{breakfix}
+
+\begin{lab}{Wire an edge properly}{Packet Tracer}
+\textbf{Topology.} One PoE switch; an IP phone with a PC behind it; a lightweight
+AP; a printer.
+
+\begin{tasks}
+  \item Create VLANs 10 (Staff), 20 (Guest), 30 (Voice), 50 (AP-Mgmt) and 60
+        (Printers).
+  \item Configure the phone port with data VLAN 10, voice VLAN 30, PortFast and
+        PoE. Verify both VLANs appear on the one port.
+  \item Configure the AP port as an access port in VLAN 50 with PoE.
+  \item Configure the printer port in VLAN 60 with PortFast.
+  \item Run \cmd{show power inline} and record the budget, the used figure and
+        the class of each powered device.
+  \item Set \cmd{power inline never} on the printer port and observe what happens
+        to a PoE device moved there.
+  \item \textbf{Extension.} Change the AP to standalone: reconfigure its port as
+        a trunk carrying VLANs 10, 20 and 50, and explain in one sentence why the
+        two AP types need opposite port configurations.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item An IP phone powers up and works; a PC plugged into the back of it gets an
+        address in VLAN 10. Which VLAN carries the phone's own traffic, and how
+        did the phone learn to use it?
+  \item A new AP will not power on. \cmd{show power inline} shows the port
+        \cmd{auto/off} and \cmd{Remaining:4.2(w)}. What is wrong?
+  \item Why does a lightweight AP need only one VLAN on its switch port when it
+        serves four SSIDs?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item PoE classes: 15.4~W af, 30~W at, up to 90~W bt. The shared \emph{budget}
+        is what actually runs out, so read \cmd{show power inline} first.
+  \item A voice VLAN plus a data VLAN on one access port lets a phone and a PC
+        share a cable: the phone tags, the PC does not.
+  \item Lightweight APs take an access port in the management VLAN; standalone
+        APs take a trunk carrying every SSID's VLAN. Getting this backwards
+        breaks some SSIDs and not others.
+  \item Printers and IoT devices belong in their own VLAN with port security.
+        Virtualised hosts usually need a trunk.
+  \item Use \cmd{switchport trunk allowed vlan add}, never bare \cmd{allowed
+        vlan}, on a live trunk.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which port configuration suits a controller-based access
+        point? (a)~trunk with all client VLANs (b)~access port in the AP
+        management VLAN (c)~routed port (d)~access port in VLAN 1
+  \item \textbf{(MCQ)} Which command stops a port ever supplying power?
+        (a)~\cmd{power inline auto} (b)~\cmd{power inline never}
+        (c)~\cmd{no power inline} (d)~\cmd{shutdown}
+  \item \textbf{(Short)} Explain why a port with a voice VLAN is not configured
+        as a trunk, even though it carries two VLANs.
+  \item \textbf{(Short)} A device on a PoE port shows \cmd{Oper: off} while other
+        ports are powering normally. Give two causes and the command that
+        distinguishes them.
+  \item \textbf{(Applied)} You must connect twelve IP phones with PCs behind
+        them, four PoE+ access points and six printers to one 24-port switch with
+        a 370~W budget. Estimate whether the budget suffices, state your
+        assumptions, and write the configuration for one port of each type.
+\end{reviewq}

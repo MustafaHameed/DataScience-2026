@@ -1,0 +1,259 @@
+\chapter{Networks, Models and This Exam}\label{ch:models}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} what a network does, in terms of the four things every
+        network must solve: naming, addressing, forwarding and error handling.
+  \item \textbf{Explain} the layered model well enough to use it as a
+        troubleshooting tool, which is the only reason this exam still cares
+        about it.
+  \item \textbf{Identify} the devices in a small enterprise network and say what
+        each one decides.
+  \item \textbf{Navigate} the CCNA v2.0 blueprint and this book against it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+Nothing. This is the first chapter, and the course assumes no prior networking.
+\end{prereq}
+
+\begin{keyterms}
+host $\bullet$ node $\bullet$ link $\bullet$ frame $\bullet$ packet $\bullet$
+segment $\bullet$ encapsulation $\bullet$ layer $\bullet$ protocol $\bullet$
+switch $\bullet$ router $\bullet$ access layer $\bullet$ distribution layer
+$\bullet$ broadcast domain $\bullet$ collision domain
+\end{keyterms}
+
+\section{What a network has to solve}
+
+Two computers in the same room, joined by a cable, can exchange bytes. Everything
+else in networking exists because that arrangement does not scale. Add a third
+machine and you need a way to say \emph{which} machine you mean. Add a building
+and you need a way to find a machine you cannot see. Add the internet and you
+need a way to reach a machine whose owner you have never met, over equipment
+owned by people you will never meet either.
+
+\begin{conceptbox}[The four problems, and the four answers]
+Every network technology in this book is an answer to one of four questions.
+\begin{tight}
+  \item \textbf{Who am I talking to?} $\rightarrow$ addressing. MAC addresses
+        locally (\chref{ethernet}), IP addresses globally (\chref{ipv4}).
+  \item \textbf{How do I find them?} $\rightarrow$ forwarding. Switches learn
+        (\chref{ethernet}); routers decide (\chref{routingtable}).
+  \item \textbf{How do we not talk over each other?} $\rightarrow$ media access
+        and loop prevention (\chref{ethernet}, \chref{stp}).
+  \item \textbf{What if it goes wrong?} $\rightarrow$ error detection,
+        acknowledgement and retransmission (\chref{transport}).
+\end{tight}
+When you meet a new protocol, ask which of the four it is answering. It will be
+one of them.
+\end{conceptbox}
+
+\section{Layers, and why they survive}
+
+A network stack is split into layers so that each layer can be changed without
+rewriting the others. Wi-Fi replaced the cable without anyone rewriting the web.
+That is the engineering argument, and it is real, but it is not why the layered
+model matters to you this year.
+
+\begin{conceptbox}[The model is a troubleshooting tool]
+When something does not work, the layered model tells you \emph{what to test
+next}. If a cable is unplugged, checking DNS is a waste of a minute you do not
+have in the exam. Work up: is the link up? Does it have an address? Can it reach
+its gateway? Can it resolve a name? Every troubleshooting question in this exam
+--- and there are eight topics' worth --- is answered by walking the layers in
+order.
+
+The v2.0 blueprint no longer asks you to \emph{describe} the OSI model, as v1.1
+did. It assumes you use it.
+\end{conceptbox}
+
+\begin{longtable}{@{}C{1.1cm}L{3.0cm}L{5.0cm}L{5.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{\#} & \textbf{Layer} & \textbf{What it decides} & \textbf{What breaks, and the symptom} \\
+\midrule
+\endhead
+7--5 & Application & What the data means & Wrong URL, expired certificate; ``the
+site is down but ping works'' \\
+\rowcolor{lightbg}
+4 & Transport & Which program on the host, and whether loss is repaired &
+Blocked port; ``it pings but the application times out'' \\
+3 & Network & Which network, and the path between networks & Wrong IP, wrong
+mask, no route; ``I can reach my own subnet but nothing else'' \\
+\rowcolor{lightbg}
+2 & Data link & Which device on this link & Wrong VLAN, trunk down, spanning tree
+blocking; ``the port is up but nothing passes'' \\
+1 & Physical & Bits on the wire & Cable, transceiver, duplex or speed mismatch;
+``the port is down'', or worse, up with errors climbing \\
+\bottomrule
+\end{longtable}
+
+The bottom two rows are where this exam starts: topic \tp{1.1} is entirely
+physical-layer diagnosis, and it is examined in \chref{physical}.
+
+\begin{definitionbox}[Encapsulation, and the names of things]
+As data moves down the stack each layer wraps it in a header. The wrapped unit
+gets a different name at each layer, and using the right one is how you show you
+know which layer you are discussing.
+\begin{tight}
+  \item Application data becomes a \term{segment} at layer 4 (TCP) or a
+        \term{datagram} (UDP), when a port number is attached.
+  \item That becomes a \term{packet} at layer 3, when IP addresses are attached.
+  \item That becomes a \term{frame} at layer 2, when MAC addresses are attached.
+  \item That becomes \term{bits} at layer 1.
+\end{tight}
+Switches forward frames. Routers forward packets. That single sentence explains
+most of the difference between the two devices.
+\end{definitionbox}
+
+\section{The devices, and what each one decides}
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \Host{P1}{(0,1.4)}{PC1}
+  \Phone{PH}{(0,-1.4)}{Phone}
+  \Sw{A1}{(3.2,0)}{Access}
+  \Sw{A2}{(3.2,-2.8)}{Access}
+  \Msw{D1}{(6.6,-1.4)}{Distribution}
+  \Rtr{R1}{(10.0,-1.4)}{Router}
+  \Fw{FW}{(13.0,-1.4)}{Firewall}
+  \Cld{IN}{(15.8,-1.4)}{Internet}
+  \Srv{S1}{(6.6,1.4)}{Servers}
+
+  \plainwire{P1}{A1}
+  \plainwire{PH}{A1}
+  \wire[xconn]{A1}{D1}{trunk}
+  \wire[xconn]{A2}{D1}{trunk}
+  \plainwire{D1}{S1}
+  \wire{D1}{R1}{routed}
+  \plainwire{R1}{FW}
+  \plainwire{FW}{IN}
+\end{tikzpicture}}%
+{A small enterprise network. Access switches connect end devices; a distribution
+switch aggregates them and routes between VLANs; the router reaches other
+networks; the firewall polices what leaves. Every chapter in Parts~II to~IV
+configures one piece of this picture.}{smallent}
+
+\begin{longtable}{@{}L{3.2cm}L{5.6cm}L{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Device} & \textbf{The decision it makes} & \textbf{Where in this book} \\
+\midrule
+\endhead
+\textbf{Switch} (layer 2) & ``Which port leads to this MAC address?'' Learns by
+watching source addresses; floods when it does not know &
+\chref{ethernet}, then all of Part~II \\
+\rowcolor{lightbg}
+\textbf{Router} & ``Which interface leads to this IP network?'' Never floods;
+drops what it cannot route & Part~III \\
+\textbf{Multilayer switch} & Both. Switches within a VLAN, routes between them
+using an SVI & \chref{trunking}, \chref{routingtable} \\
+\rowcolor{lightbg}
+\textbf{Access point} & Bridges wireless clients onto a wired VLAN &
+\chref{wireless} \\
+\textbf{Firewall} & ``Is this flow permitted?'' Stateful, unlike an access list &
+\chref{acl}, \chref{vpn} \\
+\bottomrule
+\end{longtable}
+
+\begin{definitionbox}[Two domains worth keeping straight]
+A \term{collision domain} is the set of ports that could transmit at the same
+instant and interfere. Every switch port is its own collision domain, which is
+why modern switched networks do not collide --- and why a \cmd{collisions}
+counter that is climbing means something is badly wrong, usually a duplex
+mismatch (\chref{physical}).
+
+A \term{broadcast domain} is the set of devices that receive each other's
+broadcasts. One VLAN is one broadcast domain. Splitting broadcast domains is the
+entire purpose of \chref{vlans}, and joining them again is the purpose of
+\chref{routingtable}.
+\end{definitionbox}
+
+\section{This exam, and this book}
+
+\begin{examnote}[How the blueprint is built, and how to read it]
+Cisco publishes twenty-nine numbered topics in five domains. The number is the
+whole contract: if a technique is not in a topic statement, it is not directly
+examinable, and if it is, the \emph{verb} tells you the depth expected.
+
+\begin{tight}
+  \item \emph{Describe} --- you must be able to explain it. Six topics.
+  \item \emph{Interpret}, \emph{Validate}, \emph{Select}, \emph{Use},
+        \emph{Manage} --- you must be able to read output or make a choice.
+        Seven topics.
+  \item \emph{Configure} --- you must produce the commands. Eight topics.
+  \item \emph{Troubleshoot} or \emph{Diagnose} --- you must find and fix a fault.
+        Eight topics.
+\end{tight}
+
+Sixteen of twenty-nine are configure-or-fix. That is the single most useful fact
+about this exam, and it should change how you study: time at a command line
+beats time with a highlighter, by a wide margin.
+\end{examnote}
+
+Every chapter of this book carries its topic numbers under the title. If you want
+to revise by blueprint rather than by chapter, Appendix~\ref{app:coverage} maps
+all twenty-nine topics to the chapters that cover them.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Studying a v1.1 book.} The exam number, 200-301, did not change
+        when the blueprint did. A book that teaches QoS, NTP, REST APIs, JSON or
+        Terraform in a CCNA context is written for the old blueprint. Check the
+        version before you trust the contents.
+  \item \textbf{Learning the OSI layers as a list to recite.} Nobody will ask you
+        to name layer 6. They will show you a broken network and expect you to
+        work upwards.
+  \item \textbf{Assuming ``switch'' means layer 2.} Multilayer switches route.
+        Most of the distribution layer in a real network is switches doing
+        routing, and topic \tp{2.1} explicitly includes switch virtual
+        interfaces.
+\end{tight}
+\end{pitfall}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A user reports that a web page will not load. Ping to the server's IP
+        address succeeds. Which layers have you just ruled out, and which is the
+        first one you should now suspect?
+  \item A switch port shows as up, but the \cmd{collisions} counter is
+        increasing steadily. Which layer is at fault, and what is the most likely
+        single cause?
+  \item Why does a router drop a packet for an unknown network when a switch
+        floods a frame for an unknown MAC address?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Networks solve four problems: addressing, forwarding, media access and
+        error handling. Every protocol you meet answers one of them.
+  \item Layers matter because they tell you what to test next. Work upwards from
+        the physical layer; do not start at DNS.
+  \item Switches forward frames using MAC addresses and flood when they do not
+        know. Routers forward packets using IP addresses and drop when they do
+        not know.
+  \item One VLAN is one broadcast domain. Every switch port is its own collision
+        domain.
+  \item CCNA v2.0 has twenty-nine topics. Sixteen of them ask you to configure
+        or to fix. Study accordingly.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which unit of data carries MAC addresses?
+        (a)~segment (b)~packet (c)~frame (d)~datagram
+  \item \textbf{(MCQ)} A device receives a frame for a destination MAC address
+        it has never seen. What does it do?
+        (a)~drops it (b)~floods it out all ports in the VLAN except the one it
+        arrived on (c)~returns it to the sender (d)~routes it
+  \item \textbf{(Short)} Give one reason the v2.0 blueprint dropped the
+        requirement to describe the OSI model, and say what it expects instead.
+  \item \textbf{(Short)} Explain the difference between a collision domain and a
+        broadcast domain, and give the device that bounds each.
+  \item \textbf{(Applied)} A colleague says ``we do not need to learn
+        troubleshooting, it is only one section of the exam''. Using the verb
+        counts in the blueprint, explain why that is wrong.
+\end{reviewq}

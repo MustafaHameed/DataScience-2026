@@ -1,0 +1,309 @@
+\chapter{IPv4 Addressing and Subnetting}\label{ch:ipv4}
+\bp{1.3}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Convert} between dotted decimal, binary and prefix length fast
+        enough to do it in an exam without a calculator.
+  \item \textbf{Compute} the network address, broadcast address, usable range and
+        host count of any subnet, in under thirty seconds.
+  \item \textbf{Subnet} a given block to meet a stated requirement, and apply
+        variable-length masks without overlapping.
+  \item \textbf{Diagnose} the four addressing faults that account for almost every
+        broken host: wrong mask, wrong gateway, address outside the subnet, and
+        duplicate address.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{models} and \chref{ethernet}. You need to be comfortable that a switch
+works on MAC addresses and a router works on IP addresses.
+\end{prereq}
+
+\begin{keyterms}
+dotted decimal $\bullet$ prefix length $\bullet$ subnet mask $\bullet$ network
+address $\bullet$ broadcast address $\bullet$ usable range $\bullet$ block size
+$\bullet$ magic number $\bullet$ RFC 1918 $\bullet$ private address $\bullet$
+public address $\bullet$ VLSM $\bullet$ default gateway $\bullet$ APIPA
+\end{keyterms}
+
+\begin{examnote}[This topic is worth more time than any other in Part I]
+Topic \tp{1.3} says \emph{troubleshoot} IPv4 addressing, assignment and
+subnetting, ``public and private''. You will be given a host that cannot reach
+something and expected to spot that its mask is wrong. Every second you spend
+computing a subnet boundary is a second not spent reasoning, so the arithmetic
+has to be automatic. Learn the method in §\ref{sec:magic} until it is boring.
+\end{examnote}
+
+\section{The address and the mask}
+
+An IPv4 address is 32 bits, written as four decimal bytes. It carries two pieces
+of information at once, and the mask is what separates them.
+
+\begin{definitionbox}[Network part and host part]
+The \term{subnet mask} marks, with 1 bits, which leading bits of the address
+identify the \term{network}. The remaining 0 bits identify the \term{host} within
+it. Written as a count of 1 bits, the mask is a \term{prefix length}:
+\cmd{255.255.255.0} and \cmd{/24} are the same statement.
+
+Two addresses are on the same subnet if and only if their network parts are
+identical. That single sentence is the source of most addressing faults: a host
+with the wrong mask computes a different network part, decides its neighbour is
+remote, and sends the traffic to a gateway that may not want it.
+\end{definitionbox}
+
+\begin{longtable}{@{}C{1.6cm}L{3.6cm}C{2.0cm}C{2.4cm}L{4.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Prefix} & \textbf{Mask} & \textbf{Block} & \textbf{Usable} & \textbf{Typical use} \\
+\midrule
+\endhead
+/24 & 255.255.255.0   & 256 & 254 & A standard user VLAN \\
+\rowcolor{lightbg}
+/25 & 255.255.255.128 & 128 & 126 & Half a /24 \\
+/26 & 255.255.255.192 & 64  & 62  & A small office \\
+\rowcolor{lightbg}
+/27 & 255.255.255.224 & 32  & 30  & A rack or a server segment \\
+/28 & 255.255.255.240 & 16  & 14  & A tiny segment \\
+\rowcolor{lightbg}
+/29 & 255.255.255.248 & 8   & 6   & Four routers and room to grow \\
+/30 & 255.255.255.252 & 4   & 2   & A point-to-point link between routers \\
+\rowcolor{lightbg}
+/31 & 255.255.255.254 & 2   & 2   & A point-to-point link, no waste (RFC 3021) \\
+/32 & 255.255.255.255 & 1   & 1   & A host route or a loopback \\
+\bottomrule
+\end{longtable}
+
+Usable is block size minus two, because the first address in a block is the
+network address and the last is the broadcast address. The exception is /31,
+where both are usable because a point-to-point link has no need for a broadcast.
+
+\begin{definitionbox}[Private addresses --- RFC 1918]
+Three ranges are reserved for internal use and are never routed on the internet.
+The exam expects you to recognise them instantly.
+\begin{tight}
+  \item \cmd{10.0.0.0/8} --- one very large block
+  \item \cmd{172.16.0.0/12} --- that is \cmd{172.16.0.0} to \cmd{172.31.255.255},
+        and the upper bound catches people out
+  \item \cmd{192.168.0.0/16}
+\end{tight}
+Also worth knowing: \cmd{169.254.0.0/16} is \term{APIPA}, which a host assigns
+itself when DHCP fails. A host with a 169.254 address has not been given one ---
+see \chref{dhcp}.
+\end{definitionbox}
+
+\section{The method: block size, or ``magic number''}\label{sec:magic}
+
+You will not have time to write out binary. This method needs no binary at all.
+
+\begin{conceptbox}[Four steps, every time]
+\begin{tightnum}
+  \item \textbf{Find the interesting octet} --- the one where the mask is neither
+        255 nor 0.
+  \item \textbf{Block size} $= 256 -$ (the mask value in that octet). This is the
+        magic number.
+  \item \textbf{Count in blocks} from zero in that octet until you pass the
+        address. The multiple you last passed is the \textbf{network address}.
+  \item \textbf{Broadcast} $=$ next network address $-1$. Usable range is
+        everything between the two, exclusive.
+\end{tightnum}
+\end{conceptbox}
+
+\begin{worked}[Where does 172.16.83.190/26 live?]
+\begin{tightnum}
+  \item Mask for /26 is \cmd{255.255.255.192}. The interesting octet is the
+        fourth.
+  \item Block size $= 256 - 192 = 64$.
+  \item Count in 64s in the fourth octet: 0, 64, 128, \textbf{192}. Our host is
+        190, which sits after 128 and before 192. Network address is
+        \cmd{172.16.83.128}.
+  \item Next network is \cmd{172.16.83.192}, so broadcast is
+        \cmd{172.16.83.191}. Usable range is \cmd{172.16.83.129} to
+        \cmd{172.16.83.190}.
+\end{tightnum}
+So \cmd{.190} is the \emph{last usable address} in its subnet --- a perfectly
+valid host address, and a favourite exam distractor because it looks like a
+broadcast.
+\end{worked}
+
+\begin{worked}[The same method in the third octet: 10.44.150.7/21]
+\begin{tightnum}
+  \item /21 is \cmd{255.255.248.0}. Interesting octet is the third.
+  \item Block size $= 256 - 248 = 8$.
+  \item Count in 8s in the third octet: 0, 8, \ldots, 144, \textbf{152}. Our 150
+        sits after 144. Network is \cmd{10.44.144.0}.
+  \item Next network is \cmd{10.44.152.0}, so broadcast is
+        \cmd{10.44.151.255}. Usable is \cmd{10.44.144.1} to
+        \cmd{10.44.151.254} --- $2046$ hosts.
+\end{tightnum}
+Note that the fourth octet plays no part in finding the boundary. Only the
+interesting octet does.
+\end{worked}
+
+\section{Subnetting a block to a requirement}
+
+\begin{worked}[Split 192.168.20.0/24 for four sites of 50, 25, 10 and 2 hosts]
+Work \emph{largest first}, or you will strand addresses.
+
+\begin{tightnum}
+  \item 50 hosts needs 62 usable $\rightarrow$ /26, block 64.
+        \cmd{192.168.20.0/26} --- usable \cmd{.1}--\cmd{.62}.
+  \item 25 hosts needs 30 usable $\rightarrow$ /27, block 32. Next free address
+        is \cmd{.64}: \cmd{192.168.20.64/27} --- usable \cmd{.65}--\cmd{.94}.
+  \item 10 hosts needs 14 usable $\rightarrow$ /28, block 16. Next free is
+        \cmd{.96}: \cmd{192.168.20.96/28} --- usable \cmd{.97}--\cmd{.110}.
+  \item 2 hosts (a router link) $\rightarrow$ /30, block 4. Next free is
+        \cmd{.112}: \cmd{192.168.20.112/30} --- usable \cmd{.113}--\cmd{.114}.
+\end{tightnum}
+Everything from \cmd{.116} upwards is still free. This is \term{VLSM}: different
+masks inside one block, sized to the requirement.
+\end{worked}
+
+\begin{alertbox}[The two rules VLSM must obey]
+\begin{tight}
+  \item \textbf{A subnet must start on a multiple of its own block size.} A /27
+        can start at \cmd{.64} or \cmd{.96}, never at \cmd{.70}.
+  \item \textbf{Subnets must not overlap.} If you allocate smallest-first you
+        will eventually place a large subnet where it does not fit, and have to
+        start again. Largest first avoids this.
+\end{tight}
+\end{alertbox}
+
+\section{Configuring and verifying an address}
+
+\begin{config}{an interface address and a default gateway}
+! On a router interface -- the mask is written in full.
+interface GigabitEthernet0/0
+ description User VLAN 10 gateway
+ ip address 192.168.20.1 255.255.255.192
+ no shutdown
+!
+! On a layer 2 switch, the management address lives on an SVI,
+! and the switch needs a default gateway because it does not route.
+interface Vlan10
+ ip address 192.168.20.2 255.255.255.192
+ no shutdown
+!
+ip default-gateway 192.168.20.1
+\end{config}
+
+\begin{verify}{R1}{show ip interface brief}
+Interface              IP-Address      OK? Method Status                Protocol
+GigabitEthernet0/0     192.168.20.1    YES manual up                    up
+GigabitEthernet0/1     unassigned      YES unset  administratively down down
+Vlan1                  unassigned      YES unset  down                  down
+\end{verify}
+
+\begin{conceptbox}[Reading the two status columns]
+The pair of columns is the single most useful diagnostic on a router, and the
+combinations mean different things.
+\begin{tight}
+  \item \textbf{up / up} --- working.
+  \item \textbf{up / down} --- the cable and electrical link are fine, but the
+        protocol is not. Usually an encapsulation or keepalive mismatch, or the
+        far end is not configured.
+  \item \textbf{down / down} --- a physical problem. Cable, transceiver, or the
+        other end is shut. Go back to \chref{physical}.
+  \item \textbf{administratively down / down} --- somebody typed
+        \cmd{shutdown}. The fix is \cmd{no shutdown}.
+\end{tight}
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Forgetting \cmd{no shutdown}.} Router interfaces are shut by
+        default. Switch ports are not. This asymmetry catches everyone once.
+  \item \textbf{Assuming \cmd{172.16.0.0/12} stops at 172.16.} It runs to
+        \cmd{172.31.255.255}. \cmd{172.32.0.0} is public.
+  \item \textbf{Giving the gateway an address outside the subnet.} A host will
+        accept the configuration and then fail silently for everything off-net.
+  \item \textbf{Using the network or broadcast address on a host.} \cmd{.0} and
+        \cmd{.255} are only network and broadcast in a /24. In a /26 the
+        boundaries move, and \cmd{192.168.20.64} is a network address even though
+        it does not end in zero.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[``I can reach my own floor but nothing else''.]
+A host is configured \cmd{192.168.20.100} mask \cmd{255.255.255.192}, gateway
+\cmd{192.168.20.1}. It can ping \cmd{192.168.20.90} but not its gateway and
+nothing beyond.
+
+\textbf{Diagnosis.} Work the mask. /26 gives block size 64, so the boundaries are
+\cmd{.0}, \cmd{.64}, \cmd{.128}, \cmd{.192}. The host at \cmd{.100} is in the
+\cmd{192.168.20.64/26} subnet, usable \cmd{.65}--\cmd{.126}. Its gateway at
+\cmd{.1} is in the \emph{first} subnet, \cmd{192.168.20.0/26}. The host and its
+gateway are on different subnets, so the host cannot ARP for it and has no way
+off its own segment. It can still reach \cmd{.90} because that address is in the
+same /26.
+
+\textbf{Fix.} Either move the host into the subnet its gateway serves, or --- far
+more likely what was intended --- correct the gateway to \cmd{192.168.20.65}, the
+first usable address of the subnet the host is actually in. Then confirm with a
+ping to the gateway before testing anything remote.
+\end{breakfix}
+
+\begin{lab}{Subnet, configure, then break it}{Packet Tracer}
+\textbf{Topology.} One router, two switches, four PCs --- two per VLAN.
+
+\begin{tasks}
+  \item Subnet \cmd{172.16.5.0/24} into two subnets of at least 100 hosts each.
+        Write down, before touching a device: network address, first and last
+        usable address, and broadcast address for both.
+  \item Configure the router with a gateway address in each subnet and the PCs
+        with addresses from your plan. Verify with \cmd{show ip interface brief}
+        and a ping within each subnet.
+  \item Prove routing works between the two subnets by pinging across.
+  \item Now change one PC's mask from your planned value to
+        \cmd{255.255.255.0}. Predict what will break \emph{before} you test, then
+        test it. Explain the result in terms of the network part.
+  \item Change it back, then set one PC's gateway to an address in the other
+        subnet. Predict and test again.
+  \item \textbf{Extension.} Re-plan the same /24 using VLSM for four segments of
+        100, 50, 20 and 2 hosts, and configure it without overlaps.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item For \cmd{10.19.200.37/27}: give the network address, broadcast address,
+        and first and last usable address.
+  \item A host is \cmd{192.168.1.130/25} and its gateway is
+        \cmd{192.168.1.126}. Will it work? Show your reasoning.
+  \item How many usable addresses does a /30 provide, and why is a /31 sometimes
+        used instead on a router-to-router link?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Address plus mask equals two facts: which network, and which host.
+        Devices are on the same subnet only if their network parts match.
+  \item Block size $=256-$ mask octet. Count in blocks. That method answers every
+        subnetting question you will be asked.
+  \item Usable $=$ block $-2$, except /31 and /32.
+  \item Private ranges are \cmd{10/8}, \cmd{172.16/12} (to 172.31) and
+        \cmd{192.168/16}. A \cmd{169.254} address means DHCP failed.
+  \item Plan VLSM largest first, and start every subnet on a multiple of its own
+        block size.
+  \item Four faults cover most cases: wrong mask, wrong gateway, address outside
+        the subnet, duplicate address.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A host is addressed \cmd{192.168.90.200/28}. What is the
+        broadcast address of its subnet?
+        (a)~192.168.90.207 (b)~192.168.90.255 (c)~192.168.90.191 (d)~192.168.90.215
+  \item \textbf{(MCQ)} Which is a valid host address in \cmd{10.0.8.0/22}?
+        (a)~10.0.8.0 (b)~10.0.11.255 (c)~10.0.11.254 (d)~10.0.12.1
+  \item \textbf{(Short)} Explain why a host with the correct address but a mask
+        that is too short may still reach some destinations and not others.
+  \item \textbf{(Short)} A host has address \cmd{169.254.14.9}. What has
+        happened, and what would you check first?
+  \item \textbf{(Applied)} You are given \cmd{192.168.40.0/24} and asked for six
+        subnets: 60, 60, 28, 12, 12 and 2 hosts. Produce a VLSM plan with no
+        overlaps, showing network address, mask and usable range for each, and
+        state how much of the block remains free.
+\end{reviewq}

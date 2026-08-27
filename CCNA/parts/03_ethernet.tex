@@ -1,0 +1,253 @@
+\chapter{Ethernet, Frames and Switching}\label{ch:ethernet}
+\bp{1.1}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} the Ethernet frame and the purpose of each field you
+        will actually meet on a device.
+  \item \textbf{Explain} how a switch learns, forwards, floods and ages MAC
+        addresses --- the algorithm behind every switching chapter that follows.
+  \item \textbf{Read} the MAC address table and use it to prove where a device is
+        physically connected.
+  \item \textbf{Predict} what a switch does with a unicast, broadcast or unknown
+        destination.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{models} for frames and broadcast domains; \chref{physical} for the link
+underneath.
+\end{prereq}
+
+\begin{keyterms}
+Ethernet $\bullet$ MAC address $\bullet$ OUI $\bullet$ unicast $\bullet$
+broadcast $\bullet$ multicast $\bullet$ CAM table $\bullet$ MAC address table
+$\bullet$ learning $\bullet$ flooding $\bullet$ filtering $\bullet$ ageing
+$\bullet$ unknown unicast $\bullet$ MTU $\bullet$ FCS
+\end{keyterms}
+
+\section{The frame}
+
+\begin{definitionbox}[The Ethernet frame, field by field]
+\begin{tight}
+  \item \textbf{Preamble} --- clock synchronisation. You will never see it.
+  \item \textbf{Destination MAC} (6 bytes) --- who this frame is for. The switch
+        reads this to decide where to send it.
+  \item \textbf{Source MAC} (6 bytes) --- who sent it. The switch reads this
+        to \emph{learn}.
+  \item \textbf{Type/Length} (2 bytes) --- what is inside. \cmd{0x0800} is IPv4,
+        \cmd{0x86DD} is IPv6, \cmd{0x8100} means a VLAN tag follows
+        (\chref{trunking}).
+  \item \textbf{Payload} --- 46 to 1500 bytes. Below 46 the frame is padded;
+        this is why a frame under 64 bytes total is a \term{runt}.
+  \item \textbf{FCS} (4 bytes) --- a checksum. If it fails, the frame is counted
+        as a CRC error and discarded (\chref{physical}).
+\end{tight}
+\end{definitionbox}
+
+A \term{MAC address} is 48 bits, written as twelve hex digits. The first half is
+the \term{OUI}, assigned to the manufacturer; the second half is assigned by that
+manufacturer. Cisco writes them as \cmd{00d0.58a1.0201}; almost everyone else
+writes \cmd{00:d0:58:a1:02:01}. They are the same address, and you should be able
+to read both.
+
+\begin{conceptbox}[Three kinds of destination]
+\begin{tight}
+  \item \textbf{Unicast} --- one specific device. The low-order bit of the first
+        byte is 0.
+  \item \textbf{Broadcast} --- \cmd{ffff.ffff.ffff}, every device in the VLAN.
+        This is what defines a broadcast domain.
+  \item \textbf{Multicast} --- a group. The low-order bit of the first byte is 1.
+        OSPF (\chref{ospfv2}), HSRP and VRRP (\chref{fhrp}) all use multicast.
+\end{tight}
+\end{conceptbox}
+
+\section{How a switch actually works}
+
+A switch runs one small algorithm, and everything in Part~II is a modification
+of it.
+
+\begin{conceptbox}[Learn, then forward or flood]
+For every frame that arrives on a port:
+\begin{tightnum}
+  \item \textbf{Learn.} Record the \emph{source} MAC address against the port it
+        arrived on, in this VLAN. Reset the ageing timer if it is already there.
+  \item \textbf{Decide on the destination.}
+        \begin{tight}
+          \item Known unicast $\rightarrow$ \textbf{forward} out that one port.
+          \item Unknown unicast $\rightarrow$ \textbf{flood} out every other port
+                in the VLAN.
+          \item Broadcast or multicast $\rightarrow$ \textbf{flood}.
+          \item Destination is on the same port it arrived on $\rightarrow$
+                \textbf{filter}, that is, discard it.
+        \end{tight}
+\end{tightnum}
+A switch never modifies the addresses in a frame it forwards, and it never
+consults an IP address. Both of those are the router's job.
+\end{conceptbox}
+
+\begin{alertbox}[The consequence that matters: unknown unicast flooding]
+A switch floods a unicast frame when it does not know the destination. That is
+not a fault --- it is how the network keeps working while the table is learned.
+But it means a full or wiped MAC table causes traffic to be sprayed to every
+port, which is both a performance problem and a security one. It is also the
+mechanism a MAC flooding attack abuses, which is why \chref{l2security} exists
+and why topic \tp{4.7} names port security.
+\end{alertbox}
+
+Entries age out after five minutes of silence by default. A device that has been
+quiet longer than that has to be re-learned, and the first frame to it is
+flooded.
+
+\begin{verify}{SW1}{show mac address-table}
+          Mac Address Table
+-------------------------------------------
+
+Vlan    Mac Address       Type        Ports
+----    -----------       --------    -----
+   1    00d0.58a1.0201    DYNAMIC     Gi0/1
+   1    0060.5c2b.19a4    DYNAMIC     Gi0/2
+  10    000a.f36e.7712    DYNAMIC     Gi0/5
+  10    0002.1751.4c33    STATIC      Gi0/6
+  20    00e0.b05f.2210    DYNAMIC     Gi0/8
+Total Mac Addresses for this criterion: 5
+\end{verify}
+
+This table is the most useful single output on a switch. It answers ``where is
+this device physically plugged in?'', and it does so by evidence rather than by
+documentation --- which is exactly what topic \tp{2.3} asks you to do when it
+says \emph{validate the accuracy of network documentation}.
+
+\begin{config}{a static MAC entry, and a shorter ageing time}
+! Pin a known device to a known port. Rarely needed, but it survives
+! ageing and cannot be moved by a spoofed frame.
+mac address-table static 0002.1751.4c33 vlan 10 interface GigabitEthernet0/6
+!
+! Age entries out faster than the 300-second default.
+mac address-table aging-time 120
+\end{config}
+
+\begin{worked}[Following a frame across two switches]
+PC-A (\cmd{00d0.58a1.0201}) on \cmd{SW1 Gi0/1} sends to PC-B
+(\cmd{00e0.b05f.2210}) on \cmd{SW2 Gi0/3}. Both switches have empty tables.
+
+\begin{tightnum}
+  \item The frame arrives at \cmd{SW1 Gi0/1}. \cmd{SW1} \emph{learns}
+        \cmd{00d0.58a1.0201} on \cmd{Gi0/1}.
+  \item \cmd{SW1} does not know PC-B, so it \emph{floods} --- out its uplink and
+        every other access port.
+  \item \cmd{SW2} receives it on its uplink and learns \cmd{00d0.58a1.0201} on
+        \emph{that uplink port}, not on \cmd{Gi0/1}. A switch only ever knows the
+        direction, not the distance.
+  \item \cmd{SW2} does not know PC-B either, so it floods. PC-B receives it.
+  \item PC-B replies. Now \cmd{SW2} learns PC-B on \cmd{Gi0/3}, and because it
+        already knows PC-A, it \emph{forwards} rather than flooding.
+  \item \cmd{SW1} learns PC-B on its uplink. From here on the conversation is
+        unicast in both directions.
+\end{tightnum}
+Two floods to start a conversation, then none. That is the whole design.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Expecting a switch to know a distance.} The table says which
+        port, never how many hops. Five hundred devices can appear behind one
+        uplink port and that is entirely normal.
+  \item \textbf{Reading a stale table.} An entry can be up to five minutes old.
+        If you have just moved a cable, the table may still show the old port.
+  \item \textbf{Confusing the MAC table with the ARP table.} The MAC table maps
+        MAC~$\rightarrow$~port and lives on a switch. The ARP table maps
+        IP~$\rightarrow$~MAC and lives on any device with an IP address. The exam
+        will test that you know which to look at.
+  \item \textbf{Forgetting the VLAN column.} The same MAC address can legitimately
+        appear in two VLANs. Learning is always per VLAN.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[Two ports, one MAC address, and a flapping log.]
+Users on VLAN 10 report intermittent drops. The log shows:
+
+\begin{verify}{SW1}{show logging | include MACFLAP}
+%SW_MATM-4-MACFLAP_NOTIF: Host 000a.f36e.7712 in vlan 10 is flapping
+  between port Gi0/5 and port Gi0/12
+\end{verify}
+
+\textbf{Diagnosis.} The switch is learning the same source MAC on two ports in
+quick succession. A device cannot be in two places, so one of three things is
+true: there is a \textbf{physical loop} joining those ports (the same frame is
+arriving by two paths --- see \chref{stp}), a device is \textbf{spoofing} that
+address, or two devices have been given the \textbf{same MAC} by a bad clone or
+a virtualisation misconfiguration.
+
+\textbf{Fix.} Check spanning tree first, because a loop is both the most likely
+cause and the most damaging: \cmd{show spanning-tree vlan 10} and look for a port
+that should be blocking and is not. If the topology is loop-free, shut
+\cmd{Gi0/12}, confirm the flapping stops, and trace what is attached to it.
+\end{breakfix}
+
+\begin{lab}{Watching a switch learn}{Packet Tracer}
+\textbf{Topology.} Two switches, uplinked; two PCs on \cmd{SW1}, one on
+\cmd{SW2}. All in VLAN 1 for now.
+
+\begin{tasks}
+  \item Power everything on and immediately run \cmd{show mac address-table} on
+        both switches. Record what is there before any traffic.
+  \item Ping from PC-A to PC-C. Re-run the command on both switches and record
+        which addresses each has learned, and against which port.
+  \item Explain, from your own capture, why \cmd{SW2} shows PC-A against its
+        uplink rather than against a host port.
+  \item Run \cmd{clear mac address-table dynamic}, then ping again and watch the
+        table rebuild.
+  \item Set \cmd{mac address-table aging-time 15}. Leave a PC idle for thirty
+        seconds and confirm its entry disappears.
+  \item \textbf{Extension.} Add a second cable between the two switches to create
+        a loop. Observe what happens to the MAC table and the log before
+        spanning tree settles --- then read \chref{stp} to find out why the
+        network survived.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A switch receives a frame whose destination MAC is already in its table,
+        against the same port the frame arrived on. What does it do, and what is
+        that behaviour called?
+  \item Why does the first ping between two devices often show a longer round
+        trip than the ones after it?
+  \item You need to prove which wall port a particular laptop is using. Which
+        table do you consult, on which device, and what do you need to know first?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A switch learns from the \emph{source} address and decides on the
+        \emph{destination} address. Everything else follows.
+  \item Known unicast is forwarded, unknown unicast and broadcast are flooded,
+        and a frame is never sent back out of the port it came in on.
+  \item The MAC address table maps MAC to port, per VLAN, and ages entries out
+        after five minutes by default.
+  \item MAC table is not ARP table. One lives on a switch and maps to ports; the
+        other maps IP to MAC and lives on anything with an IP address.
+  \item A MAC address flapping between two ports means a loop, a spoof, or a
+        duplicate --- and you check for the loop first.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A switch receives a frame destined for
+        \cmd{ffff.ffff.ffff}. What does it do?
+        (a)~forwards it to the router (b)~floods it out all ports in the VLAN
+        except the ingress port (c)~drops it (d)~sends it to the CPU
+  \item \textbf{(MCQ)} Which field does a switch use to populate its MAC address
+        table? (a)~destination MAC (b)~source MAC (c)~source IP (d)~Type/Length
+  \item \textbf{(Short)} Explain why a switch shows hundreds of MAC addresses
+        against a single uplink port, and why this is not a fault.
+  \item \textbf{(Short)} Give two distinct causes of a MAC flap message and say
+        which you would investigate first, with a reason.
+  \item \textbf{(Applied)} A security auditor asks you to prove that no
+        unauthorised device is connected to the finance VLAN. Describe, with
+        commands, how you would produce that evidence and what its limitations
+        are.
+\end{reviewq}

@@ -1,0 +1,276 @@
+\chapter{TCP, UDP and the Diagnostic Toolkit}\label{ch:transport}
+\bp{2.4}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what a port number identifies, and recognise the
+        well-known ports that appear in access lists and in fault reports.
+  \item \textbf{Choose} correctly between TCP and UDP behaviour when reasoning
+        about a symptom.
+  \item \textbf{Use} ping, extended ping and traceroute deliberately, varying
+        source, size and count to test a specific hypothesis.
+  \item \textbf{Read} packet capture output well enough to say which direction
+        failed.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ipv4} for addressing, \chref{ethernet} for what a switch does with a
+frame.
+\end{prereq}
+
+\begin{keyterms}
+port $\bullet$ socket $\bullet$ TCP $\bullet$ UDP $\bullet$ three-way handshake
+$\bullet$ acknowledgement $\bullet$ retransmission $\bullet$ well-known port
+$\bullet$ ephemeral port $\bullet$ ICMP $\bullet$ echo request $\bullet$ TTL
+$\bullet$ extended ping $\bullet$ traceroute
+\end{keyterms}
+
+\begin{examnote}[The toolkit is the exam]
+Topic \tp{2.4} names the tools by name: ``show commands (including show logs),
+ping, extended ping, trace route, and packet capture output''. It is one of the
+eight \emph{troubleshoot} topics, and the tools in it are how you will answer the
+other seven. Learn them as instruments, not as trivia.
+\end{examnote}
+
+\section{Ports, and what they identify}
+
+An IP address identifies a host. A \term{port number} identifies which program on
+that host. Together they form a \term{socket}, and a conversation is defined by
+four things: source address, source port, destination address, destination port.
+
+\begin{longtable}{@{}C{1.6cm}L{2.6cm}L{2.0cm}L{8.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Port} & \textbf{Service} & \textbf{Protocol} & \textbf{Why it matters here} \\
+\midrule
+\endhead
+22  & SSH        & TCP & Device management. \chref{aaa} \\
+\rowcolor{lightbg}
+23  & Telnet     & TCP & Device management, unencrypted. Disable it \\
+53  & DNS        & UDP, TCP & Name resolution. \chref{dns} \\
+\rowcolor{lightbg}
+67, 68 & DHCP    & UDP & Address assignment. \chref{dhcp} \\
+69  & TFTP       & UDP & Legacy file transfer. Replaced by SFTP/SCP in v2.0 \\
+\rowcolor{lightbg}
+80, 443 & HTTP, HTTPS & TCP & The traffic users notice \\
+161, 162 & SNMP  & UDP & Monitoring and traps. \chref{management} \\
+\rowcolor{lightbg}
+514 & Syslog     & UDP & Log delivery. \chref{management} \\
+\bottomrule
+\end{longtable}
+
+Client programs use a high-numbered \term{ephemeral} port as their source. This
+is why a return packet is not simply ``port 80'' --- it is addressed to whatever
+ephemeral port the client opened, and why stateless access lists need care
+(\chref{acl}).
+
+\begin{conceptbox}[TCP or UDP, and what each failure looks like]
+\textbf{TCP} establishes a connection with a three-way handshake --- SYN,
+SYN-ACK, ACK --- numbers every byte, acknowledges what arrives and retransmits
+what does not. It costs latency and gains reliability.
+
+\textbf{UDP} sends and forgets. No handshake, no acknowledgement, no
+retransmission. It is right for anything where a late packet is worse than a lost
+one, and for short exchanges where a handshake would double the cost --- which is
+why DNS and DHCP use it.
+
+The diagnostic value is in how they fail. A blocked TCP port produces a
+\emph{connection timeout or refusal} --- something definite. A blocked UDP port
+often produces \emph{nothing at all}, because there was never going to be an
+acknowledgement. ``It just hangs'' points at UDP or at a one-way path; ``connection
+refused'' means something answered and said no.
+\end{conceptbox}
+
+\section{Ping, and how to ping deliberately}
+
+Ping sends an ICMP echo request and waits for a reply. It proves that a path
+exists in \emph{both} directions --- a point worth dwelling on, because a
+successful ping rules out far more than a failed one confirms.
+
+\begin{verify}{R1}{ping 192.168.20.10}
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 192.168.20.10, timeout is 2 seconds:
+!!!!!
+Success rate is 100 percent (5/5), round-trip min/avg/max = 1/2/4 ms
+\end{verify}
+
+\begin{longtable}{@{}C{1.6cm}L{13.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+\endhead
+\cmd{!} & Reply received. The path works in both directions \\
+\rowcolor{lightbg}
+\cmd{.} & Timed out. Either no path, no return path, or something is dropping
+silently \\
+\cmd{U} & Destination unreachable --- a router explicitly told you it has no
+route. This is far more informative than a timeout \\
+\rowcolor{lightbg}
+\cmd{Q} & Source quench: congestion \\
+\cmd{M} & Could not fragment. An MTU problem \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[The extended ping is the one that finds faults]
+A plain ping from a router sources the packet from the exit interface. That is
+often not the address you care about. \term{Extended ping} lets you set the
+source, and this single option answers the commonest routing question: ``does the
+far end have a route \emph{back} to this subnet?''
+
+Run \cmd{ping} with no arguments to enter the extended dialogue.
+\end{conceptbox}
+
+\begin{verify}{R1}{ping}
+Protocol [ip]:
+Target IP address: 192.168.30.10
+Repeat count [5]: 100
+Datagram size [100]: 1500
+Timeout in seconds [2]:
+Extended commands [n]: y
+Source address or interface: 192.168.20.1
+Type of service [0]:
+Set DF bit in IP header? [no]: yes
+Sweep range of sizes [n]:
+Sending 100, 1500-byte ICMP Echos to 192.168.30.10, timeout is 2 seconds:
+Packet sent with a source address of 192.168.20.1
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+Success rate is 100 percent (100/100), round-trip min/avg/max = 1/3/12 ms
+\end{verify}
+
+\begin{tight}
+  \item \textbf{Source address} --- test the return path for a specific subnet.
+  \item \textbf{Repeat count} --- 100 pings exposes intermittent loss that five
+        will miss.
+  \item \textbf{Datagram size} with \textbf{DF bit set} --- finds MTU problems.
+        If 1500 fails and 1400 succeeds, something on the path cannot carry a
+        full-size frame.
+\end{tight}
+
+\section{Traceroute}
+
+Traceroute sends packets with deliberately small TTL values. The first router
+decrements TTL to zero, discards the packet and reports back; the second does the
+same for TTL 2, and so on. The result is a list of hops.
+
+\begin{verify}{R1}{traceroute 192.168.30.10}
+Type escape sequence to abort.
+Tracing the route to 192.168.30.10
+
+  1 10.0.12.2 4 msec 1 msec 1 msec
+  2 10.0.23.3 8 msec 5 msec 4 msec
+  3  *  *  *
+  4  *  *  *
+\end{verify}
+
+\begin{alertbox}[Where a traceroute stops is not always where the fault is]
+Asterisks mean no reply from that hop. That can mean the fault is there --- or
+that the hop is configured not to reply, or that the \emph{return} path from that
+hop is broken while the forward path is fine. A traceroute that dies at hop 3
+narrows the search to hop 3 onwards; it does not convict hop 3. Confirm with an
+extended ping sourced from an address the far end should know.
+\end{alertbox}
+
+\section{Reading a capture}
+
+\begin{verify}{SW1}{show capture BUF}
+   1  0.000000  192.168.20.10 -> 192.168.30.10  ICMP Echo request  id=1 seq=1
+   2  2.001113  192.168.20.10 -> 192.168.30.10  ICMP Echo request  id=1 seq=2
+   3  4.002240  192.168.20.10 -> 192.168.30.10  ICMP Echo request  id=1 seq=3
+\end{verify}
+
+Three requests, no replies. That is a one-way path: the packets are leaving and
+arriving, but nothing is coming back. The fault is on the return path or at the
+destination host, and it is emphatically \emph{not} the local switch --- which is
+exactly the conclusion the capture is there to let you draw.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Treating a failed ping as proof of a broken forward path.} Ping
+        needs both directions. Half the time the forward path is fine.
+  \item \textbf{Pinging from the wrong source.} A router pinging from its exit
+        interface tests a path the users never take.
+  \item \textbf{Concluding from five packets.} Intermittent loss needs a hundred.
+  \item \textbf{Forgetting that ICMP may be filtered.} Plenty of hosts and
+        firewalls drop echo requests by policy. ``It does not ping'' is not the
+        same as ``it is down''.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[Web server reachable by IP, refuses connections by name and port.]
+Users cannot load an internal site. From a workstation, \cmd{ping 10.20.5.40}
+succeeds with 0\% loss. Browsing to the address times out.
+
+\textbf{Diagnosis.} Ping proves layer 3 connectivity in both directions, so
+addressing, masks, routing and the physical path are all sound. The failure is
+above layer 3 --- either the service is not listening, or something is filtering
+TCP 443 specifically. A timeout rather than a refusal points at a filter: a
+closed port on a live host normally answers with a reset.
+
+\textbf{Fix.} Test the port rather than the host. From a router on the path, an
+extended ping cannot help --- it is ICMP only --- so use \cmd{telnet 10.20.5.40
+443}: a blank screen means the port is open, a refusal means closed, and a hang
+means filtered. Then walk the access lists on the path (\chref{acl}). Do not
+touch addressing; the ping already cleared it.
+\end{breakfix}
+
+\begin{lab}{Diagnose with intent}{Packet Tracer}
+\textbf{Topology.} Two routers back to back, one LAN each, one PC per LAN.
+
+\begin{tasks}
+  \item Address everything and confirm end-to-end ping between the PCs.
+  \item From \cmd{R1}, run a plain ping to the far PC, then an extended ping
+        sourced from the LAN interface. Explain why the second is the more
+        useful test.
+  \item Remove the return route on \cmd{R2}. Predict what a ping from PC-A will
+        show, and what a traceroute will show, \emph{before} testing.
+  \item Restore the route. Now set the far LAN interface MTU to 1400, and use an
+        extended ping with size 1500 and the DF bit set. Record the result.
+  \item Run a hundred-packet ping and record whether any loss appears.
+  \item \textbf{Extension.} Have a partner break one thing --- an address, a
+        mask, a route or an interface --- and identify which, using only ping,
+        extended ping and traceroute, in under five minutes.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A ping returns \cmd{U.U.U}. What has happened, and why is that more
+        useful than five dots?
+  \item Why does an extended ping with a specified source often succeed when a
+        plain ping from the same router fails?
+  \item A traceroute shows three hops then asterisks. List three different
+        explanations.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A port identifies the program; address plus port is a socket.
+  \item TCP handshakes, acknowledges and retransmits; UDP does none of it. Their
+        failure modes differ, and the difference is diagnostic.
+  \item Ping tests both directions at once. A success rules out a great deal; a
+        failure convicts nothing on its own.
+  \item Extended ping sets the source, size and DF bit --- it is the tool that
+        finds return-path and MTU faults.
+  \item Traceroute narrows the search; it does not name the culprit.
+  \item A capture showing requests and no replies is a one-way path.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which pair of ping output characters indicates that a
+        router explicitly reported it had no route?
+        (a)~\cmd{.....} (b)~\cmd{UUUUU} (c)~\cmd{!!!!!} (d)~\cmd{MMMMM}
+  \item \textbf{(MCQ)} Which protocol would you expect a DNS query to use by
+        default? (a)~TCP 53 (b)~UDP 53 (c)~UDP 67 (d)~TCP 22
+  \item \textbf{(Short)} Explain why setting the source address on a ping is the
+        single most useful extended option when troubleshooting routing.
+  \item \textbf{(Short)} A service ``hangs'' rather than being refused. What does
+        that suggest, and what would you check?
+  \item \textbf{(Applied)} A user reports a file transfer that succeeds for small
+        files and fails for large ones. Describe, with the exact ping options you
+        would use, how you would confirm or rule out an MTU problem.
+\end{reviewq}

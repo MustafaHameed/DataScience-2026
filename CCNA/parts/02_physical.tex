@@ -1,0 +1,276 @@
+\chapter{The Physical Layer and Cable Faults}\label{ch:physical}
+\bp{1.1}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Select} the right medium --- copper, multimode fibre, single-mode
+        fibre --- for a given distance and speed.
+  \item \textbf{Read} the interface counters that expose a physical fault, and
+        say which counter implicates which cause.
+  \item \textbf{Diagnose} the classic faults: duplex mismatch, speed mismatch,
+        wrong cable type, bad pin-out, dirty or over-long fibre, and a
+        transceiver operating outside its optical budget.
+  \item \textbf{Distinguish} a port that is down from a port that is up and
+        damaging traffic --- the second is far more dangerous.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{models} for the layered model and the idea of a collision domain.
+\end{prereq}
+
+\begin{keyterms}
+twisted pair $\bullet$ Cat5e/Cat6 $\bullet$ multimode $\bullet$ single-mode
+$\bullet$ SFP $\bullet$ attenuation $\bullet$ auto-negotiation $\bullet$ duplex
+mismatch $\bullet$ CRC error $\bullet$ runt $\bullet$ giant $\bullet$ late
+collision $\bullet$ input error $\bullet$ pin-out $\bullet$ straight-through
+$\bullet$ crossover $\bullet$ Auto-MDIX
+\end{keyterms}
+
+\begin{examnote}[Read the topic wording]
+Topic \tp{1.1} says \emph{diagnose} interface and cable issues, and then names
+them: ``collisions, errors, mismatched duplex, speed, distance, interface, signal
+levels, pin out, and cable types''. That list is a syllabus in itself. You will
+not be asked to describe a cable; you will be shown counters and asked what is
+wrong.
+\end{examnote}
+
+\section{Choosing the medium}
+
+\begin{longtable}{@{}L{3.1cm}L{2.4cm}L{2.6cm}L{6.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Medium} & \textbf{Typical reach} & \textbf{Speed} & \textbf{Use it when} \\
+\midrule
+\endhead
+Cat5e twisted pair & 100~m & 1~Gbps & Desk to access switch. The default, and
+the distance limit is a hard 100~m including patch leads \\
+\rowcolor{lightbg}
+Cat6 / Cat6a & 100~m (55~m for 10G on Cat6) & 1--10~Gbps & Uplinks within a
+building, or any run you expect to upgrade \\
+Multimode fibre (OM3/OM4) & 300--400~m & 1--10~Gbps & Between floors or between
+buildings on one campus. Cheaper optics, shorter reach \\
+\rowcolor{lightbg}
+Single-mode fibre & Kilometres & 1--100~Gbps & Between sites. More expensive
+optics, effectively unlimited campus reach \\
+Direct-attach copper & 1--10~m & 10~Gbps+ & Switch to switch inside one rack \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Distance is a fault, not a preference]
+The exam names \emph{distance} as a diagnosable issue for a reason. Exceed the
+reach of a medium and the link does not fail cleanly --- it comes up and then
+corrupts frames, which shows as climbing CRC errors rather than a down port. A
+95~m run that works in winter and fails in summer is a real phenomenon, and the
+answer is fibre, not another patch lead.
+\end{conceptbox}
+
+\subsection{Copper pin-outs, and why you can mostly forget them}
+
+A \term{straight-through} cable connects pin 1 to pin 1; a \term{crossover}
+swaps the transmit and receive pairs. Historically you needed a crossover between
+two devices of the same kind --- switch to switch, PC to router --- and a
+straight-through between unlike devices.
+
+\term{Auto-MDIX} makes the switch detect and correct this itself, and it is on by
+default on every modern platform. It is still examinable because it fails in two
+situations: when a port has been hard-coded to a speed and duplex (Auto-MDIX
+requires auto-negotiation to be on), and on older or simulated gear. If a link
+between two switches will not come up and both ends are hard-coded, the pin-out
+is a live suspect.
+
+\section{The counters that name the fault}
+
+\begin{verify}{SW1}{show interfaces GigabitEthernet0/1}
+GigabitEthernet0/1 is up, line protocol is up (connected)
+  Hardware is Gigabit Ethernet, address is 00d0.58a1.0201
+  MTU 1500 bytes, BW 1000000 Kbit, DLY 10 usec
+  Full-duplex, 1000Mb/s, media type is 10/100/1000BaseTX
+  5 minute input rate 41000 bits/sec, 12 packets/sec
+     284517 packets input, 39281044 bytes, 0 no buffer
+     Received 1204 broadcasts (0 multicasts)
+     0 runts, 0 giants, 0 throttles
+     0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+     271033 packets output, 33771201 bytes, 0 underruns
+     0 output errors, 0 collisions, 0 interface resets
+     0 late collision, 0 deferred
+\end{verify}
+
+That is a healthy port: every error counter zero, full duplex, and the speed
+matching the media. Learn what this looks like, because you diagnose by
+difference.
+
+\begin{longtable}{@{}L{3.4cm}L{5.4cm}L{6.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Counter climbing} & \textbf{What it means} & \textbf{Most likely cause} \\
+\midrule
+\endhead
+\cmd{CRC} and \cmd{input errors} & Frames arrived damaged & Bad cable, exceeded
+distance, dirty fibre connector, electrical interference. If \cmd{collisions} is
+zero, suspect the cable before the duplex \\
+\rowcolor{lightbg}
+\cmd{collisions} on a full-duplex link & Should be impossible & \textbf{Duplex
+mismatch.} One end is half, the other full \\
+\cmd{late collision} & A collision after the first 64 bytes & Duplex mismatch, or
+a segment longer than the standard allows \\
+\rowcolor{lightbg}
+\cmd{runts} & Frames shorter than 64 bytes & Collisions, or a failing NIC \\
+\cmd{giants} & Frames longer than the MTU & MTU mismatch, or a misconfigured
+jumbo-frame setting on one side \\
+\rowcolor{lightbg}
+\cmd{input errors} with \cmd{CRC} zero & Damaged, but not by corruption & Often
+an MTU or framing problem rather than the cable \\
+\cmd{output drops} & The device could not transmit fast enough & Congestion, not
+a cable fault. Do not replace the cable \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[The duplex mismatch, in one paragraph]
+Auto-negotiation lets two ports agree on speed and duplex. If one end is set to
+\cmd{duplex full} by hand and the other is left on auto, the auto end cannot
+detect duplex, falls back to half, and you have a mismatch. The half-duplex end
+listens before transmitting and treats simultaneous transmission as a collision;
+the full-duplex end transmits whenever it likes. The link stays \emph{up}. It
+just loses a percentage of every conversation, and the symptom the user reports
+is ``the network is slow'', not ``the network is down''.
+
+The fix is to set both ends the same way. The rule of thumb is: leave both on
+auto, or hard-code both. Never one of each.
+\end{conceptbox}
+
+\begin{config}{a hard-coded access port, both ends matching}
+interface GigabitEthernet0/1
+ description Link to SW2 - speed and duplex fixed at both ends
+ speed 1000
+ duplex full
+ no shutdown
+\end{config}
+
+\subsection{Fibre and signal levels}
+
+Topic \tp{1.1} names \emph{signal levels}. On a fibre link the transceiver
+reports how much light it is transmitting and receiving, in dBm, and a receive
+level below the optic's sensitivity produces exactly the same symptom as a bad
+copper cable --- a link that is up with climbing CRC errors.
+
+\begin{verify}{SW1}{show interfaces GigabitEthernet0/25 transceiver}
+                             Optical   Optical
+           Temperature  Voltage  Tx Power  Rx Power
+Port       (Celsius)    (Volts)  (dBm)     (dBm)
+---------  -----------  -------  --------  --------
+Gi0/25       33.2         3.31     -2.4     -28.9
+\end{verify}
+
+A receive power of $-28.9$~dBm against a typical sensitivity of about $-23$~dBm
+means the link is starved of light. Causes, in the order worth checking: a dirty
+or unseated connector, a bend or break in the fibre, too many patch panels, a
+run longer than the optic supports, or a single-mode optic on multimode fibre.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Replacing the cable first.} It is the most expensive check in
+        time and the least likely single cause on a link that has been working.
+        Read the counters first: they tell you which of six causes it is.
+  \item \textbf{Treating ``up/up'' as healthy.} A port can be up, passing
+        traffic, and corrupting five per cent of it. The exam will show you
+        exactly this and expect you not to declare it fine.
+  \item \textbf{Hard-coding one end.} The commonest way to create a duplex
+        mismatch is to fix one side ``to be safe''.
+  \item \textbf{Reading raw totals instead of a rate.} Counters accumulate since
+        the last clear. Ten thousand CRC errors over two years is noise; ten
+        thousand since yesterday is a fault. Use \cmd{clear counters} and watch.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[``The file server is slow, but it is not down''.]
+A user copies a large file and gets a fraction of the expected throughput. Ping
+succeeds with no loss. You look at the access port:
+
+\begin{verify}{SW1}{show interfaces GigabitEthernet0/7 | include duplex|collision|CRC}
+  Half-duplex, 100Mb/s, media type is 10/100/1000BaseTX
+     14432 input errors, 118 CRC, 0 frame, 0 overrun, 0 ignored
+     0 output errors, 89211 collisions, 0 interface resets
+     2244 late collision, 0 deferred
+\end{verify}
+
+\textbf{Diagnosis.} The port is half duplex at 100~Mbps on gigabit-capable media,
+with a very large collision count and --- decisively --- \emph{late} collisions.
+Late collisions on a modern switched link are the signature of a duplex mismatch:
+the far end is transmitting full duplex while this end still listens before
+sending. The small CRC count is a consequence of the collisions, not a separate
+cable fault.
+
+\textbf{Fix.} Find the server NIC setting. It has almost certainly been hard-coded
+to full duplex while the switch port was left on auto. Set both ends to auto, or
+both to \cmd{speed 1000} / \cmd{duplex full}, then \cmd{clear counters} and
+confirm the errors stop climbing. If they do not, \emph{now} suspect the cable.
+\end{breakfix}
+
+\begin{lab}{Reading a broken link}{Packet Tracer}
+\textbf{Topology.} Two 2960 switches connected by one link; a PC on each.
+
+\begin{tasks}
+  \item Cable \cmd{SW1 Gi0/1} to \cmd{SW2 Gi0/1}. Confirm both PCs can ping each
+        other, then run \cmd{show interfaces Gi0/1} on both and record the speed,
+        duplex and every error counter while the link is healthy.
+  \item On \cmd{SW1} only, set \cmd{speed 100} and \cmd{duplex half}. Leave
+        \cmd{SW2} on auto.
+  \item Generate traffic between the PCs. Record what changes on each side.
+        Which counter moved first?
+  \item Repeat with \cmd{SW1} at \cmd{duplex full} and \cmd{SW2} on auto ---
+        the classic mismatch. Note that the link stays up.
+  \item \textbf{Extension.} Without looking at your own configuration, hand the
+        topology to a partner, have them introduce one fault from this chapter,
+        and diagnose it from \cmd{show} output alone in under three minutes.
+\end{tasks}
+
+\textbf{Verification.} You should be able to state, from counters only, whether
+a link is healthy, mismatched, or physically damaged.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A gigabit link is up. \cmd{collisions} is increasing and the interface
+        reports full duplex. What single conclusion can you draw, and why is it
+        certain?
+  \item A fibre link shows Rx power of $-31$~dBm against a sensitivity of
+        $-23$~dBm. Give three causes in the order you would check them.
+  \item Why is a port that is administratively down easier to deal with than one
+        that is up with rising CRC errors?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Copper is 100~m, full stop. Multimode reaches a campus; single-mode
+        reaches a city. Exceeding a medium's reach corrupts frames rather than
+        dropping the link.
+  \item Diagnose from counters, not from intuition. CRC without collisions points
+        at the cable; collisions on a full-duplex link point at duplex; late
+        collisions are close to proof of a duplex mismatch.
+  \item Set both ends of a link the same way --- both auto, or both fixed.
+  \item ``Up/up'' does not mean healthy. The dangerous fault is the one that
+        passes most traffic and damages the rest.
+  \item On fibre, read \cmd{show interfaces \ldots{} transceiver}. Light levels
+        are a diagnosable fault the blueprint names explicitly.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which counter most strongly indicates a duplex mismatch?
+        (a)~giants (b)~late collision (c)~output drops (d)~no buffer
+  \item \textbf{(MCQ)} A 10~Gbps link is required over 2~km between two
+        buildings. Which medium?
+        (a)~Cat6a (b)~multimode OM4 (c)~single-mode fibre (d)~direct-attach copper
+  \item \textbf{(Short)} Explain why hard-coding duplex on one end of a link and
+        leaving the other on auto produces a mismatch rather than a failure to
+        link.
+  \item \textbf{(Short)} A port shows 8,000 CRC errors and zero collisions.
+        State the two most likely causes and the command you would run next.
+  \item \textbf{(Applied)} You inherit a network where every access port has been
+        hard-coded to \cmd{speed 100} and \cmd{duplex full}. Describe the risk
+        this creates, and the safest order in which to migrate the estate back to
+        auto-negotiation.
+\end{reviewq}

@@ -1,0 +1,265 @@
+\chapter{VLANs and Access Ports}\label{ch:vlans}
+\bp{2.2}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what a VLAN changes about a switch, in terms of the
+        learning-and-flooding algorithm from \chref{ethernet}.
+  \item \textbf{Create} VLANs and assign access ports to them.
+  \item \textbf{Verify} VLAN membership from three different angles, and know
+        which one to trust when they disagree.
+  \item \textbf{Diagnose} the classic VLAN faults: a port in the wrong VLAN, a
+        VLAN that does not exist, and a VLAN that is shut down.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ethernet} for the MAC table and flooding; \chref{cli} for moving around
+the command line.
+\end{prereq}
+
+\begin{keyterms}
+VLAN $\bullet$ broadcast domain $\bullet$ access port $\bullet$ VLAN database
+$\bullet$ default VLAN $\bullet$ native VLAN $\bullet$ management VLAN $\bullet$
+SVI $\bullet$ VLAN 1 $\bullet$ shutdown VLAN
+\end{keyterms}
+
+\section{What a VLAN actually does}
+
+\begin{definitionbox}[VLAN]
+A \term{VLAN} is a broadcast domain implemented in software on a switch. Ports in
+VLAN 10 behave as though they were on a physically separate switch from ports in
+VLAN 20: a broadcast from one never reaches the other, and a frame cannot cross
+between them without passing through something that routes.
+\end{definitionbox}
+
+\begin{conceptbox}[One line changes in the switching algorithm]
+Recall the algorithm from \chref{ethernet}: learn the source, then forward,
+flood, or filter. VLANs change exactly one thing --- \textbf{every step is now
+scoped to a VLAN}.
+
+\begin{tight}
+  \item Learning is per VLAN. The same MAC address may legitimately appear in two
+        VLANs on the same switch.
+  \item Flooding is per VLAN. An unknown unicast in VLAN 10 goes out every
+        \emph{VLAN 10} port and no others.
+  \item A frame never leaves the VLAN it arrived in. Not once, not for broadcast,
+        not for anything.
+\end{tight}
+That is the whole mechanism. Everything else about VLANs --- trunking,
+inter-VLAN routing, voice VLANs --- is machinery for coping with the consequences
+of that one rule.
+\end{conceptbox}
+
+\begin{alertbox}[The consequence people forget]
+If two devices are in different VLANs they cannot communicate, \emph{even if they
+are in the same IP subnet, plugged into adjacent ports on the same switch}. The
+switch will not carry the frame. Conversely two devices in the same VLAN but
+different subnets cannot communicate either, because IP will not deliver it.
+
+VLAN and subnet are separate ideas that must be kept aligned by design. The
+convention that saves everyone trouble is one VLAN, one subnet, and a number that
+matches: VLAN 10 is \cmd{192.168.10.0/24}, VLAN 20 is \cmd{192.168.20.0/24}.
+\end{alertbox}
+
+\section{Creating VLANs and assigning ports}
+
+\begin{config}{three VLANs and the access ports that use them}
+! Create the VLANs and name them. A name is documentation that
+! survives on the device -- use it.
+vlan 10
+ name Staff
+vlan 20
+ name Guest
+vlan 30
+ name Voice
+exit
+!
+! Assign a single access port.
+interface GigabitEthernet0/5
+ description Staff desk 5
+ switchport mode access
+ switchport access vlan 10
+ no shutdown
+!
+! Assign a block of ports in one go.
+interface range GigabitEthernet0/6 - 12
+ description Staff desks 6-12
+ switchport mode access
+ switchport access vlan 10
+!
+interface range GigabitEthernet0/13 - 18
+ description Guest desks
+ switchport mode access
+ switchport access vlan 20
+\end{config}
+
+\begin{conceptbox}[Why \cmd{switchport mode access} matters]
+Without it the port is left in dynamic auto mode, which means it will negotiate
+and may become a \emph{trunk} if the device on the other end asks for one. On an
+access port that is both a fault waiting to happen and a security hole --- an
+attacker who can negotiate a trunk can reach every VLAN.
+
+Set it explicitly. It is one line, and it is the difference between a port that
+does what you configured and a port that does what the far end suggests.
+\end{conceptbox}
+
+\section{Verifying, three ways}
+
+\begin{verify}{SW1}{show vlan brief}
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+1    default                          active    Gi0/1, Gi0/2, Gi0/3, Gi0/4
+10   Staff                            active    Gi0/5, Gi0/6, Gi0/7, Gi0/8
+                                                Gi0/9, Gi0/10, Gi0/11, Gi0/12
+20   Guest                            active    Gi0/13, Gi0/14, Gi0/15
+30   Voice                            active
+1002 fddi-default                     act/unsup
+\end{verify}
+
+This is the view by VLAN. Note that VLAN 30 exists but has no ports --- it was
+created and never used, which is a common and harmless state, and also a common
+symptom of a half-finished change.
+
+\begin{verify}{SW1}{show interfaces GigabitEthernet0/5 switchport}
+Name: Gi0/5
+Switchport: Enabled
+Administrative Mode: static access
+Operational Mode: static access
+Administrative Trunking Encapsulation: dot1q
+Access Mode VLAN: 10 (Staff)
+Trunking Native Mode VLAN: 1 (default)
+Voice VLAN: none
+\end{verify}
+
+This is the view by port, and it is the one to trust when something is odd.
+\textbf{Administrative} mode is what you configured; \textbf{operational} mode is
+what the port has actually become. When those two differ, you have found your
+fault.
+
+\begin{verify}{SW1}{show mac address-table vlan 10}
+          Mac Address Table
+-------------------------------------------
+Vlan    Mac Address       Type        Ports
+----    -----------       --------    -----
+  10    000a.f36e.7712    DYNAMIC     Gi0/5
+  10    0060.5c2b.19a4    DYNAMIC     Gi0/7
+\end{verify}
+
+This is the view by evidence: which devices are actually present in the VLAN. If
+a port is in VLAN 10 and no MAC address ever appears against it, nothing is
+plugged in or the device is silent --- and that distinction is the start of most
+access-layer troubleshooting.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Assigning a port to a VLAN that does not exist.} On many
+        platforms the switch creates it silently; on others the port simply stops
+        forwarding. Either way \cmd{show vlan brief} tells you within seconds.
+  \item \textbf{Leaving everything in VLAN 1.} VLAN 1 cannot be deleted and
+        carries control traffic. Do not put users on it, and do not use it as the
+        management VLAN.
+  \item \textbf{Forgetting that a VLAN can be shut down.} \cmd{shutdown} inside
+        \cmd{vlan 10} stops the whole VLAN forwarding on that switch while every
+        port still shows as correctly assigned. It is an unusual fault and
+        therefore a nasty one.
+  \item \textbf{Deleting a VLAN and leaving ports assigned to it.} Those ports
+        become inactive. \cmd{show vlan brief} will not list them at all, which is
+        confusing until you know to look for their absence.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[A new desk cannot reach anything, and the port looks fine.]
+A user on \cmd{Gi0/9} has no connectivity. The port is up, the cable is good, and
+the configuration reads exactly like the working port next to it.
+
+\begin{verify}{SW1}{show vlan brief | include Staff|Gi0/9}
+10   Staff                            active    Gi0/5, Gi0/6, Gi0/7, Gi0/8
+\end{verify}
+
+\cmd{Gi0/9} is not listed against VLAN 10 --- nor against any other VLAN.
+
+\begin{verify}{SW1}{show interfaces GigabitEthernet0/9 switchport}
+Name: Gi0/9
+Switchport: Enabled
+Administrative Mode: static access
+Operational Mode: static access
+Access Mode VLAN: 15 (Inactive)
+\end{verify}
+
+\textbf{Diagnosis.} The port was assigned to VLAN 15, which does not exist on this
+switch --- most likely a typing slip for 10, or a VLAN that was deleted after the
+port was configured. The word \cmd{(Inactive)} is the whole diagnosis: the port is
+administratively correct and operationally orphaned.
+
+\textbf{Fix.} Either create VLAN 15 if it was meant to exist, or reassign the port:
+\cmd{switchport access vlan 10}. Confirm with \cmd{show vlan brief} that
+\cmd{Gi0/9} now appears in the Staff list, then confirm a MAC address learns
+against it.
+\end{breakfix}
+
+\begin{lab}{Divide one switch into three networks}{Packet Tracer}
+\textbf{Topology.} One switch, six PCs --- two per VLAN --- all in the same IP
+subnet to begin with.
+
+\begin{tasks}
+  \item With every port in VLAN 1, confirm all six PCs can ping each other.
+        Record the MAC address table.
+  \item Create VLANs 10, 20 and 30 with names, and move two PCs into each.
+  \item Re-test. Which pings now succeed and which fail? Explain each result in
+        terms of broadcast domains, not IP.
+  \item Run all three verification commands from this chapter and reconcile them.
+  \item Assign \cmd{Gi0/11} to VLAN 99, which you have not created. Record what
+        \cmd{show vlan brief} and \cmd{show interfaces switchport} each say.
+  \item Enter \cmd{vlan 20} and type \cmd{shutdown}. Confirm the ports still look
+        correctly assigned while nothing passes. Undo it.
+  \item \textbf{Extension.} Re-address the PCs so each VLAN is its own subnet.
+        Note that inter-VLAN pings still fail --- and that fixing it needs
+        \chref{trunking}.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Two PCs are in the same IP subnet, plugged into the same switch, in
+        VLANs 10 and 20. Can they ping each other? Justify your answer at layer 2.
+  \item Which command distinguishes what you configured on a port from what the
+        port has actually become?
+  \item A port shows \cmd{Access Mode VLAN: 15 (Inactive)}. State the two
+        possible causes.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A VLAN is a broadcast domain in software. Learning, flooding and
+        forwarding all become per-VLAN operations.
+  \item A frame never leaves its VLAN without being routed.
+  \item Keep VLAN and subnet aligned one-to-one; mismatches produce faults that
+        look like everything and nothing.
+  \item Always set \cmd{switchport mode access} explicitly, or the port may
+        negotiate a trunk.
+  \item Verify three ways: \cmd{show vlan brief} by VLAN,
+        \cmd{show interfaces switchport} by port, and the MAC table by evidence.
+        Administrative versus operational mode is where faults show.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which command assigns an access port to VLAN 10?
+        (a)~\cmd{vlan 10} (b)~\cmd{switchport access vlan 10}
+        (c)~\cmd{switchport trunk vlan 10} (d)~\cmd{ip vlan 10}
+  \item \textbf{(MCQ)} A port reports \cmd{Administrative Mode: dynamic auto} and
+        \cmd{Operational Mode: trunk}. What has happened?
+        (a)~it was configured as a trunk (b)~it negotiated a trunk with the far
+        end (c)~the VLAN is inactive (d)~the port is errdisabled
+  \item \textbf{(Short)} Explain why leaving a port in dynamic auto is a security
+        problem as well as an operational one.
+  \item \textbf{(Short)} A VLAN exists, ports are assigned, and nothing forwards.
+        Name a cause that \cmd{show vlan brief} would reveal and one it would not.
+  \item \textbf{(Applied)} You are asked to segment a 24-port switch for staff,
+        guests and printers, with guests unable to reach the other two. Write the
+        configuration, and state what additional device or feature you would need
+        for the isolation requirement to hold once routing is added.
+\end{reviewq}

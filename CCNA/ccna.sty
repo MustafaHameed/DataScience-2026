@@ -1,0 +1,583 @@
+%=====================================================================
+%  ccna.sty
+%  Style and pedagogy package for the CCNA 200-301 v2.0 course volume.
+%
+%  The third sibling of ../Data Science Fall 2026/dshandout.sty and
+%  ../HEC AI-DS Curriculum Map/hecmap.sty: same palette, same
+%  typographic decisions, and the same hard-won line-breaking rules.
+%
+%  What is new here, and why: v2.0 is 55% configure-or-troubleshoot
+%  (8 of its 29 topics begin "Configure", 8 begin "Troubleshoot" or
+%  "Diagnose", only 6 begin "Describe"). A handout for it cannot be
+%  prose with a lab bolted on the end, so this file adds three
+%  first-class environments -- config, verify and breakfix -- and a
+%  blueprint tag that makes every chapter's exam coverage auditable.
+%=====================================================================
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{ccna}[2026/08/27 CCNA 200-301 v2.0 course volume style]
+
+%---------------------------------------------------------------------
+% Packages
+%---------------------------------------------------------------------
+\RequirePackage[margin=2.4cm,top=2.6cm,bottom=2.4cm]{geometry}
+% Latin Modern + T1 before microtype: the default CM fonts include
+% bitmap variants, and microtype's font expansion is a fatal error on
+% any non-scalable font. lmodern is scalable Type1 throughout.
+\RequirePackage{lmodern}
+\RequirePackage[T1]{fontenc}
+\RequirePackage[utf8]{inputenc}
+\RequirePackage{textcomp}
+\RequirePackage{microtype}
+% Latin Modern Roman has no bold small-caps shape (T1/lmr/bx/sc does
+% not exist), so asking for bold small caps silently loses the caps.
+% Kickers are medium-weight small caps, letterspaced.
+\SetTracking{encoding=*, shape=sc}{45}
+\RequirePackage{graphicx}
+\RequirePackage{tikz}
+\usetikzlibrary{shapes,shapes.geometric,shapes.misc,arrows.meta,positioning,
+                calc,fit,backgrounds,decorations.pathreplacing,
+                decorations.markings,patterns,chains}
+\RequirePackage{colortbl}
+\RequirePackage{enumitem}
+\RequirePackage{booktabs}
+\RequirePackage{longtable}
+\RequirePackage{array}
+\RequirePackage{ragged2e}
+\RequirePackage{tabularx}
+\RequirePackage{xcolor}
+\RequirePackage{fancyhdr}
+\RequirePackage{titlesec}
+\RequirePackage[most]{tcolorbox}
+\tcbuselibrary{listings}
+\RequirePackage{amsmath,amssymb}
+\RequirePackage{multirow}
+\RequirePackage{multicol}
+\RequirePackage{fontawesome5}
+\RequirePackage{listings}
+\RequirePackage{float}
+\RequirePackage{caption}
+% Conceptual diagrams are tightly coupled to the text that introduces
+% them, so a float must never drift past its own section heading.
+\RequirePackage[section]{placeins}
+\RequirePackage{needspace}
+\RequirePackage{emptypage}
+\RequirePackage{hyperref}
+\RequirePackage{bookmark}
+
+%---------------------------------------------------------------------
+% Spacing and line breaking
+%---------------------------------------------------------------------
+\setlength{\parskip}{3pt plus 1pt minus 1pt}
+\setlength{\parindent}{0pt}
+\setlength{\emergencystretch}{3em}
+% A single line stranded at the top or bottom of a page is the most
+% common way a printed handout loses a reader mid-argument.
+\widowpenalty=10000
+\clubpenalty=10000
+\displaywidowpenalty=10000
+% brokenpenalty stays finite: forbidding a break after a hyphenated
+% line as well leaves TeX no legal break at all on figure-heavy pages.
+\brokenpenalty=4000
+\renewcommand{\arraystretch}{1.18}
+
+% Table paragraph columns here are narrow and hold ordinary prose.
+% Justifying them opens rivers and forces underfull lines, so every one
+% is set ragged right with hyphens made expensive. Use L{<width>}
+% wherever you would otherwise write p{<width>}.
+\setlength{\RaggedRightRightskip}{0pt plus 4em}
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash\hyphenpenalty=2000\relax}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+% Monospace column, for addressing tables and command references.
+\newcolumntype{M}[1]{>{\RaggedRight\arraybackslash\ttfamily\footnotesize}p{#1}}
+
+% snake_case and interface names appear inline throughout, and TeX has
+% no break point inside one. Allow a break after an underscore; no
+% hyphen is inserted, and maths is left alone.
+\let\ccnaunderscore\_
+\renewcommand{\_}{\ccnaunderscore\ifmmode\else\allowbreak\fi}
+
+% Float placement: keep a figure on the page that discusses it.
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{4}
+\renewcommand{\topfraction}{0.92}
+\renewcommand{\bottomfraction}{0.75}
+\renewcommand{\textfraction}{0.06}
+\renewcommand{\floatpagefraction}{0.70}
+
+%---------------------------------------------------------------------
+% Palette -- identical to the two sibling style files so the three
+% documents read as one family.
+%---------------------------------------------------------------------
+\definecolor{primary}{HTML}{1A5276}
+\definecolor{secondary}{HTML}{2E86C1}
+\definecolor{accent}{HTML}{E74C3C}
+\definecolor{lightbg}{HTML}{EBF5FB}
+\definecolor{defbg}{HTML}{FDF2E9}
+\definecolor{greenhl}{HTML}{27AE60}
+\definecolor{purplehl}{HTML}{8E44AD}
+\definecolor{goldhl}{HTML}{B7950B}
+\definecolor{tealhl}{HTML}{117A65}
+\definecolor{codebg}{HTML}{F4F6F7}
+\definecolor{neutral}{HTML}{707B7C}
+
+% One fixed colour per v2.0 exam domain, used in the blueprint tags,
+% the part openers, the topology icons and the coverage matrix, so a
+% reader learns the domain by colour alone.
+\definecolor{dom1}{HTML}{1F618D}   % 1.0 Network Infrastructure and Connectivity
+\definecolor{dom2}{HTML}{117864}   % 2.0 Switching and Network Access
+\definecolor{dom3}{HTML}{6C3483}   % 3.0 IP Routing
+\definecolor{dom4}{HTML}{922B21}   % 4.0 Network Services and Security
+\definecolor{dom5}{HTML}{B7950B}   % 5.0 AI, Network Operations and Management
+
+\hypersetup{
+  colorlinks=true, linkcolor=primary, urlcolor=secondary, citecolor=primary,
+  bookmarksnumbered=true, bookmarksdepth=2,
+  bookmarksopen=true, bookmarksopenlevel=1,
+  pdftitle={CCNA 200-301 v2.0 --- Course Notes, Labs and Syllabus},
+  % pdfauthor={},   % <- add the instructor or department here
+  pdfsubject={A from-zero course volume for Cisco CCNA 200-301 version 2.0,
+              covering all twenty-nine blueprint topics with notes,
+              configurations, verification, troubleshooting and labs},
+  pdfkeywords={CCNA, 200-301, v2.0, Cisco, networking, switching, routing,
+               VLAN, trunk, EtherChannel, Rapid PVST+, OSPF, OSPFv3, HSRP,
+               VRRP, NAT, PAT, ACL, DHCP, DNS, AAA, port security, wireless,
+               SNMP, syslog, Ansible, agentic AI, Packet Tracer, CML},
+  pdfdisplaydoctitle=true}
+
+%---------------------------------------------------------------------
+% Running heads
+%---------------------------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{primary}{\textbf{CCNA 200-301 v2.0}}}
+\fancyhead[R]{\small\textcolor{primary}{\nouppercase{\leftmark}}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.5pt}
+\renewcommand{\footrulewidth}{0.3pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}\fancyfoot[C]{\small\thepage}%
+  \renewcommand{\headrulewidth}{0pt}\renewcommand{\footrulewidth}{0.3pt}}
+\renewcommand{\chaptermark}[1]{\markboth{\thechapter.~#1}{}}
+
+%---------------------------------------------------------------------
+% Part / chapter / section formatting
+%---------------------------------------------------------------------
+\titleformat{\part}[display]
+  {\centering\normalfont\huge\bfseries\color{primary}}
+  {\Large\mdseries\textsc{Part \thepart}}{12pt}{\Huge}
+  [\vspace{6pt}{\color{secondary}\rule{0.7\textwidth}{1.5pt}}]
+
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries\color{primary}}
+  {\raggedright\normalsize\mdseries\textsc{\color{secondary}Chapter \thechapter}}{4pt}
+  {\Large\raggedright}
+  [\vspace{3pt}{\color{secondary}\rule{\textwidth}{1.2pt}}]
+\titlespacing*{\chapter}{0pt}{-18pt}{10pt}
+
+\titleformat{\section}{\large\bfseries\color{primary}}{\thesection}{0.6em}{}
+  [\vspace{1pt}{\color{secondary!35}\titlerule}]
+\titleformat{\subsection}{\normalsize\bfseries\color{secondary}}{\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}{\small\bfseries\color{primary}}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{13pt}{6pt}
+\titlespacing*{\subsection}{0pt}{9pt}{4pt}
+\titlespacing*{\subsubsection}{0pt}{7pt}{3pt}
+
+\setcounter{tocdepth}{1}
+\setcounter{secnumdepth}{3}
+
+%=====================================================================
+% BLUEPRINT TAGS
+%
+% \bp{2.1,2.2} under a chapter title states which exam topics that
+% chapter discharges; \tp{2.1} does the same inline in prose. The
+% colour comes from the leading digit, so the domain is legible at a
+% glance. Write the list WITHOUT spaces: \bp{2.1,2.2,2.5}.
+%
+% These tags are also the data behind the coverage matrix in
+% Appendix D -- tools/check_coverage.py greps them out of parts/ and
+% checks all twenty-nine topics are accounted for.
+%=====================================================================
+\def\ccna@bpsplit#1.#2\relax{%
+  \edef\ccna@dc{dom\ifcase#1 1\or1\or2\or3\or4\or5\else5\fi}%
+  \tikz[baseline=(bx.base)]{%
+    \node[inner xsep=2.5pt, inner ysep=1pt, rounded corners=1.5pt,
+          fill=\ccna@dc!12, draw=\ccna@dc!45, line width=0.4pt,
+          text=\ccna@dc!85!black, font=\scriptsize\bfseries] (bx) {#1.#2};}}
+\newcommand{\tp}[1]{\ccna@bpsplit#1\relax}
+
+\makeatletter
+\newcommand{\bp}[1]{%
+  \par\nobreak\vspace{-2pt}%
+  \noindent{\scriptsize\color{neutral}\textsc{Exam topics}}\hspace{4pt}%
+  \@for\ccna@t:=#1\do{\expandafter\tp\expandafter{\ccna@t}\hspace{2.5pt}}%
+  \par\vspace{7pt}\nobreak}
+\makeatother
+
+% The five domains, for openers and the coverage matrix.
+\newcommand{\domname}[1]{%
+  \ifcase#1 \or Network Infrastructure and Connectivity\or
+  Switching and Network Access\or IP Routing\or
+  Network Services and Security\or AI, Network Operations and Management\fi}
+\newcommand{\domweight}[1]{%
+  \ifcase#1 \or 25\%\or 25\%\or 20\%\or 20\%\or 10\%\fi}
+
+%=====================================================================
+% CISCO IOS LISTINGS
+%=====================================================================
+\lstdefinelanguage{IOS}{
+  morekeywords={%
+    % modes and housekeeping
+    configure,terminal,enable,disable,exit,end,do,hostname,banner,motd,
+    reload,write,memory,copy,running-config,startup-config,erase,
+    % interfaces
+    interface,range,description,shutdown,duplex,speed,mtu,bandwidth,
+    negotiation,auto,media-type,
+    % switching
+    switchport,mode,access,trunk,dynamic,desirable,nonegotiate,voice,
+    encapsulation,dot1q,native,allowed,add,remove,vlan,name,
+    channel-group,port-channel,lacp,active,passive,pagp,
+    spanning-tree,portfast,bpduguard,bpdufilter,guard,root,loop,
+    vlan-priority,primary,secondary,cost,link-type,point-to-point,
+    mac-address-table,storm-control,broadcast,multicast,unicast,level,
+    port-security,maximum,violation,restrict,protect,sticky,aging,
+    % addressing and routing
+    ip,ipv6,address,mask,secondary,dhcp,unicast-routing,route,
+    default-gateway,router,ospf,network,area,router-id,passive-interface,
+    redistribute,summary-address,reference-bandwidth,hello-interval,
+    dead-interval,priority,cost,standby,vrrp,preempt,track,timers,
+    version,authentication,
+    % services and security
+    nat,inside,outside,source,destination,list,pool,overload,static,
+    netmask,helper-address,excluded-address,default-router,dns-server,
+    domain-name,lease,name-server,
+    access-list,permit,deny,any,host,eq,gt,lt,range,remark,established,
+    log,extended,standard,sequence,
+    aaa,new-model,authentication,authorization,accounting,login,exec,
+    group,tacacs,radius,server,key,timeout,local,none,default,
+    username,password,secret,privilege,algorithm-type,scrypt,
+    line,console,vty,transport,input,output,ssh,telnet,all,
+    crypto,generate,rsa,modulus,
+    snooping,arp,inspection,trust,limit,rate,validate,
+    ra-guard,device-role,policy,
+    % management
+    logging,trap,buffered,console,monitor,facility,source-interface,
+    snmp-server,community,location,contact,host,traps,group,user,
+    ntp,clock,timezone,
+    cdp,lldp,run,receive,transmit,neighbors,detail,
+    power,inline,never,
+    % show and diagnostics
+    show,ping,traceroute,telnet,debug,undebug,terminal,monitor,
+    brief,status,summary,vrf,protocols,neighbor,database,statistics,
+    counters,errors,transceiver,capabilities,
+  },
+  sensitive=true,
+  morecomment=[l]{!},
+  morestring=[b]",
+  literate={-}{{-}}1 {+}{{+}}1 {/}{{/}}1,
+}
+
+\lstdefinestyle{ioscfg}{
+  language=IOS,
+  basicstyle=\ttfamily\footnotesize\color{black!85},
+  keywordstyle=\color{dom2!85!black}\bfseries,
+  commentstyle=\color{neutral}\itshape,
+  stringstyle=\color{greenhl!70!black},
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=true,
+  breakindent=1.2em,
+  columns=fullflexible,
+  keepspaces=true,
+  aboveskip=0pt, belowskip=0pt,
+  xleftmargin=0pt, framexleftmargin=0pt,
+}
+
+% Device output is not configuration: no keyword highlighting, because
+% highlighting half the words in a show-command dump makes it harder to
+% read, not easier.
+\lstdefinestyle{iosout}{
+  basicstyle=\ttfamily\scriptsize\color{black!80},
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  keepspaces=true,
+  aboveskip=0pt, belowskip=0pt,
+  xleftmargin=0pt, framexleftmargin=0pt,
+}
+\lstset{style=ioscfg}
+
+%---------------------------------------------------------------------
+% config -- what you type. #1 names what the block builds.
+%---------------------------------------------------------------------
+\newtcblisting{config}[1]{%
+  listing only, listing style=ioscfg,
+  enhanced, breakable,
+  colback=codebg, colframe=dom2,
+  colbacktitle=dom2, coltitle=white,
+  title={\faIcon{terminal}~Configure~---~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=4pt, bottom=4pt, left=7pt, right=7pt,
+  before skip=7pt, after skip=7pt}
+
+%---------------------------------------------------------------------
+% verify -- the show command that proves it worked.
+%
+%   \begin{verify}{SW1}{show interfaces trunk}
+%
+% Two arguments, device then command, so that the "#" of the prompt is
+% produced here rather than escaped by hand in every one of the many
+% hundreds of these blocks in the volume. A raw # in a tcolorbox title
+% is an "Illegal parameter number" error, and remembering that is not
+% the chapter author's job.
+%---------------------------------------------------------------------
+\newtcblisting{verify}[2]{%
+  listing only, listing style=iosout,
+  enhanced, breakable,
+  colback=white, colframe=primary!70,
+  colbacktitle=primary!70, coltitle=white,
+  title={\faIcon{search}~\texttt{#1\#\ #2}}, fonttitle=\bfseries\footnotesize,
+  boxrule=0.5pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=7pt, right=7pt,
+  before skip=7pt, after skip=7pt}
+
+%---------------------------------------------------------------------
+% breakfix -- a broken device to diagnose. Eight of the twenty-nine
+% v2.0 topics begin Troubleshoot or Diagnose, so this appears in every
+% chapter rather than being saved for a revision section at the end.
+%---------------------------------------------------------------------
+\newtcolorbox{breakfix}[1][The symptom]{%
+  enhanced, breakable,
+  colback=accent!3, colframe=accent!85!black,
+  colbacktitle=accent!85!black, coltitle=white,
+  title={\faIcon{bug}~Break \& Fix~---~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!10},
+  top=4pt, bottom=4pt, left=8pt, right=8pt}
+
+%=====================================================================
+% Pedagogy furniture, carried over from dshandout.sty
+%=====================================================================
+\newtcolorbox{definitionbox}[1][]{
+  enhanced, breakable,
+  colback=defbg, colframe=orange!60!black,
+  colbacktitle=orange!70!black, coltitle=white,
+  title={\faIcon{book}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!15},
+  top=4pt, bottom=4pt, left=8pt, right=8pt}
+
+\newtcolorbox{conceptbox}[1][]{
+  enhanced, breakable,
+  colback=lightbg, colframe=secondary,
+  colbacktitle=secondary, coltitle=white,
+  title={\faIcon{lightbulb}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!15},
+  top=4pt, bottom=4pt, left=8pt, right=8pt}
+
+\newtcolorbox{alertbox}[1][]{
+  enhanced, breakable,
+  colback=red!4, colframe=accent,
+  colbacktitle=accent, coltitle=white,
+  title={\faIcon{exclamation-triangle}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=8pt, right=8pt}
+
+\newtcolorbox{outcomes}{
+  enhanced, breakable,
+  colback=primary!4, colframe=primary,
+  colbacktitle=primary, coltitle=white,
+  title={\faIcon{bullseye}~Learning Outcomes}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!12},
+  top=4pt, bottom=4pt, left=8pt, right=8pt}
+
+\newtcolorbox{prereq}{
+  enhanced, breakable,
+  colback=gray!6, colframe=gray!60!black,
+  colbacktitle=gray!60!black, coltitle=white,
+  title={\faIcon{link}~Before You Start}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=8pt, right=8pt}
+
+\newtcolorbox{keyterms}{
+  enhanced, breakable,
+  colback=purplehl!4, colframe=purplehl,
+  colbacktitle=purplehl, coltitle=white,
+  title={\faIcon{tags}~Key Terms in This Chapter}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=8pt, right=8pt}
+
+\newtcolorbox{worked}[1][]{
+  enhanced, breakable,
+  colback=goldhl!5, colframe=goldhl,
+  colbacktitle=goldhl, coltitle=white,
+  title={\faIcon{calculator}~Worked Example: #1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!12},
+  top=4pt, bottom=4pt, left=8pt, right=8pt}
+
+\newtcolorbox{pitfall}[1][Common Pitfalls]{
+  enhanced, breakable,
+  colback=accent!4, colframe=accent,
+  colbacktitle=accent, coltitle=white,
+  title={\faIcon{exclamation-circle}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=8pt, right=8pt}
+
+% Labs are numbered within the chapter and state their platform in the
+% header: Packet Tracer through Part III, then CML or GNS3 from Part IV
+% on, where real IOS XE behaviour matters.
+%
+%   \begin{lab}{Building a trunk}{Packet Tracer}
+%
+% Both arguments are mandatory. The counter feeds the lab index in
+% Appendix G, so every lab is findable by number.
+\newtcolorbox[auto counter, number within=chapter]{lab}[2]{
+  enhanced, breakable,
+  colback=tealhl!4, colframe=tealhl,
+  colbacktitle=tealhl, coltitle=white,
+  title={\faIcon{flask}~Lab~\thetcbcounter~---~#1
+         \normalfont\footnotesize\;(\textit{#2})},
+  fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!12},
+  top=4pt, bottom=4pt, left=8pt, right=8pt}
+
+\newtcolorbox{checkpoint}{
+  enhanced, breakable,
+  colback=secondary!5, colframe=secondary!80!black,
+  colbacktitle=secondary!80!black, coltitle=white,
+  title={\faIcon{question-circle}~Checkpoint --- Test Yourself}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=8pt, right=8pt}
+
+\newtcolorbox{chaptersummary}{
+  enhanced, breakable,
+  colback=primary!5, colframe=primary!80!black,
+  colbacktitle=primary!80!black, coltitle=white,
+  title={\faIcon{clipboard-check}~Chapter Summary}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!12},
+  top=4pt, bottom=4pt, left=8pt, right=8pt}
+
+\newtcolorbox{examnote}[1][On the exam]{
+  enhanced, breakable,
+  colback=dom5!6, colframe=dom5,
+  colbacktitle=dom5, coltitle=white,
+  title={\faIcon{graduation-cap}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=8pt, right=8pt}
+
+%=====================================================================
+% TOPOLOGY DIAGRAMS
+%
+% Devices are nodes carrying a Font Awesome glyph over a bold label,
+% coloured by the domain they mostly belong to. Drawn natively so the
+% document stays self-contained -- no external image files anywhere.
+%
+%   \begin{topology}
+%     \Sw{S1}{(0,0)}{SW1}
+%     \Rtr{R1}{(4,0)}{R1}
+%     \wire{S1}{R1}{Gi0/1}
+%   \end{topology}
+%=====================================================================
+\tikzset{
+  dev/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+              line width=0.9pt, minimum width=1.45cm, minimum height=1.05cm,
+              align=center, font=\scriptsize\bfseries, inner sep=2pt},
+  wirestyle/.style={line width=0.9pt, neutral!75},
+  xconn/.style={line width=0.9pt, neutral!75, dash pattern=on 2.5pt off 2pt},
+}
+
+\newcommand{\Rtr}[3]{\node[dev=dom3] (#1) at #2 {\faIcon{route}\\#3};}
+\newcommand{\Sw}[3]{\node[dev=dom2] (#1) at #2 {\faIcon{sitemap}\\#3};}
+\newcommand{\Msw}[3]{\node[dev=dom3] (#1) at #2 {\faIcon{layer-group}\\#3};}
+\newcommand{\Host}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{desktop}\\#3};}
+\newcommand{\Lap}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{laptop}\\#3};}
+\newcommand{\Srv}[3]{\node[dev=dom1] (#1) at #2 {\faIcon{server}\\#3};}
+\newcommand{\Ap}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{wifi}\\#3};}
+\newcommand{\Wlc}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{broadcast-tower}\\#3};}
+\newcommand{\Fw}[3]{\node[dev=dom4] (#1) at #2 {\faIcon{shield-alt}\\#3};}
+\newcommand{\Cld}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{cloud}\\#3};}
+\newcommand{\Phone}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{phone-alt}\\#3};}
+\newcommand{\Prn}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{print}\\#3};}
+
+% A link. The optional argument takes tikz options (e.g. xconn for a
+% trunk drawn dashed); the fourth argument labels the link.
+\newcommand{\wire}[4][wirestyle]{%
+  \draw[#1] (#2) -- node[font=\tiny, text=neutral!85!black, fill=white,
+                          inner sep=1.2pt, midway] {#4} (#3);}
+\newcommand{\plainwire}[3][wirestyle]{\draw[#1] (#2) -- (#3);}
+
+\newenvironment{topology}[1][]
+  {\begin{center}\begin{tikzpicture}[font=\scriptsize,#1]}
+  {\end{tikzpicture}\end{center}}
+
+%---------------------------------------------------------------------
+% Figures. Every figure goes through \ccnafig so it is numbered,
+% captioned, labelled and collected in the List of Figures. Content
+% wider than the text block is scaled down; content that fits is left
+% untouched, so it is impossible for a figure to overflow the margin.
+%---------------------------------------------------------------------
+\newcommand{\ccnafitw}[1]{%
+  \resizebox{\ifdim\width>\linewidth \linewidth\else \width\fi}{!}{#1}}
+
+\newcommand{\ccnafig}[3]{%
+  \begin{figure}[htbp]
+    \centering
+    \ccnafitw{#1}
+    \caption{#2}\label{fig:#3}
+  \end{figure}}
+
+% Same, forced in place, for a diagram that must not drift.
+\newcommand{\ccnafigh}[3]{%
+  \begin{figure}[H]
+    \centering
+    \ccnafitw{#1}
+    \caption{#2}\label{fig:#3}
+  \end{figure}}
+
+\captionsetup{font=small, labelfont={bf,color=primary}, skip=6pt,
+              justification=centering, width=0.92\linewidth}
+
+% Front-matter and part-opener figures sit outside any chapter, so the
+% default chapter.n scheme would give them a misleading number.
+\newcommand{\structuralfigures}[1]{%
+  \setcounter{figure}{0}%
+  \renewcommand{\thefigure}{#1\arabic{figure}}%
+  \setcounter{table}{0}%
+  \renewcommand{\thetable}{#1\arabic{table}}}
+\newcommand{\normalfigures}{%
+  \renewcommand{\thefigure}{\thechapter.\arabic{figure}}%
+  \renewcommand{\thetable}{\thechapter.\arabic{table}}}
+
+%---------------------------------------------------------------------
+% Small helpers
+%---------------------------------------------------------------------
+\newcommand{\term}[1]{\textbf{\textcolor{primary}{#1}}}
+\newcommand{\ccnaref}[1]{Figure~\ref{fig:#1}}
+\newcommand{\chref}[1]{Chapter~\ref{ch:#1}}
+% A command or interface name in running prose.
+\newcommand{\cmd}[1]{\texttt{\small #1}}
+% A device prompt, for when one is quoted inline.
+\newcommand{\prompt}[1]{{\ttfamily\small\color{primary}#1}}
+
+\newenvironment{reviewq}
+  {\subsection*{\color{primary}\faIcon{pen-fancy}~Review Questions}
+   \begin{enumerate}[leftmargin=*, itemsep=3pt, label=\textbf{\arabic*.}]}
+  {\end{enumerate}}
+\newenvironment{tight}
+  {\begin{itemize}[leftmargin=1.3em, itemsep=2pt, topsep=2pt, parsep=0pt]}
+  {\end{itemize}}
+\newenvironment{tightnum}
+  {\begin{enumerate}[leftmargin=1.5em, itemsep=2pt, topsep=2pt, parsep=0pt]}
+  {\end{enumerate}}
+% Lab task list -- numbered, and referred to as "Task n" in the text.
+\newenvironment{tasks}
+  {\begin{enumerate}[leftmargin=*, itemsep=3pt, topsep=3pt, parsep=0pt,
+                     label=\textbf{Task \arabic*.}]}
+  {\end{enumerate}}
+
+\endinput

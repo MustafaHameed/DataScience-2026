@@ -1,0 +1,271 @@
+\chapter{IPv6 Addressing}\label{ch:ipv6}
+\bp{1.4}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Abbreviate} and expand an IPv6 address correctly, applying both
+        compression rules without ambiguity.
+  \item \textbf{Identify} the address types the exam names: global unicast, link
+        local, unique local, multicast, and the solicited-node address.
+  \item \textbf{Construct} an interface identifier by modified EUI-64, which the
+        blueprint calls out explicitly.
+  \item \textbf{Size} a prefix, and \textbf{diagnose} the assignment faults that
+        stop an IPv6 host communicating.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ipv4} --- the ideas of network part, host part and prefix length carry
+over unchanged. \chref{ethernet} for MAC addresses, which EUI-64 is built from.
+\end{prereq}
+
+\begin{keyterms}
+global unicast $\bullet$ link local $\bullet$ unique local $\bullet$ multicast
+$\bullet$ solicited-node $\bullet$ anycast $\bullet$ modified EUI-64 $\bullet$
+SLAAC $\bullet$ router advertisement $\bullet$ neighbour discovery $\bullet$
+dual stack $\bullet$ prefix
+\end{keyterms}
+
+\begin{examnote}[What v2.0 asks, and what it dropped]
+Topic \tp{1.4} says \emph{troubleshoot} IPv6 address configuration, assignment
+and prefix sizing, and narrows the scope to ``unicast and modified EUI~64''. The
+previous blueprint asked you to compare every address type in detail; this one
+does not. Concentrate on getting an address onto an interface, understanding
+where the link-local one came from, and spotting a wrong prefix.
+\end{examnote}
+
+\section{Writing the address}
+
+An IPv6 address is 128 bits, written as eight groups of four hex digits
+separated by colons. Two rules compress it.
+
+\begin{conceptbox}[The two compression rules]
+\begin{tightnum}
+  \item \textbf{Drop leading zeros} in any group. \cmd{0db8} becomes \cmd{db8};
+        \cmd{0000} becomes \cmd{0}. Trailing zeros are never dropped.
+  \item \textbf{Replace one run of all-zero groups with \cmd{::}}. You may do
+        this \textbf{once only}, because a second \cmd{::} would make the address
+        ambiguous --- there would be no way to know how many zeros each stood for.
+\end{tightnum}
+\end{conceptbox}
+
+\begin{worked}[Compressing an address]
+Start with the full form:
+
+\cmd{2001:0db8:0000:0000:0000:ff00:0042:8329}
+
+\begin{tightnum}
+  \item Drop leading zeros in each group:
+        \cmd{2001:db8:0:0:0:ff00:42:8329}
+  \item Replace the longest run of zero groups with \cmd{::}:
+        \cmd{2001:db8::ff00:42:8329}
+\end{tightnum}
+
+Expanding is the same in reverse. Given \cmd{2001:db8::1}, count the groups
+present --- two before the \cmd{::} and one after, so three --- and the
+\cmd{::} must therefore stand for five zero groups:
+\cmd{2001:0db8:0000:0000:0000:0000:0000:0001}.
+\end{worked}
+
+\section{The types you must recognise}
+
+\begin{longtable}{@{}L{3.0cm}L{3.4cm}L{8.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Type} & \textbf{Prefix} & \textbf{What it is for} \\
+\midrule
+\endhead
+Global unicast & \cmd{2000::/3} & Routable on the internet. In practice you meet
+\cmd{2001:db8::/32}, which is reserved for documentation and used throughout
+this book \\
+\rowcolor{lightbg}
+Link local & \cmd{fe80::/10} & Valid on one link only, never routed. Every IPv6
+interface has one automatically, and routing protocols use it as the next hop \\
+Unique local & \cmd{fc00::/7} & The rough equivalent of RFC 1918 private space.
+In practice \cmd{fd00::/8} \\
+\rowcolor{lightbg}
+Multicast & \cmd{ff00::/8} & Groups. \cmd{ff02::1} is all nodes on the link,
+\cmd{ff02::2} is all routers, \cmd{ff02::5} is OSPFv3 \\
+Solicited-node & \cmd{ff02::1:ff00:0/104} & Used by neighbour discovery in place
+of ARP. Formed from the last 24 bits of the unicast address \\
+\rowcolor{lightbg}
+Loopback & \cmd{::1} & The equivalent of \cmd{127.0.0.1} \\
+Unspecified & \cmd{::} & ``No address yet'', used as a source during
+autoconfiguration \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[There is no broadcast in IPv6]
+IPv6 has no broadcast address at all. Where IPv4 would broadcast, IPv6 uses a
+multicast group --- usually \cmd{ff02::1}, all nodes. This is why ARP does not
+exist in IPv6: its job is done by neighbour discovery using the solicited-node
+multicast address, which reaches only the handful of hosts whose addresses end
+the same way rather than every device on the segment.
+\end{alertbox}
+
+\section{Modified EUI-64}
+
+The blueprint names this explicitly, so it is examinable arithmetic.
+
+\begin{conceptbox}[Turning a 48-bit MAC into a 64-bit interface ID]
+\begin{tightnum}
+  \item Split the MAC in half.
+  \item Insert \cmd{fffe} in the middle.
+  \item \textbf{Flip the seventh bit} of the first byte --- the universal/local
+        bit. In hex this means adding or subtracting 2 from the second hex digit.
+\end{tightnum}
+\end{conceptbox}
+
+\begin{worked}[EUI-64 from 00d0.58a1.0201]
+\begin{tightnum}
+  \item Split: \cmd{00d0.58} and \cmd{a1.0201}.
+  \item Insert \cmd{fffe}: \cmd{00d0:58ff:fea1:0201}.
+  \item Flip the seventh bit of \cmd{00}. In binary \cmd{00} is
+        \cmd{0000 0000}; flipping the seventh bit gives \cmd{0000 0010}, which
+        is \cmd{02}.
+  \item Interface ID is \cmd{02d0:58ff:fea1:0201}. With a prefix of
+        \cmd{2001:db8:acad:10::/64} the full address is
+        \cmd{2001:db8:acad:10:2d0:58ff:fea1:201}.
+\end{tightnum}
+The quick check: an address containing \cmd{ff:fe} in the middle of its host
+portion was almost certainly built by EUI-64.
+\end{worked}
+
+\section{Configuring IPv6}
+
+\begin{config}{IPv6 on a router interface, three ways}
+! Routing must be enabled globally first -- this is the step most often
+! forgotten, and without it the router will not forward or advertise.
+ipv6 unicast-routing
+!
+interface GigabitEthernet0/0
+ description User VLAN 10 gateway
+ ! 1. A fully specified address.
+ ipv6 address 2001:db8:acad:10::1/64
+ ! 2. Or let the device build the host part by EUI-64.
+ ipv6 address 2001:db8:acad:20::/64 eui-64
+ ! 3. A link-local address is created automatically, but you can pin it
+ !    to something memorable -- worth doing, because routing protocols
+ !    show it as the next hop.
+ ipv6 address fe80::1 link-local
+ no shutdown
+\end{config}
+
+\begin{verify}{R1}{show ipv6 interface brief}
+GigabitEthernet0/0     [up/up]
+    FE80::1
+    2001:DB8:ACAD:10::1
+    2001:DB8:ACAD:20:2D0:58FF:FEA1:201
+GigabitEthernet0/1     [administratively down/down]
+    unassigned
+\end{verify}
+
+Note that one interface holds several addresses at once, and that this is normal
+rather than a fault. An IPv6 interface essentially always has a link-local
+address plus whatever global addresses it has been given.
+
+\begin{conceptbox}[How a host gets an address: SLAAC versus DHCPv6]
+A host sends a router solicitation to \cmd{ff02::2}; a router replies with a
+\term{router advertisement} carrying the prefix. Then either:
+\begin{tight}
+  \item \textbf{SLAAC} --- the host builds its own address from the advertised
+        prefix plus an interface ID it generates. No server involved.
+  \item \textbf{DHCPv6} --- the advertisement tells the host to ask a server,
+        which supplies the address and other options.
+\end{tight}
+A host with only a \cmd{fe80::} address and no global one has heard no router
+advertisement. That is the IPv6 equivalent of an APIPA address, and it points at
+the router, not the host.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Omitting \cmd{ipv6 unicast-routing}.} Interfaces come up and
+        addresses look right, but the router neither forwards nor advertises.
+  \item \textbf{Using \cmd{::} twice.} It is not merely discouraged, it is
+        invalid, because the address can no longer be expanded uniquely.
+  \item \textbf{Dropping trailing zeros.} \cmd{2001:db8:1000::} cannot be
+        shortened to \cmd{2001:db8:1::}. Only \emph{leading} zeros go.
+  \item \textbf{Assuming a prefix other than /64 for a LAN.} SLAAC requires a
+        64-bit interface ID, so a LAN prefix longer than /64 breaks
+        autoconfiguration. Point-to-point links are the usual exception.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[Dual-stack host reaches IPv4 destinations only.]
+A workstation has a working IPv4 address and, for IPv6, only
+\cmd{fe80::2d0:58ff:fea1:201}. It cannot reach any IPv6 destination, on or off
+the segment.
+
+\textbf{Diagnosis.} A link-local address is generated by the host itself and
+proves nothing except that the interface is up. The absence of a global address
+means no router advertisement is being received. Either no router is configured
+for IPv6 on that VLAN, or \cmd{ipv6 unicast-routing} is missing, or the router
+interface has no global prefix to advertise.
+
+\textbf{Fix.} On the gateway, confirm \cmd{ipv6 unicast-routing} is present in the
+running configuration, then check \cmd{show ipv6 interface GigabitEthernet0/0}
+shows a global address and that router advertisements are not suppressed. Bring
+the prefix back and the host will build its own address within seconds --- no
+change is needed on the host at all.
+\end{breakfix}
+
+\begin{lab}{Dual-stack a small network}{Packet Tracer}
+\textbf{Topology.} One router, one switch, two PCs, addressed for both protocols.
+
+\begin{tasks}
+  \item Enable \cmd{ipv6 unicast-routing} and give \cmd{Gi0/0} the address
+        \cmd{2001:db8:acad:10::1/64} and link-local \cmd{fe80::1}.
+  \item Set both PCs to obtain IPv6 automatically. Record the addresses they
+        build and confirm they contain \cmd{ff:fe}.
+  \item Compute by hand what each PC's EUI-64 address should be from its MAC,
+        and check your answer against the device.
+  \item Ping between the PCs using IPv6, then ping the router's link-local
+        address from a PC. Note that the link-local ping needs no global
+        addressing at all.
+  \item Remove \cmd{ipv6 unicast-routing} and observe what happens to the PCs
+        after their addresses expire.
+  \item \textbf{Extension.} Configure a second VLAN with prefix
+        \cmd{2001:db8:acad:20::/64} and route between the two.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Compress \cmd{2001:0db8:0000:0012:0000:0000:0000:00ab} fully.
+  \item A host shows only an \cmd{fe80::} address. What is missing, and on which
+        device would you look?
+  \item Build the modified EUI-64 interface identifier for MAC
+        \cmd{aabb.cc00.0100}.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Drop leading zeros; use \cmd{::} once, for the longest zero run.
+  \item \cmd{2000::/3} global, \cmd{fe80::/10} link local, \cmd{fd00::/8} unique
+        local, \cmd{ff00::/8} multicast. There is no broadcast.
+  \item EUI-64: split the MAC, insert \cmd{fffe}, flip the seventh bit.
+  \item \cmd{ipv6 unicast-routing} is a separate, easily forgotten step.
+  \item LANs are /64 because SLAAC needs a 64-bit interface ID.
+  \item Only a link-local address means no router advertisement was heard ---
+        investigate the router, not the host.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which address is a valid compression of
+        \cmd{2001:0db8:0000:0000:1000:0000:0000:0001}?
+        (a)~2001:db8::1000::1 (b)~2001:db8:0:0:1::1 (c)~2001:db8::1000:0:0:1
+        (d)~2001:db8:1000::1
+  \item \textbf{(MCQ)} Which multicast group do all IPv6 routers on a link join?
+        (a)~ff02::1 (b)~ff02::2 (c)~ff02::5 (d)~ff02::9
+  \item \textbf{(Short)} Explain why \cmd{::} may appear only once in an address.
+  \item \textbf{(Short)} A LAN is configured with a /112 prefix and hosts are set
+        to autoconfigure. What will happen, and why?
+  \item \textbf{(Applied)} You are dual-stacking an existing IPv4 network.
+        Describe the order in which you would enable IPv6 on the router,
+        verify each step, and what evidence you would collect before declaring
+        the segment working.
+\end{reviewq}

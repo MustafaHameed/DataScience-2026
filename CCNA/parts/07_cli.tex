@@ -1,0 +1,299 @@
+\chapter{The IOS Command Line}\label{ch:cli}
+\bp{2.4}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Move} between IOS command modes without hesitating, and recognise
+        which mode a prompt indicates.
+  \item \textbf{Distinguish} the running configuration from the startup
+        configuration, and save deliberately rather than by habit.
+  \item \textbf{Perform} a first-time device setup: hostname, addressing,
+        passwords, SSH and a banner.
+  \item \textbf{Filter} \cmd{show} output, which is what makes long output usable
+        under exam time pressure.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ipv4} for addressing and \chref{transport} for the diagnostic commands
+you will now be typing for real.
+\end{prereq}
+
+\begin{keyterms}
+user EXEC $\bullet$ privileged EXEC $\bullet$ global configuration $\bullet$
+interface configuration $\bullet$ line configuration $\bullet$ running-config
+$\bullet$ startup-config $\bullet$ NVRAM $\bullet$ context-sensitive help
+$\bullet$ pipe $\bullet$ banner $\bullet$ SSH
+\end{keyterms}
+
+\section{Modes, and the prompt that tells you where you are}
+
+\begin{longtable}{@{}L{4.6cm}L{3.6cm}L{6.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Mode} & \textbf{Prompt} & \textbf{What you can do, and how you got there} \\
+\midrule
+\endhead
+User EXEC & \prompt{SW1>} & Look, barely. Enter with \cmd{enable} \\
+\rowcolor{lightbg}
+Privileged EXEC & \prompt{SW1\#} & All \cmd{show} commands, \cmd{copy},
+\cmd{reload}, \cmd{debug}. Enter configuration with \cmd{configure terminal} \\
+Global configuration & \prompt{SW1(config)\#} & Device-wide settings: hostname,
+users, routing \\
+\rowcolor{lightbg}
+Interface configuration & \prompt{SW1(config-if)\#} & One interface. Entered with
+\cmd{interface Gi0/1} \\
+Line configuration & \prompt{SW1(config-line)\#} & Console and VTY access.
+Entered with \cmd{line vty 0 15} \\
+\rowcolor{lightbg}
+VLAN configuration & \prompt{SW1(config-vlan)\#} & Naming a VLAN.
+\chref{vlans} \\
+Router configuration & \prompt{R1(config-router)\#} & A routing protocol.
+\chref{ospfv2} \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Getting out, and the two ways to do it]
+\cmd{exit} steps back one level. \cmd{end}, or \cmd{Ctrl-Z}, jumps straight to
+privileged EXEC from anywhere. When an exam question shows you a prompt, the
+prompt is telling you which commands are currently legal --- a global command
+typed in interface mode is rejected, and that is a favourite trap.
+
+One shortcut worth knowing: \cmd{do} runs a privileged EXEC command without
+leaving configuration mode, so \cmd{do show ip interface brief} works from
+\prompt{SW1(config-if)\#}.
+\end{conceptbox}
+
+\section{Two configurations, and only one survives a reboot}
+
+\begin{definitionbox}[running-config and startup-config]
+The \term{running configuration} is in RAM. It is what the device is doing right
+now, and every command you type takes effect there \emph{immediately}.
+
+The \term{startup configuration} is in NVRAM. It is what the device will load
+when it next boots. Nothing you type reaches it until you copy it there.
+\begin{tight}
+  \item \cmd{copy running-config startup-config} --- save. Abbreviated
+        \cmd{wr} or \cmd{write memory} on most platforms.
+  \item \cmd{show running-config} --- what is in force.
+  \item \cmd{show startup-config} --- what will be in force after a reload.
+\end{tight}
+\end{definitionbox}
+
+\begin{alertbox}[Not saving is a technique, not only a mistake]
+Because configuration takes effect immediately and is lost on reload, a
+deliberately unsaved change is a safety net. If you are about to modify the
+access list or the interface you are connected through, and you get it wrong, a
+power cycle restores the last saved configuration and your access with it.
+
+The professional habit is: make the risky change, verify you still have access,
+\emph{then} save. Reversing that order is how people lock themselves out of
+devices in another building.
+\end{alertbox}
+
+\section{Getting help, and typing less}
+
+\begin{longtable}{@{}L{4.6cm}L{11.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Keystroke} & \textbf{Effect} \\
+\midrule
+\endhead
+\cmd{?} & List every command valid here \\
+\rowcolor{lightbg}
+\cmd{sh ?} & List commands starting with ``sh'' \\
+\cmd{show ip ?} & List the next keyword. Note the space --- \cmd{show ip?} means
+something different \\
+\rowcolor{lightbg}
+\cmd{Tab} & Complete the current keyword \\
+Abbreviation & Type the shortest unambiguous form. \cmd{sh ip int br} is
+\cmd{show ip interface brief} \\
+\rowcolor{lightbg}
+\cmd{Ctrl-A} / \cmd{Ctrl-E} & Jump to start / end of line \\
+\cmd{Ctrl-C} & Abandon this command \\
+\rowcolor{lightbg}
+\cmd{Ctrl-Shift-6} & Abort a running ping or traceroute \\
+Up arrow & Previous command \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Filtering output is a survival skill]
+A full \cmd{show running-config} on a production switch runs to hundreds of
+lines. The pipe cuts it to what you need, and in an exam it is the difference
+between answering and scrolling.
+\begin{tight}
+  \item \cmd{| include vlan} --- only lines containing ``vlan''
+  \item \cmd{| exclude \textasciicircum!} --- drop the \cmd{!} comment lines
+  \item \cmd{| begin interface} --- start output at the first match
+  \item \cmd{| section interface Gi0/1} --- that interface's whole block
+\end{tight}
+\end{conceptbox}
+
+\begin{verify}{SW1}{show running-config | section interface GigabitEthernet0/1}
+interface GigabitEthernet0/1
+ description Uplink to SW2
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30
+\end{verify}
+
+\section{A first-time setup, end to end}
+
+\begin{config}{a switch from the box to remotely manageable}
+enable
+configure terminal
+!
+! 1. Identify the device. The hostname appears in every prompt and log.
+hostname SW1
+!
+! 2. Protect privileged mode. "secret" is hashed; "password" is not --
+!    never use "enable password".
+enable secret Str0ng-Enable-Secret
+!
+! 3. A local user for SSH, with full privilege.
+username netadmin privilege 15 secret Str0ng-User-Secret
+!
+! 4. A management address. A layer 2 switch has no routed ports, so
+!    this lives on an SVI, and it needs a gateway to be reachable
+!    from another subnet.
+interface Vlan1
+ ip address 10.0.0.11 255.255.255.0
+ no shutdown
+exit
+ip default-gateway 10.0.0.1
+!
+! 5. SSH needs a domain name and a key. 2048-bit minimum; version 2 only.
+ip domain-name example.local
+crypto key generate rsa modulus 2048
+ip ssh version 2
+!
+! 6. Console: require login, and stop output interrupting your typing.
+line console 0
+ login local
+ logging synchronous
+ exec-timeout 10 0
+exit
+!
+! 7. Remote access: SSH only, authenticated against local users.
+line vty 0 15
+ login local
+ transport input ssh
+ exec-timeout 10 0
+exit
+!
+! 8. A legal banner. Never write "welcome" -- it has been argued in court.
+banner motd # Authorised access only. Activity is logged. #
+!
+end
+copy running-config startup-config
+\end{config}
+
+\begin{verify}{SW1}{show ip ssh}
+SSH Enabled - version 2.0
+Authentication timeout: 120 secs; Authentication retries: 3
+\end{verify}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Using \cmd{enable password}.} It is stored in clear text.
+        \cmd{enable secret} is hashed, and where both exist the secret wins.
+  \item \textbf{Forgetting \cmd{transport input ssh}.} Leave it at the default
+        and Telnet stays available, which undoes the point of configuring SSH.
+  \item \textbf{Generating a key without a hostname and domain name.} The key is
+        named after them, and the command fails or produces a useless key if they
+        are still at defaults.
+  \item \textbf{Saving before verifying.} See the warning above. Verify access,
+        then save.
+  \item \textbf{Omitting \cmd{logging synchronous}.} Without it a log message
+        arrives in the middle of the line you are typing, and you cannot tell
+        what you have actually entered.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[The change worked yesterday and the device came back without it.]
+A colleague configured a new VLAN and confirmed it working. After a power cut
+overnight, the VLAN is gone and the configuration looks like it did last week.
+
+\textbf{Diagnosis.} The change was made in the running configuration and never
+copied to the startup configuration. The reload loaded NVRAM, which did not have
+it. Nothing is broken --- the device did exactly what it was told.
+
+\textbf{Confirm it} by comparing the two before doing anything else:
+
+\begin{verify}{SW1}{show archive config differences nvram:startup-config system:running-config}
+!Contextual Config Diffs:
++vlan 30
++ name Guest
++interface GigabitEthernet0/9
++ switchport access vlan 30
+\end{verify}
+
+Any output at all means the two differ and a reload will lose the difference.
+
+\textbf{Fix.} Re-apply the change, verify, then \cmd{copy running-config
+startup-config}. As a habit, run that comparison before you leave any device.
+\end{breakfix}
+
+\begin{lab}{Bring up a switch you can reach from your desk}{Packet Tracer}
+\textbf{Topology.} One switch, one PC on the same VLAN, connected by console
+cable and by an Ethernet cable.
+
+\begin{tasks}
+  \item Connect by console. Move through all five modes in turn and write down
+        the prompt at each. Use \cmd{end} to jump back from the deepest.
+  \item Set hostname, \cmd{enable secret} and a local user.
+  \item Give \cmd{Vlan1} an address in the PC's subnet and a default gateway.
+        Ping the switch from the PC to prove it.
+  \item Enable SSH properly: domain name, 2048-bit key, version 2, and
+        \cmd{transport input ssh} on the VTY lines.
+  \item SSH from the PC. Then try Telnet and confirm it is refused.
+  \item Make a small change, do \emph{not} save, reload, and observe the change
+        vanish. Repeat with a save.
+  \item \textbf{Extension.} Practise \cmd{| include}, \cmd{| section} and
+        \cmd{| begin} on \cmd{show running-config} until you can extract a single
+        interface block in one command without thinking.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item You are at \prompt{SW1(config-if)\#} and need to check the routing table
+        without losing your place. What do you type?
+  \item Which configuration does a device load on boot, and which one are you
+        editing when you type a command?
+  \item Why must a hostname and domain name be set before generating an RSA key?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item The prompt tells you the mode, and the mode decides which commands are
+        legal. \cmd{end} returns to privileged EXEC from anywhere; \cmd{do} runs
+        one EXEC command without leaving.
+  \item Commands take effect in the running configuration immediately and are
+        lost on reload until copied to the startup configuration.
+  \item Verify access first, save second. An unsaved risky change is a safety net.
+  \item \cmd{enable secret}, not \cmd{enable password}. SSH version 2 with a
+        2048-bit key, and \cmd{transport input ssh} to shut off Telnet.
+  \item Filtering with \cmd{| include}, \cmd{| section} and \cmd{| begin} is what
+        makes device output usable at speed.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which prompt indicates global configuration mode?
+        (a)~\cmd{SW1>} (b)~\cmd{SW1\#} (c)~\cmd{SW1(config)\#} (d)~\cmd{SW1(config-if)\#}
+  \item \textbf{(MCQ)} Which command shows only the lines of the running
+        configuration that mention a trunk?
+        (a)~\cmd{show run | begin trunk} (b)~\cmd{show run | include trunk}
+        (c)~\cmd{show run | section trunk} (d)~\cmd{show run trunk}
+  \item \textbf{(Short)} Explain the difference between \cmd{| include} and
+        \cmd{| section}, with an example where the answers differ.
+  \item \textbf{(Short)} Give the professional argument for \emph{not} saving a
+        configuration immediately after making a change to a remote device.
+  \item \textbf{(Applied)} Write the complete configuration to take a
+        factory-default switch to the point where you can administer it by SSH
+        from another subnet, and state which single omission would leave Telnet
+        available.
+\end{reviewq}

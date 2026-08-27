@@ -1,0 +1,320 @@
+\chapter{Trunking, 802.1Q and SVIs}\label{ch:trunking}
+\bp{2.1}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what an 802.1Q tag is and why the native VLAN is the
+        exception that causes most trunk faults.
+  \item \textbf{Configure} a trunk between two switches and between a switch and
+        a router, and prune it to the VLANs it should carry.
+  \item \textbf{Configure} switch virtual interfaces so that a multilayer switch
+        routes between VLANs.
+  \item \textbf{Diagnose} the four trunk faults: mode mismatch, encapsulation
+        mismatch, native VLAN mismatch and a missing VLAN in the allowed list.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{vlans} for VLANs and access ports; \chref{ipv4} for addressing, which the
+SVI section needs.
+\end{prereq}
+
+\begin{keyterms}
+trunk $\bullet$ 802.1Q $\bullet$ tag $\bullet$ native VLAN $\bullet$ allowed VLAN
+list $\bullet$ DTP $\bullet$ dynamic auto $\bullet$ dynamic desirable $\bullet$
+SVI $\bullet$ inter-VLAN routing $\bullet$ router on a stick $\bullet$
+subinterface
+\end{keyterms}
+
+\section{The tag, and the one VLAN that has none}
+
+A single link between two switches must carry traffic for every VLAN, and the
+receiving switch has to know which VLAN each frame belongs to. \term{802.1Q}
+solves this by inserting a four-byte tag into the frame carrying the VLAN ID.
+
+\begin{conceptbox}[The native VLAN is untagged, and that is the whole problem]
+One VLAN on every trunk is designated the \term{native VLAN}, and its frames
+cross the trunk \textbf{untagged}. The receiving switch assumes any untagged
+frame it sees on a trunk belongs to \emph{its own} native VLAN.
+
+If the two ends disagree about which VLAN is native, traffic silently leaks
+between VLANs: frames sent untagged in VLAN 1 by one switch are received into
+VLAN 99 by the other. Nothing goes down, nothing logs an error at layer 2, and
+two VLANs that should be isolated are now joined. CDP will complain, which is one
+of several reasons to leave it on (\chref{discovery}).
+
+Set the native VLAN explicitly and identically at both ends, and make it an
+unused VLAN --- never VLAN 1, and never a VLAN carrying users.
+\end{conceptbox}
+
+\begin{config}{a trunk between two switches, configured deliberately}
+! On BOTH ends, identically.
+interface GigabitEthernet0/1
+ description Uplink to SW2
+ ! Some platforms require the encapsulation before the mode; on
+ ! switches that only support dot1q the command is rejected as
+ ! unavailable, which is not an error.
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ ! An unused VLAN as native, matched at the far end.
+ switchport trunk native vlan 999
+ ! Carry only what this link needs. Pruning limits broadcast
+ ! flooding and limits the blast radius of a mistake.
+ switchport trunk allowed vlan 10,20,30
+ ! Do not negotiate -- we have decided what this port is.
+ switchport nonegotiate
+ no shutdown
+\end{config}
+
+\begin{verify}{SW1}{show interfaces trunk}
+Port        Mode         Encapsulation  Status        Native vlan
+Gi0/1       on           802.1q         trunking      999
+
+Port        Vlans allowed on trunk
+Gi0/1       10,20,30
+
+Port        Vlans allowed and active in management domain
+Gi0/1       10,20,30
+
+Port        Vlans in spanning tree forwarding state and not pruned
+Gi0/1       10,20,30
+\end{verify}
+
+Four blocks, and they narrow as they go. A VLAN can be \emph{allowed} but not
+\emph{active} (it does not exist on this switch), or active but not
+\emph{forwarding} (spanning tree is blocking it). When a VLAN is missing from the
+last block but present in the first, you have found the layer at which it is
+being lost.
+
+\begin{alertbox}[\cmd{allowed vlan} replaces; \cmd{allowed vlan add} appends]
+Typing \cmd{switchport trunk allowed vlan 40} on a live trunk does not add
+VLAN~40 --- it makes 40 the \emph{only} allowed VLAN and instantly drops every
+other VLAN on that link. On a production uplink this is an outage.
+
+Use \cmd{switchport trunk allowed vlan add 40}. The equivalents are
+\cmd{remove}, \cmd{except} and \cmd{all}.
+\end{alertbox}
+
+\section{DTP, and why to turn it off}
+
+\term{Dynamic Trunking Protocol} lets two Cisco switches negotiate whether a link
+becomes a trunk. It is convenient and it is a liability.
+
+\begin{longtable}{@{}L{3.6cm}L{3.4cm}L{3.4cm}L{4.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Local mode} & \textbf{vs \cmd{trunk}} & \textbf{vs \cmd{dynamic desirable}} & \textbf{vs \cmd{dynamic auto} / \cmd{access}} \\
+\midrule
+\endhead
+\cmd{trunk} & trunk & trunk & trunk / \textbf{mismatch} \\
+\rowcolor{lightbg}
+\cmd{dynamic desirable} & trunk & trunk & trunk / access \\
+\cmd{dynamic auto} & trunk & trunk & \textbf{access} / access \\
+\rowcolor{lightbg}
+\cmd{access} & \textbf{mismatch} & access & access / access \\
+\bottomrule
+\end{longtable}
+
+The two entries worth memorising are the failures. \cmd{dynamic auto} on both
+ends gives you an \textbf{access port}, not a trunk --- each side waits for the
+other to ask. And \cmd{trunk} facing \cmd{access} is a genuine mismatch that
+passes only the access VLAN.
+
+\begin{conceptbox}[Configure both ends; negotiate nothing]
+Set \cmd{switchport mode trunk} and \cmd{switchport nonegotiate} on uplinks, and
+\cmd{switchport mode access} on edge ports. Then a port is what you said it is,
+and an attacker who plugs a laptop into a wall socket cannot negotiate himself a
+trunk into every VLAN.
+\end{conceptbox}
+
+\section{Routing between VLANs}
+
+A VLAN is a broadcast domain and traffic cannot leave it without being routed.
+There are two ways to provide that, and the exam names the modern one.
+
+\subsection{Switch virtual interfaces --- the modern way}
+
+An \term{SVI} is a virtual layer 3 interface inside a multilayer switch,
+representing one VLAN. Give each VLAN an SVI with an address and the switch
+routes between them at hardware speed.
+
+\begin{config}{a multilayer switch routing three VLANs}
+! Routing must be switched on -- easily forgotten, and without it the
+! SVIs come up and nothing is routed between them.
+ip routing
+!
+interface Vlan10
+ description Staff gateway
+ ip address 192.168.10.1 255.255.255.0
+ no shutdown
+!
+interface Vlan20
+ description Guest gateway
+ ip address 192.168.20.1 255.255.255.0
+ no shutdown
+!
+interface Vlan30
+ description Voice gateway
+ ip address 192.168.30.1 255.255.255.0
+ no shutdown
+\end{config}
+
+\begin{alertbox}[What it takes to bring an SVI up]
+An SVI shows \cmd{up/up} only when \emph{all} of the following hold:
+\begin{tight}
+  \item the VLAN exists in the VLAN database and is not shut down;
+  \item at least one access port in that VLAN is up, \textbf{or} the VLAN is
+        allowed and forwarding on a trunk;
+  \item the SVI itself is not shut down.
+\end{tight}
+An SVI that stays down with a perfectly good address almost always means the
+second condition: no live port in that VLAN. It is not an addressing fault.
+\end{alertbox}
+
+\begin{verify}{SW1}{show ip interface brief | include Vlan}
+Vlan10                 192.168.10.1    YES manual up                    up
+Vlan20                 192.168.20.1    YES manual up                    up
+Vlan30                 192.168.30.1    YES manual up                    down
+\end{verify}
+
+VLAN 30's SVI is up administratively and down at protocol level --- no active
+port in VLAN 30. Plug in a phone, or allow VLAN 30 on a trunk, and it comes up.
+
+\subsection{Router on a stick --- the older way}
+
+Where the switch cannot route, one router interface carries every VLAN over a
+trunk, divided into \term{subinterfaces}.
+
+\begin{config}{router on a stick}
+interface GigabitEthernet0/0
+ description Trunk to SW1
+ no ip address
+ no shutdown
+!
+interface GigabitEthernet0/0.10
+ description Staff
+ encapsulation dot1Q 10
+ ip address 192.168.10.1 255.255.255.0
+!
+interface GigabitEthernet0/0.20
+ description Guest
+ encapsulation dot1Q 20
+ ip address 192.168.20.1 255.255.255.0
+!
+! The native VLAN's subinterface is marked, not tagged.
+interface GigabitEthernet0/0.999
+ encapsulation dot1Q 999 native
+\end{config}
+
+Every VLAN's traffic crosses the one physical link twice --- in and out --- so
+this scales badly. It appears in the exam because it still appears in small
+networks.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Native VLAN mismatch.} The two ends disagree, VLANs leak, and
+        nothing goes down. CDP logs it; look for
+        \cmd{\%CDP-4-NATIVE\_VLAN\_MISMATCH}.
+  \item \textbf{Bare \cmd{allowed vlan} on a live trunk.} Replaces the list.
+        Always \cmd{add}.
+  \item \textbf{Forgetting \cmd{ip routing} on a multilayer switch.} The SVIs
+        come up and traffic still will not cross between VLANs.
+  \item \textbf{Expecting an SVI to be up with no active port in its VLAN.} It
+        will not be, and no amount of re-addressing changes that.
+  \item \textbf{Leaving VLAN 1 as native.} It carries control traffic and it is
+        every attacker's first guess.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[One VLAN crosses the uplink; the other three do not.]
+After a maintenance window, users in VLAN 10 are fine and users in 20, 30 and 40
+cannot reach the servers. Both uplink ports show as trunking.
+
+\begin{verify}{SW2}{show interfaces trunk}
+Port        Mode         Encapsulation  Status        Native vlan
+Gi0/1       on           802.1q         trunking      999
+
+Port        Vlans allowed on trunk
+Gi0/1       10
+\end{verify}
+
+\textbf{Diagnosis.} The trunk is healthy; the allowed list has been reduced to
+VLAN 10 alone. Somebody ran \cmd{switchport trunk allowed vlan 10} intending to
+add VLAN 10 to the existing list, and replaced it instead. The link stayed up
+throughout, which is why nothing alerted.
+
+\textbf{Fix.} Restore the full list explicitly rather than adding one VLAN at a
+time: \cmd{switchport trunk allowed vlan 10,20,30,40}. Verify with
+\cmd{show interfaces trunk} on \emph{both} ends --- the allowed list is
+configured per side, and the effective set is the intersection, so a matching
+mistake at the far end would leave the fault half-fixed and twice as confusing.
+\end{breakfix}
+
+\begin{lab}{Trunk two switches and route between VLANs}{Packet Tracer}
+\textbf{Topology.} Two switches trunked together; a multilayer switch or router
+providing gateways; two PCs per VLAN across both switches.
+
+\begin{tasks}
+  \item Create VLANs 10, 20 and 999 on both switches. Put PCs in 10 and 20 on
+        each switch.
+  \item Before configuring the trunk, try to ping between the two switches'
+        VLAN 10 PCs. Record the failure and explain it.
+  \item Configure the trunk on both ends with native VLAN 999 and an allowed list
+        of 10, 20 and 999. Re-test.
+  \item Change the native VLAN on one end only to 998. Record what still works,
+        what breaks, and what the log says.
+  \item Restore it, then run \cmd{switchport trunk allowed vlan 20} on one end
+        and observe the outage you have just caused. Fix it with \cmd{add}.
+  \item Enable \cmd{ip routing} and configure SVIs for VLANs 10 and 20. Prove
+        inter-VLAN routing works.
+  \item \textbf{Extension.} Shut every access port in VLAN 20 and watch the SVI
+        go down. Explain why in terms of the three conditions above.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Both ends of a link are set to \cmd{dynamic auto}. What does the link
+        become, and why?
+  \item An SVI has a correct address and shows \cmd{up/down}. What is the most
+        likely cause and how would you confirm it?
+  \item Why is a native VLAN mismatch more dangerous than a trunk that fails to
+        come up at all?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item 802.1Q tags every VLAN except the native one, which crosses untagged.
+        Mismatched native VLANs leak traffic between VLANs silently.
+  \item Configure both ends explicitly and add \cmd{switchport nonegotiate}.
+        \cmd{dynamic auto} on both ends yields an access port, not a trunk.
+  \item \cmd{allowed vlan} replaces the list; \cmd{allowed vlan add} appends.
+        This distinction causes real outages.
+  \item \cmd{show interfaces trunk} narrows from allowed to active to forwarding;
+        the block where a VLAN disappears tells you the layer at fault.
+  \item An SVI needs \cmd{ip routing}, an existing unshut VLAN, and at least one
+        live port in that VLAN.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which command adds VLAN 40 to a trunk without disturbing
+        the VLANs already carried?
+        (a)~\cmd{switchport trunk allowed vlan 40}
+        (b)~\cmd{switchport trunk allowed vlan add 40}
+        (c)~\cmd{switchport trunk vlan 40}
+        (d)~\cmd{switchport access vlan 40}
+  \item \textbf{(MCQ)} A trunk's two ends have different native VLANs. What
+        happens? (a)~the trunk fails to form (b)~both ends shut down (c)~untagged
+        traffic is bridged between two VLANs (d)~all VLANs are pruned
+  \item \textbf{(Short)} Explain why an SVI can show \cmd{up/down} when its
+        address and mask are correct.
+  \item \textbf{(Short)} Give two reasons to set the native VLAN to an unused
+        VLAN rather than leaving it as VLAN 1.
+  \item \textbf{(Applied)} A colleague reports that after adding a new VLAN,
+        three existing VLANs stopped working across an uplink. State what they
+        almost certainly typed, what they should have typed, and how you would
+        verify the repair on both ends.
+\end{reviewq}

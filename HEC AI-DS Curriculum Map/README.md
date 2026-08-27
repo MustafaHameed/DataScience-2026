@@ -1,15 +1,17 @@
-# HEC AI & Data Science Curriculum Map
+# HEC Curriculum Map — AI, Data Science and Networking
 
-A comparison of how one group of courses — artificial intelligence, machine
-learning, data mining, data science, deep learning, natural language processing
-and their neighbours, plus the three infrastructure courses the group runs on
-(**Computer Networks**, **System & Network Administration**, **Cloud
-Computing**) — is treated across three editions of the HEC computing curriculum,
-followed by a pathway and four semester-wise schemes for BSIT and for BSCS with
-an IT specialization.
+How one group of courses — artificial intelligence, machine learning, data
+mining, data science, deep learning, NLP, and the infrastructure and networking
+courses they run on — is treated across three editions of the HEC computing
+curriculum. Ends with a pathway, five semester schemes for BSIT and BSCS (IT
+specialization), a CCNA v2.0 alignment, and the published contents of every
+course.
 
-**Current build:** 39 pages · zero LaTeX errors, zero undefined references, zero
+**Current build:** 52 pages · zero LaTeX errors, zero undefined references, zero
 overfull boxes, zero underfull boxes, zero font warnings.
+
+The document opens with a **Summary** — the findings and a five-item "what to do
+first". Read that before anything else; the rest is evidence for it.
 
 ## Sources
 
@@ -21,23 +23,28 @@ The three booklets sit in the repository root and are read, not shipped:
 | 2023 | `../BS Curriculm Computing Disciplines-2023.pdf` | Eleven BS degrees including BSAI, BSDS and BSIT, 100 pp. |
 | 2025 | `../HEC CURRICULUM OF COMPUTER SCIENCE-2025.pdf` | BS Computer Science only, with fourteen specializations, 86 pp. |
 
-Every claim in the document is cited to a page range in its closing **Sources**
-section. Page references are to the PDF page, not the printed page number.
+Every claim about the curriculum is cited to a page range in the closing
+**Sources** section. Page references are to the PDF page, not the printed page
+number. Part 7 additionally cites Cisco's own published CCNA blueprint.
 
 ## What the document contains
 
+The order is evidence (1–3), analysis (4–7), design (8), practice (9),
+reference (10).
+
 | Part | Contents |
 | --- | --- |
+| — | **Summary** — what the three editions did, the four findings that change what a department should do, the CCNA position, what to do first, and a table routing each kind of reader to the right part |
 | 1 | What each of the three booklets is, and where the elective credit actually sits in BSIT and BSCS |
-| 2 | The status matrix — 31 courses × 3 editions, showing compulsory / elective / postgraduate-only / absent, in two blocks: the AI/DS cluster and the infrastructure it runs on |
+| 2 | The status matrix — 43 courses × 3 editions, showing compulsory / elective / postgraduate-only / absent, in three blocks: the AI/DS cluster, the infrastructure it runs on, and the networking depth |
 | 3 | Course cards: for each major course, what each edition says about credits, prerequisites and content, and what changed |
-| 4 | The invariants — what holds across all three editions |
-| 5 | The changes, 2017→2023 and 2023→2025, plus a naming-drift table |
-| 6 | The overlap map: twelve pairs of courses that duplicate each other, with the recommended split |
-| 7 | The pathway — one dependency graph reconciling all three editions, with the infrastructure lane in teal |
-| 8 | Four semester-wise schemes (see below) |
+| 4 | What stays the same, and what changes — the invariants, then 2017→2023 and 2023→2025, plus a naming-drift table |
+| 5 | The overlap map: twelve pairs of courses that duplicate each other, with the recommended split |
+| 6 | The pathway — one dependency graph reconciling all three editions, with the infrastructure lane in teal |
+| 7 | **Networking depth and the CCNA** — what networking courses exist in each edition, the CCNA 200-301 **v2.0** blueprint, a domain-by-domain mapping onto HEC courses, and why the gap is practice rather than knowledge |
+| 8 | **Five semester schemes** (see below) — four data tracks and one CCNA track, together so the choice can be made side by side |
 | 9 | Risks, the certification requirement, and running the three editions side by side |
-| 10 | **The published course contents** — every topic outline, prerequisite, learning outcome and reading list, verbatim, for 33 courses across all three editions. This is the part to open when writing an actual course file. |
+| 10 | **The published course contents** — every topic outline, prerequisite, learning outcome and reading list, verbatim, for 43 courses across all three editions. This is the part to open when writing an actual course file. |
 
 Parts 1–9 are the analysis; Part 10 is the raw material. The gaps in Part 10 are
 recorded rather than passed over: 2017 specifies all 75 of its bachelor courses,
@@ -46,7 +53,23 @@ Science and Cyber Security cluster tables — the Information Technology cluster
 left entirely unspecified), and 2025 publishes learning outcomes only, with no
 prerequisite and no outline for any of its 215 specialization courses.
 
-## The four schemes
+Part 7 is the only part that draws on a non-HEC source: Cisco's own published
+exam-topics document for **CCNA 200-301 v2.0**. v2.0 replaces v1.1 on 3 February
+2027, so any student entering from Fall 2026 sits v2.0 — the whole part is
+aligned to it, with a table in §7.5 for anyone carrying a v1.1 course file
+forward.
+
+The planning fact that matters is not the domain weights: of the 29 published
+topics, **8 begin *Troubleshoot* or *Diagnose* and 8 begin *Configure*, so 55%
+of the exam is hands-on**, against 21% *Describe*. Under v1.1 the word
+"troubleshoot" appeared in no topic statement at all.
+
+The closing note in **Sources** says plainly that the mapping is a planning
+judgement rather than a Cisco-certified equivalence. Cisco revises blueprints
+without renaming the exam — re-check `cisco.com/go/certroadmap` before committing
+a scheme of studies.
+
+## The five schemes
 
 - **Scheme A** — BSIT under HEC 2023, all seven domain electives on the cluster.
 - **Scheme B** — BSIT under HEC 2023: four data courses, Cloud Computing as the
@@ -55,6 +78,10 @@ prerequisite and no outline for any of its 215 specialization courses.
   and Data Science clusters and exploiting the fact that Computer Networks and
   Cloud Computing are compulsory major courses that cost no elective credit.
 - **Scheme D** — the three-course minimum viable strand.
+- **Scheme E** — a CCNA **v2.0** track under HEC 2025: six networking
+  electives, two AI electives because domain 5.0 now examines agentic AI and
+  prompt selection, with the compulsory professional-certification credit spent
+  on CCNA itself.
 
 Every scheme spends only elective credit and leaves the compulsory parts of the
 degree untouched, so none of them requires HEC approval of a new programme.

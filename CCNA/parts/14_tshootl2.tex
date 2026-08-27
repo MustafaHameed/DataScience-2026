@@ -1,0 +1,276 @@
+\chapter{Troubleshooting Layer 2}\label{ch:tshootl2}
+\bp{2.4}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Apply} a repeatable order of checks to a layer 2 fault instead of
+        guessing.
+  \item \textbf{Select} the right \cmd{show} command for a symptom, and read what
+        it returns.
+  \item \textbf{Use} \cmd{show logging}, ping, extended ping and capture output
+        together to localise a fault.
+  \item \textbf{Diagnose} the six faults that account for most switched-network
+        problems.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+All of Part~II. This chapter assembles \chref{vlans} to \chref{discovery} into a
+method.
+\end{prereq}
+
+\begin{keyterms}
+symptom $\bullet$ hypothesis $\bullet$ scope $\bullet$ errdisable $\bullet$
+show logging $\bullet$ severity $\bullet$ divide and conquer $\bullet$
+bottom-up $\bullet$ baseline
+\end{keyterms}
+
+\begin{examnote}[This chapter is the exam's heaviest verb]
+Topic \tp{2.4} --- ``troubleshoot basic Layer 2/Layer 3 connectivity and device
+operations using show commands (including show logs), ping, extended ping, trace
+route, and packet capture output'' --- is one of eight \emph{troubleshoot} topics.
+Together with the eight \emph{configure} topics they are 55\% of the paper. The
+method below is worth more marks than any single technology in this book.
+\end{examnote}
+
+\section{Scope first, then layers}
+
+\begin{conceptbox}[Ask ``how many?'' before you ask ``why?'']
+The single most useful question is how much is broken, because it tells you where
+to look before you have run a command.
+
+\begin{tight}
+  \item \textbf{One device} $\rightarrow$ that port, that cable, that host's
+        configuration.
+  \item \textbf{One VLAN, everywhere} $\rightarrow$ the VLAN itself: does it
+        exist, is it shut, is it allowed on the trunks, does its SVI have an
+        address?
+  \item \textbf{Everything on one switch} $\rightarrow$ that switch's uplink, or
+        spanning tree.
+  \item \textbf{Everything, everywhere} $\rightarrow$ a loop, the root bridge, or
+        a routing or gateway failure.
+  \item \textbf{Intermittent, under load} $\rightarrow$ physical layer, duplex, or
+        a saturated link. Almost never a VLAN.
+\end{tight}
+\end{conceptbox}
+
+\begin{conceptbox}[Then work bottom-up]
+Once you know the scope, walk the layers from the bottom. Each step is one
+command and rules out a whole class of cause.
+
+\begin{tightnum}
+  \item \textbf{Is the port up?} \cmd{show interfaces status}
+  \item \textbf{Is it clean?} \cmd{show interfaces} --- errors, duplex, speed
+  \item \textbf{Is it in the right VLAN?} \cmd{show interfaces switchport}
+  \item \textbf{Does the switch see the device?} \cmd{show mac address-table}
+  \item \textbf{Does the VLAN reach the next switch?}
+        \cmd{show interfaces trunk}
+  \item \textbf{Is spanning tree forwarding?} \cmd{show spanning-tree vlan}
+  \item \textbf{Is there a gateway?} \cmd{show ip interface brief}
+\end{tightnum}
+Resist starting at step 7 because the user said ``I cannot reach the internet''.
+\end{conceptbox}
+
+\section{The first three commands}
+
+\begin{verify}{SW1}{show interfaces status}
+Port      Name               Status       Vlan       Duplex  Speed Type
+Gi0/1     Uplink to SW2      connected    trunk      a-full a-1000 10/100/1000
+Gi0/5     Desk 5             connected    10         a-full  a-100 10/100/1000
+Gi0/6     Desk 6             notconnect   10           auto   auto 10/100/1000
+Gi0/7     Desk 7             err-disabled 10           auto   auto 10/100/1000
+Gi0/8     Desk 8             connected    15         a-full a-1000 10/100/1000
+\end{verify}
+
+One screen, four different faults visible. \cmd{Gi0/6} \cmd{notconnect} --- nothing
+plugged in, or a dead cable. \cmd{Gi0/7} \cmd{err-disabled} --- a protection
+feature fired; find out which. \cmd{Gi0/8} is in VLAN 15, which may or may not be
+intended --- compare against the design.
+
+\begin{verify}{SW1}{show logging | include LINK|LINEPROTO|ERR|SPANTREE}
+%LINK-3-UPDOWN: Interface GigabitEthernet0/6, changed state to down
+%SPANTREE-2-BLOCK_BPDUGUARD: Received BPDU on port Gi0/7 with BPDU Guard
+   enabled. Disabling port.
+%PM-4-ERR_DISABLE: bpduguard error detected on Gi0/7, putting Gi0/7 in
+   err-disable state
+%CDP-4-NATIVE_VLAN_MISMATCH: Native VLAN mismatch discovered on
+   GigabitEthernet0/1 (999), with SW2 GigabitEthernet0/1 (1).
+\end{verify}
+
+\begin{alertbox}[Read the log before you read anything else]
+The log frequently contains the answer in plain English, timestamped. Above, it
+names the errdisable cause and a native VLAN mismatch nobody had reported --- a
+fault that is silently bridging VLAN 999 and VLAN 1 between two switches.
+
+Filter it. \cmd{show logging | include} with the keywords above turns hundreds of
+lines into the handful that matter.
+\end{alertbox}
+
+\section{The six faults, and what each looks like}
+
+\begin{longtable}{@{}L{3.6cm}L{5.0cm}L{6.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Fault} & \textbf{Symptom} & \textbf{Command that proves it} \\
+\midrule
+\endhead
+Port in the wrong VLAN & One user isolated; can reach some hosts, not others &
+\cmd{show interfaces switchport} --- check Access Mode VLAN \\
+\rowcolor{lightbg}
+VLAN missing from a trunk & One VLAN fails between switches; others fine &
+\cmd{show interfaces trunk} --- compare allowed lists at both ends \\
+Native VLAN mismatch & Nothing obviously down; VLANs leak &
+\cmd{show cdp neighbors detail}, or the log message above \\
+\rowcolor{lightbg}
+Errdisabled port & One port dead after somebody plugged something in &
+\cmd{show interfaces status err-disabled} \\
+Spanning tree blocking & A path that should work does not; redundant link idle &
+\cmd{show spanning-tree vlan N} --- look for \cmd{Altn BLK} \\
+\rowcolor{lightbg}
+Duplex or speed mismatch & Slow, not down; errors climbing under load &
+\cmd{show interfaces} --- collisions, late collisions, CRC \\
+\bottomrule
+\end{longtable}
+
+\begin{worked}[Working a fault end to end]
+\textbf{Symptom.} ``Nobody in accounts can reach the file server since this
+morning. Sales are fine.''
+
+\textbf{Scope.} One VLAN, multiple users, more than one switch. That rules out a
+single cable and points at the VLAN or its path.
+
+\begin{tightnum}
+  \item \cmd{show interfaces status} on the access switch --- accounts ports are
+        \cmd{connected} in VLAN 30. Not a port problem.
+  \item \cmd{show mac address-table vlan 30} --- addresses are being learned
+        locally. The devices are alive and the switch sees them.
+  \item \cmd{show interfaces trunk} on the uplink --- VLAN 30 appears in
+        ``allowed'' but \emph{not} in ``forwarding and not pruned''.
+  \item \cmd{show spanning-tree vlan 30} --- the uplink is \cmd{Altn BLK}.
+  \item \cmd{show logging | include SPANTREE} --- a topology change overnight; a
+        second switch was added and won the root election for VLAN 30.
+\end{tightnum}
+
+\textbf{Cause.} Not a VLAN fault at all. The new switch became root for VLAN 30
+only, which moved the tree and put the accounts uplink into blocking. Sales, in
+VLAN 20, still had the old root and were unaffected --- which is exactly why only
+one VLAN broke.
+
+\textbf{Fix.} Set the intended root explicitly for all VLANs, add root guard on
+the ports facing access switches, and confirm the uplink returns to
+\cmd{Desg FWD}.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Changing something before you have measured.} If you reconfigure
+        before capturing the current state you can no longer tell whether you
+        fixed it or moved it.
+  \item \textbf{Changing more than one thing at once.} Then you do not know which
+        change worked, and you cannot write it up.
+  \item \textbf{Believing the reporter's diagnosis.} ``The switch is broken''
+        usually means ``my thing does not work''. Take the symptom, discard the
+        theory.
+  \item \textbf{Ignoring what still works.} The working half of the network is
+        evidence. Sales working and accounts failing localised the fault above
+        faster than any command did.
+  \item \textbf{Skipping the log.} It is timestamped and often explicit.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[Two symptoms, one cause, and a misleading first look.]
+Users report intermittent slowness. One user cannot connect at all. Both started
+after a contractor visited the comms room.
+
+\begin{verify}{SW1}{show interfaces status | exclude connected}
+Port      Name               Status       Vlan       Duplex  Speed Type
+Gi0/7     Desk 7             err-disabled 10           auto   auto 10/100/1000
+\end{verify}
+
+\begin{verify}{SW1}{show logging | include ERR_DISABLE|MACFLAP}
+%PM-4-ERR_DISABLE: bpduguard error detected on Gi0/7, putting Gi0/7 in
+   err-disable state
+%SW_MATM-4-MACFLAP_NOTIF: Host 0011.2233.4455 in vlan 10 is flapping
+   between port Gi0/7 and port Gi0/12
+\end{verify}
+
+\textbf{Diagnosis.} Both symptoms are one event. The contractor plugged an
+unmanaged switch into \cmd{Gi0/7} and, to ``make sure it worked'', also patched it
+into \cmd{Gi0/12}. That created a loop: the MAC flap is the loop being seen from
+two ports, and the intermittent slowness is the resulting flooding. BPDU guard
+then errdisabled \cmd{Gi0/7}, which is the one port that is definitively dead ---
+and which, by shutting, largely saved the network.
+
+\textbf{Fix.} Remove the second patch lead. Confirm the flapping stops. Then
+recover the port with \cmd{shutdown} / \cmd{no shutdown} --- \emph{after} the
+cause is gone, not before, or it will simply errdisable again. Finally, note that
+BPDU guard did its job: without it this would have been a full broadcast storm
+rather than one dead port.
+\end{breakfix}
+
+\begin{lab}{Fix five faults against the clock}{Packet Tracer}
+\textbf{Topology.} Three switches, one router, six PCs across three VLANs ---
+built, working, and then broken by a partner.
+
+\begin{tasks}
+  \item Build the network and confirm it works fully. \textbf{Capture a baseline}:
+        \cmd{show interfaces status}, \cmd{show interfaces trunk},
+        \cmd{show spanning-tree vlan} and \cmd{show ip interface brief} from every
+        device. You cannot troubleshoot without knowing what right looks like.
+  \item Hand the network to a partner, who introduces \textbf{five} faults from
+        the table above without telling you which.
+  \item Find and fix them, writing down for each: the symptom, the scope, the
+        command that proved it, and the fix. Give yourself twenty minutes.
+  \item Swap roles.
+  \item Compare notes: which fault took longest, and would starting with scope
+        rather than commands have found it faster?
+  \item \textbf{Extension.} Introduce a fault that produces \emph{no} log message
+        --- a wrong access VLAN is a good one --- and discuss why the log is a
+        first stop rather than a complete answer.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Users on one VLAN across three switches lose connectivity; other VLANs are
+        fine. What are the two most likely causes, and which command separates
+        them?
+  \item A port is errdisabled. You issue \cmd{no shutdown} and it errdisables
+        again within seconds. What have you forgotten?
+  \item Why does knowing what \emph{still works} narrow a fault faster than
+        knowing what is broken?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Establish scope first --- one device, one VLAN, one switch, or everything.
+        Scope points at the layer before you type anything.
+  \item Then work bottom-up: port up, port clean, right VLAN, MAC learned, VLAN on
+        the trunk, spanning tree forwarding, gateway present.
+  \item Read \cmd{show logging} early. It is timestamped and often explicit.
+  \item Six faults cover most cases: wrong VLAN, VLAN missing from a trunk, native
+        VLAN mismatch, errdisable, spanning tree blocking, duplex mismatch.
+  \item Capture a baseline while the network works. Change one thing at a time,
+        and remove the cause before recovering an errdisabled port.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A single VLAN fails between two switches while others work.
+        Which command should you run first?
+        (a)~\cmd{show ip route} (b)~\cmd{show interfaces trunk}
+        (c)~\cmd{show version} (d)~\cmd{show mac address-table}
+  \item \textbf{(MCQ)} Which status means a protection feature has shut a port?
+        (a)~notconnect (b)~disabled (c)~err-disabled (d)~monitoring
+  \item \textbf{(Short)} Explain why establishing scope before running commands
+        makes troubleshooting faster, with an example.
+  \item \textbf{(Short)} Give one fault from this chapter that produces a clear
+        log message and one that produces none, and say how you would find the
+        second.
+  \item \textbf{(Applied)} Write a troubleshooting procedure of no more than eight
+        steps that a first-line technician could follow for ``a user cannot reach
+        the network'', naming the command at each step and the decision it
+        resolves.
+\end{reviewq}
