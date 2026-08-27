@@ -1,4 +1,478 @@
 \chapter{DHCP: Client, Server and Relay}\label{ch:dhcp}
 \bp{1.7}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} the four DHCPv4 messages and say which of them are
+        broadcast and why that matters.
+  \item \textbf{Configure} an IOS router in each of the three roles: client,
+        server and relay agent.
+  \item \textbf{Interpret} \cmd{show ip dhcp binding}, \cmd{show ip dhcp pool} and
+        \cmd{show ip dhcp conflict}.
+  \item \textbf{Troubleshoot} a host that has no address, has the wrong address, or
+        has an address but no connectivity --- and tell those three apart before
+        touching anything.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ipv4} for addressing and subnet boundaries. \chref{vlans} and
+\chref{trunking} for SVIs --- a DHCP fault is very often a VLAN fault wearing a
+disguise. \chref{transport} for UDP and for broadcast versus unicast.
+\end{prereq}
+
+\begin{keyterms}
+DORA $\bullet$ \cmd{DHCPDISCOVER} $\bullet$ lease $\bullet$ binding $\bullet$
+relay agent $\bullet$ \cmd{ip helper-address} $\bullet$ \cmd{giaddr} $\bullet$
+excluded address $\bullet$ APIPA $\bullet$ conflict
+\end{keyterms}
+
+\begin{examnote}[The verb is \emph{troubleshoot}, not \emph{configure}]
+Topic~\tp{1.7} reads \emph{troubleshoot DHCPv4 client, server, and relay on IOS
+devices}. It is worth reading twice. The exam is not primarily asking you to
+build a DHCP pool from nothing --- it is asking you to be shown a pool, a relay
+and a client that between them are not working, and to say which of the three is
+at fault.
+
+Note also \textbf{DHCPv4}. There is no DHCPv6 in this topic. IPv6 hosts in this
+course get their addresses by SLAAC (\chref{ipv6}).
+
+That is why this chapter spends more space on \emph{how to tell the three failure
+classes apart} than on the pool syntax, which is four lines long.
+\end{examnote}
+
+\section{What DHCP is solving}
+
+A host that has just booted knows its own MAC address and nothing else. It has no
+IP address, so it cannot be the destination of a routed packet; it does not know
+the address of a server, so it cannot ask one directly; and it does not know its
+own subnet, so it cannot even work out what a sensible address would be.
+
+Everything odd about DHCP follows from that opening position. The first message
+has to be a broadcast, because there is no unicast address to use in either
+direction. And broadcasts do not cross routers, which is the whole reason relay
+agents exist.
+
+\begin{definitionbox}[DHCPv4]
+A client--server protocol that leases an IPv4 address and a set of configuration
+options --- default gateway, DNS servers, domain name, lease time --- to a host
+for a bounded period. The client runs on UDP port~68, the server on UDP port~67.
+\end{definitionbox}
+
+\subsection{DORA}
+
+Four messages, in a fixed order, remembered as \term{DORA}.
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \node[font=\scriptsize\bfseries, text=neutral!45!black] (cl) at (0,0)  {CLIENT};
+  \node[font=\scriptsize\bfseries, text=neutral!45!black] (sv) at (10,0) {SERVER};
+  \draw[neutral!50, line width=0.8pt] (0,-0.35) -- (0,-5.3);
+  \draw[neutral!50, line width=0.8pt] (10,-0.35) -- (10,-5.3);
+
+  \tikzset{
+    bc/.style={-{Stealth[length=2.4mm]}, line width=1.1pt, dom4!80},
+    uc/.style={-{Stealth[length=2.4mm]}, line width=1.1pt, dom1!80},
+    lb/.style={font=\scriptsize\bfseries, above=1pt, midway},
+    sb/.style={font=\tiny, text=neutral!85!black, below=1pt, midway}}
+
+  \draw[bc] (0,-1.0)  -- node[lb, text=dom4!45!black] {1. DHCPDISCOVER}
+                         node[sb] {broadcast, src 0.0.0.0, dst 255.255.255.255} (10,-1.0);
+  \draw[bc] (10,-2.1) -- node[lb, text=dom4!45!black] {2. DHCPOFFER}
+                         node[sb] {broadcast --- the client still has no address} (0,-2.1);
+  \draw[bc] (0,-3.2)  -- node[lb, text=dom4!45!black] {3. DHCPREQUEST}
+                         node[sb] {broadcast, so other servers withdraw their offers} (10,-3.2);
+  \draw[uc] (10,-4.3) -- node[lb, text=dom1!45!black] {4. DHCPACK}
+                         node[sb] {the lease is now a binding on the server} (0,-4.3);
+\end{tikzpicture}}%
+{DORA. Three of the four messages are broadcasts, which is why a router between
+client and server stops the process dead unless it is configured to relay.}{dora}
+
+Two details in that figure earn their place on the exam.
+
+\begin{tight}
+  \item \textbf{The REQUEST is broadcast, not unicast.} If two servers both
+        offered, the request names the one the client accepted, and the other
+        server sees it and returns its offered address to the pool. A unicast
+        request would leave the second address reserved for nothing.
+  \item \textbf{The client is not finished at the OFFER.} A host that receives an
+        offer and then loses the server still has no address. ``It got an offer''
+        is not the same as ``it is working''.
+\end{tight}
+
+\begin{conceptbox}[Renewal is not DORA]
+At half the lease time (T1), a client that already has an address sends a
+\emph{unicast} \cmd{DHCPREQUEST} straight to its server and expects an ACK. There
+is no discover and no offer. This matters for troubleshooting: a fault that only
+breaks broadcast forwarding --- a dead relay, a wrong VLAN --- can leave existing
+hosts working perfectly for hours while every newly booted host fails. ``It works
+for everyone except the machines that rebooted this morning'' is a relay fault
+until proved otherwise.
+\end{conceptbox}
+
+\section{Role 1: IOS as a client}
+
+A router interface can take its address from DHCP. This is normal on the WAN
+interface of a small branch router.
+
+\begin{config}{a router that leases its own WAN address}
+interface GigabitEthernet0/0/0
+ description WAN to ISP
+ ip address dhcp
+ no shutdown
+\end{config}
+
+\begin{verify}{R1}{show ip interface brief}
+Interface              IP-Address      OK? Method Status                Protocol
+GigabitEthernet0/0/0   203.0.113.24    YES DHCP   up                    up
+GigabitEthernet0/0/1   192.168.10.1    YES manual up                    up
+\end{verify}
+
+The \cmd{Method} column is the whole point of that output. \cmd{DHCP} means the
+address was leased; \cmd{manual} means somebody typed it. A WAN interface showing
+\cmd{unassigned} with the line protocol up is a router that asked and got no
+answer.
+
+\begin{examnote}
+A router that is a DHCP client normally also wants the default route the lease
+carries. It installs one automatically as a static default with an administrative
+distance of~254, so anything you configure yourself will win. Check with
+\cmd{show ip route static} if a branch router is reaching the internet by a path
+you did not expect.
+\end{examnote}
+
+\section{Role 2: IOS as a server}
+
+Small sites often use the router itself rather than a dedicated server. Four
+things must be right, and they must be right \emph{together}.
+
+\begin{config}{a DHCP pool for VLAN 10}
+! 1. Reserve the addresses that are already spoken for -- the gateway,
+!    the switch management SVIs, the printers, the servers.
+!    Do this FIRST. A pool created before the exclusions can hand out
+!    the gateway address in the seconds between the two commands.
+ip dhcp excluded-address 192.168.10.1 192.168.10.20
+ip dhcp excluded-address 192.168.10.250 192.168.10.254
+!
+ip dhcp pool VLAN10-STAFF
+ network 192.168.10.0 255.255.255.0
+ default-router 192.168.10.1
+ dns-server 192.168.20.10 192.168.20.11
+ domain-name campus.example.edu
+ lease 0 8 0
+!
+! lease is days hours minutes. "lease 0 8 0" is eight hours, which
+! suits a teaching lab; "lease infinite" suits nothing.
+\end{config}
+
+\begin{alertbox}[The \cmd{network} statement must match the interface's subnet]
+The router decides which pool to use by looking at the address of the interface
+the request arrived on --- or, for a relayed request, at the \cmd{giaddr} field.
+If VLAN~10's SVI is \cmd{192.168.10.1/24} and the pool says
+\cmd{network 192.168.10.0 255.255.255.0}, they match and the pool is used.
+
+If somebody later renumbers the SVI to \cmd{/25} and leaves the pool at
+\cmd{/24}, the pool no longer matches, the router silently declines to serve, and
+the symptom is a host with no address at all --- with a perfectly valid-looking
+pool sitting in the configuration.
+\end{alertbox}
+
+\begin{verify}{R1}{show ip dhcp binding}
+Bindings from all pools not associated with VRF:
+IP address      Client-ID/              Lease expiration        Type      State
+                Hardware address
+192.168.10.21   0100.5079.6668.01       Aug 28 2026 06:14 AM    Automatic Active
+192.168.10.22   0100.5079.6668.22       Aug 28 2026 06:19 AM    Automatic Active
+\end{verify}
+
+\begin{verify}{R1}{show ip dhcp pool}
+Pool VLAN10-STAFF :
+ Utilization mark (high/low)    : 100 / 0
+ Subnet size (first/next)       : 0 / 0
+ Total addresses                : 254
+ Leased addresses               : 2
+ Excluded addresses             : 25
+ Pending event                  : none
+ 1 subnet is currently in the pool:
+ Current index   IP address range                    Leased/Excluded/Total
+ 192.168.10.23   192.168.10.1     - 192.168.10.254    2  / 25 / 254
+\end{verify}
+
+\cmd{Leased addresses} against \cmd{Total addresses} is the number to read when
+somebody reports that ``DHCP has stopped working'' at nine in the morning. A pool
+that is full does not log an error to anybody who is watching; it simply stops
+answering.
+
+\section{Role 3: IOS as a relay agent}
+
+The DISCOVER is a broadcast, and a router does not forward broadcasts. So when
+the server is on a different subnet from the client --- which is the normal case
+in any site with more than one VLAN --- the router on the client's subnet has to
+pick the broadcast up and forward it as a unicast.
+
+\begin{topology}
+  \Host{h}{(0,0)}{PC1}
+  \Sw{sw}{(2.6,0)}{SW1}
+  \Rtr{r}{(6.0,0)}{R1}
+  \Srv{s}{(9.6,0)}{DHCP\\10.0.0.5}
+  \wire{h}{sw}{VLAN 10}
+  \wire{sw}{r}{trunk}
+  \wire{r}{s}{Gi0/1}
+  \node[font=\tiny, text=dom4!45!black, align=center] at (2.6,-1.15)
+    {\textbf{broadcast}\\stops here};
+  \node[font=\tiny, text=dom1!45!black, align=center] at (7.8,-1.15)
+    {\textbf{unicast}\\to 10.0.0.5};
+\end{topology}
+
+\begin{config}{relaying VLAN 10's requests to a central server}
+interface Vlan10
+ description Staff -- clients live here
+ ip address 192.168.10.1 255.255.255.0
+ ip helper-address 10.0.0.5
+\end{config}
+
+\begin{alertbox}[\cmd{ip helper-address} goes on the interface facing the
+\emph{clients}]
+This is the single most common relay mistake and it is worth stating on its own.
+The command belongs on the SVI or interface in the subnet where the broadcasts
+are --- the client side. Putting it on the interface facing the server does
+nothing at all, because no DISCOVER ever arrives there.
+
+If a site has six client VLANs, the command goes on six SVIs.
+\end{alertbox}
+
+\begin{conceptbox}[What \cmd{giaddr} does, and why the server needs it]
+When the relay forwards the DISCOVER it fills in the \term{gateway IP address}
+field, \cmd{giaddr}, with its own address on the interface that received the
+broadcast --- \cmd{192.168.10.1} in the example above.
+
+That single field does two jobs. It tells the server which subnet the client is
+on, so the server knows which pool to draw from; and it gives the server a
+unicast address to send the OFFER back to, so the relay can broadcast it onward
+to the client.
+
+The consequence for troubleshooting: if the central server has no pool for
+\cmd{192.168.10.0/24}, the relay is working perfectly and the client still gets
+nothing. Do not conclude ``the relay is broken'' from ``the client got no
+address''.
+\end{conceptbox}
+
+\begin{examnote}[\cmd{ip helper-address} forwards more than DHCP]
+By default it relays eight UDP services, not one --- among them TFTP~(69),
+DNS~(53), NetBIOS name service~(137) and TACACS~(49) as well as DHCP~(67/68).
+That is occasionally useful and occasionally a surprise, and it is a fair exam
+question. Trim it with \cmd{ip forward-protocol udp <port>} if a site wants only
+DHCP relayed.
+\end{examnote}
+
+\section{Troubleshooting: three symptoms, three places to look}
+
+This is the part the blueprint actually asks for. Almost every DHCP fault
+presents as one of three symptoms, and each points at a different part of the
+path. Establish which one you have \emph{before} you start changing
+configuration.
+
+\begin{longtable}{@{}L{3.3cm}L{5.5cm}L{6.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Symptom on the host} & \textbf{What it proves} & \textbf{Where to look} \\
+\midrule
+\endhead
+\cmd{169.254.x.x}, or ``no address'' &
+The host asked and heard nothing back. The failure is before the server ever
+formed an opinion. &
+Client VLAN and access port first (\chref{tshootl2}); then the relay ---
+is \cmd{ip helper-address} on the client-side SVI? Then whether the SVI is up. \\
+\rowcolor{lightbg}
+An address, but from the wrong subnet &
+Something answered, but from the wrong pool --- or a rogue server answered
+first. &
+\cmd{giaddr}: the client is in a different VLAN from the one you think. Or an
+unauthorised server on the segment --- see \chref{l2security}. \\
+The right address, but nothing works &
+DHCP succeeded. This is not a DHCP fault at all. &
+The \emph{options}, not the address: \cmd{default-router} and
+\cmd{dns-server}. A host with a good address and a wrong gateway reaches its own
+VLAN and nothing else. \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The third row is the one people waste an afternoon on]
+``DHCP is broken'' is reported when a user cannot reach the internet. Run
+\cmd{ipconfig /all} on the host. If it has an address in the right subnet, DHCP
+has done its job perfectly and the problem is elsewhere --- routing, NAT, DNS or
+an ACL. Check the gateway and DNS values the lease carried, then leave DHCP
+alone.
+\end{alertbox}
+
+\subsection{Conflicts}
+
+\begin{verify}{R1}{show ip dhcp conflict}
+IP address       Detection method   Detection time
+192.168.10.24    Ping               Aug 27 2026 09:12 AM
+192.168.10.31    Gratuitous ARP     Aug 27 2026 09:41 AM
+\end{verify}
+
+A conflict means the router offered an address and then found somebody already
+using it. \cmd{Ping} means the server tested the address before offering and got
+a reply; \cmd{Gratuitous ARP} means a client took the address and immediately
+heard another host claim it.
+
+Either way the cause is the same: a statically addressed device inside the pool
+range that nobody excluded. Conflicted addresses are removed from the pool and
+stay out, so a site that never clears them slowly runs out of addresses. Fix the
+exclusions first, then \cmd{clear ip dhcp conflict *}.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Pool created before the exclusions.} There is a real window in
+        which the gateway address can be leased to a laptop. Exclude first.
+  \item \textbf{\cmd{ip helper-address} on the server-side interface.} Does
+        nothing. It goes on the client side.
+  \item \textbf{Pool \cmd{network} not matching the SVI's subnet or mask.} Silent
+        refusal to serve.
+  \item \textbf{Assuming a working host proves DHCP works.} Existing leases renew
+        by unicast and survive faults that stop every new host dead.
+  \item \textbf{Forgetting the SVI must be up.} An SVI with no access port in its
+        VLAN in the up state is down, so the pool it serves is unreachable ---
+        a layer 2 fault presenting as a DHCP fault.
+  \item \textbf{Reading \cmd{169.254.x.x} as a server problem.} It means nothing
+        answered. Nine times in ten the fault is on the client's own switch port.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[Every host in VLAN 30 gets 169.254 addresses. VLAN 10 and VLAN 20 are fine.]
+The DHCP server is a central router, \cmd{R1}, reached through a distribution
+switch. VLANs 10, 20 and 30 all have SVIs on \cmd{DSW1}, all three have pools on
+\cmd{R1}, and only VLAN~30 fails. Static addressing inside VLAN~30 works, and a
+statically addressed host in VLAN~30 can ping \cmd{R1}.
+
+\begin{verify}{DSW1}{show run interface vlan 30}
+interface Vlan30
+ description Lab -- clients
+ ip address 192.168.30.1 255.255.255.0
+!
+\end{verify}
+
+\textbf{Diagnosis.} There is no \cmd{ip helper-address}. VLAN~10 and VLAN~20 have
+one; VLAN~30 was added later and the line was missed. Everything else about
+VLAN~30 is correct, which is exactly why static addressing works and why the
+subnet is reachable --- routing is fine, layer~2 is fine, and only the broadcast
+relay is absent.
+
+The tell is that the fault is confined to \emph{one} VLAN. A server fault or a
+routing fault would take out all three; a switch-port fault would take out one
+host. One whole VLAN failing while its neighbours work points at something
+configured per-SVI, and on this path there is only one such thing.
+
+\textbf{Fix.}
+
+\begin{config}{restoring the relay}
+interface Vlan30
+ ip helper-address 10.0.0.5
+\end{config}
+
+\textbf{Then check the second half.} Confirm \cmd{R1} actually has a pool whose
+\cmd{network} statement matches \cmd{192.168.30.0/24}. A relay pointing at a
+server with no matching pool produces the identical symptom, and fixing one half
+of a two-part fault and declaring victory is how faults come back the next
+morning.
+\end{breakfix}
+
+\begin{lab}{DHCP in all three roles, then broken deliberately}{Packet Tracer}
+\textbf{Topology.} \cmd{SW1} carrying VLANs 10, 20 and 30; \cmd{DSW1} holding the
+three SVIs; \cmd{R1} as the central server on \cmd{10.0.0.0/24}; two PCs per VLAN.
+
+\begin{tasks}
+  \item Address the SVIs and confirm inter-VLAN routing works with static host
+        addresses before introducing DHCP at all. Do not skip this --- it
+        separates the layer~3 work from the DHCP work.
+  \item On \cmd{R1}, exclude the first twenty addresses of each subnet, then build
+        three pools with gateway, DNS and an eight-hour lease.
+  \item Add \cmd{ip helper-address} to VLAN~10's SVI only. Boot one PC in VLAN~10
+        and one in VLAN~20. Record what each receives, and explain the difference
+        in terms of \cmd{giaddr} before adding the second helper.
+  \item Add the remaining helpers. Confirm all six PCs lease correctly and read
+        \cmd{show ip dhcp binding} and \cmd{show ip dhcp pool} on \cmd{R1}.
+  \item \textbf{Break 1.} Change VLAN~20's SVI mask to \cmd{/25}, leaving the pool
+        at \cmd{/24}. Release and renew a VLAN~20 host. Explain the result.
+  \item \textbf{Break 2.} Give a PC a static address inside a pool range, then
+        force new leases until a conflict is detected. Read
+        \cmd{show ip dhcp conflict}, fix the exclusion, and clear it.
+  \item \textbf{Break 3.} Remove \cmd{default-router} from VLAN~30's pool. Renew a
+        host. It will lease successfully and reach its own VLAN only. Write down
+        the exact test that distinguishes this from a routing failure.
+  \item \textbf{Extension.} Configure \cmd{R1}'s uplink as \cmd{ip address dhcp}
+        against a second router acting as an ISP, and observe the default route
+        that appears with distance 254.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Which of the four DORA messages are broadcast, and what would break if
+        the REQUEST were unicast?
+  \item A host has \cmd{169.254.8.31}. What single fact does that establish, and
+        what does it \emph{not} establish?
+  \item On which interface does \cmd{ip helper-address} belong, and what does the
+        relay write into \cmd{giaddr}?
+  \item Existing hosts work; every rebooted host fails. What class of fault does
+        that pattern point to, and why?
+  \item A host has the correct address and gateway but cannot browse the web. Is
+        this a DHCP fault? Justify the answer.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item DORA: Discover, Offer, Request, Ack. The first three are broadcast, which
+        is why routers block the process by default.
+  \item Renewal at T1 is a \emph{unicast} request with no discover, so existing
+        hosts survive faults that kill every new one.
+  \item As a client: \cmd{ip address dhcp}, and the \cmd{Method} column of
+        \cmd{show ip interface brief} proves it.
+  \item As a server: exclude first, then a pool whose \cmd{network} statement
+        matches the serving interface's subnet exactly.
+  \item As a relay: \cmd{ip helper-address} on the \textbf{client-side}
+        interface. It writes \cmd{giaddr}, which selects the pool and carries the
+        reply back.
+  \item Three symptoms, three places: no address means nothing answered; wrong
+        subnet means the wrong pool or a rogue server; right address but no
+        connectivity is not a DHCP fault.
+  \item Conflicts come from static addresses inside the pool range. Fix the
+        exclusion, then \cmd{clear ip dhcp conflict *}.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A client receives \cmd{169.254.14.2}. What has happened?
+        \begin{tight}
+          \item[(a)] The server offered an address from the wrong pool
+          \item[(b)] The client received no DHCP reply and self-assigned
+          \item[(c)] The lease expired and was not renewed
+          \item[(d)] The relay agent rewrote \cmd{giaddr} incorrectly
+        \end{tight}
+  \item \textbf{(MCQ)} Where must \cmd{ip helper-address} be configured?
+        \begin{tight}
+          \item[(a)] On the interface facing the DHCP server
+          \item[(b)] On the SVI in the clients' own subnet
+          \item[(c)] On every interface of the router
+          \item[(d)] Under the \cmd{ip dhcp pool} for that subnet
+        \end{tight}
+  \item \textbf{(Short)} Explain why the DHCPREQUEST is broadcast rather than sent
+        directly to the server that made the offer.
+  \item \textbf{(Short)} A pool is configured, the SVI is up, the helper address
+        is correct, and clients still receive nothing. Name two configuration
+        errors that would produce exactly this and say how you would distinguish
+        them.
+  \item \textbf{(Applied)} Write the complete configuration for a router serving
+        two VLANs, \cmd{10.1.10.0/24} and \cmd{10.1.20.0/24}, reserving the first
+        ten addresses of each for infrastructure, with a four-hour lease and two
+        DNS servers. Then state which single command you would add if the server
+        were moved to a third subnet.
+  \item \textbf{(Applied)} You are handed \cmd{show ip dhcp pool} output showing
+        \cmd{Leased addresses: 251} of \cmd{Total addresses: 254}. Users report
+        intermittent failures. Give the immediate mitigation and the permanent
+        fix, and say which you would do first and why.
+\end{reviewq}

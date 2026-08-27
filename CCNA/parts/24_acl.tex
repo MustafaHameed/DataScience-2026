@@ -1,4 +1,508 @@
 \chapter{Access Control Lists}\label{ch:acl}
 \bp{4.6}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Calculate} a wildcard mask for any subnet, and recognise the
+        common ones on sight.
+  \item \textbf{Configure} standard, extended, numbered and named IPv4 ACLs.
+  \item \textbf{Decide} where to place an ACL and in which direction, and justify
+        the choice.
+  \item \textbf{Read} an existing ACL and predict exactly which traffic it permits
+        --- which is what the exam asks far more often than it asks you to write
+        one.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ipv4} for subnet masks --- a wildcard mask is meaningless without them.
+\chref{transport} for protocol numbers and well-known ports. \chref{nat} for the
+order of operations, which decides which address an ACL actually sees.
+\end{prereq}
+
+\begin{keyterms}
+access control list $\bullet$ wildcard mask $\bullet$ implicit deny $\bullet$
+standard ACL $\bullet$ extended ACL $\bullet$ named ACL $\bullet$ sequence number
+$\bullet$ \cmd{ip access-group} $\bullet$ \cmd{access-class} $\bullet$
+\cmd{established}
+\end{keyterms}
+
+\begin{examnote}[IPv4 only, and all four kinds]
+Topic~\tp{4.6} reads \emph{configure IPv4 access control lists (standard,
+extended, numbered, and named ACLs)}. IPv6 ACLs are not on this blueprint.
+
+All four named kinds are examinable, but note they are two axes, not four
+categories: an ACL is standard \emph{or} extended by what it can match, and
+numbered \emph{or} named by how you refer to it. All four combinations exist.
+\end{examnote}
+
+\section{What an ACL does}
+
+\begin{definitionbox}[Access control list]
+An ordered list of \cmd{permit} and \cmd{deny} statements. Each packet is tested
+against the entries from the top down; the \textbf{first match wins} and testing
+stops. A packet matching nothing hits an invisible \cmd{deny any} at the end and
+is dropped.
+\end{definitionbox}
+
+Three consequences follow from that definition, and between them they cause most
+ACL faults.
+
+\begin{tight}
+  \item \textbf{Order is behaviour.} Moving one line changes what the ACL does. A
+        specific rule placed after a general one that already matched is dead
+        configuration.
+  \item \textbf{The implicit deny is always there.} An ACL that permits one thing
+        denies everything else. There is no way to switch it off; if you want
+        everything else through, end the list with \cmd{permit ip any any}.
+  \item \textbf{An unapplied ACL does nothing.} Writing the list and applying it
+        to an interface are two separate acts, and forgetting the second is
+        common.
+\end{tight}
+
+\section{Wildcard masks}
+
+A wildcard mask says which bits of an address must match. A \textbf{0} bit means
+``must match''; a \textbf{1} bit means ``ignore''. That is the inverse of a subnet
+mask, and the arithmetic is: subtract each octet of the subnet mask from 255.
+
+\begin{longtable}{@{}L{4.2cm}L{3.6cm}L{7.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Subnet mask} & \textbf{Wildcard} & \textbf{Matches} \\
+\midrule
+\endhead
+\cmd{255.255.255.255} (/32) & \cmd{0.0.0.0} & Exactly one host. Shorthand:
+\cmd{host 10.1.1.5} \\
+\rowcolor{lightbg}
+\cmd{255.255.255.192} (/26) & \cmd{0.0.0.63} & One 64-address subnet \\
+\cmd{255.255.255.0} (/24) & \cmd{0.0.0.255} & One 256-address subnet \\
+\rowcolor{lightbg}
+\cmd{255.255.252.0} (/22) & \cmd{0.0.3.255} & Four consecutive /24s \\
+\cmd{255.255.0.0} (/16) & \cmd{0.0.255.255} & An entire class-B-sized range \\
+\rowcolor{lightbg}
+--- & \cmd{255.255.255.255} & Anything. Shorthand: \cmd{any} \\
+\bottomrule
+\end{longtable}
+
+\begin{worked}[Wildcard for 172.16.8.0/21]
+The mask for a \cmd{/21} is \cmd{255.255.248.0}.
+
+Subtract each octet from 255: $255-255=0$, $255-255=0$, $255-248=7$,
+$255-0=255$.
+
+The wildcard is \cmd{0.0.7.255}, and the ACL entry is
+\cmd{permit ip 172.16.8.0 0.0.7.255 any}. It matches \cmd{172.16.8.0} through
+\cmd{172.16.15.255} --- eight consecutive /24s, which is what a /21 is.
+\end{worked}
+
+\begin{conceptbox}[The check that catches arithmetic slips]
+Add the wildcard to the network address. The result should be the last address in
+the range you meant. $172.16.8.0 + 0.0.7.255 = 172.16.15.255$. If that is not the
+broadcast address of the block you intended, the wildcard is wrong.
+
+Do this every time. It takes five seconds and it catches the off-by-one that
+otherwise costs you a lab.
+\end{conceptbox}
+
+\section{Standard ACLs}
+
+A standard ACL matches the \textbf{source address only}. Numbered 1--99 and
+1300--1999.
+
+\begin{config}{a numbered standard ACL}
+! Order matters: the specific deny must precede the general permit,
+! or the permit matches first and the deny is never reached.
+access-list 10 remark Block the lab subnet, allow the rest of campus
+access-list 10 deny   192.168.30.0 0.0.0.255
+access-list 10 permit 192.168.0.0 0.0.255.255
+!
+interface GigabitEthernet0/0/1
+ ip access-group 10 out
+\end{config}
+
+\begin{alertbox}[Place a standard ACL close to the \emph{destination}]
+Because it can only see the source address, a standard ACL cannot distinguish
+``traffic from this subnet to the finance server'' from ``traffic from this
+subnet to anywhere''. Applied near the source, it blocks the host from the entire
+network, not just from the thing you wanted protected.
+
+So the rule is: standard ACLs go as close to the destination as possible;
+extended ACLs go as close to the source as possible, because they can be precise
+enough to be safe there and it saves carrying doomed traffic across the network.
+\end{alertbox}
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.35cm, minimum height=0.95cm,
+               align=center, font=\tiny\bfseries},
+    w/.style={line width=0.85pt, neutral!65},
+    hdr/.style={font=\scriptsize\bfseries, text=neutral!45!black}}
+
+  % Every prose node gets an explicit text width. Without one the node is as
+  % wide as its text, which both collides with its neighbours and drags the
+  % picture's bounding box out sideways.
+  \node[hdr, text width=13.5cm, align=center] at (5.3,3.5)
+      {VLAN 30 must not reach the finance server --- but must still reach
+       everything else};
+
+  \node[dv=neutral] (h)   at (0,0.7)    {\faIcon{desktop}\\VLAN 30};
+  \node[dv=dom3]    (r1)  at (3.0,0.7)  {\faIcon{route}\\R1};
+  \node[dv=dom3]    (r2)  at (7.0,0.7)  {\faIcon{route}\\R2};
+  \node[dv=dom1]    (fin) at (10.4,1.75){\faIcon{server}\\Finance};
+  \node[dv=dom1]    (oth) at (10.4,-0.4){\faIcon{server}\\Everything\\else};
+  \draw[w] (h) -- (r1);  \draw[w] (r1) -- (r2);
+  \draw[w] (r2) -- (fin);  \draw[w] (r2) -- (oth);
+
+  % wrong placement -- marker on the link, caption well below it
+  \draw[accent!85, line width=1.4pt] (4.7,1.25) -- (5.3,0.15);
+  \node[font=\tiny\bfseries, text=accent!75!black, align=center,
+        text width=3.1cm, anchor=north] at (5.0,-0.35)
+      {\faIcon{times-circle}~\textbf{standard} here\\blocks \emph{everything}};
+
+  % right placement -- caption above, clear of the header
+  \draw[dom2!80, line width=1.4pt] (8.5,2.0) -- (9.1,1.1);
+  \node[font=\tiny\bfseries, text=dom2!45!black, align=center,
+        text width=3.4cm, anchor=south] at (8.8,2.15)
+      {\faIcon{check-circle}~\textbf{standard} here\\blocks only this server};
+
+  \node[font=\tiny, text=neutral!85!black, align=center, text width=13.5cm]
+      at (5.3,-1.85)
+      {A standard ACL sees only \emph{who sent it}, so near the source it cannot
+       tell the two servers apart. An \textbf{extended} ACL names the destination
+       too, so it is safe at the source --- and saves carrying doomed traffic
+       across the network.};
+\end{tikzpicture}}%
+{Why placement is part of the design. The same ACL is correct in one place and an
+outage in the other.}{aclplace}
+
+\section{Extended ACLs}
+
+An extended ACL matches source, destination, protocol and port. Numbered 100--199
+and 2000--2699.
+
+The argument order is fixed and worth reciting until it is automatic:
+
+\begin{center}
+\cmd{access-list <n> \{permit|deny\} <protocol> <source> <src-port> <dest> <dest-port>}
+\end{center}
+
+\begin{config}{an extended ACL letting a subnet reach only what it needs}
+access-list 110 remark Guest VLAN -- web, DNS and nothing else
+!
+! DNS to the campus resolvers, both transports.
+access-list 110 permit udp 192.168.40.0 0.0.0.255 host 192.168.20.10 eq 53
+access-list 110 permit tcp 192.168.40.0 0.0.0.255 host 192.168.20.10 eq 53
+!
+! Web out to anywhere.
+access-list 110 permit tcp 192.168.40.0 0.0.0.255 any eq 80
+access-list 110 permit tcp 192.168.40.0 0.0.0.255 any eq 443
+!
+! Let guests get an address. Without this the implicit deny stops
+! DHCP and the VLAN never works at all.
+access-list 110 permit udp any host 255.255.255.255 eq 67
+!
+! Ping to the gateway only, so users can prove their own link.
+access-list 110 permit icmp 192.168.40.0 0.0.0.255 host 192.168.40.1
+!
+! Everything else is dropped by the implicit deny, logged so that
+! surprises are visible.
+access-list 110 deny ip any any log
+!
+interface GigabitEthernet0/0/2
+ description Guest VLAN
+ ip access-group 110 in
+\end{config}
+
+\begin{conceptbox}[\cmd{eq 53} on the destination, not the source]
+In that list the port qualifier follows the \emph{destination} address, because
+the guest is connecting \emph{to} port 53 on the resolver. Its own source port is
+ephemeral and unpredictable, so it is left unspecified.
+
+Getting this backwards --- \cmd{permit udp 192.168.40.0 0.0.0.255 eq 53 any} ---
+is a classic and produces an ACL that matches almost nothing. The position of the
+port in the line is the whole meaning.
+\end{conceptbox}
+
+\begin{examnote}[\cmd{established}]
+\cmd{permit tcp any 192.168.10.0 0.0.0.255 established} matches only TCP segments
+with the ACK or RST flag set --- that is, packets belonging to a conversation
+that somebody inside already started. A pure connection attempt from outside has
+only SYN set and is not matched.
+
+It is a cheap way to say ``replies to our traffic may return, new connections may
+not.'' It is not stateful --- it inspects flags, not connections --- and the exam
+likes that distinction.
+\end{examnote}
+
+\section{Named ACLs, and why they are what you should write}
+
+\begin{config}{the same policy, named and editable}
+ip access-list extended GUEST-OUT
+ remark Guest VLAN -- web, DNS and nothing else
+ 10 permit udp 192.168.40.0 0.0.0.255 host 192.168.20.10 eq 53
+ 20 permit tcp 192.168.40.0 0.0.0.255 host 192.168.20.10 eq 53
+ 30 permit tcp 192.168.40.0 0.0.0.255 any eq 80
+ 40 permit tcp 192.168.40.0 0.0.0.255 any eq 443
+ 50 deny   ip any any log
+!
+interface GigabitEthernet0/0/2
+ ip access-group GUEST-OUT in
+\end{config}
+
+\begin{alertbox}[This is the practical advantage, and it is a large one]
+With sequence numbers you can insert and delete single lines:
+
+\begin{tight}
+  \item \cmd{ip access-list extended GUEST-OUT} then \cmd{35 permit tcp ... eq 8080}
+        inserts a rule between 30 and 40.
+  \item \cmd{no 40} removes one entry and leaves the rest standing.
+\end{tight}
+
+With a numbered ACL on older IOS, \cmd{no access-list 110} deletes the
+\emph{entire list} --- and if it is still applied to an interface, the interface
+now has an empty ACL, which denies everything. That is how a routine edit becomes
+an outage. Number your entries in tens so there is room to insert later, and
+prefer named ACLs.
+\end{alertbox}
+
+\section{Applying and verifying}
+
+\begin{longtable}{@{}L{4.6cm}L{10.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Command} & \textbf{Where and what} \\
+\midrule
+\endhead
+\cmd{ip access-group <acl> in} &
+On an interface. Filters packets \emph{arriving}. Evaluated before routing, so
+it sees traffic the router might have dropped anyway --- cheaper. \\
+\rowcolor{lightbg}
+\cmd{ip access-group <acl> out} &
+On an interface. Filters packets \emph{leaving} after a routing decision. Does
+not filter traffic the router itself originates. \\
+\cmd{access-class <acl> in} &
+On \cmd{line vty}. Controls who may open a management session. Use a standard
+ACL naming the permitted management subnets. \\
+\bottomrule
+\end{longtable}
+
+\begin{config}{restricting management access}
+ip access-list standard MGMT-HOSTS
+ 10 permit 10.0.0.0 0.0.0.255
+ 20 permit host 192.168.99.14
+!
+line vty 0 15
+ access-class MGMT-HOSTS in
+ transport input ssh
+\end{config}
+
+\begin{verify}{R1}{show access-lists}
+Standard IP access list MGMT-HOSTS
+    10 permit 10.0.0.0, wildcard bits 0.0.0.255 (214 matches)
+    20 permit 192.168.99.14 (3 matches)
+Extended IP access list GUEST-OUT
+    10 permit udp 192.168.40.0 0.0.0.255 host 192.168.20.10 eq domain (8841 matches)
+    20 permit tcp 192.168.40.0 0.0.0.255 host 192.168.20.10 eq domain (12 matches)
+    30 permit tcp 192.168.40.0 0.0.0.255 any eq www (40218 matches)
+    40 permit tcp 192.168.40.0 0.0.0.255 any eq 443 (338104 matches)
+    50 deny ip any any log (2277 matches)
+\end{verify}
+
+\begin{conceptbox}[The match counters are the diagnostic]
+That output tells you more than the configuration does.
+
+\begin{tight}
+  \item \textbf{A rule with zero matches} is either unnecessary or unreachable
+        --- shadowed by an earlier line. Both are worth investigating.
+  \item \textbf{A rising counter on the final deny} tells you the ACL is dropping
+        things, and \cmd{log} tells you what. This is the first place to look when
+        an application ``sometimes'' fails.
+  \item \textbf{Counters that do not move at all} mean the ACL is not in the path.
+        Check it is actually applied, and in the direction you think.
+\end{tight}
+
+\cmd{clear access-list counters} before a test gives you a clean baseline.
+\end{conceptbox}
+
+\begin{verify}{R1}{show ip interface GigabitEthernet0/0/2 | include access list}
+  Outgoing access list is not set
+  Inbound  access list is GUEST-OUT
+\end{verify}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Forgetting the implicit deny.} Permit what you need and everything
+        else stops. This is the single biggest cause of ACL outages.
+  \item \textbf{A general permit above a specific deny.} First match wins, so the
+        deny never runs.
+  \item \textbf{A standard ACL applied near the source.} Blocks the host from
+        everything, not from the one destination you meant.
+  \item \textbf{Port qualifier on the wrong side.} \cmd{eq 80} belongs with the
+        destination for a client reaching a web server.
+  \item \textbf{Writing the ACL and not applying it.} No error, no effect.
+  \item \textbf{Applying it in the wrong direction.} \cmd{in} and \cmd{out} are
+        relative to the interface, not to the building.
+  \item \textbf{\cmd{no access-list 110} on a live numbered ACL.} Deletes the
+        whole list; the interface is left denying everything.
+  \item \textbf{Blocking your own management session.} Think about \cmd{vty}
+        before you press enter on a remote device.
+  \item \textbf{Forgetting supporting protocols.} DHCP, DNS and ICMP all need
+        explicit permits in a restrictive list, or the VLAN looks completely
+        dead.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[An ACL meant to stop one subnet reaching the finance server has cut that subnet off from everything.]
+The requirement was: hosts in \cmd{192.168.30.0/24} must not reach the finance
+server at \cmd{192.168.20.15}. Everything else should be unaffected. After the
+change, VLAN~30 cannot reach the internet, the file server, or DNS. It can still
+reach hosts within its own VLAN.
+
+\begin{verify}{R1}{show access-lists 20}
+Standard IP access list 20
+    10 deny   192.168.30.0, wildcard bits 0.0.0.255 (18442 matches)
+    20 permit any (0 matches)
+\end{verify}
+
+\begin{verify}{R1}{show ip interface Vlan30 | include access list}
+  Inbound  access list is 20
+  Outgoing access list is not set
+\end{verify}
+
+\textbf{Diagnosis.} Two things are wrong and they compound.
+
+First, this is a \emph{standard} ACL, so it can only match the source. It has no
+way to express ``to the finance server'' --- the destination is invisible to it.
+
+Second, it is applied \textbf{inbound on VLAN 30's own SVI}, which is as close to
+the source as it is possible to get. Every packet leaving VLAN~30 for anywhere
+hits line 10 and is dropped. Traffic \emph{within} the VLAN still works because
+it is switched and never reaches the SVI at all --- which is exactly why the
+symptom looks like a routing fault rather than an ACL.
+
+The confirming detail is line 20: \cmd{permit any} has \textbf{zero matches}. Not
+one packet from anywhere got past line 10. An ACL whose last line never matches
+is dropping everything it sees.
+
+\textbf{Fix.} The requirement names a destination, so it needs an extended ACL,
+and an extended ACL can safely sit near the source.
+
+\begin{config}{an ACL that expresses the actual requirement}
+ip access-list extended VLAN30-POLICY
+ 10 remark Deny only the finance server, permit the rest
+ 20 deny   ip 192.168.30.0 0.0.0.255 host 192.168.20.15
+ 30 permit ip any any
+!
+interface Vlan30
+ no ip access-group 20 in
+ ip access-group VLAN30-POLICY in
+\end{config}
+
+Note line 30. Without it the extended ACL would reproduce the original outage by
+a different route. Then \cmd{clear access-list counters} and re-test: line 20
+should accumulate matches only when someone tries the finance server, and line 30
+should carry everything else.
+\end{breakfix}
+
+\begin{lab}{Writing, reading and repairing ACLs}{Packet Tracer, or CML}
+\textbf{Topology.} \cmd{R1} routing four VLANs --- staff 10, servers 20, lab 30,
+guest 40 --- with a server at \cmd{192.168.20.10} running DNS and HTTP, a finance
+server at \cmd{192.168.20.15}, and an internet-facing link.
+
+\begin{tasks}
+  \item Confirm full connectivity between all four VLANs before applying any ACL.
+        Record the tests you used; you will repeat them after every change.
+  \item Write and apply a numbered standard ACL restricting management access to
+        the VTY lines to the staff VLAN only. Test from staff and from lab.
+  \item Convert it to a named ACL. Insert an additional permitted host between
+        two existing lines without retyping the list.
+  \item Write an extended named ACL for the guest VLAN permitting only DNS to
+        \cmd{192.168.20.10}, HTTP and HTTPS anywhere, and DHCP. Apply it inbound.
+        Verify each permitted service works and at least three others do not.
+  \item Read the match counters after your tests. Identify any rule with zero
+        matches and explain why.
+  \item \textbf{Break 1.} Remove the DHCP permit and release a guest host's
+        lease. Predict the result before testing.
+  \item \textbf{Break 2.} Move the \cmd{permit tcp ... eq 443} line above the
+        \cmd{deny} that follows it, then below it, and observe the counters in
+        each case.
+  \item \textbf{Break 3.} Reproduce the Break \& Fix above deliberately: use a
+        standard ACL near the source to try to protect one server. Confirm the
+        symptom, then repair it with an extended ACL.
+  \item \textbf{Break 4.} Apply an ACL that blocks your own SSH session on a
+        device you can still reach by console. Recover it, then write down the
+        habit that would have prevented it.
+  \item \textbf{Extension.} Add \cmd{permit tcp any 192.168.20.0 0.0.0.255
+        established} to an internet-facing inbound ACL. Verify that internal
+        hosts can browse out and that inbound connections are refused, and
+        explain why this is not a stateful firewall.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Give the wildcard mask for \cmd{10.20.16.0/20} and the range it matches.
+  \item Why is a standard ACL placed near the destination and an extended ACL
+        near the source?
+  \item An ACL's final \cmd{permit any} shows zero matches. What does that tell
+        you?
+  \item What does \cmd{established} match, and why is it not stateful?
+  \item Name three supporting protocols that a restrictive inbound ACL must
+        explicitly permit, and give the symptom for each if it is missed.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Top down, first match wins, implicit \cmd{deny any} at the end. Order is
+        behaviour.
+  \item Wildcard mask = 255 minus each octet of the subnet mask. Check it by
+        adding it to the network address.
+  \item Standard (1--99, 1300--1999) matches source only --- place near the
+        destination. Extended (100--199, 2000--2699) matches source, destination,
+        protocol and port --- place near the source.
+  \item Named ACLs with sequence numbers can be edited a line at a time. Numbered
+        ones on older IOS cannot, and deleting one that is still applied denies
+        everything.
+  \item Apply with \cmd{ip access-group in|out} on an interface, or
+        \cmd{access-class in} on the VTY lines.
+  \item \cmd{show access-lists} match counters are the real diagnostic: a zero on
+        the last line means everything is being dropped; a zero in the middle
+        means a shadowed rule.
+  \item Remember DHCP, DNS and ICMP, or a restrictive ACL makes a VLAN look dead.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which wildcard mask matches exactly the range
+        \cmd{172.20.32.0} to \cmd{172.20.39.255}?
+        \begin{tight}
+          \item[(a)] \cmd{0.0.7.255} \quad (b)~\cmd{0.0.15.255}
+          \quad (c)~\cmd{0.0.3.255} \quad (d)~\cmd{255.255.248.0}
+        \end{tight}
+  \item \textbf{(MCQ)} A standard ACL should be applied:
+        \begin{tight}
+          \item[(a)] as close to the source as possible
+          \item[(b)] as close to the destination as possible
+          \item[(c)] on every interface of the router
+          \item[(d)] inbound only
+        \end{tight}
+  \item \textbf{(Short)} Explain what happens when a numbered ACL that is applied
+        to a live interface is deleted with \cmd{no access-list 110}.
+  \item \textbf{(Short)} An ACL permitting HTTP and HTTPS is applied inbound on a
+        user VLAN and the whole VLAN immediately loses connectivity, including
+        the ability to obtain an address. Explain why, and give the two entries
+        that were missing.
+  \item \textbf{(Applied)} Write a named extended ACL that allows
+        \cmd{10.10.10.0/24} to reach only SSH on \cmd{10.20.20.5}, DNS on
+        \cmd{10.20.20.10}, and HTTPS anywhere, denying and logging everything
+        else. State where you would apply it and in which direction, and justify
+        both choices.
+  \item \textbf{(Applied)} You are given an ACL and told users cannot print.
+        Describe, in order, the four commands you would run to establish whether
+        the ACL is responsible, and say what each one would prove.
+\end{reviewq}

@@ -1,4 +1,341 @@
 \chapter{First Hop Redundancy: HSRP and VRRP}\label{ch:fhrp}
 \bp{3.4}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} the problem a first hop redundancy protocol solves, and
+        why routing protocols do not solve it.
+  \item \textbf{Interpret} the operational status of HSRP and VRRP --- which the
+        blueprint asks for by name.
+  \item \textbf{Configure} basic HSRP and VRRP with priority and preemption.
+  \item \textbf{Diagnose} the two classic faults: both routers active, and a
+        gateway that fails over but does not fail back.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{routingtable} for gateways; \chref{trunking} for SVIs, which is where
+these protocols usually live.
+\end{prereq}
+
+\begin{keyterms}
+first hop redundancy $\bullet$ virtual IP $\bullet$ virtual MAC $\bullet$ HSRP
+$\bullet$ VRRP $\bullet$ active $\bullet$ standby $\bullet$ master $\bullet$
+backup $\bullet$ priority $\bullet$ preemption $\bullet$ group number $\bullet$
+tracking
+\end{keyterms}
+
+\begin{examnote}[The verb is \emph{interpret}, not configure]
+Topic \tp{3.4} is ``interpret the operational status of First Hop Redundancy
+Protocols (HSRP and VRRP)''. You are far more likely to be shown
+\cmd{show standby brief} and asked which router is forwarding, or why a failover
+did not happen, than to be asked to configure it from scratch. Configuration is
+here because you cannot interpret what you have never built --- but read the
+verification sections hardest.
+\end{examnote}
+
+\section{The problem}
+
+Every host is configured with one default gateway address. If the router holding
+that address fails, every host on the subnet is cut off --- and no routing
+protocol helps, because the hosts are not running one. They have a single static
+address and no way to learn a new one quickly.
+
+\begin{conceptbox}[The solution: a gateway address that is not tied to a router]
+Two routers share a \term{virtual IP address} and a \term{virtual MAC address}.
+Hosts are configured with the virtual IP as their gateway and never know that
+two routers exist. One router is elected to answer for it; the other waits.
+
+When the active router fails, the standby takes over \emph{both} the virtual IP
+and the virtual MAC. Because the MAC does not change, the hosts' ARP caches stay
+valid and no host has to do anything at all. That is the whole trick, and it is
+why the virtual MAC matters as much as the virtual IP.
+\end{conceptbox}
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.6cm, minimum height=1.0cm,
+               align=center, font=\tiny\bfseries},
+    w/.style={line width=0.85pt, neutral!65}}
+
+  % The dashed box is drawn first so every label sits on top of it, and each
+  % label is given an explicit position that cannot collide with another.
+  \draw[dom4!70, dash pattern=on 3pt off 2pt, line width=1pt, rounded corners=4pt]
+      (6.5,-2.55) rectangle (13.6,2.55);
+  \node[font=\tiny\bfseries, text=dom4!45!black, anchor=north west]
+      at (6.7,2.42) {ONE GATEWAY, AS FAR AS PC1 KNOWS};
+
+  \node[dv=neutral] (h) at (0,0) {\faIcon{desktop}\\PC1};
+  \node[font=\tiny, text=neutral!85!black, align=center, anchor=north,
+        text width=2.4cm] at (0,-0.62) {its gateway is\\\cmd{10.1.1.1}};
+
+  \node[dv=dom2, minimum width=2.8cm] (sw) at (3.4,0) {\faIcon{sitemap}\\SW1};
+  \draw[w] (h) -- (sw);
+
+  % The role goes inside the node: two more free-floating labels beside the
+  % routers is what made the earlier version of this figure unreadable.
+  \node[dv=dom3, minimum height=1.25cm] (r1) at (8.3,1.3)
+      {\faIcon{route}\\R1\\\textcolor{dom2!55!black}{ACTIVE}};
+  \node[dv=dom3, minimum height=1.25cm] (r2) at (8.3,-1.3)
+      {\faIcon{route}\\R2\\\textcolor{neutral!60!black}{STANDBY}};
+  \draw[w] (sw) -- (r1);  \draw[w] (sw) -- (r2);
+
+  \node[font=\tiny, text=neutral!85!black, anchor=north] at (8.3,0.55)
+      {own \cmd{10.1.1.2}};
+  \node[font=\tiny, text=neutral!85!black, anchor=south] at (8.3,-0.55)
+      {own \cmd{10.1.1.3}};
+
+  \node[draw=dom4!55, fill=dom4!6, rounded corners=3pt, line width=0.8pt,
+        font=\tiny, align=center, text width=3.0cm, inner sep=4pt,
+        text=dom4!40!black] at (11.6,0)
+      {\textbf{shared by both}\\[2pt]
+       virtual IP\\\cmd{10.1.1.1}\\[2pt]
+       virtual MAC\\\cmd{0000.0c07.ac01}};
+  \draw[dom4!55, line width=0.7pt] (9.1,1.3) -- (10.0,0.45);
+  \draw[dom4!55, line width=0.7pt] (9.1,-1.3) -- (10.0,-0.45);
+
+  \node[font=\tiny, text=neutral!85!black, align=center, text width=13.0cm]
+      at (5.5,-3.35)
+      {PC1 knows one address and one MAC. If R1 fails, R2 answers to
+       \emph{both} of them --- so PC1's ARP cache is still correct and it never
+       notices.};
+\end{tikzpicture}}%
+{The host is configured once and never reconfigured. Failover moves the virtual
+IP \emph{and} the virtual MAC, which is why nothing on the LAN has to
+re-learn anything.}{fhrpvip}
+
+\begin{longtable}{@{}L{3.2cm}L{5.6cm}L{6.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{HSRP} & \textbf{VRRP} \\
+\midrule
+\endhead
+Standard & Cisco proprietary & IETF, RFC 5798 \\
+\rowcolor{lightbg}
+Role names & \textbf{Active} and \textbf{standby} & \textbf{Master} and
+\textbf{backup} \\
+Default priority & 100 & 100 \\
+\rowcolor{lightbg}
+Preemption & \textbf{Off} by default & \textbf{On} by default \\
+Virtual MAC & \cmd{0000.0c07.acXX} (XX = group) &
+\cmd{0000.5e00.01XX} \\
+\rowcolor{lightbg}
+Virtual IP & Must be an address no router owns & \textbf{May} be an address one
+router owns; that router then always wins \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The preemption default is the difference that catches people]
+HSRP does \textbf{not} preempt by default. Configure a router with priority 150,
+reload it, and when it comes back the other router --- priority 100 --- keeps the
+active role. Your carefully planned primary is now the standby, and everything
+still works, so nobody notices until the second failure.
+
+VRRP preempts by default, so it behaves the way most people expect.
+
+If you want a specific router to be primary, configure \cmd{standby 10 preempt}
+explicitly. This is the single most commonly missed HSRP command.
+\end{alertbox}
+
+\section{Configuring HSRP}
+
+\begin{config}{HSRP on two multilayer switches, VLAN 10}
+! ---------- CORE1: the intended primary ----------
+interface Vlan10
+ ip address 192.168.10.2 255.255.255.0
+ ! The virtual IP -- this is what hosts use as their gateway.
+ standby 10 ip 192.168.10.1
+ ! Higher priority wins the election.
+ standby 10 priority 150
+ ! Without this, CORE1 will NOT take the role back after a reload.
+ standby 10 preempt
+ ! Give up the role if the uplink dies -- otherwise CORE1 stays
+ ! active while having no path to anywhere.
+ standby 10 track GigabitEthernet0/24 60
+ standby 10 name VLAN10-GW
+!
+! ---------- CORE2: the standby ----------
+interface Vlan10
+ ip address 192.168.10.3 255.255.255.0
+ standby 10 ip 192.168.10.1
+ standby 10 priority 100
+ standby 10 preempt
+\end{config}
+
+\begin{conceptbox}[Tracking, and why it is not optional]
+Without tracking, the active router keeps the role as long as its own VLAN
+interface is up. If its \emph{uplink} fails, it is still active, still answering
+for the gateway, and has nowhere to send the traffic --- a black hole that the
+standby router cannot detect, because from its point of view the active router is
+perfectly healthy.
+
+\cmd{standby 10 track Gi0/24 60} decrements the priority by 60 when that
+interface goes down: 150 becomes 90, which is below CORE2's 100, so CORE2
+preempts and takes over. The decrement must be large enough to cross the gap
+between the two priorities, or nothing happens.
+\end{conceptbox}
+
+\section{Interpreting the status}
+
+\begin{verify}{CORE1}{show standby brief}
+                     P indicates configured to preempt.
+                     |
+Interface   Grp  Pri P State    Active          Standby         Virtual IP
+Vl10        10   150 P Active   local           192.168.10.3    192.168.10.1
+Vl20        20   100 P Standby  192.168.10.3    local           192.168.20.1
+\end{verify}
+
+Read it column by column. \cmd{Pri} is this router's priority. \cmd{P} means
+preemption is configured --- its absence is the fault described above.
+\cmd{State} is the role. \cmd{Active} and \cmd{Standby} name who holds each role,
+where \cmd{local} means this router.
+
+Note that VLAN 10 and VLAN 20 have opposite roles here. That is deliberate load
+sharing: half the VLANs are active on each core switch, so both boxes carry
+traffic instead of one sitting idle.
+
+\begin{verify}{CORE1}{show standby Vlan10}
+Vlan10 - Group 10
+  State is Active
+    2 state changes, last state change 04:12:19
+  Virtual IP address is 192.168.10.1
+  Active virtual MAC address is 0000.0c07.ac0a
+    Local virtual MAC address is 0000.0c07.ac0a (v1 default)
+  Hello time 3 sec, hold time 10 sec
+  Preemption enabled
+  Active router is local
+  Standby router is 192.168.10.3, priority 100 (expires in 8.048 sec)
+  Priority 150 (configured 150)
+    Track interface GigabitEthernet0/24 state Up decrement 60
+\end{verify}
+
+Two lines to check first: \cmd{Priority 150 (configured 150)} --- if the two
+numbers differ, a tracked interface is down and has decremented it --- and
+\cmd{Preemption enabled}.
+
+\begin{verify}{CORE1}{show vrrp brief}
+Interface          Grp Pri Time    Own Pre State   Master addr     Group addr
+Vl30               30  110 3570     Y  Y   Master  192.168.30.2    192.168.30.1
+\end{verify}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Forgetting \cmd{preempt} on HSRP.} The intended primary never
+        takes the role back.
+  \item \textbf{Mismatched group numbers.} Two routers with different group
+        numbers on the same VLAN both become active, each for its own group. The
+        symptom is intermittent connectivity as hosts ARP for a virtual IP that
+        two devices answer.
+  \item \textbf{Mismatched virtual IPs.} Same result.
+  \item \textbf{A track decrement too small to matter.} 150 with a decrement of
+        10 still beats 100. Size the decrement against the gap.
+  \item \textbf{Configuring the virtual IP as a router's real address in HSRP.}
+        Not allowed. VRRP permits it; HSRP does not.
+  \item \textbf{Assuming the gateway works because the routers are up.} Test by
+        pinging the \emph{virtual} address from a host, then failing the active
+        router and pinging again.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[Both routers say they are active.]
+Users on VLAN 10 report intermittent loss. Both core switches report the active
+role for group 10.
+
+\begin{verify}{CORE1}{show standby brief}
+Interface   Grp  Pri P State    Active          Standby         Virtual IP
+Vl10        10   150 P Active   local           unknown         192.168.10.1
+\end{verify}
+
+\begin{verify}{CORE2}{show standby brief}
+Interface   Grp  Pri P State    Active          Standby         Virtual IP
+Vl10        11   100 P Active   local           unknown         192.168.10.1
+\end{verify}
+
+\textbf{Diagnosis.} Look at the \cmd{Grp} column: CORE1 is in group \textbf{10},
+CORE2 in group \textbf{11}. They are not peers at all --- they are two independent
+HSRP groups that happen to share a virtual IP address. Each sees no partner, so
+each elects itself active, and each answers ARP for \cmd{192.168.10.1} with a
+\emph{different} virtual MAC (\cmd{0000.0c07.ac0a} against
+\cmd{0000.0c07.ac0b}). Hosts get whichever reply arrives first, and traffic
+splits unpredictably between two routers.
+
+The giveaway is \cmd{Standby unknown} on both sides. A healthy pair always names
+its partner.
+
+\textbf{Fix.} Correct the group number on CORE2 to 10. Within a hello interval the
+two will see each other, the priorities decide, and one becomes standby. Confirm
+that each side names the other in the \cmd{Standby} column, and that only one
+virtual MAC is now in use.
+\end{breakfix}
+
+\begin{lab}{Fail a gateway and watch it survive}{Packet Tracer}
+\textbf{Topology.} Two multilayer switches as redundant gateways for VLANs 10 and
+20; an access switch; two PCs.
+
+\begin{tasks}
+  \item Address both cores in VLAN 10 and configure HSRP group 10 with virtual IP
+        \cmd{192.168.10.1}, CORE1 at priority 150 with preempt.
+  \item Point the PCs at the virtual IP and confirm they can reach the rest of the
+        network. Record the ARP entry a PC holds for its gateway --- note the
+        virtual MAC.
+  \item Run \cmd{show standby brief} on both. Identify active, standby and the
+        preempt flag.
+  \item Start a continuous ping from a PC, then shut CORE1's VLAN 10 interface.
+        Count how many pings are lost and confirm the PC's ARP entry has
+        \emph{not} changed.
+  \item Bring CORE1 back and confirm it resumes the active role. Then remove
+        \cmd{preempt}, repeat, and observe that it does not.
+  \item Configure tracking on CORE1's uplink with a decrement of 60. Shut the
+        uplink and confirm failover; use a decrement of 10 instead and confirm it
+        does not.
+  \item Configure VLAN 20 with CORE2 as primary, so the two share the load.
+  \item \textbf{Extension.} Repeat the first four steps with VRRP on a third VLAN
+        and note the difference in default preemption behaviour.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why does a host not need to update its ARP cache when the active router
+        fails?
+  \item \cmd{show standby brief} shows \cmd{Standby unknown} on both routers.
+        What does that indicate?
+  \item A router is configured with priority 150 and a tracked interface with
+        decrement 10. Its peer is at 100. The tracked interface fails. What
+        happens, and is it what was intended?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Hosts have one static gateway address, so redundancy has to be provided
+        below them: two routers share a virtual IP \emph{and} a virtual MAC.
+  \item HSRP is Cisco, uses active and standby, and \textbf{does not preempt by
+        default}. VRRP is standard, uses master and backup, and does.
+  \item Priority decides; preemption decides whether the better router takes the
+        role back.
+  \item Track the uplink, with a decrement large enough to cross the priority
+        gap, or the active router can become a black hole.
+  \item Interpret \cmd{show standby brief} by columns: priority, the \cmd{P}
+        flag, state, and who is named as partner. \cmd{Standby unknown} means the
+        two are not peering.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which protocol preempts by default?
+        (a)~HSRP (b)~VRRP (c)~both (d)~neither
+  \item \textbf{(MCQ)} In \cmd{show standby brief}, what does the \cmd{P} column
+        indicate? (a)~priority (b)~preemption configured (c)~primary
+        (d)~point-to-point
+  \item \textbf{(Short)} Explain why the virtual MAC address matters as much as
+        the virtual IP address during a failover.
+  \item \textbf{(Short)} An HSRP router is active but has lost its uplink. What
+        feature prevents this, and how must it be sized?
+  \item \textbf{(Applied)} Two core switches serve VLANs 10, 20, 30 and 40. Design
+        an HSRP arrangement that shares the load evenly and survives the loss of
+        either switch, and write the configuration for one VLAN on each switch.
+\end{reviewq}

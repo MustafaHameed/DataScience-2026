@@ -26,6 +26,55 @@ $\bullet$ directly connected $\bullet$ local route $\bullet$ default route
 $\bullet$ gateway of last resort $\bullet$ null0
 \end{keyterms}
 
+\section{What a router is actually doing}
+
+A switch asks ``which \emph{port} is this MAC address on?''. A router asks a
+different and slightly harder question, once for every packet:
+
+\begin{center}
+\emph{Of everything I know how to reach, which entry best matches this
+destination, and where do I send the packet next?}
+\end{center}
+
+\begin{definitionbox}[Routing table]
+The list of destinations a router knows how to reach, and for each one, the
+\term{next hop} --- the neighbouring device to hand the packet to --- and the
+interface to send it out of.
+
+A router does \textbf{not} know the whole path. It knows one step. Every router
+along the way makes the same one-step decision independently, and the packet
+arrives because each of them was right about its own next hop. That is worth
+sitting with, because it explains why a fault three hops away looks like a
+working router with traffic disappearing into it.
+\end{definitionbox}
+
+\begin{conceptbox}[One line, before twenty]
+Every entry in the table has the same shape. Read this one slowly and the full
+dump below stops being a wall of text:
+
+\begin{center}
+\cmd{O~~~~10.1.0.0/16 [110/20] via 10.255.0.2, 00:14:22, GigabitEthernet0/1}
+\end{center}
+
+\begin{tight}
+  \item \cmd{O} --- \textbf{how} the router learned it. \cmd{O} is OSPF, \cmd{S}
+        static, \cmd{C} connected, \cmd{L} local. The legend at the top of the
+        output lists them all.
+  \item \cmd{10.1.0.0/16} --- \textbf{what} it reaches: the destination network
+        and its prefix length.
+  \item \cmd{[110/20]} --- \textbf{administrative distance} and \textbf{metric}.
+        110 is how much the router trusts the source; 20 is how good this
+        particular path is. Section~\ref{sec:ad} explains why those are two
+        separate numbers.
+  \item \cmd{via 10.255.0.2} --- the \textbf{next hop}.
+  \item \cmd{00:14:22} --- how long the route has been known.
+  \item \cmd{GigabitEthernet0/1} --- the \textbf{exit interface}.
+\end{tight}
+
+Connected and local routes have no distance, metric or next hop, because there is
+nothing between the router and them.
+\end{conceptbox}
+
 \section{Reading the table}
 
 \begin{verify}{R1}{show ip route}
@@ -108,7 +157,7 @@ Now a packet for \cmd{172.20.5.1}: only \cmd{0.0.0.0/0} matches, so it takes the
 gateway of last resort.
 \end{worked}
 
-\section{Rule two: administrative distance}
+\section{Rule two: administrative distance}\label{sec:ad}
 
 \begin{definitionbox}[Administrative distance]
 \term{Administrative distance} ranks the trustworthiness of a route's

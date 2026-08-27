@@ -1,3 +1,679 @@
 \chapter{Checkpoint Answers}\label{app:answers}
 
-% TODO: appendix content.
+Answers to the \textbf{Checkpoint} questions in each chapter. The Review
+Questions at the end of each chapter are deliberately not answered here --- they
+are for assessment, and several have more than one defensible answer.
+
+\begin{alertbox}[Use these to check, not to learn]
+A checkpoint question you read the answer to teaches almost nothing. Write your
+answer down first, then compare. Where yours differs, the useful question is not
+``was I right'' but ``what did I not consider''.
+\end{alertbox}
+
+\section*{Part I --- Foundations}
+\addcontentsline{toc}{section}{Part I --- Foundations}
+
+\subsection*{Chapter 1 --- Networks, Models and This Exam}
+\begin{tightnum}
+  \item Layers 1 to 3 are ruled out: something reached the server and came back.
+        Suspect layer 7 first --- specifically name resolution or the web service
+        itself. Test the name (\chref{dns}) and the port (\chref{transport}).
+  \item Layer 1. Rising collisions on a link that reports full duplex means a
+        duplex mismatch: one end is half duplex and is correctly reporting
+        collisions the other end does not see.
+  \item Because they are different jobs. A switch's flooding is a \emph{recovery}
+        mechanism --- the destination is probably on one of those ports and will
+        answer, teaching the switch where it is. A router's unknown network has no
+        such prospect; flooding a packet to every interface would loop and
+        multiply. So a router drops and reports.
+\end{tightnum}
+
+\subsection*{Chapter 2 --- The Physical Layer and Cable Faults}
+\begin{tightnum}
+  \item That the two ends disagree about duplex. It is certain because a full
+        duplex link \emph{cannot} have collisions --- there is no shared medium to
+        collide on. The counter can only be incrementing because the local end is
+        actually running half duplex, or because the far end is and is causing
+        them.
+  \item In order: a dirty or damaged connector; the wrong optic or wavelength for
+        the distance; and excessive length or a bad splice. Check the cheapest
+        first --- clean the connector before ordering hardware.
+  \item Because it is unambiguous. Administratively down is a decision somebody
+        made, recorded in the configuration, and reversible with one command. A
+        port that is up with rising CRC errors is intermittently working, so
+        traffic is partly passing, users report ``slow'' rather than ``down'',
+        and the cause could be cable, connector, optic, EMI or duplex.
+\end{tightnum}
+
+\subsection*{Chapter 3 --- Ethernet, Frames and Switching}
+\begin{tightnum}
+  \item It drops it. The behaviour is called \term{filtering}: the destination is
+        known to be reachable through the same port the frame arrived on, so
+        forwarding it would send it back where it came from.
+  \item Because the first one triggers an ARP request and possibly a MAC flood,
+        and the round trip includes that resolution. Later pings use the cached
+        entries.
+  \item The MAC address table, on the switch the laptop is connected to. You need
+        the laptop's MAC address first --- and note that on wireless it may be
+        randomised (\chref{clienttshoot}), so the MAC on the label may not be the
+        one on the network.
+\end{tightnum}
+
+\subsection*{Chapter 4 --- IPv4 Addressing and Subnetting}
+\begin{tightnum}
+  \item \cmd{/27} gives a block size of 32 in the fourth octet. The address ends
+        in \textbf{37}, which falls in the block starting at 32. Network
+        \cmd{10.19.200.32}, broadcast \cmd{10.19.200.63}, first usable
+        \cmd{10.19.200.33}, last usable \cmd{10.19.200.62}.
+  \item \textbf{No.} \cmd{/25} has a block size of 128, so the host is in
+        \cmd{192.168.1.128/25}, whose range is \cmd{.129} to \cmd{.254}. The
+        gateway \cmd{192.168.1.126} is in the \emph{other} half,
+        \cmd{192.168.1.0/25}. The host will ARP for a gateway that is not on its
+        segment and reach nothing beyond its own subnet.
+  \item Two. A \cmd{/31} is used on a router-to-router link because there are
+        only ever two devices and neither needs a broadcast address, so it
+        provides both addresses usefully and halves the address consumption of
+        every point-to-point link on a network.
+\end{tightnum}
+
+\subsection*{Chapter 5 --- IPv6 Addressing}
+\begin{tightnum}
+  \item \cmd{2001:db8:0:12::ab}. Leading zeros drop in every group; the single run
+        of three all-zero groups becomes \cmd{::}. Note the fourth group is
+        \cmd{0}, not part of the \cmd{::} --- only one run may be compressed, and
+        the longer one wins.
+  \item A global unicast address, which means no router advertisement is being
+        received. Look at the router or layer 3 switch for the segment: is
+        \cmd{ipv6 unicast-routing} enabled, and does the interface have a global
+        address to advertise a prefix from?
+  \item Split the MAC, insert \cmd{fffe}, and flip the seventh bit: \cmd{aa}
+        becomes \cmd{a8}. The result is \cmd{a8bb:ccff:fe00:0100}.
+\end{tightnum}
+
+\subsection*{Chapter 6 --- TCP, UDP and the Diagnostic Toolkit}
+\begin{tightnum}
+  \item \cmd{U} is an ICMP destination-unreachable reply. Something on the path
+        actively told you it could not deliver --- so the packet was routed, and a
+        device took responsibility. Five dots means silence, which could be
+        anything from a dropped packet to an ACL to a dead host. A reply is
+        always more informative than a timeout.
+  \item Because a plain ping is sourced from the exit interface's address, which
+        the far end may have no route back to. Sourcing from a LAN interface or
+        loopback uses an address the far end's routing table knows about.
+  \item Any of: an ACL blocking the probes; a device configured not to send ICMP
+        time-exceeded messages; asymmetric return path with no route back; a
+        firewall dropping the traffic; or the destination genuinely unreachable
+        beyond that hop.
+\end{tightnum}
+
+\subsection*{Chapter 7 --- The IOS Command Line}
+\begin{tightnum}
+  \item \cmd{do show ip route}. The \cmd{do} prefix runs a privileged EXEC command
+        from any configuration mode without leaving it.
+  \item It boots from \cmd{startup-config} in NVRAM. You are editing
+        \cmd{running-config} in RAM. Anything not saved is lost at the next
+        reload --- see \chref{ansible} for how this catches out automation too.
+  \item Because the RSA key pair is named after the fully qualified domain name,
+        \cmd{hostname.domain}. Without both, the device has no name to label the
+        key with and refuses to generate it.
+\end{tightnum}
+
+\section*{Part II --- Switching and Network Access}
+\addcontentsline{toc}{section}{Part II --- Switching and Network Access}
+
+\subsection*{Chapter 8 --- VLANs and Access Ports}
+\begin{tightnum}
+  \item No. VLANs are separate broadcast domains, so the ARP request never reaches
+        the other host. Sharing an IP subnet is irrelevant at layer 2 --- and
+        because both believe the destination is local, neither will send the
+        traffic to a router either. This configuration cannot be fixed by
+        routing; the VLANs must be corrected.
+  \item \cmd{show interfaces <int> switchport}, which reports both
+        \cmd{Administrative Mode} (what you configured) and \cmd{Operational
+        Mode} (what it actually became).
+  \item Either the VLAN does not exist in the VLAN database, or it exists and is
+        shut down. \cmd{show vlan brief} distinguishes them.
+\end{tightnum}
+
+\subsection*{Chapter 9 --- Edge-Host Connectivity: PoE, Voice, APs and IoT}
+\begin{tightnum}
+  \item The voice VLAN, tagged. The phone learned its VLAN ID from CDP or LLDP-MED
+        advertised by the switch. The PC's traffic stays untagged in the data
+        VLAN, which is why one cable carries both.
+  \item The switch has only 4.2\,W of power budget left, which is not enough for
+        the AP. This is a \emph{budget} problem, not a port problem --- the port
+        is willing (\cmd{auto}) and the supply cannot meet the request. Add a
+        power supply, move the AP, or free capacity elsewhere.
+  \item Because it tunnels all client traffic to the wireless controller inside
+        CAPWAP. The SSID-to-VLAN mapping is done by the controller, so the switch
+        port only needs to reach the controller. A \emph{standalone} AP bridges
+        locally and does need a trunk.
+\end{tightnum}
+
+\subsection*{Chapter 10 --- Trunking, 802.1Q and SVIs}
+\begin{tightnum}
+  \item An access port. \cmd{dynamic auto} will accept a trunk if asked but never
+        asks, so with neither side initiating, no trunk forms.
+  \item No access port in that VLAN is up, so the SVI has nothing to be up for.
+        Confirm with \cmd{show vlan brief} --- an SVI needs the VLAN to exist and
+        at least one active port in it (or \cmd{no autostate}).
+  \item Because a trunk that fails to come up is obvious and fails safe --- no
+        traffic passes and somebody investigates. A native VLAN mismatch leaves
+        the trunk up and quietly bridges two different VLANs together, merging
+        broadcast domains that were meant to be separate. It is a security
+        problem that looks like a working link.
+\end{tightnum}
+
+\subsection*{Chapter 11 --- EtherChannel and LACP}
+\begin{tightnum}
+  \item No channel forms --- both ends wait to be asked. The individual links stay
+        up, so spanning tree sees parallel paths and blocks all but one. The
+        result is a working but single-link connection, which is why the symptom
+        is ``it works, but it is not four gigabits''.
+  \item \cmd{(s)} is suspended: a parameter mismatch. Compare speed, duplex, and
+        the allowed VLAN list and native VLAN on each member. \cmd{show
+        interfaces <int> switchport} and \cmd{show interfaces status} show them.
+  \item Because load balancing is per-\emph{flow}, not per-packet. A hash of
+        addresses and ports selects one member for a conversation, and one file
+        copy is one conversation. Bundling raises aggregate capacity across many
+        flows, not the speed of any single one.
+\end{tightnum}
+
+\subsection*{Chapter 12 --- Rapid PVST+ and the Protection Features}
+\begin{tightnum}
+  \item The one ending \cmd{...0050}. With equal priorities the lowest MAC address
+        wins the tie-break, and \cmd{0050} is numerically lowest.
+  \item No, it is correct and necessary. An alternate port blocking is spanning
+        tree doing exactly its job --- it has found a redundant path and is
+        keeping it available without creating a loop.
+  \item Because PortFast removes the delay that would otherwise let spanning tree
+        detect a loop before the port forwards. If somebody plugs a switch into
+        that port, a loop forms immediately. BPDU guard restores the safety by
+        err-disabling the port the instant a BPDU appears --- which is the only
+        thing that should never arrive on an access port.
+\end{tightnum}
+
+\subsection*{Chapter 13 --- CDP, LLDP and Documenting a Network}
+\begin{tightnum}
+  \item There is no switch between you and it that processes CDP --- so the
+        intervening devices are hubs, media converters, or unmanaged switches
+        that pass the frames through. Neighbour discovery only shows
+        \emph{directly connected} devices, so a distant one appearing means the
+        path is not what the diagram says.
+  \item Because entries persist for the advertised holdtime, 180 seconds by
+        default for CDP. Until it expires, the table describes a neighbour that
+        is no longer there.
+  \item \cmd{show cdp neighbors detail}. The summary form gives neither.
+\end{tightnum}
+
+\subsection*{Chapter 14 --- Troubleshooting Layer 2}
+\begin{tightnum}
+  \item Either the VLAN is missing from a trunk's allowed list, or it has been
+        deleted or shut down on one switch. \cmd{show interfaces trunk} separates
+        them --- read \cmd{Vlans allowed and active}, which reflects both the
+        allowed list and whether the VLAN exists.
+  \item To fix the cause. Err-disable is a symptom; whatever triggered it --- a
+        port security violation, a BPDU on a PortFast port --- is still there and
+        will trigger again the moment the port comes up.
+  \item Because everything that still works is evidence you can trust, and it
+        eliminates whole layers and paths at once. A user's report tells you one
+        thing is broken; knowing that four similar things are fine tells you
+        where the fault \emph{cannot} be, which is a much larger reduction in the
+        search space.
+\end{tightnum}
+
+\section*{Part III --- IP Routing}
+\addcontentsline{toc}{section}{Part III --- IP Routing}
+
+\subsection*{Chapter 15 --- The Routing Table and How a Router Decides}
+\begin{tightnum}
+  \item The static \cmd{10.5.0.0/16}, because it is the longer prefix match.
+        Administrative distance never enters into it --- longest prefix match is
+        applied first and decides between \emph{entries}.
+  \item The static route, distance 1 against OSPF's 110. The OSPF route is not
+        installed in the routing table but remains in the OSPF database, so it
+        will appear if the static route is removed or its next hop becomes
+        unreachable.
+  \item A layer 2 problem on the path; an ACL blocking the traffic; or no return
+        route at the far end. \cmd{traceroute} distinguishes the most common by
+        showing where the packets stop, and whether they get there and cannot get
+        back.
+\end{tightnum}
+
+\subsection*{Chapter 16 --- Static Routing, IPv4 and IPv6}
+\begin{tightnum}
+  \item The next hop is not reachable. A router will not install a static route
+        whose next-hop address it cannot resolve to an interface. Confirm with
+        \cmd{show ip route <next-hop>} --- if that returns nothing, the static
+        route has nowhere to point.
+  \item Nothing will happen: 100 is \emph{lower} than OSPF's 110, so the ``backup''
+        route wins permanently and the OSPF route is never installed. A floating
+        static must have a distance \emph{higher} than the protocol it backs up.
+  \item Because a link-local address is only unique within a link, and a router
+        with several interfaces has no way to tell which one \cmd{fe80::2} refers
+        to. Naming the exit interface removes the ambiguity.
+\end{tightnum}
+
+\subsection*{Chapter 17 --- OSPFv2, Single Area}
+\begin{tightnum}
+  \item When both routers are DROTHERs. Two non-designated routers on a broadcast
+        segment deliberately stop at 2-WAY --- they exchange databases with the DR
+        and BDR, not with each other. It is a fault only if one of them should
+        have been the DR or BDR.
+  \item \cmd{0.0.3.255}. The mask for \cmd{/22} is \cmd{255.255.252.0}, and
+        $255-252 = 3$.
+  \item The router ID was derived from that interface's address, so when the
+        interface flaps the router ID changes and every adjacency rebuilds. Fix
+        it with an explicit \cmd{router-id}, or a loopback, which never flaps.
+\end{tightnum}
+
+\subsection*{Chapter 18 --- OSPFv3 for IPv6}
+\begin{tightnum}
+  \item Because the router ID is a 32-bit value written in IPv4 format regardless
+        of the address family, and it is normally derived from an IPv4 address on
+        the device. With no IPv4 anywhere, none can be derived, and the process
+        will not start at all --- the interface commands are accepted and do
+        nothing.
+  \item Nothing. They are separate processes with separate databases, neighbours
+        and adjacencies. A working v2 adjacency proves the link and layer 2 are
+        fine, which is useful, but says nothing about v3's configuration.
+  \item Per interface, with \cmd{ipv6 ospf <pid> area <n>}. \emph{Every} IPv6
+        prefix on that interface is advertised --- there are no network statements
+        and no wildcard masks, which is why \cmd{passive-interface} matters more
+        in OSPFv3 than in OSPFv2.
+\end{tightnum}
+
+\subsection*{Chapter 19 --- First Hop Redundancy: HSRP and VRRP}
+\begin{tightnum}
+  \item Because the virtual MAC address moves with the virtual IP. The host's ARP
+        cache still maps the gateway IP to the same MAC; the new active router
+        simply starts answering to it. The host never learns anything happened,
+        which is the entire point.
+  \item That the two routers are not seeing each other's hellos --- so each
+        believes it is alone. Causes: mismatched group numbers, different
+        subnets, a VLAN or trunk fault between them, or an ACL blocking the
+        multicast. Both then claim active, and two devices answer for the same IP.
+  \item The priority drops to 140, which is still above the peer's 100, so
+        \textbf{nothing happens} --- the router keeps the active role despite
+        having lost the tracked interface. That is almost certainly not what was
+        intended: the decrement must be large enough to take the priority
+        \emph{below} the peer's, so 51 or more.
+\end{tightnum}
+
+\section*{Part IV --- Network Services and Security}
+\addcontentsline{toc}{section}{Part IV --- Network Services and Security}
+
+\subsection*{Chapter 20 --- DHCP: Client, Server and Relay}
+\begin{tightnum}
+  \item Discover, Offer and Request are broadcast; only the Ack is unicast. If the
+        Request were unicast, a second server that had also made an offer would
+        never learn that its offer was declined, and would hold that address
+        reserved for nothing until it timed out.
+  \item It establishes only that the host asked and \textbf{nothing answered}. It
+        does not establish where the failure is --- it could be the switch port,
+        the VLAN, the SVI, the relay, or the server, and it says nothing about
+        whether the server is healthy.
+  \item On the interface facing the \textbf{clients} --- the SVI in the subnet
+        where the broadcasts are. The relay writes its own address on that
+        interface into \cmd{giaddr}, which tells the server which pool to use and
+        gives it a unicast address to reply to.
+  \item A relay or broadcast-path fault. Existing hosts renew at T1 by
+        \emph{unicast} directly to the server, which needs no relay, so they
+        survive. Only newly booting hosts need the broadcast path, so only they
+        fail.
+  \item No. DHCP delivered a correct address and a correct gateway, which is its
+        entire job. The fault is elsewhere --- routing, NAT, an ACL, or DNS. Check
+        the DNS servers the lease carried before looking further afield.
+\end{tightnum}
+
+\subsection*{Chapter 21 --- DNS, and Diagnosing Records}
+\begin{tightnum}
+  \item That the network path and the server are fine and the fault is name
+        resolution. Next, query the record explicitly and against a known server:
+        \cmd{nslookup -type=A www.example.edu 8.8.8.8}, and compare with what your
+        own resolver returns.
+  \item \cmd{NXDOMAIN} means the \emph{name} does not exist. \cmd{NOERROR} with an
+        empty answer means the name exists but has no record \emph{of the type you
+        asked for}. They look identical to a user and mean entirely different
+        things.
+  \item Because a CNAME means ``this name is an alias for that name'', and a name
+        that is an alias cannot also carry data of its own. Standards prohibit
+        other records alongside it, and mail servers differ in how they cope ---
+        which produces the worst symptom, where mail from some senders arrives
+        and from others does not.
+  \item AAAA. A dual-stack client prefers IPv6 and will try the AAAA address
+        first; if it is wrong or unreachable the client waits for a timeout before
+        falling back to IPv4. IPv4-only clients never see it, so the site is slow
+        for some and instant for others.
+  \item Usually whoever owns the address block --- your ISP or cloud provider, not
+        you, because reverse DNS is delegated separately in
+        \cmd{in-addr.arpa}. Without it, outbound mail is commonly rejected or
+        scored as spam, because receiving servers check that the connecting
+        address reverse-resolves and forward-resolves back.
+\end{tightnum}
+
+\subsection*{Chapter 22 --- NAT and PAT on IOS XE}
+\begin{tightnum}
+  \item Inside local \cmd{10.1.1.9}; inside global \cmd{198.51.100.4}; outside
+        global \cmd{203.0.113.80}; outside local \cmd{203.0.113.80} --- the same,
+        because plain NAT does not translate the outside host's address.
+  \item \cmd{overload}. It translates the port as well as the address, so one
+        public address serves many hosts. Without it, dynamic NAT lends addresses
+        one-to-one and \textbf{silently fails} when the pool is exhausted.
+  \item It rules out a pool or ACL problem --- misses would be non-zero if packets
+        had been considered and refused. Both counters at zero means no packet was
+        ever evaluated for translation, which points at the missing \cmd{ip nat
+        inside} or \cmd{ip nat outside} interface markers.
+  \item The \textbf{inside global} address, the translated one. An inbound ACL on
+        the outside interface is evaluated \emph{before} the packet is
+        un-translated, so it sees the address that is on the wire at that
+        interface.
+  \item Because it is an address-conservation mechanism. It happens to make
+        unsolicited inbound connections difficult, since no translation entry
+        matches them, but that is a side effect rather than a policy --- it cannot
+        be audited, it states no intent, and it is trivially bypassed by anything
+        the inside host initiates. Use an ACL or firewall for policy.
+\end{tightnum}
+
+\subsection*{Chapter 23 --- Device Access, AAA and Secure File Transfer}
+\begin{tightnum}
+  \item \cmd{local} is used only when the TACACS+ group \emph{does not respond at
+        all}. If a server answers and rejects the credentials, that is an answer,
+        the list ends, and the local database is never consulted. Fallback
+        protects against a dead server, not a forgotten password.
+  \item TACACS+ is TCP 49 and encrypts the entire packet body; RADIUS is UDP
+        1812/1813 and encrypts only the password field. Choose \textbf{TACACS+}
+        for switch administrators --- it separates authorization fully and
+        supports per-command control.
+  \item Because the RSA key pair is named \cmd{hostname.domain}. Without a domain
+        name the device has no full name to label the key with and refuses.
+  \item \cmd{aaa new-model}, an \cmd{aaa authentication login} method, and
+        \cmd{aaa authorization exec} --- plus \cmd{ip scp server enable} itself.
+        Without the authorization line, users authenticate successfully and every
+        transfer is then refused.
+  \item TFTP has no user authentication, sends everything in clear text, and runs
+        over UDP with no integrity protection. A configuration file in flight ---
+        including its shared secrets --- is readable by anyone on the path, and
+        anyone who can reach the server can fetch any file whose name they guess.
+\end{tightnum}
+
+\subsection*{Chapter 24 --- Access Control Lists}
+\begin{tightnum}
+  \item Mask \cmd{255.255.240.0}, so the wildcard is \cmd{0.0.15.255}. It matches
+        \cmd{10.20.16.0} through \cmd{10.20.31.255} --- sixteen consecutive /24s.
+  \item Because a standard ACL can only match the \emph{source}. Placed near the
+        source it would block that host from everything, not just the one
+        destination. An extended ACL can name the destination too, so it is
+        precise enough to sit near the source, which saves carrying doomed traffic
+        across the network.
+  \item That everything is being dropped by an earlier line --- no packet from
+        anywhere reached the bottom of the list. An ACL whose final permit never
+        matches is denying all traffic it sees.
+  \item TCP segments with the ACK or RST flag set --- replies within a conversation
+        somebody inside already started. It is not stateful because it inspects
+        \emph{flags} on each packet independently and keeps no record of
+        connections; a crafted packet with ACK set will match.
+  \item \textbf{DHCP} --- without it hosts get no address and the VLAN looks
+        completely dead. \textbf{DNS} --- everything works by IP and nothing by
+        name. \textbf{ICMP} --- users and you lose the ability to test anything,
+        and troubleshooting becomes guesswork.
+\end{tightnum}
+
+\subsection*{Chapter 25 --- Layer 2 Security}
+\begin{tightnum}
+  \item Port security --- one device claiming many MAC addresses or an
+        unauthorised device. DHCP snooping --- a rogue DHCP server. Dynamic ARP
+        inspection --- ARP poisoning. Storm control --- flooding. RA guard --- a
+        rogue IPv6 router.
+  \item Because DAI validates ARP against the DHCP snooping \textbf{binding
+        table}, which records which MAC legitimately holds which IP on which port.
+        Without snooping running there is no table, and DAI has nothing to
+        validate against.
+  \item It drops offending traffic silently --- no counter, no log, no trap. A
+        user whose traffic is being discarded reports ``the network is slow'' and
+        nothing anywhere records why. Prefer \cmd{restrict}, which drops and
+        reports.
+  \item Because the phone appears in the voice VLAN, the PC in the data VLAN, and
+        the phone commonly registers a second address of its own. A maximum of 2
+        produces violations that come and go with phone firmware.
+  \item It is statically addressed, so it never took a DHCP lease and has no entry
+        in the snooping binding table. DAI therefore drops every ARP reply it
+        sends, so nothing can resolve its MAC address and it becomes unreachable
+        while remaining healthy. Fix with an ARP ACL naming its address and MAC,
+        applied with \cmd{ip arp inspection filter}.
+  \item The uplink toward the distribution layer, for \textbf{DHCP snooping} and
+        for \textbf{dynamic ARP inspection}. Untrusted uplinks take out the whole
+        switch in both cases.
+\end{tightnum}
+
+\subsection*{Chapter 26 --- IPsec VPNs}
+\begin{tightnum}
+  \item ESP, IP protocol \textbf{50}. AH provides integrity and authentication but
+        no encryption.
+  \item Tunnel mode encrypts the entire original packet and adds a new IP header;
+        transport mode keeps the original header and encrypts only the payload. A
+        site-to-site VPN uses \textbf{tunnel mode}.
+  \item Because AH authenticates the entire packet including the source and
+        destination addresses in the IP header, and NAT's whole function is to
+        rewrite them. The integrity check therefore fails by definition and the
+        far end discards the packet. No configuration fixes this.
+  \item Phase 1 authenticates the peers and builds a secure channel between them
+        --- the IKE security association. Phase 2 uses that channel to negotiate
+        the security associations that protect user traffic, including which
+        traffic is protected.
+  \item Because plain IPsec tunnel mode carries unicast IP only, and OSPF depends
+        on multicast. GRE can carry multicast, so the routing protocol runs inside
+        a GRE tunnel, which IPsec then protects.
+  \item Path MTU. The added headers push large packets past the MTU somewhere on
+        the path, so small packets pass and large ones are dropped or fragmented
+        badly. A good reminder that ``it pings'' is not ``it works''.
+\end{tightnum}
+
+\section*{Part V --- Wireless, Virtualisation and Operations}
+\addcontentsline{toc}{section}{Part V --- Wireless, Virtualisation and Operations}
+
+\subsection*{Chapter 27 --- Wireless Principles}
+\begin{tightnum}
+  \item Because channels are numbered 5\,MHz apart but each is 20\,MHz wide, so
+        five channel numbers of separation are needed to avoid overlap. In a band
+        of eleven usable channels that gives exactly three: \textbf{1, 6 and 11}.
+  \item \textbf{Adjacent-channel} is worse. Two APs on the same channel can hear
+        each other, so CSMA/CA works and they share the airtime --- throughput
+        halves but nothing is corrupted. On partly overlapping channels neither
+        can decode the other, so neither defers, both transmit, and frames are
+        destroyed and retransmitted.
+  \item The \textbf{noise floor}, so you can calculate SNR. A signal of $-62$ is
+        strong; if the noise floor is around $-70$ the SNR is only 8\,dB, well
+        below the 25\,dB voice needs. That would make the report entirely normal.
+  \item Personal shares one passphrase among everyone and identifies nobody;
+        Enterprise authenticates each user individually via 802.1X against a
+        RADIUS server, so one account can be revoked without touching anyone else.
+        WPA2 uses AES-CCMP with a 4-way handshake that can be captured and
+        attacked offline; WPA3 replaces it with SAE, which resists offline attack
+        and adds forward secrecy.
+  \item Bodies are largely water, which absorbs 2.4\,GHz strongly --- so a full
+        room attenuates far more than an empty one. And a full room means many
+        clients contending for the same airtime on a half-duplex shared medium.
+  \item Non-Wi-Fi interference --- a microwave oven, a video sender, a cordless
+        phone. It transmits no frames, so it never appears in a Wi-Fi scan; it
+        simply raises the noise floor. Finding it needs a \textbf{spectrum
+        analyser}, which looks at raw RF energy rather than decoded frames.
+\end{tightnum}
+
+\subsection*{Chapter 28 --- Troubleshooting Client Connectivity}
+\begin{tightnum}
+  \item (1) Do I have an address? Failure points to DHCP or layer 2. (2) Ping my
+        gateway --- failure points to the local segment. (3) Ping something remote
+        by IP --- failure points to routing, NAT or an ACL. (4) Ping the same thing
+        by name --- failure points to DNS and nothing else.
+  \item \cmd{ipconfig /all} on Windows, \cmd{ifconfig} on macOS, \cmd{ip addr} on
+        Linux. Note that \cmd{ifconfig} is deprecated on Linux and normal on
+        macOS.
+  \item It can reach hosts on its own subnet and nothing else. Everything local
+        works, so the user may report it as ``the internet is down'' rather than
+        as a network fault.
+  \item Because the mask decides which destinations the host believes are local.
+        With a mask that is too short, the host ARPs directly for addresses that
+        are actually on other subnets, gets no answer, and fails --- while
+        destinations genuinely outside the over-wide range still use the gateway
+        correctly and work.
+  \item Either it is being placed in a VLAN with no DHCP scope --- often because
+        MAC randomisation means it is not recognised by a MAC-based authorisation
+        list --- or the relay or scope for its VLAN is broken. Tell them apart by
+        checking whether \emph{other} clients on the same SSID and VLAN are
+        leasing normally; if they are, it is specific to this device.
+  \item The locally-administered bit is set --- the second-lowest bit of the first
+        octet. In practice the first octet's second hex digit will be 2, 6, a or e
+        (as in \cmd{8A}), and the address will not match the device's label or
+        the manufacturer OUI.
+\end{tightnum}
+
+\subsection*{Chapter 29 --- Hypervisors, Virtual Machines and Containers}
+\begin{tightnum}
+  \item One layer. A type~1 hypervisor runs directly on the hardware and \emph{is}
+        the operating system; a type~2 runs as an application on top of a host
+        operating system.
+  \item The \textbf{kernel}. Consequences: containers are far smaller and start in
+        milliseconds because there is no operating system to boot; and isolation
+        is weaker, because a kernel vulnerability is shared by every container on
+        the host.
+  \item Because the VMs on it live in several VLANs, and their frames arrive at
+        the physical switch tagged. An access port would carry one VLAN and
+        discard the rest, stranding every VM outside it.
+  \item Because a hypervisor presents many MAC addresses on one port --- one per
+        vNIC plus the host's own --- and they change as machines start, stop and
+        migrate. Port security will exceed its maximum and err-disable the port,
+        taking down every VM on the host.
+  \item Traffic between two VMs on the same host and VLAN. It is switched inside
+        the hypervisor's virtual switch and never leaves the server, so it never
+        reaches the physical switch to be seen, filtered or captured there.
+  \item Live migration. A running VM was moved to another host, so its MAC address
+        legitimately appears on a different switch port seconds later. It looks
+        exactly like a loop and is not.
+\end{tightnum}
+
+\subsection*{Chapter 30 --- Management Approaches, SNMP and Syslog}
+\begin{tightnum}
+  \item Device-based, controller-based, cloud-based, automation-based, and
+        infrastructure as code. The test: \textbf{does the network still have a
+        management system when the tool is switched off?} For controller-based,
+        yes --- and you have just lost it. For automation-based, no --- nothing
+        about the devices changed.
+  \item Facility \cmd{\%PM}, severity \textbf{4}, mnemonic \cmd{ERR\_DISABLE}.
+        Severity 4 is \emph{warning}.
+  \item \cmd{warnings} is severity 4, so it records levels 0 to 4 and
+        \textbf{discards} 5, 6 and 7 --- notification, informational and
+        debugging.
+  \item A trap is sent once over UDP and never acknowledged, so it can be lost
+        silently. An inform is acknowledged and retransmitted until it is.
+        Use informs for anything you would be sorry to miss, traps for
+        high-volume low-consequence events.
+  \item Because the community string travels in \textbf{clear text} in every
+        polling packet, hundreds of times an hour. Anyone who can capture one
+        packet has it, so obscurity is irrelevant. A read-write string is
+        equivalent to an enable password.
+  \item It sets the \emph{severity threshold for messages sent to a syslog
+        server}. It has nothing whatever to do with SNMP traps, despite the name.
+\end{tightnum}
+
+\subsection*{Chapter 31 --- Ansible and Configuration Management}
+\begin{tightnum}
+  \item It installs nothing on the managed device and connects over SSH. It
+        decides the choice because you cannot install an agent on a Catalyst
+        switch --- so any agent-based tool (Puppet, Chef) is simply unavailable
+        for network hardware, while Ansible needs only the SSH access already
+        configured.
+  \item An operation produces the same result whether applied once or many times.
+        In the recap you see it as \cmd{ok} rather than \cmd{changed} on a device
+        that is already in the desired state --- so a second run of the same
+        playbook reports \cmd{changed=0}.
+  \item \cmd{ios\_command} runs EXEC commands and returns output; it cannot make a
+        configuration change. \cmd{ios\_config} enters configuration mode and
+        applies lines. A playbook reporting success while changing nothing is very
+        often the former where the latter was meant.
+  \item It writes the running configuration to startup-config, but only when that
+        run actually changed something. Without it the change lives in the running
+        configuration only and is lost at the next reload --- which shows up weeks
+        later as a fault correlating with reboots rather than with the change.
+  \item \cmd{unreachable} means Ansible could not log in to the device at all.
+        \cmd{failed} means it logged in and the task did not work. They point at
+        completely different problems.
+  \item \cmd{--check} is a dry run --- it reports what it would do and touches
+        nothing. \cmd{--diff} shows the exact lines. Omit them only when you have
+        already run with them and are applying the change you just reviewed.
+\end{tightnum}
+
+\subsection*{Chapter 32 --- AI in Network Operations}
+\begin{tightnum}
+  \item Generative AI produces content in response to a prompt and stops; agentic
+        AI pursues a goal, uses tools to act, and evaluates its own results.
+  \item Data classification, output format, persona and instructions.
+        \textbf{Data classification} is listed first, because a prompt that
+        discloses credentials or real addressing is wrong regardless of how good
+        the rest of it is --- and the disclosure cannot be undone.
+  \item Credentials of any kind (passwords, hashes, community strings, pre-shared
+        keys, tokens); personal data; and real public IP addressing or anything
+        the organisation classifies as confidential.
+  \item How much breaks if the action is wrong. It governs autonomy because the
+        question is not how capable the system is but how bad a confident mistake
+        would be --- clearing one err-disabled port is reversible and local, while
+        changing a core route map reaches the whole organisation.
+  \item A hallucination. The defence is verification: check the command exists on
+        your platform, check it against the exhibit or the device, and keep change
+        control. Fluency is not evidence.
+  \item Any three of: anomaly detection, event correlation and noise reduction,
+        root-cause suggestion, configuration drafting and review, documentation
+        and summarisation, capacity forecasting, guided remediation.
+\end{tightnum}
+
+\section*{Part VI --- Sitting the Exam}
+\addcontentsline{toc}{section}{Part VI --- Sitting the Exam}
+
+\subsection*{Chapter 33 --- A Troubleshooting Method for the 28 Per Cent}
+\begin{tightnum}
+  \item Define, gather, analyse, eliminate, hypothesise, test, solve. Steps
+        \textbf{5 and 6} form the loop --- a hypothesis whose prediction fails is
+        discarded and replaced, not patched.
+  \item Bottom-up for a suspected physical or hardware fault, or when nothing
+        works. Top-down when one application fails and everything else is fine.
+        Divide and conquer as the default when you have no strong prior. Follow
+        the path when two specific points cannot reach each other. Compare working
+        to broken whenever an identical working case exists.
+  \item \emph{One user or many?} --- sets the whole search space. \emph{Has it ever
+        worked?} --- separates a build fault from a change fault. \emph{What
+        changed?} --- finds the cause of most faults in previously working
+        networks. \emph{Does it fail by name but work by address?} --- answers
+        ``is this DNS'' in one test.
+  \item Because it converts a check into information whichever way it goes. Without
+        a prediction, a fix that does not resolve the symptom reads as ``the fix
+        did not work'' rather than ``the hypothesis was wrong'', and you re-check
+        something already correct.
+  \item Either the hypothesis was wrong, or there is more than one fault. Go back
+        to scoping rather than re-checking the thing you just verified --- and
+        keep the fix if it corrected a genuine defect, but record it separately.
+  \item The precise symptom and who is affected; what has been ruled out and the
+        evidence for it; what has been changed, including anything not yet undone;
+        and the current hypothesis with the next test.
+\end{tightnum}
+
+\subsection*{Chapter 34 --- Exam Strategy}
+\begin{tightnum}
+  \item \textbf{You cannot return to a previous question.} It invalidates
+        skimming the paper first, leaving hard questions to come back to, and
+        flagging anything for review.
+  \item 60 to 75 seconds. At 90 seconds, eliminate what you can, choose the best
+        remaining option, and move on --- the question you have not seen yet may be
+        one you would answer in twenty seconds.
+  \item Because you cannot come back to it, so a deferred simulation is an
+        abandoned one. Read the whole task first; plan before typing; configure
+        only what is asked; verify with a \cmd{show} command --- and save if the
+        task says to.
+  \item The \textbf{question} first. Otherwise you study an entire configuration
+        or topology to answer something about one line of it.
+  \item The \emph{describe} topics --- wireless principles, virtualisation, VPNs,
+        management approaches, AI --- because they are recall-heavy and recall
+        decays fastest. Configuration skill does not.
+  \item Cisco publishes the 120-minute duration, the five domains and their
+        weights, and the 29 topics with their wording. It does \textbf{not}
+        publish the number of questions or the passing score.
+\end{tightnum}

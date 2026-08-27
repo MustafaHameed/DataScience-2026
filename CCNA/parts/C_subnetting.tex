@@ -1,3 +1,331 @@
 \chapter{Subnetting and IPv6 Drills}\label{app:subnetting}
 
-% TODO: appendix content.
+Subnetting appears on the exam mostly \emph{inside} other questions --- an ACL
+wildcard, a summary route, whether two hosts share a subnet. It is rarely the
+point of the question, which means every second you spend calculating is a second
+taken from the question you were actually asked.
+
+\begin{alertbox}[The standard to aim for]
+Any \cmd{/24} to \cmd{/30} question, answered in \textbf{under fifteen seconds,
+without writing anything down}. That is achievable by almost anyone with about
+two hours of drilling, and it is worth more marks than any single chapter of this
+book.
+
+The drills in this appendix have their answers computed rather than typed. If
+your answer differs from one here, work it through again --- the table is right.
+\end{alertbox}
+
+\section{The method}
+
+Forget binary conversion. There is one number to find.
+
+\begin{definitionbox}[The block size, or ``magic number'']
+\textbf{256 minus the interesting octet of the mask.} Subnets begin at multiples
+of that number, in that octet.
+\end{definitionbox}
+
+\begin{worked}[192.168.10.77/26]
+\textbf{Step 1 --- the mask.} \cmd{/26} is 24 bits plus 2, so the fourth octet
+has 2 bits: $128+64 = 192$. Mask \cmd{255.255.255.192}. The fourth octet is the
+interesting one.
+
+\textbf{Step 2 --- the block size.} $256 - 192 = \mathbf{64}$.
+
+\textbf{Step 3 --- count in blocks} until you pass the address. 0, 64, 128, 192.
+The address ends in 77, which falls between 64 and 128, so the network is
+\textbf{192.168.10.64}.
+
+\textbf{Step 4 --- the rest follows.} The next block starts at 128, so the
+broadcast is one below it: \textbf{192.168.10.127}. Usable hosts are everything
+between: \textbf{.65 to .126}, which is $64 - 2 = \mathbf{62}$.
+
+Four steps, no binary, and with the two tables below memorised it is arithmetic
+you can do while reading the question.
+\end{worked}
+
+\section{The two tables to memorise}
+
+\begin{longtable}{@{}L{2.4cm}L{2.4cm}L{2.4cm}L{7.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Mask octet} & \textbf{Block size} & \textbf{Bits} & \textbf{Subnets it makes in that octet} \\
+\midrule
+\endhead
+\cmd{128} & 128 & 1 & 0, 128 \\
+\rowcolor{lightbg}
+\cmd{192} & 64 & 2 & 0, 64, 128, 192 \\
+\cmd{224} & 32 & 3 & 0, 32, 64, 96, 128, 160, 192, 224 \\
+\rowcolor{lightbg}
+\cmd{240} & 16 & 4 & 0, 16, 32, 48, \ldots \\
+\cmd{248} & 8 & 5 & 0, 8, 16, 24, \ldots \\
+\rowcolor{lightbg}
+\cmd{252} & 4 & 6 & 0, 4, 8, 12, \ldots \\
+\cmd{254} & 2 & 7 & 0, 2, 4, 6, \ldots \\
+\rowcolor{lightbg}
+\cmd{255} & 1 & 8 & every value \\
+\bottomrule
+\end{longtable}
+
+\begin{longtable}{@{}L{1.5cm}L{3.4cm}L{2.3cm}L{2.4cm}L{4.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Prefix} & \textbf{Mask} & \textbf{Block} & \textbf{Usable} & \textbf{Typical use} \\
+\midrule
+\endhead
+\cmd{/30} & \cmd{255.255.255.252} & 4 & 2 & A point-to-point link \\
+\rowcolor{lightbg}
+\cmd{/29} & \cmd{255.255.255.248} & 8 & 6 & A handful of servers \\
+\cmd{/28} & \cmd{255.255.255.240} & 16 & 14 & A small office \\
+\rowcolor{lightbg}
+\cmd{/27} & \cmd{255.255.255.224} & 32 & 30 & A classroom \\
+\cmd{/26} & \cmd{255.255.255.192} & 64 & 62 & A floor \\
+\rowcolor{lightbg}
+\cmd{/25} & \cmd{255.255.255.128} & 128 & 126 & Half a /24 \\
+\cmd{/24} & \cmd{255.255.255.0} & 256 & 254 & The default assumption \\
+\rowcolor{lightbg}
+\cmd{/23} & \cmd{255.255.254.0} & 2 (3rd) & 510 & Two /24s \\
+\cmd{/22} & \cmd{255.255.252.0} & 4 (3rd) & 1022 & A building \\
+\rowcolor{lightbg}
+\cmd{/21} & \cmd{255.255.248.0} & 8 (3rd) & 2046 & A campus block \\
+\cmd{/20} & \cmd{255.255.240.0} & 16 (3rd) & 4094 & A site \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Wildcard masks are the same table, inverted]
+Subtract each octet of the mask from 255 (\chref{acl}). \cmd{/26} is
+\cmd{255.255.255.192}, so the wildcard is \cmd{0.0.0.63} --- and 63 is one less
+than the block size of 64, which is the quickest way to produce it.
+
+\textbf{Check it every time:} network address plus wildcard should equal the
+broadcast address. $192.168.10.64 + 0.0.0.63 = 192.168.10.127$. If it does not,
+the wildcard is wrong.
+\end{conceptbox}
+
+\section{Drill 1 --- network, broadcast and range}
+
+For each, give the mask in dotted decimal, the network address, the broadcast
+address, the usable range and the host count. Answers in Section~\ref{sec:c-answers}.
+
+\begin{longtable}{@{}L{0.8cm}L{4.2cm}L{3.1cm}L{3.1cm}L{3.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Given} & \textbf{Network} & \textbf{Broadcast} & \textbf{Usable hosts} \\
+\midrule
+\endhead
+1 & \cmd{192.168.10.77/26} &  &  &  \\
+\rowcolor{lightbg}
+2 & \cmd{10.4.19.200/21} &  &  &  \\
+3 & \cmd{172.16.35.14/20} &  &  &  \\
+\rowcolor{lightbg}
+4 & \cmd{192.168.1.130/25} &  &  &  \\
+5 & \cmd{10.0.0.66/30} &  &  &  \\
+\rowcolor{lightbg}
+6 & \cmd{172.20.140.9/22} &  &  &  \\
+7 & \cmd{192.168.200.35/27} &  &  &  \\
+\rowcolor{lightbg}
+8 & \cmd{10.55.12.3/19} &  &  &  \\
+9 & \cmd{172.31.255.200/18} &  &  &  \\
+\rowcolor{lightbg}
+10 & \cmd{192.168.16.62/28} &  &  &  \\
+11 & \cmd{10.128.64.31/27} &  &  &  \\
+\rowcolor{lightbg}
+12 & \cmd{172.16.0.129/29} &  &  &  \\
+13 & \cmd{203.0.113.45/29} &  &  &  \\
+\rowcolor{lightbg}
+14 & \cmd{198.51.100.17/28} &  &  &  \\
+15 & \cmd{192.0.2.200/26} &  &  &  \\
+\rowcolor{lightbg}
+16 & \cmd{10.10.10.10/23} &  &  &  \\
+17 & \cmd{172.18.6.250/21} &  &  &  \\
+\rowcolor{lightbg}
+18 & \cmd{192.168.99.99/24} &  &  &  \\
+\bottomrule
+\end{longtable}
+
+\section{Drill 2 --- sizing a subnet}
+
+The other direction, and the one VLSM questions need: given a host requirement,
+find the smallest prefix that fits. Work each out before reading the row.
+
+\begin{longtable}{@{}L{3.4cm}L{3.0cm}L{3.4cm}L{4.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Hosts needed} & \textbf{Prefix} & \textbf{Mask} & \textbf{Usable / wasted} \\
+\midrule
+\endhead
+2 & \cmd{/30} & \cmd{255.255.255.252} & 2 / 0 \\
+\rowcolor{lightbg}
+6 & \cmd{/29} & \cmd{255.255.255.248} & 6 / 0 \\
+12 & \cmd{/28} & \cmd{255.255.255.240} & 14 / 2 \\
+\rowcolor{lightbg}
+25 & \cmd{/27} & \cmd{255.255.255.224} & 30 / 5 \\
+50 & \cmd{/26} & \cmd{255.255.255.192} & 62 / 12 \\
+\rowcolor{lightbg}
+100 & \cmd{/25} & \cmd{255.255.255.128} & 126 / 26 \\
+200 & \cmd{/24} & \cmd{255.255.255.0} & 254 / 54 \\
+\rowcolor{lightbg}
+500 & \cmd{/23} & \cmd{255.255.254.0} & 510 / 10 \\
+1000 & \cmd{/22} & \cmd{255.255.252.0} & 1022 / 22 \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The off-by-one that costs marks]
+A requirement for 30 hosts needs a \cmd{/26}, not a \cmd{/27}. A \cmd{/27} has 32
+addresses and \textbf{30 usable} --- so it fits exactly, with no room for the
+gateway you forgot to count.
+
+Count the gateway, and count any HSRP virtual address (\chref{fhrp}) as well: a
+subnet with two routers running HSRP consumes three addresses before a single
+user appears.
+\end{alertbox}
+
+\section{Drill 3 --- IPv6 compression}
+
+Apply both rules: drop leading zeros in each group, and replace \emph{one} run of
+consecutive all-zero groups with \cmd{::}.
+
+\begin{longtable}{@{}L{0.8cm}L{7.6cm}L{6.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Given} & \textbf{Compressed} \\
+\midrule
+\endhead
+1 & \cmd{2001:0db8:0000:0000:0000:ff00:0042:8329} &  \\
+\rowcolor{lightbg}
+2 & \cmd{2001:0db8:acad:0010:0000:0000:0000:0001} &  \\
+3 & \cmd{fe80:0000:0000:0000:0204:61ff:fe9d:f156} &  \\
+\rowcolor{lightbg}
+4 & \cmd{2001:0db8:0000:0001:0000:0000:0000:0100} &  \\
+5 & \cmd{0000:0000:0000:0000:0000:0000:0000:0001} &  \\
+\rowcolor{lightbg}
+6 & \cmd{2001:0db8:aaaa:0001:0000:0000:0000:0000} &  \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[The rule people get wrong]
+\cmd{::} may appear \textbf{once}. \cmd{2001:db8::1::5} is not a valid address,
+because a parser cannot tell how many zero groups each \cmd{::} stands for.
+
+Where there are two runs of zeros, compress the \emph{longer} one and write the
+shorter out in full. If they are equal in length, compress the first.
+\end{conceptbox}
+
+\section{Drill 4 --- EUI-64}
+
+Build the full address from the prefix and the MAC. The procedure is: split the
+MAC in half, insert \cmd{fffe} in the middle, and \textbf{flip the seventh bit of
+the first octet}.
+
+\begin{longtable}{@{}L{0.7cm}L{4.0cm}L{3.2cm}L{7.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Prefix} & \textbf{MAC} & \textbf{EUI-64 address} \\
+\midrule
+\endhead
+1 & \cmd{2001:db8:acad:10::/64} & \cmd{00:1a:2b:3c:4d:5e} &  \\
+\rowcolor{lightbg}
+2 & \cmd{2001:db8:1:1::/64} & \cmd{aa:bb:cc:dd:ee:ff} &  \\
+3 & \cmd{fe80::/64} & \cmd{0c:1d:2e:3f:40:51} &  \\
+\rowcolor{lightbg}
+4 & \cmd{2001:db8:99::/64} & \cmd{52:54:00:12:34:56} &  \\
+\bottomrule
+\end{longtable}
+
+\begin{worked}[Why the seventh bit flips, and how to do it fast]
+That bit is the universal/local flag. In a MAC address it is 0 for a
+manufacturer-assigned address; EUI-64 inverts it, so a burned-in address becomes
+1.
+
+In practice you are flipping the value 2 in the second hex digit of the first
+octet. \cmd{00} becomes \cmd{02}. \cmd{aa} becomes \cmd{a8}. \cmd{52} becomes
+\cmd{50}. \cmd{0c} becomes \cmd{0e}.
+
+If the second hex digit is even, add 2; if it is odd\ldots{} it will not be, for
+a normal MAC. Learn the four cases above and you have covered nearly everything
+you will be shown.
+\end{worked}
+
+\section{Answers}\label{sec:c-answers}
+
+\subsection{Drill 1}
+
+\begin{longtable}{@{}L{0.8cm}L{3.1cm}L{3.0cm}L{3.0cm}L{4.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Mask} & \textbf{Network} & \textbf{Broadcast} & \textbf{Usable range (count)} \\
+\midrule
+\endhead
+1 & \cmd{255.255.255.192} & \cmd{192.168.10.64} & \cmd{192.168.10.127} & \cmd{192.168.10.65} \newline \cmd{to 192.168.10.126} (62) \\
+\rowcolor{lightbg}
+2 & \cmd{255.255.248.0} & \cmd{10.4.16.0} & \cmd{10.4.23.255} & \cmd{10.4.16.1} \newline \cmd{to 10.4.23.254} (2046) \\
+3 & \cmd{255.255.240.0} & \cmd{172.16.32.0} & \cmd{172.16.47.255} & \cmd{172.16.32.1} \newline \cmd{to 172.16.47.254} (4094) \\
+\rowcolor{lightbg}
+4 & \cmd{255.255.255.128} & \cmd{192.168.1.128} & \cmd{192.168.1.255} & \cmd{192.168.1.129} \newline \cmd{to 192.168.1.254} (126) \\
+5 & \cmd{255.255.255.252} & \cmd{10.0.0.64} & \cmd{10.0.0.67} & \cmd{10.0.0.65} \newline \cmd{to 10.0.0.66} (2) \\
+\rowcolor{lightbg}
+6 & \cmd{255.255.252.0} & \cmd{172.20.140.0} & \cmd{172.20.143.255} & \cmd{172.20.140.1} \newline \cmd{to 172.20.143.254} (1022) \\
+7 & \cmd{255.255.255.224} & \cmd{192.168.200.32} & \cmd{192.168.200.63} & \cmd{192.168.200.33} \newline \cmd{to 192.168.200.62} (30) \\
+\rowcolor{lightbg}
+8 & \cmd{255.255.224.0} & \cmd{10.55.0.0} & \cmd{10.55.31.255} & \cmd{10.55.0.1} \newline \cmd{to 10.55.31.254} (8190) \\
+9 & \cmd{255.255.192.0} & \cmd{172.31.192.0} & \cmd{172.31.255.255} & \cmd{172.31.192.1} \newline \cmd{to 172.31.255.254} (16382) \\
+\rowcolor{lightbg}
+10 & \cmd{255.255.255.240} & \cmd{192.168.16.48} & \cmd{192.168.16.63} & \cmd{192.168.16.49} \newline \cmd{to 192.168.16.62} (14) \\
+11 & \cmd{255.255.255.224} & \cmd{10.128.64.0} & \cmd{10.128.64.31} & \cmd{10.128.64.1} \newline \cmd{to 10.128.64.30} (30) \\
+\rowcolor{lightbg}
+12 & \cmd{255.255.255.248} & \cmd{172.16.0.128} & \cmd{172.16.0.135} & \cmd{172.16.0.129} \newline \cmd{to 172.16.0.134} (6) \\
+13 & \cmd{255.255.255.248} & \cmd{203.0.113.40} & \cmd{203.0.113.47} & \cmd{203.0.113.41} \newline \cmd{to 203.0.113.46} (6) \\
+\rowcolor{lightbg}
+14 & \cmd{255.255.255.240} & \cmd{198.51.100.16} & \cmd{198.51.100.31} & \cmd{198.51.100.17} \newline \cmd{to 198.51.100.30} (14) \\
+15 & \cmd{255.255.255.192} & \cmd{192.0.2.192} & \cmd{192.0.2.255} & \cmd{192.0.2.193} \newline \cmd{to 192.0.2.254} (62) \\
+\rowcolor{lightbg}
+16 & \cmd{255.255.254.0} & \cmd{10.10.10.0} & \cmd{10.10.11.255} & \cmd{10.10.10.1} \newline \cmd{to 10.10.11.254} (510) \\
+17 & \cmd{255.255.248.0} & \cmd{172.18.0.0} & \cmd{172.18.7.255} & \cmd{172.18.0.1} \newline \cmd{to 172.18.7.254} (2046) \\
+\rowcolor{lightbg}
+18 & \cmd{255.255.255.0} & \cmd{192.168.99.0} & \cmd{192.168.99.255} & \cmd{192.168.99.1} \newline \cmd{to 192.168.99.254} (254) \\
+\bottomrule
+\end{longtable}
+
+\subsection{Drill 3}
+
+\begin{longtable}{@{}L{0.8cm}L{7.6cm}L{6.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Given} & \textbf{Compressed} \\
+\midrule
+\endhead
+1 & \cmd{2001:0db8:0000:0000:0000:ff00:0042:8329} & \cmd{2001:db8::ff00:42:8329} \\
+\rowcolor{lightbg}
+2 & \cmd{2001:0db8:acad:0010:0000:0000:0000:0001} & \cmd{2001:db8:acad:10::1} \\
+3 & \cmd{fe80:0000:0000:0000:0204:61ff:fe9d:f156} & \cmd{fe80::204:61ff:fe9d:f156} \\
+\rowcolor{lightbg}
+4 & \cmd{2001:0db8:0000:0001:0000:0000:0000:0100} & \cmd{2001:db8:0:1::100} \\
+5 & \cmd{0000:0000:0000:0000:0000:0000:0000:0001} & \cmd{::1} \\
+\rowcolor{lightbg}
+6 & \cmd{2001:0db8:aaaa:0001:0000:0000:0000:0000} & \cmd{2001:db8:aaaa:1::} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Drill 4}
+
+\begin{longtable}{@{}L{0.7cm}L{4.0cm}L{3.2cm}L{7.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Prefix} & \textbf{MAC} & \textbf{EUI-64 address} \\
+\midrule
+\endhead
+1 & \cmd{2001:db8:acad:10::/64} & \cmd{00:1a:2b:3c:4d:5e} & \cmd{2001:db8:acad:10:21a:2bff:fe3c:4d5e} \\
+\rowcolor{lightbg}
+2 & \cmd{2001:db8:1:1::/64} & \cmd{aa:bb:cc:dd:ee:ff} & \cmd{2001:db8:1:1:a8bb:ccff:fedd:eeff} \\
+3 & \cmd{fe80::/64} & \cmd{0c:1d:2e:3f:40:51} & \cmd{fe80::e1d:2eff:fe3f:4051} \\
+\rowcolor{lightbg}
+4 & \cmd{2001:db8:99::/64} & \cmd{52:54:00:12:34:56} & \cmd{2001:db8:99:0:5054:ff:fe12:3456} \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Regenerating these]
+Every answer above is computed by \cmd{tools/gen\_drills.py} using Python's
+\cmd{ipaddress} module, not worked out by hand. To change or extend the drills,
+edit the lists at the top of that script and re-run it --- do not edit the tables
+here, because a hand-edited answer is exactly the error this arrangement exists
+to prevent.
+\end{alertbox}

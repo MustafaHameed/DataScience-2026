@@ -39,6 +39,44 @@ block any member, so all of the bandwidth is usable, and if one member fails the
 others carry on without a topology change.
 \end{definitionbox}
 
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.45cm, minimum height=1.0cm,
+               align=center, font=\tiny\bfseries},
+    hdr/.style={font=\scriptsize\bfseries, text=neutral!45!black}}
+
+  %--- left: four links, three blocked
+  \node[hdr] at (2.6,2.35) {Four cables, no EtherChannel};
+  \node[dv=dom2] (a1) at (0.7,1.15) {\faIcon{sitemap}\\SW1};
+  \node[dv=dom2] (b1) at (4.5,1.15) {\faIcon{sitemap}\\SW2};
+  \draw[dom2!75, line width=1pt] (1.45,1.72) -- (3.75,1.72);
+  \foreach \y in {1.34, 0.96, 0.58} {
+    \draw[accent!60, line width=1pt, dash pattern=on 2.5pt off 2pt]
+      (1.45,\y) -- (3.75,\y);
+    \node[font=\tiny\bfseries, text=accent!75!black, fill=white, inner sep=1pt]
+      at (2.6,\y) {BLK};}
+  \node[font=\tiny\bfseries, text=accent!70!black, align=center] at (2.6,-0.15)
+      {spanning tree blocks three.\\You paid for 4\,Gbps and use 1};
+
+  %--- right: one bundle
+  \node[hdr] at (10.6,2.35) {Four cables, one port channel};
+  \node[dv=dom2] (a2) at (8.7,1.15) {\faIcon{sitemap}\\SW1};
+  \node[dv=dom2] (b2) at (12.5,1.15) {\faIcon{sitemap}\\SW2};
+  \draw[dom2!30, line width=7pt] (9.45,1.15) -- (11.75,1.15);
+  \foreach \y in {1.72, 1.34, 0.96, 0.58}
+    \draw[dom2!85, line width=0.9pt] (9.45,\y) -- (11.75,\y);
+  \node[font=\tiny\bfseries, text=dom2!45!black] at (10.6,2.0) {Po1};
+  \node[font=\tiny, text=neutral!85!black, align=center] at (10.6,-0.15)
+      {STP sees \emph{one} link, so none is blocked.\\All 4\,Gbps is usable};
+
+  \node[font=\scriptsize\bfseries, text=neutral!45!black] at (6.6,1.15)
+      {$\Longrightarrow$};
+\end{tikzpicture}}%
+{Bundling is not about speed for one conversation --- it is about spanning tree
+seeing one link instead of four, and therefore blocking none of them.}{pochannel}
+
 \begin{conceptbox}[Load balancing is per conversation, not per packet]
 Frames are distributed across members by hashing fields from the frame --- source
 MAC, destination MAC, source and destination IP, or a combination. Every frame

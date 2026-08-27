@@ -33,6 +33,40 @@ A single link between two switches must carry traffic for every VLAN, and the
 receiving switch has to know which VLAN each frame belongs to. \term{802.1Q}
 solves this by inserting a four-byte tag into the frame carrying the VLAN ID.
 
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.45cm, minimum height=1.0cm,
+               align=center, font=\tiny\bfseries},
+    w/.style={line width=0.85pt, neutral!65},
+    fld/.style={draw=#1, fill=#1!12, text=#1!40!black, minimum height=0.6cm,
+                align=center, font=\tiny\bfseries, line width=0.7pt}}
+
+  \node[dv=dom2] (s1) at (0,0)   {\faIcon{sitemap}\\SW1};
+  \node[dv=dom2] (s2) at (12.6,0) {\faIcon{sitemap}\\SW2};
+  \draw[w, line width=1.5pt, dom2!60] (s1) -- (s2);
+  \node[font=\tiny\bfseries, text=dom2!45!black] at (6.3,0.42)
+      {one physical link --- the \emph{trunk}};
+
+  \foreach \y/\v/\c in {-1.15/10/dom1, -1.75/20/dom4, -2.35/30/dom5} {
+    \draw[-{Stealth[length=2mm]}, \c!70, line width=0.9pt] (0.9,\y) -- (11.7,\y);
+    \node[font=\tiny\bfseries, text=\c!45!black, anchor=east] at (0.85,\y) {VLAN \v};
+    \node[font=\tiny, text=\c!45!black, fill=white, inner sep=1.5pt] at (6.3,\y)
+        {tagged \textbf{\v}};}
+  \draw[-{Stealth[length=2mm]}, neutral!70, line width=0.9pt] (0.9,-2.95) -- (11.7,-2.95);
+  \node[font=\tiny\bfseries, text=neutral!55!black, anchor=east] at (0.85,-2.95) {VLAN 99};
+  \node[font=\tiny, text=accent!70!black, fill=white, inner sep=1.5pt] at (6.3,-2.95)
+      {\textbf{untagged} --- the native VLAN};
+
+  \node[font=\tiny, text=neutral!85!black, align=center] at (6.3,-3.75)
+      {Three VLANs carry a tag that says which they are.\\
+       The native VLAN carries none --- so both ends must agree what it is.};
+\end{tikzpicture}}%
+{A trunk is one cable carrying many VLANs. Every VLAN but one is labelled; the
+unlabelled one is the native VLAN, and a disagreement about it joins two
+networks silently.}{trunktag}
+
 \begin{conceptbox}[The native VLAN is untagged, and that is the whole problem]
 One VLAN on every trunk is designated the \term{native VLAN}, and its frames
 cross the trunk \textbf{untagged}. The receiving switch assumes any untagged

@@ -1,4 +1,478 @@
 \chapter{AI in Network Operations}\label{ch:ai}
 \bp{5.1,5.2}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} generative AI from agentic AI, and describe what
+        makes a system agentic.
+  \item \textbf{Describe} where AI is genuinely used in network operations, and
+        where it should not be trusted.
+  \item \textbf{Select} an effective prompt, using the four components the
+        blueprint names: data classification, output format, persona and
+        instructions.
+  \item \textbf{Judge} what data may safely be sent to an AI system, and sanitise
+        what may not.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{management} for the five management approaches --- agentic systems sit on
+top of them, not instead of them. \chref{ansible} for automation, which is what an
+agent actually uses to act. \chref{aaa} for why credentials must not leave the
+organisation.
+\end{prereq}
+
+\begin{keyterms}
+generative AI $\bullet$ agentic AI $\bullet$ autonomy $\bullet$ tool use
+$\bullet$ human in the loop $\bullet$ prompt $\bullet$ persona $\bullet$ data
+classification $\bullet$ sanitisation $\bullet$ hallucination $\bullet$ blast
+radius
+\end{keyterms}
+
+\begin{examnote}[Two topics, and the second one is unusual]
+\tp{5.1} is \emph{describe the role of agentic AI in network operations}.
+
+\tp{5.2} is \emph{select a prompt to send to a generative AI system to support
+network operations considering prompt components such as data classification,
+output format, persona, and instructions}.
+
+Read \tp{5.2} carefully, because it tells you the question format. \emph{Select}
+means you will be shown several candidate prompts and asked which is best ---
+not asked to write one. And the four components are \textbf{named}, which means
+the marking scheme is those four. A prompt that has all four beats one that
+does not.
+
+Note the order Cisco lists them in: \textbf{data classification comes first}.
+That is not accidental, and Section~\ref{sec:dataclass} explains why.
+\end{examnote}
+
+\section{Generative and agentic}
+
+\begin{definitionbox}[Generative AI]
+A system that produces content --- text, code, configuration --- in response to a
+prompt. It answers and stops. Every action taken as a result is taken by you.
+\end{definitionbox}
+
+\begin{definitionbox}[Agentic AI]
+A system that pursues a \emph{goal} rather than answering a question. It
+perceives the current state, plans, uses tools to act, observes the result, and
+iterates --- choosing the intermediate steps itself.
+\end{definitionbox}
+
+\ccnafigh{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    bx/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, text width=2.5cm, align=center,
+               minimum height=0.95cm, font=\tiny\bfseries},
+    a/.style={-{Stealth[length=2.2mm]}, line width=0.9pt, neutral!70},
+    ttl/.style={font=\scriptsize\bfseries, text=neutral!45!black, anchor=west}}
+
+  \node[ttl] at (-0.3,1.55) {Generative};
+  \node[bx=dom1] (g1) at (1.1,0.4)  {you ask};
+  \node[bx=dom1] (g2) at (4.3,0.4)  {it answers};
+  \node[bx=dom1] (g3) at (7.5,0.4)  {\textbf{you} act};
+  \draw[a] (g1) -- (g2);  \draw[a] (g2) -- (g3);
+
+  \node[ttl] at (-0.3,-1.15) {Agentic};
+  \node[bx=dom5] (a1) at (1.1,-2.3) {goal set};
+  \node[bx=dom5] (a2) at (4.3,-2.3) {observe\\state};
+  \node[bx=dom5] (a3) at (7.5,-2.3) {plan};
+  \node[bx=dom5] (a4) at (10.7,-2.3){\textbf{it} acts\\via tools};
+  \draw[a] (a1) -- (a2);  \draw[a] (a2) -- (a3);  \draw[a] (a3) -- (a4);
+  \draw[a, dom5!70] (a4) to[bend left=32]
+      node[font=\tiny, text=dom5!45!black, midway, above=1pt]
+      {check the result, iterate} (a2);
+\end{tikzpicture}}%
+{The difference is the loop and who closes it. A generative system hands you an
+answer; an agentic one acts and checks its own work.}{agentic}
+
+\begin{longtable}{@{}L{3.1cm}L{5.7cm}L{6.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Generative} & \textbf{Agentic} \\
+\midrule
+\endhead
+Given & A prompt & A goal \\
+\rowcolor{lightbg}
+Produces & An answer & A sequence of actions \\
+Tools & None. It only writes &
+Calls APIs, runs show commands, opens tickets, applies configuration \\
+\rowcolor{lightbg}
+Steps & One & As many as it decides it needs \\
+Who acts & \textbf{You} & \textbf{It} --- within whatever bounds you set \\
+\rowcolor{lightbg}
+Risk if wrong & A bad suggestion you can reject &
+A change already made to a live network \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The one-sentence answer for the exam]
+\textbf{Generative AI produces content; agentic AI takes action toward a goal,
+using tools, and evaluates its own results.} Autonomy and tool use are the two
+words that separate them.
+\end{alertbox}
+
+\section{Where it is actually used}
+
+\begin{longtable}{@{}L{4.3cm}L{5.2cm}L{5.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Role} & \textbf{What it does} & \textbf{Why it is suited to this} \\
+\midrule
+\endhead
+Anomaly detection &
+Learns normal behaviour and flags departures from it &
+The volume of telemetry is far past what anyone can watch \\
+\rowcolor{lightbg}
+Event correlation &
+Collapses a thousand alarms from one fault into one incident &
+Pattern matching across sources, at speed \\
+Root-cause suggestion &
+Proposes the likely cause and the evidence for it &
+It has seen the whole log, and you have seen the last screen \\
+\rowcolor{lightbg}
+Configuration drafting &
+Produces candidate configuration and reviews existing configuration &
+Syntax and boilerplate are exactly what it is good at \\
+Documentation and summary &
+Turns a change record or a packet capture into readable prose &
+Tedious, low-risk, easily checked \\
+\rowcolor{lightbg}
+Capacity forecasting &
+Projects growth from historical counters &
+A statistical problem with plenty of data \\
+Guided remediation &
+Proposes a fix; with more autonomy, applies it &
+This is the agentic end, and where care is needed \\
+\bottomrule
+\end{longtable}
+
+\subsection{The autonomy ladder}
+
+The useful question about an agentic system is not ``is it intelligent'' but
+\textbf{how much is it allowed to do without asking}.
+
+\begin{tight}
+  \item \textbf{Recommend.} It tells you what it would do. You do it. No risk
+        beyond a wasted suggestion.
+  \item \textbf{Approve then act.} It prepares the change and waits for a human
+        to approve. This is where most production deployments sit, and sensibly.
+  \item \textbf{Act then report.} It makes the change and tells you afterwards.
+        Appropriate for narrow, reversible, well-understood actions --- clearing
+        an err-disabled port, restarting a stuck process.
+  \item \textbf{Fully autonomous.} It acts within a defined scope with no
+        notification. Appropriate for very little in a production network.
+\end{tight}
+
+\begin{conceptbox}[Blast radius is the design question]
+Before granting autonomy, ask what the worst outcome is if the system is
+confidently wrong. Clearing one err-disabled port has a blast radius of one port.
+Changing a route map on a core router has a blast radius of the organisation.
+
+The same technology can sit at different rungs for different actions, and a
+well-designed deployment does exactly that. ``Human in the loop'' is not a
+blanket policy; it is a decision made per action, based on reversibility and
+reach.
+\end{conceptbox}
+
+\begin{alertbox}[What these systems are bad at, and you must know]
+\begin{tight}
+  \item \textbf{Being confidently wrong.} A fluent, plausible, incorrect answer
+        is the characteristic failure. It does not signal uncertainty the way a
+        colleague would.
+  \item \textbf{Your network specifically.} Training data is the internet, not
+        your topology. It does not know that VLAN~40 is the guest network here.
+  \item \textbf{Currency.} It may recommend commands deprecated years ago, or
+        miss ones added last year.
+  \item \textbf{Accountability.} When a change breaks a site, a person is
+        answerable. Change control, approval and rollback do not become optional
+        because a machine proposed the change.
+\end{tight}
+\end{alertbox}
+
+\section{Selecting a prompt}
+
+This is topic \tp{5.2}, and it is a practical skill with four named parts.
+
+\begin{longtable}{@{}L{3.4cm}L{5.4cm}L{6.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Component} & \textbf{What it does} & \textbf{Weak against strong} \\
+\midrule
+\endhead
+\textbf{Data classification} &
+Decides what you may include, and what must be removed or replaced first &
+Pasting a full running configuration with keys and public addresses, against
+pasting the four relevant lines with addresses re-written \\
+\rowcolor{lightbg}
+\textbf{Persona} &
+Sets the expertise and viewpoint to answer from &
+``Explain VLANs'' against ``You are a senior network engineer working on Cisco
+IOS XE 17.12'' \\
+\textbf{Instructions} &
+The actual task, with its constraints and its scope &
+``Fix this'' against ``Identify why VLAN 30 clients get no address; do not
+suggest changes to VLANs 10 or 20'' \\
+\rowcolor{lightbg}
+\textbf{Output format} &
+The shape the answer must take, so it is usable &
+``Tell me about it'' against ``Reply as a table of Cause, Evidence, Command to
+confirm. No more than five rows'' \\
+\bottomrule
+\end{longtable}
+
+\begin{worked}[The same question, asked twice]
+\textbf{Weak:}
+
+\begin{quote}
+\RaggedRight\itshape Why is my DHCP not working? Here is my config:
+[entire running configuration pasted, including \cmd{snmp-server community},
+\cmd{username ... secret} and the site's public addressing]
+\end{quote}
+
+No persona, no output format, no scope --- and it has just sent credentials and
+the organisation's real addressing to a third party. Even a good answer would not
+justify that.
+
+\textbf{Strong:}
+
+\begin{quote}
+\RaggedRight\itshape You are a senior network engineer working on Cisco IOS XE
+17.12.
+
+Clients in VLAN 30 receive APIPA addresses. VLANs 10 and 20 on the same
+distribution switch lease correctly. The DHCP server is central and reached
+across a routed core. Relevant configuration, with addresses substituted:
+
+\medskip
+\cmd{interface Vlan30 / ip address 10.30.0.1 255.255.255.0}
+
+\medskip
+List the three most likely causes, most likely first. For each give the single
+show command that would confirm or eliminate it. Reply as a table with columns
+Cause, Confirming command, Expected output if this is the fault. Do not propose
+configuration changes.
+\end{quote}
+
+All four components are present, and each earns its place: the persona sets the
+platform, the classification decided that addresses would be substituted and
+credentials omitted, the instructions bound the scope, and the format makes the
+answer directly actionable.
+\end{worked}
+
+\begin{examnote}[How to answer a ``select the best prompt'' question]
+Score each candidate against the four components and pick the one with most.
+Then apply three tie-breakers:
+
+\begin{tight}
+  \item \textbf{Eliminate anything containing credentials, keys or real public
+        addressing} immediately, however good the rest of it is. Data
+        classification is listed first for a reason and a prompt that leaks is
+        wrong regardless of its other qualities.
+  \item \textbf{Prefer specific over polite.} ``Please help me with my network''
+        scores nothing. Length is not the measure --- \emph{specificity} is.
+  \item \textbf{Prefer a stated output format.} It is the component most often
+        missing from the distractors, so it frequently decides the answer.
+\end{tight}
+\end{examnote}
+
+\subsection{Data classification, properly}\label{sec:dataclass}
+
+\begin{alertbox}[Assume anything you send leaves your control]
+A prompt sent to an external service has been disclosed to a third party. It may
+be logged, retained, reviewed by humans, or used for training, depending on the
+contract --- and deleting it later does not undo the disclosure.
+
+\textbf{Never send:} passwords, hashes, SNMP community strings, pre-shared keys,
+certificates, API tokens; personal data; real public IP addressing; anything
+your organisation classifies as confidential or above.
+
+\textbf{Sanitise first:} substitute addresses consistently (documentation ranges
+\cmd{192.0.2.0/24}, \cmd{198.51.100.0/24}, \cmd{203.0.113.0/24} exist for exactly
+this), replace hostnames, strip credential lines entirely, and include only the
+configuration relevant to the question.
+
+\textbf{And check the policy.} Many organisations permit an approved internal or
+contracted tool and prohibit public ones. Knowing which applies to you is part
+of the job now.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Pasting a whole running configuration.} Slower, worse answers,
+        and a disclosure.
+  \item \textbf{Confusing generative with agentic.} Tool use and autonomy are the
+        difference.
+  \item \textbf{Omitting the output format.} You get an essay where you needed
+        three commands.
+  \item \textbf{No persona or platform.} You get generic advice, or IOS syntax
+        for a platform you are not running.
+  \item \textbf{Accepting a confident answer without verifying.} Check the
+        command exists on your platform before typing it.
+  \item \textbf{Granting autonomy without considering blast radius.}
+  \item \textbf{Assuming it knows your network.} It knows the internet.
+  \item \textbf{Treating an AI-proposed change as exempt from change control.}
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[The suggested command was accepted and took the site off the air.]
+An engineer asks an assistant why a trunk is not carrying VLAN~50 and is told to
+run \cmd{switchport trunk allowed vlan 50} on the uplink. They apply it. Every
+VLAN except 50 immediately stops working across that link.
+
+\begin{quote}
+\RaggedRight\itshape \textbf{The prompt that was used:} ``VLAN 50 isn't going over
+my trunk, what command fixes it?''
+\end{quote}
+
+\textbf{Diagnosis --- of the answer.} The command is real, correctly spelled and
+valid. It also \emph{replaces} the allowed list rather than adding to it, so a
+trunk carrying 10, 20 and 30 now carries only 50. The correct command was
+\cmd{switchport trunk allowed vlan add 50} (\chref{trunking}).
+
+\textbf{Diagnosis --- of the prompt}, which is the examinable part. Measure it
+against the four components:
+
+\begin{tight}
+  \item \textbf{Persona} --- absent. Nothing established the platform or the
+        expected level of care.
+  \item \textbf{Instructions} --- absent. No mention that the trunk already
+        carried other VLANs, which is the fact that makes the difference between
+        the two commands. The model had no way to know it.
+  \item \textbf{Output format} --- absent. A request for ``the command, plus what
+        it changes, plus how to verify before and after'' would have surfaced the
+        replace-versus-add behaviour in the answer itself.
+  \item \textbf{Data classification} --- the one component that was, by accident,
+        satisfied. Nothing sensitive was sent, because nothing was sent.
+\end{tight}
+
+The prompt asked a question whose correct answer depends on context it did not
+supply. The response was reasonable given what it was told.
+
+\textbf{The better prompt.}
+
+\begin{quote}
+\RaggedRight\itshape You are a senior network engineer working on Cisco IOS XE.
+An 802.1Q trunk between two switches currently carries VLANs 10, 20 and 30. I
+need to add VLAN 50 \textbf{without interrupting the existing three}. Give the
+exact command, state what it changes, and give the show command to verify the
+allowed list before and after. Warn me about any similar command that would be
+destructive here.
+\end{quote}
+
+\textbf{The wider lesson, and it is the point of this chapter.} The fault was not
+the tool's. A prompt missing three of its four components produced an answer that
+was correct in general and wrong here, and it was applied to a production trunk
+without verification. The habit that prevents this is not distrust of AI --- it
+is the same habit that should apply to a command copied from a forum: understand
+what it changes before you press enter, and have a way to check.
+\end{breakfix}
+
+\begin{lab}{Prompt engineering as an examinable skill}{Any generative AI assistant, plus a lab device}
+\textbf{Platform note.} This lab needs no particular tool. Use whatever assistant
+your institution permits --- and \textbf{check that policy first}, which is task
+1 and is not a formality.
+
+\begin{tasks}
+  \item Find and read your institution's or employer's policy on sending data to
+        AI services. Write down, in one sentence, what you are permitted to send.
+  \item Take a real configuration from one of your lab devices. Produce a
+        sanitised version fit to include in a prompt: substitute addressing into
+        documentation ranges, rename hosts, remove every credential. List
+        everything you removed and why.
+  \item Write the weakest useful prompt you can for a real problem from
+        \chref{tshootl2}. Record the answer.
+  \item Rewrite it with all four components. Record the answer. Compare the two
+        for specificity, correctness and usability.
+  \item \textbf{Verify both answers on the device.} Note anything suggested that
+        was wrong, deprecated, or not supported on your platform. This step is
+        the one that matters.
+  \item Ask a question whose correct answer depends on context you deliberately
+        withhold --- as in this chapter's Break \& Fix. Confirm you can produce a
+        confidently wrong answer, and identify which missing component caused it.
+  \item Write four candidate prompts for one task, one of which is clearly best,
+        and swap with a colleague. Score each other's against the four
+        components. This is the exam question format.
+  \item \textbf{Autonomy.} For each of these, place it on the four-rung ladder
+        and justify: clearing an err-disabled port; adding a VLAN to an access
+        switch; changing an OSPF cost on a core link; opening a ticket.
+  \item \textbf{Extension.} Write the one-page guidance your team should follow
+        for using AI assistants on network work --- what may be sent, what must
+        be verified, and which actions may ever be automatic.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item State the difference between generative and agentic AI in one sentence.
+  \item Name the four prompt components the blueprint lists, and say which is
+        listed first and why.
+  \item Give three categories of data that must never be sent to an external AI
+        service.
+  \item What is blast radius, and how does it govern how much autonomy an agent
+        should have?
+  \item An assistant gives a fluent, confident, wrong answer. What is this called
+        and what is the defence?
+  \item Name three genuine uses of AI in network operations.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Generative AI produces content in response to a prompt. \textbf{Agentic
+        AI pursues a goal}, uses tools, acts, and evaluates its own results.
+        Autonomy and tool use are the difference.
+  \item Real roles: anomaly detection, event correlation, root-cause suggestion,
+        configuration drafting, documentation, capacity forecasting, guided
+        remediation.
+  \item Autonomy is a ladder --- recommend, approve then act, act then report,
+        fully autonomous --- chosen per action according to blast radius.
+  \item The four prompt components: \textbf{data classification, output format,
+        persona, instructions}. A prompt with all four beats one without.
+  \item Data classification is listed first. Never send credentials, keys,
+        personal data or real public addressing; sanitise into documentation
+        ranges first; check your organisation's policy.
+  \item In a ``select the prompt'' question: eliminate anything that leaks, prefer
+        specificity over politeness, and look for the stated output format.
+  \item These systems are confidently wrong, do not know your network, and may be
+        out of date. Verify before you apply, and keep change control.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} What most distinguishes agentic AI from generative AI?
+        \begin{tight}
+          \item[(a)] It produces longer answers
+          \item[(b)] It takes actions using tools and evaluates the results
+          \item[(c)] It runs on the network device itself
+          \item[(d)] It requires no prompt
+        \end{tight}
+  \item \textbf{(MCQ)} Which prompt component decides what you are permitted to
+        include in the first place?
+        \begin{tight}
+          \item[(a)] Persona \quad (b)~Output format
+          \item[(c)] Data classification \quad (d)~Instructions
+        \end{tight}
+  \item \textbf{(MCQ)} Which of these should never appear in a prompt sent to an
+        external service?
+        \begin{tight}
+          \item[(a)] A VLAN number \quad (b)~An SNMP community string
+          \item[(c)] An interface name \quad (d)~A documentation-range address
+        \end{tight}
+  \item \textbf{(Short)} Explain blast radius and use it to justify why clearing
+        an err-disabled port may be automated while changing a core route map
+        should not.
+  \item \textbf{(Short)} An assistant recommends a command that is valid but
+        destructive in your situation. Name the two prompt components whose
+        absence caused this, and rewrite the prompt.
+  \item \textbf{(Applied)} Write a prompt asking for help diagnosing an OSPF
+        adjacency stuck in EXSTART, containing all four components, using only
+        data that is safe to send. Then state how you would verify the answer
+        before acting on it.
+  \item \textbf{(Applied)} Your manager proposes letting an agentic system apply
+        ACL changes automatically out of hours. Give your recommendation with
+        three specific conditions you would require, referring to the autonomy
+        ladder.
+\end{reviewq}

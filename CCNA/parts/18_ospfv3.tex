@@ -1,4 +1,270 @@
 \chapter{OSPFv3 for IPv6}\label{ch:ospfv3}
 \bp{3.3}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} what OSPFv3 keeps from OSPFv2 and what it changes.
+  \item \textbf{Configure} single-area OSPFv3 on interfaces rather than with
+        network statements.
+  \item \textbf{Explain} why an IPv6-only router still needs an IPv4-format
+        router ID, and configure one.
+  \item \textbf{Troubleshoot} an OSPFv3 adjacency, including the failure unique to
+        it: a missing router ID.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ospfv2} --- this chapter assumes it and covers only the differences.
+\chref{ipv6} for link-local addressing.
+\end{prereq}
+
+\begin{keyterms}
+OSPFv3 $\bullet$ router ID $\bullet$ link-local next hop $\bullet$ per-interface
+configuration $\bullet$ address family $\bullet$ ff02::5 $\bullet$ ff02::6
+\end{keyterms}
+
+\begin{examnote}[One topic, two protocols]
+Topic \tp{3.3} covers OSPFv2 and OSPFv3 together, and OSPFv3 is new in v2.0 --- it
+was not in the v1.1 blueprint at all. The exam will not ask you to re-learn OSPF;
+it will ask whether you can configure the v6 version, which means knowing the
+handful of things that differ.
+\end{examnote}
+
+\section{What stays the same}
+
+Almost everything conceptual. The link-state mechanism, the database, the
+shortest-path calculation, areas, the DR and BDR election with its priority-then-
+router-ID tie-break, the FULL and 2-WAY states, cost as the metric, hello and
+dead intervals that must match, and the administrative distance of 110 are all
+identical to \chref{ospfv2}.
+
+So is the troubleshooting. If an OSPFv3 adjacency will not form, the causes are
+the same list: area, timers, network type, MTU, duplicate router ID.
+
+\section{What changes}
+
+\begin{longtable}{@{}L{3.6cm}L{5.4cm}L{6.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{OSPFv2} & \textbf{OSPFv3} \\
+\midrule
+\endhead
+Enabled by & \cmd{network} statements under the process &
+\textbf{Per interface}, with \cmd{ipv6 ospf 10 area 0} \\
+\rowcolor{lightbg}
+Advertises & The subnets matched by network statements &
+Every prefix on an enabled interface, automatically \\
+Neighbour address & The interface's IPv4 address & The neighbour's
+\textbf{link-local} address \\
+\rowcolor{lightbg}
+Multicast groups & \cmd{224.0.0.5}, \cmd{224.0.0.6} & \cmd{ff02::5}, \cmd{ff02::6} \\
+Router ID & 32-bit, may be taken from an interface &
+32-bit, in IPv4 format, and \textbf{must be configured} if no IPv4 address exists
+anywhere \\
+\rowcolor{lightbg}
+Authentication & Built into the protocol & Delegated to IPsec \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The failure unique to OSPFv3]
+The router ID is still a 32-bit value written like an IPv4 address, even in a
+network with no IPv4 at all. If the router has \emph{no} IPv4 address on any
+interface and you have not configured \cmd{router-id}, the process will not
+start. IOS says so, but the message is easily missed in a long paste:
+
+\begin{quote}
+\RaggedRight\ttfamily\footnotesize \% OSPFv3-1-IPV6 Router process 10 could not
+pick a router-id, please configure manually
+\end{quote}
+
+Always configure it explicitly. It costs one line and removes the whole class of
+problem.
+\end{alertbox}
+
+\section{Configuring it}
+
+\begin{config}{single-area OSPFv3 on R1}
+ipv6 unicast-routing
+!
+! The process exists mainly to hold the router ID; interfaces do
+! the rest of the work.
+ipv6 router ospf 10
+ router-id 1.1.1.1
+ passive-interface Vlan10
+!
+! Enable per interface. Every IPv6 prefix on the interface is
+! advertised -- there is no network statement and no wildcard mask.
+interface GigabitEthernet0/1
+ description Link to R2
+ ipv6 address 2001:db8:acad:99::1/64
+ ipv6 ospf 10 area 0
+!
+interface Vlan10
+ ipv6 address 2001:db8:acad:10::1/64
+ ipv6 ospf 10 area 0
+!
+! Point-to-point on a two-router link, exactly as in OSPFv2.
+interface GigabitEthernet0/2
+ ipv6 ospf network point-to-point
+\end{config}
+
+\begin{conceptbox}[No network statements is a simplification, not a trap]
+In OSPFv2 you had to compute a wildcard mask and remember that the statement both
+enables the interface and advertises the subnet. OSPFv3 drops all of that: enable
+the interface and every prefix on it is advertised, including additional
+addresses added later.
+
+The practical consequence is that \cmd{passive-interface} becomes more important,
+not less --- it is now the only way to advertise a LAN's prefix without sending
+hellos into it.
+\end{conceptbox}
+
+\section{Verifying}
+
+\begin{verify}{R1}{show ipv6 ospf neighbor}
+            OSPFv3 Router with ID (1.1.1.1) (Process ID 10)
+
+Neighbor ID     Pri   State           Dead Time   Interface ID    Interface
+2.2.2.2           1   FULL/BDR        00:00:31    4               GigabitEthernet0/1
+3.3.3.3           1   FULL/DR         00:00:35    4               GigabitEthernet0/1
+\end{verify}
+
+The neighbour IDs are still IPv4-format. The column that replaces the IPv4
+address is \cmd{Interface ID} --- the neighbour's own index for its interface,
+which matters only when reading the database.
+
+\begin{verify}{R1}{show ipv6 route ospf}
+IPv6 Routing Table - default - 9 entries
+Codes: C - Connected, L - Local, S - Static, O - OSPF intra, OI - OSPF inter
+O   2001:DB8:ACAD:20::/64 [110/2]
+     via FE80::2, GigabitEthernet0/1
+O   2001:DB8:ACAD:30::/64 [110/3]
+     via FE80::3, GigabitEthernet0/1
+\end{verify}
+
+\begin{alertbox}[The next hop is a link-local address, and that is correct]
+Every OSPFv3 route resolves to a \cmd{fe80::} next hop plus an interface. This
+looks wrong to anyone used to IPv4 and is not: link-local addresses are
+guaranteed to exist on every IPv6 interface and cannot be renumbered, so they are
+the stable choice. This is also why the interface must always be named alongside
+them (\chref{static}).
+\end{alertbox}
+
+\begin{verify}{R1}{show ipv6 ospf interface brief}
+Interface    PID   Area            Intf ID    Cost  State Nbrs F/C
+Gi0/1        10    0               4          1     BDR   2/2
+Gi0/2        10    0               5          1     P2P   1/1
+Vl10         10    0               8          1     DR    0/0
+\end{verify}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{No router ID on an IPv6-only router.} The process will not start.
+        This is the single most common OSPFv3 fault.
+  \item \textbf{Looking for network statements.} There are none; enable the
+        interface.
+  \item \textbf{Forgetting \cmd{ipv6 unicast-routing}.} As ever. Interfaces come
+        up, OSPFv3 forms adjacencies, and nothing is forwarded.
+  \item \textbf{Expecting a global next hop in the routing table.} Link-local is
+        correct.
+  \item \textbf{Assuming OSPFv2 and OSPFv3 share anything at runtime.} They are
+        separate processes with separate databases and separate neighbours. A
+        working v2 adjacency tells you nothing about v3 on the same link.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[OSPFv3 configured on both routers; no neighbours at all.]
+\cmd{R1} and \cmd{R2} both have IPv6 addresses on the link, ping each other's
+link-local addresses successfully, and have identical-looking OSPFv3
+configuration. \cmd{show ipv6 ospf neighbor} is empty on both.
+
+\begin{verify}{R1}{show ipv6 ospf}
+%OSPFv3: Router process 10 is not running, please configure a router-id
+\end{verify}
+
+\textbf{Diagnosis.} Neither router has any IPv4 address anywhere --- this is an
+IPv6-only lab --- so neither could derive a 32-bit router ID, and the process
+never started. The interface commands were accepted and are sitting in the
+configuration doing nothing, which is why the configuration looks right.
+
+The tell is that \emph{both} ends are empty. A mismatch of area, timers or MTU
+usually leaves at least one side reporting something.
+
+\textbf{Fix.} Configure a router ID on each router explicitly:
+
+\begin{config}{starting the process}
+ipv6 router ospf 10
+ router-id 1.1.1.1
+\end{config}
+
+The process starts immediately and adjacencies form within a hello interval.
+Configure a distinct ID on \cmd{R2} --- duplicate router IDs are the next fault
+along, and they produce a flapping adjacency rather than none.
+\end{breakfix}
+
+\begin{lab}{Dual-stack routing, both protocols side by side}{Packet Tracer}
+\textbf{Topology.} The three-router topology from \chref{ospfv2}, now addressed for
+IPv4 and IPv6 simultaneously.
+
+\begin{tasks}
+  \item Keep the working OSPFv2 configuration. Add IPv6 addresses to every link
+        and LAN, and \cmd{ipv6 unicast-routing} everywhere.
+  \item Configure OSPFv3 with explicit router IDs matching the v2 ones. Enable it
+        per interface, LANs passive.
+  \item Confirm \cmd{show ipv6 ospf neighbor} reaches FULL on every link, and
+        that the DR and BDR are the same routers as for OSPFv2. Explain why they
+        need not have been.
+  \item Compare \cmd{show ip route ospf} with \cmd{show ipv6 route ospf}. Note
+        that v4 next hops are global and v6 next hops are link-local.
+  \item Remove the router ID from one router and clear the process. Reproduce the
+        ``process not running'' fault, then fix it.
+  \item Set one link to \cmd{ipv6 ospf network point-to-point} at one end only and
+        observe the result.
+  \item \textbf{Extension.} Shut a link and time how long each protocol takes to
+        reconverge. They should be comparable --- the algorithm is the same.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why does an IPv6-only router still need a router ID in IPv4 format, and
+        what happens if it cannot get one?
+  \item OSPFv2 works on a link and OSPFv3 does not. What does the working v2
+        adjacency prove about the v3 problem?
+  \item Where is OSPFv3 enabled, and what is advertised as a result?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item OSPFv3 is OSPF. The database, the algorithm, the states, the DR election
+        and the troubleshooting are unchanged.
+  \item It is enabled per interface with \cmd{ipv6 ospf <pid> area <n>}, and every
+        prefix on that interface is advertised. No network statements, no
+        wildcards.
+  \item Neighbours are reached by link-local address, so routes show a
+        \cmd{fe80::} next hop plus an interface. That is correct.
+  \item The router ID is still 32-bit IPv4 format and \textbf{must} be configured
+        on an IPv6-only router, or the process will not start.
+  \item v2 and v3 are independent processes. One working says nothing about the
+        other.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} How is OSPFv3 enabled on an interface?
+        (a)~\cmd{network} statement under the process
+        (b)~\cmd{ipv6 ospf 10 area 0} on the interface
+        (c)~automatically, on all IPv6 interfaces
+        (d)~\cmd{ipv6 router ospf 10} on the interface
+  \item \textbf{(MCQ)} Which multicast group do OSPFv3 routers use for hellos?
+        (a)~224.0.0.5 (b)~ff02::1 (c)~ff02::5 (d)~ff02::a
+  \item \textbf{(Short)} Explain why an OSPFv3 route's next hop is a link-local
+        address rather than a global one.
+  \item \textbf{(Short)} A router running only IPv6 reports that the OSPFv3
+        process is not running. State the cause and the fix.
+  \item \textbf{(Applied)} Write the OSPFv3 configuration for a dual-stack router
+        with one point-to-point uplink and two user VLANs, and explain which two
+        commands have no OSPFv2 equivalent and why.
+\end{reviewq}

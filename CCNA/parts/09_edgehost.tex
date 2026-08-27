@@ -106,6 +106,48 @@ phone, and the PC plugs into the back of the phone. Both need network access, an
 they should not be in the same VLAN --- voice needs its own subnet for quality
 and for security.
 
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.5cm, minimum height=1.0cm,
+               align=center, font=\tiny\bfseries},
+    w/.style={line width=0.9pt, neutral!65}}
+
+  \node[dv=dom2, minimum width=1.7cm] (sw) at (0,0) {\faIcon{sitemap}\\SW1};
+  \node[dv=dom5, minimum width=1.9cm] (ph) at (5.4,0) {\faIcon{phone-alt}\\IP phone};
+  \node[dv=neutral] (pc) at (10.2,0) {\faIcon{desktop}\\PC};
+
+  \draw[w, line width=1.6pt, dom2!55] (sw) -- (ph);
+  \draw[w] (ph) -- (pc);
+
+  \node[font=\tiny\bfseries, text=dom2!45!black, align=center] at (2.7,0.75)
+      {\emph{one} cable from the wall};
+
+  % The two flows. Labels sit ABOVE their arrows, not on top of them --- a
+  % label with a white background wide enough to cover a short arrow erases it.
+  \draw[-{Stealth[length=2mm]}, dom5!75, line width=0.9pt]
+      (0.95,-1.15) -- (4.45,-1.15);
+  \node[font=\tiny\bfseries, text=dom5!45!black, anchor=south] at (2.7,-1.05)
+      {voice --- \textbf{tagged} VLAN 150};
+
+  \draw[-{Stealth[length=2mm]}, neutral!70, line width=0.9pt]
+      (0.95,-2.0) -- (9.45,-2.0);
+  \node[font=\tiny\bfseries, text=neutral!55!black, anchor=south] at (5.2,-1.9)
+      {data --- \textbf{untagged} VLAN 10, straight through the phone};
+
+  \node[font=\tiny, text=dom2!45!black, align=center, text width=5.6cm,
+        anchor=north] at (2.7,-2.35)
+      {the switch tells the phone which VLAN to tag,\\over CDP or LLDP-MED};
+
+  \node[draw=dom4!55, fill=dom4!5, rounded corners=3pt, line width=0.8pt,
+        font=\tiny, align=center, text width=3.5cm, inner sep=4pt,
+        text=dom4!40!black, anchor=north] at (10.4,-0.8)
+      {\textbf{still an access port}\\--- not a trunk};
+\end{tikzpicture}}%
+{One cable, two VLANs, and no trunk. The phone tags its own traffic and passes
+the PC's through untouched.}{voiceport}
+
 \begin{conceptbox}[How one access port carries two VLANs]
 The port is configured with a \term{data VLAN} and a \term{voice VLAN}. The
 switch tells the phone, over CDP or LLDP-MED, which VLAN ID to tag its own

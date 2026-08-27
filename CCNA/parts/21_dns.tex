@@ -1,4 +1,459 @@
 \chapter{DNS, and Diagnosing Records}\label{ch:dns}
 \bp{4.4}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Trace} a name resolution from a stub resolver to an authoritative
+        server, and say which step a given failure is stuck at.
+  \item \textbf{Identify} the six record types the blueprint names --- A, AAAA,
+        CNAME, MX, NS and PTR --- and state what each is for.
+  \item \textbf{Use} \cmd{nslookup} and \cmd{dig} to query a specific record type
+        against a specific server.
+  \item \textbf{Diagnose} the three failure classes the topic names: a host
+        unreachable by name, a web application that half works, and mail that is
+        rejected.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{transport} for UDP, TCP and ports. \chref{dhcp} --- the DNS server address
+usually arrives in a lease, so a DNS fault is sometimes a DHCP option fault.
+\chref{ipv6} for what an AAAA record contains.
+\end{prereq}
+
+\begin{keyterms}
+resolver $\bullet$ recursion $\bullet$ authoritative $\bullet$ TTL $\bullet$
+zone $\bullet$ A $\bullet$ AAAA $\bullet$ CNAME $\bullet$ MX $\bullet$ NS
+$\bullet$ PTR $\bullet$ \cmd{NXDOMAIN} $\bullet$ \cmd{SERVFAIL}
+\end{keyterms}
+
+\begin{examnote}[Read the topic wording carefully]
+Topic~\tp{4.4} is \emph{diagnose issues with DNS records (A, AAAA, CNAME, MX, NS,
+and PTR) to support host, web application, and mail server access by name}.
+
+Three things follow. The verb is \emph{diagnose}, so you will be given a
+resolution that is wrong and asked why. The record types are enumerated, so those
+six and no others are examinable --- there is no SOA, SRV or TXT question waiting
+for you. And the three purposes are enumerated too, which is a strong hint that
+questions will be framed as ``the website works but mail bounces'' rather than as
+``define a CNAME''.
+
+You are not asked to configure a DNS server. You are asked to read one.
+\end{examnote}
+
+\section{How a name becomes an address}
+
+\begin{definitionbox}[DNS]
+A distributed, hierarchical database mapping names to records. Queries normally
+travel over UDP port~53; responses too large for a datagram, and zone transfers
+between servers, use TCP port~53.
+\end{definitionbox}
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    bx/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, text width=2.5cm, align=center,
+               minimum height=1.15cm, font=\scriptsize\bfseries},
+    q/.style={-{Stealth[length=2.2mm]}, line width=0.9pt, dom4!75},
+    a/.style={-{Stealth[length=2.2mm]}, line width=0.9pt, dom1!70,
+              dash pattern=on 2.5pt off 2pt}}
+
+  \node[bx=neutral] (h)  at (0,0)     {\faIcon{desktop}\\[1pt]Host\\
+      \footnotesize\mdseries stub resolver};
+  \node[bx=dom1]    (rec) at (4.0,0)  {\faIcon{server}\\[1pt]Recursive\\
+      \footnotesize\mdseries resolver, caches};
+  \node[bx=dom4]    (rt)  at (8.6,1.5){\faIcon{globe}\\[1pt]Root\\
+      \footnotesize\mdseries ``ask .edu''};
+  \node[bx=dom4]    (tld) at (8.6,0)  {\faIcon{globe}\\[1pt]TLD .edu\\
+      \footnotesize\mdseries ``ask them''};
+  \node[bx=dom4]    (au)  at (8.6,-1.5){\faIcon{database}\\[1pt]Authoritative\\
+      \footnotesize\mdseries holds the zone};
+
+  \draw[q] (h) -- node[font=\tiny, above, midway, text=dom4!45!black]
+      {1. recursive query} (rec);
+  \draw[q] (rec) -- node[font=\tiny, above=1pt, pos=0.6] {2} (rt);
+  \draw[q] (rec) -- node[font=\tiny, above=1pt, pos=0.6] {3} (tld);
+  \draw[q] (rec) -- node[font=\tiny, above=1pt, pos=0.6] {4} (au);
+  \draw[a] (rec) to[bend right=22]
+      node[font=\tiny, below, midway, text=dom1!45!black]
+      {5. answer, with a TTL} (h);
+\end{tikzpicture}}%
+{Only step~1 is recursive. The host asks one question and waits; the resolver
+does the walking and caches what it learns for the TTL.}{dnsflow}
+
+\begin{conceptbox}[The stub resolver explains most ``it works for me'' arguments]
+Your host is not doing the work in that figure. It sends one query to whichever
+resolver DHCP gave it and waits for a complete answer. Everything downstream ---
+which root it used, whether the TLD was slow, whether a cached record is
+stale --- is invisible to the host and different for every resolver.
+
+So when one user cannot reach a site and another can, the first question is not
+``what is wrong with the site'' but \textbf{``are they using the same
+resolver?''}. \cmd{ipconfig /all} or \cmd{resolvectl status} answers it in one
+line, and the answer resolves the argument more often than not.
+\end{conceptbox}
+
+\subsection{TTL, and why a fix appears not to work}
+
+Every record carries a \term{time to live} in seconds. A resolver that answers
+from cache serves the record until the TTL expires, and it does not re-check
+early because somebody in another organisation changed something.
+
+This is the source of the single most common DNS complaint: ``we fixed the record
+an hour ago and it is still wrong.'' If the old record had a 24-hour TTL, it is
+still wrong for up to 24 more hours, for anyone whose resolver cached it. There
+is no remote command to flush somebody else's cache.
+
+\begin{alertbox}[The practical consequence]
+Lower the TTL \emph{before} a planned change, not after. Drop it to 300 seconds a
+day ahead, make the change, verify, then raise it again. Doing this in the right
+order is the difference between a five-minute cutover and a day of intermittent
+failure --- and ``why did the change take so long to appear'' is a fair short-answer
+exam question.
+\end{alertbox}
+
+\section{The six record types}
+
+\begin{longtable}{@{}L{1.5cm}L{4.3cm}L{4.3cm}L{4.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Type} & \textbf{Maps} & \textbf{Example} & \textbf{Failure it causes when wrong} \\
+\midrule
+\endhead
+A & Name $\rightarrow$ IPv4 address &
+\cmd{www} $\rightarrow$ \cmd{203.0.113.10} &
+Name does not resolve at all, or resolves to a dead host \\
+\rowcolor{lightbg}
+AAAA & Name $\rightarrow$ IPv6 address &
+\cmd{www} $\rightarrow$ \cmd{2001:db8::10} &
+Slow or failing access from dual-stack clients only \\
+CNAME & Name $\rightarrow$ another \emph{name} &
+\cmd{shop} $\rightarrow$ \cmd{www} &
+Loops, or a name that cannot also hold other records \\
+\rowcolor{lightbg}
+MX & Domain $\rightarrow$ mail exchanger, with a preference number &
+\cmd{example.edu} $\rightarrow$ \cmd{10 mail1} &
+Inbound mail is not delivered or goes to the wrong host \\
+NS & Zone $\rightarrow$ the servers authoritative for it &
+\cmd{example.edu} $\rightarrow$ \cmd{ns1} &
+The whole zone becomes unresolvable --- the widest fault here \\
+\rowcolor{lightbg}
+PTR & IP address $\rightarrow$ name (reverse) &
+\cmd{10.113.0.203.\allowbreak in-addr.arpa} $\rightarrow$ \cmd{mail1} &
+Outbound mail rejected or scored as spam; logs show IPs \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Reverse lookups are a separate tree, not a mirror]
+A PTR record does not live in your forward zone. It lives in \cmd{in-addr.arpa}
+for IPv4 (or \cmd{ip6.arpa} for IPv6), with the octets reversed, and it is
+delegated to \emph{whoever owns the address block} --- normally your ISP or
+cloud provider, not you.
+
+That is why forward and reverse so often disagree. Adding an A record for a new
+mail server takes you thirty seconds; adding the matching PTR may require a
+support ticket to somebody else. The exam likes this asymmetry because it
+explains a real failure: mail that leaves cleanly and is rejected at the far end.
+\end{conceptbox}
+
+\section{Querying: the two tools}
+
+\begin{hostcmd}{Windows}{nslookup -type=MX example.edu 8.8.8.8}
+Server:  dns.google
+Address:  8.8.8.8
+
+Non-authoritative answer:
+example.edu     MX preference = 10, mail exchanger = mail1.example.edu
+example.edu     MX preference = 20, mail exchanger = mail2.example.edu
+
+mail1.example.edu       internet address = 203.0.113.25
+mail2.example.edu       internet address = 203.0.113.26
+\end{hostcmd}
+
+Three things in that command line, and all three matter when diagnosing.
+
+\begin{tight}
+  \item \cmd{-type=MX} asks for one record type. Without it you get A records and
+        would wrongly conclude the MX records are missing.
+  \item \cmd{8.8.8.8} at the end queries \emph{that} server, bypassing the host's
+        configured resolver. This is how you prove whether a fault is local
+        caching or genuinely upstream.
+  \item \cmd{Non-authoritative answer} means it came from a cache. An
+        authoritative answer comes only from a server that holds the zone.
+\end{tight}
+
+\begin{hostcmd}{Linux or macOS}{dig +noall +answer www.example.edu A}
+www.example.edu.      3600    IN    CNAME   web-lb.example.edu.
+web-lb.example.edu.   300     IN    A       203.0.113.10
+\end{hostcmd}
+
+That two-line answer is worth studying. It shows a CNAME being followed: the name
+asked for is an alias, the alias points at another name, and the resolver
+returned both the alias and the address it eventually reached. The numbers 3600
+and 300 are the two TTLs, and they are independent --- the alias is cached for an
+hour, the address behind it for five minutes.
+
+\begin{examnote}[Read the status line first]
+When \cmd{dig} is run without \cmd{+noall +answer}, the header carries a status,
+and it narrows the fault immediately:
+
+\begin{tight}
+  \item \cmd{NOERROR} with an empty answer section --- the name exists, but not
+        with that record type. Very often the real answer in an exam question.
+  \item \cmd{NXDOMAIN} --- the name does not exist. A typo, or a record never
+        created.
+  \item \cmd{SERVFAIL} --- the resolver could not complete. Broken delegation,
+        an unreachable authoritative server, or a validation failure.
+  \item \cmd{REFUSED} --- the server will not answer you. Usually an access
+        control, not a record problem.
+\end{tight}
+
+\cmd{NOERROR}-with-no-answer and \cmd{NXDOMAIN} look identical to a user and mean
+completely different things to you.
+\end{examnote}
+
+\section{DNS on IOS itself}
+
+A router resolving names is a convenience for you, not a service for users, but
+it appears in labs and it has one famous side effect.
+
+\begin{config}{name resolution on a router}
+ip domain lookup
+ip name-server 192.168.20.10 192.168.20.11
+ip domain name campus.example.edu
+!
+! A local override, no server needed. Useful in a lab and useful when
+! you want a name to resolve even if DNS is the thing that is broken.
+ip host CORE1 10.0.0.1
+\end{config}
+
+\begin{alertbox}[The mistyped-command hang]
+Type a command wrong in EXEC mode --- \cmd{shwo ip route} --- and IOS assumes you
+meant to telnet to a host called \cmd{shwo}. With \cmd{ip domain lookup} enabled
+and no reachable server, the CLI freezes for tens of seconds on every typo.
+
+On a lab device the fix is \cmd{no ip domain lookup}. On a production device,
+where you may want resolution, use \cmd{line con 0} then
+\cmd{transport preferred none}, which stops the CLI from treating unknown words
+as hostnames without disabling DNS.
+\end{alertbox}
+
+\section{Diagnosing the three named failures}
+
+The blueprint names three purposes. Take them one at a time, because each has a
+characteristic record behind it.
+
+\subsection{Host access by name}
+
+\begin{tight}
+  \item \cmd{ping <name>} fails, \cmd{ping <address>} works $\rightarrow$ it is
+        DNS, not the network. This one test separates the two and should always
+        be first.
+  \item Both fail $\rightarrow$ it is not DNS. Stop here and go to
+        \chref{clienttshoot}.
+  \item Name resolves to an address, but the \emph{wrong} one $\rightarrow$ a
+        stale cache or a stale A record. Query an authoritative server directly
+        and compare.
+\end{tight}
+
+\subsection{Web application access}
+
+The characteristic web fault is \emph{partial}: the site loads for some people,
+or loads slowly, or works on one machine and not another. Two causes account for
+most of it.
+
+\begin{tight}
+  \item \textbf{An AAAA record pointing somewhere that does not answer.} A
+        dual-stack client prefers IPv6, tries the AAAA address, waits for a
+        timeout, and only then falls back to IPv4. The site works --- after a
+        painful delay --- for v6-capable clients and instantly for everyone else.
+        A missing AAAA is harmless; a \emph{wrong} AAAA is much worse than none.
+  \item \textbf{A CNAME where there should not be one.} A name that is a CNAME
+        cannot hold any other record. Putting a CNAME at a zone apex therefore
+        conflicts with the zone's own NS records, and resolvers behave
+        inconsistently. \cmd{www} may safely be a CNAME; the bare domain may not.
+\end{tight}
+
+\subsection{Mail server access}
+
+Mail exercises three of the six record types at once, and the exam knows it.
+
+\begin{tight}
+  \item \textbf{Inbound fails} $\rightarrow$ look at MX. Does it exist? Does the
+        name it gives have an A record? An MX pointing at a name with no address
+        is a common and completely silent fault.
+  \item \textbf{Outbound is rejected by the recipient} $\rightarrow$ look at PTR.
+        Receiving servers routinely check that the connecting IP reverse-resolves
+        to a name, and that the name forward-resolves back to the same IP. If
+        either half is missing, mail is rejected or scored as spam.
+  \item \textbf{Nothing about the domain resolves} $\rightarrow$ look at NS. A
+        delegation problem takes out MX, A and everything else simultaneously,
+        which is how you tell it apart from a record-level fault.
+\end{tight}
+
+\begin{alertbox}[MX must point at a name with an A record, never at a CNAME]
+Two rules, both examinable. The value of an MX record must be a hostname, not an
+IP address. And that hostname must resolve by A or AAAA directly --- pointing an
+MX at a CNAME is prohibited by the standards and rejected by some mail servers
+and tolerated by others, which produces the worst kind of fault: mail from
+\emph{some} senders is delivered and from others is not.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Querying without \cmd{-type=}.} You get A records, see them, and
+        wrongly declare the MX or NS records missing.
+  \item \textbf{Not naming a server in the query.} You test your own cache
+        instead of the truth. Always query the authoritative server too.
+  \item \textbf{Treating \cmd{NXDOMAIN} and empty-\cmd{NOERROR} as the same.} One
+        means the name is absent; the other means the \emph{record type} is.
+  \item \textbf{Forgetting TTL.} A correct fix looks like a failed fix for as long
+        as the old TTL.
+  \item \textbf{Assuming reverse DNS is yours to fix.} PTR usually lives with
+        whoever owns the address block.
+  \item \textbf{Blaming DNS for a routing fault.} If \cmd{ping} by address also
+        fails, DNS is not involved.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[The website works. Mail to the domain bounces with ``no route to host''.]
+\cmd{example.edu} loads correctly in a browser from everywhere. Mail sent to
+\cmd{staff@example.edu} from outside is returned by the sender's server. Mail
+\emph{between} internal users is fine. The mail server itself is up, is listening
+on port~25, and can be reached by IP address from outside.
+
+\begin{hostcmd}{Linux}{dig +noall +answer example.edu MX}
+example.edu.        3600    IN    MX    10 mail.example.edu.
+\end{hostcmd}
+
+\begin{hostcmd}{Linux}{dig +noall +answer mail.example.edu A}
+\end{hostcmd}
+
+\textbf{Diagnosis.} The MX record exists and is syntactically fine. The name it
+points at, \cmd{mail.example.edu}, has no A record --- the answer section is
+empty. A sending server looks up the MX, gets a name, tries to resolve that name
+to an address, gets nothing, and has nowhere to connect to.
+
+Everything else being healthy is what makes this hard to spot. The web works
+because \cmd{www} has its own A record. Internal mail works because internal
+clients are configured with the server's address directly and never consult the
+MX. Only \emph{external inbound} mail follows the full MX-then-A path, so only
+external inbound mail fails.
+
+The tell is the shape of the failure: one direction, one protocol, one class of
+sender. Faults that broad in effect but that narrow in scope are almost always in
+a record that only one code path reads.
+
+\textbf{Fix.} Add the missing A record for \cmd{mail.example.edu} pointing at the
+server's public address, then re-query to confirm. Two further checks before
+closing it:
+
+\begin{tight}
+  \item Confirm the PTR for that address resolves back to
+        \cmd{mail.example.edu}, or outbound mail will be the next ticket.
+  \item Confirm the MX value is not itself a CNAME.
+\end{tight}
+
+\textbf{And expect a delay.} The negative answer has been cached by every
+resolver that tried, for the zone's negative-caching TTL. Mail will resume as
+those expire, not the moment you save the record.
+\end{breakfix}
+
+\begin{lab}{Diagnosing a zone you did not build}{CML or GNS3, with a BIND or Windows DNS server}
+\textbf{Platform note.} Packet Tracer's DNS server holds only A and CNAME records
+and cannot express MX, NS or PTR, so it cannot support this lab. Use a real
+resolver in CML or GNS3, or run BIND in a container alongside a virtual network.
+
+\textbf{Topology.} One router with \cmd{ip name-server} configured, one DNS
+server holding \cmd{example.edu}, and two clients --- one dual-stack, one IPv4
+only.
+
+\begin{tasks}
+  \item Load the zone supplied with this lab. Do not read the zone file yet;
+        diagnose from the client side first, as you would in practice.
+  \item For each of the six record types, run a query that returns it, using
+        \cmd{nslookup} on one client and \cmd{dig} on the other. Record the exact
+        command in each case.
+  \item Find every fault in the zone using queries alone. There are four. Write a
+        one-line diagnosis for each \emph{before} opening the zone file.
+  \item Open the zone file and check your diagnoses. Note any fault you missed
+        and what query would have found it.
+  \item \textbf{Break 1.} Point \cmd{www} at a CNAME chain three deep, with the
+        last entry pointing back at the first. Query it and describe the result.
+  \item \textbf{Break 2.} Add an AAAA record for \cmd{www} pointing at an
+        unreachable IPv6 address. Browse from the dual-stack client and from the
+        IPv4-only client. Time both. Explain the difference to somebody who has
+        not read this chapter.
+  \item \textbf{Break 3.} Set the A record TTL to 3600, change the address, and
+        observe how long the old value survives on a client that had already
+        queried it. Then repeat with a TTL of 60.
+  \item \textbf{Extension.} Disable \cmd{ip domain lookup} on the router, mistype
+        a command, and compare the behaviour with it enabled and no reachable
+        server.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item \cmd{ping www.example.edu} fails and \cmd{ping 203.0.113.10} succeeds.
+        What has this proved, and what is the next command you run?
+  \item What is the difference between \cmd{NXDOMAIN} and \cmd{NOERROR} with an
+        empty answer section?
+  \item Why can a name that is a CNAME not also hold an MX record?
+  \item A site is slow for some users and instant for others. Which record type
+        would you check first, and why does it affect only some clients?
+  \item Whose responsibility is a PTR record for your public address, and what
+        breaks when it is missing?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A host runs a stub resolver: one query, one answer. All the recursion
+        happens at the resolver, which caches for the TTL.
+  \item Six examinable types: A and AAAA give addresses, CNAME gives another
+        name, MX gives a mail exchanger with a preference, NS delegates a zone,
+        PTR reverses an address into a name.
+  \item Query a \emph{type} and a \emph{server} explicitly, or you are testing
+        neither the record you meant nor the source you meant.
+  \item \cmd{NXDOMAIN} is a missing name; empty \cmd{NOERROR} is a missing record
+        type; \cmd{SERVFAIL} is usually a broken delegation.
+  \item Host fault: does it ping by address? Web fault: suspect AAAA or an
+        apex CNAME. Mail fault: MX inbound, PTR outbound, NS if everything is
+        gone.
+  \item MX must name a host that has an A record, and must not name a CNAME.
+  \item TTL means a correct fix takes time to become visible. Lower it before a
+        change, not after.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Outbound mail from your server is being rejected as spam by
+        several recipients. Which record is the first to check?
+        \begin{tight}
+          \item[(a)] MX \quad (b)~A \quad (c)~PTR \quad (d)~NS
+        \end{tight}
+  \item \textbf{(MCQ)} \cmd{dig} returns status \cmd{NOERROR} with an empty answer
+        section. What does this mean?
+        \begin{tight}
+          \item[(a)] The name does not exist
+          \item[(b)] The name exists but has no record of the type requested
+          \item[(c)] The resolver could not reach an authoritative server
+          \item[(d)] The server refused the query
+        \end{tight}
+  \item \textbf{(Short)} Explain why an MX record must not point at a CNAME, and
+        describe the symptom when one does.
+  \item \textbf{(Short)} A record was corrected an hour ago and users still reach
+        the old address. Explain why, and state what should have been done the day
+        before.
+  \item \textbf{(Applied)} A domain's website, mail and every subdomain all stop
+        resolving at once, while the servers themselves are up and reachable by
+        address. Name the record type at fault, justify the choice from the scope
+        of the outage, and give the query that would confirm it.
+  \item \textbf{(Applied)} Write the \cmd{nslookup} and the \cmd{dig} command that
+        each ask an authoritative server at \cmd{192.0.2.53} for the NS records of
+        \cmd{example.edu}, and explain what specifying the server proves that
+        omitting it would not.
+\end{reviewq}

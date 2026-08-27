@@ -50,6 +50,17 @@ When you meet a new protocol, ask which of the four it is answering. It will be
 one of them.
 \end{conceptbox}
 
+\begin{definitionbox}[Protocol]
+An agreed set of rules for a conversation: what may be said, in what order, in
+what format, and what to do when the expected reply does not arrive.
+
+Two people who both know to say ``hello'', wait, then speak, have a protocol.
+Two computers need theirs written down to the bit, because neither can improvise.
+Almost every capitalised acronym in this book --- ARP, DHCP, OSPF, HSRP --- is one
+such agreement, and each exists because somebody had one of the four problems
+above.
+\end{definitionbox}
+
 \section{Layers, and why they survive}
 
 A network stack is split into layers so that each layer can be changed without
@@ -212,6 +223,57 @@ all twenty-nine topics to the chapters that cover them.
         interfaces.
 \end{tight}
 \end{pitfall}
+
+\begin{breakfix}[Three reports, three different layers, and no commands yet.]
+You have not configured anything and cannot yet read a \cmd{show} command. That is
+deliberate: this first Break \& Fix is about \emph{placing} a fault, not fixing
+one, because deciding which layer to investigate is the decision that all the
+later chapters depend on.
+
+Three reports arrive within an hour.
+
+\begin{tight}
+  \item[\textbf{A.}] ``The whole of the second floor is offline.'' Nobody there can
+        reach anything, including each other.
+  \item[\textbf{B.}] ``I can get to the file server but not the intranet site.''
+        This user's colleague, at the next desk, has no trouble with either.
+  \item[\textbf{C.}] ``Everything is slow this afternoon.'' It was fine this
+        morning. Several people on different floors agree.
+\end{tight}
+
+\textbf{Place each one before reading on.} Which layer would you start at, and
+what single question would you ask first?
+
+\medskip
+\textbf{A --- start at layers 1 and 2.} A whole floor failing together, including
+traffic \emph{between} hosts on that floor, means the fault is common to all of
+them and below the network layer --- an uplink, a switch, or power. Nothing about
+this is an addressing or routing problem, because hosts on the same segment do not
+need routing to reach each other. First question: does anything on that floor
+reach anything else on that floor?
+
+\textbf{B --- start at layer 7, then 3.} One user, one service, while a neighbour
+on the same segment is fine. That rules out the cable, the switch and the VLAN
+immediately --- they are shared, and they are working. Suspect name resolution or
+the client's own configuration. First question: does the intranet site work for
+them \emph{by IP address}? That one test splits ``name resolution'' from
+``everything else'' (\chref{dns}).
+
+\textbf{C --- do not start anywhere yet.} ``Slow'' is not a fault report, it is a
+feeling, and it is the one report that most often wastes an afternoon. It could be
+a duplex mismatch (layer 1), a loop (layer 2), a saturated uplink, or a slow server
+that has nothing to do with the network. First question: slow doing \emph{what},
+from \emph{where}, compared with \emph{when}? Get one measurable, repeatable case
+before touching anything.
+
+\medskip
+\textbf{The point.} Reports A and B contain enough information to place the fault
+within a layer or two before you log in to anything. Report C does not, and the
+correct first action is to go and get that information rather than to start
+guessing. \chref{tshootmethod} builds this into a method; for now, notice that the
+useful question was different in all three cases, and that in none of them was it
+``what was broken last time''.
+\end{breakfix}
 
 \begin{checkpoint}
 \begin{tightnum}

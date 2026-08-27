@@ -48,6 +48,52 @@ The network does not degrade gracefully; it stops, usually within seconds. This
 is why spanning tree exists and why it is on by default.
 \end{conceptbox}
 
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.4cm, minimum height=0.95cm,
+               align=center, font=\tiny\bfseries},
+    w/.style={line width=1pt, neutral!70},
+    hdr/.style={font=\scriptsize\bfseries, text=neutral!45!black}}
+
+  %======== left: the loop
+  \node[hdr] at (2.5,2.95) {Without spanning tree};
+  \node[dv=dom2] (a1) at (2.5,2.05) {\faIcon{sitemap}\\SW1};
+  \node[dv=dom2] (b1) at (1.1,0.25) {\faIcon{sitemap}\\SW2};
+  \node[dv=dom2] (c1) at (3.9,0.25) {\faIcon{sitemap}\\SW3};
+  \draw[w] (a1) -- (b1);  \draw[w] (a1) -- (c1);  \draw[w] (b1) -- (c1);
+
+  % Sits inside the triangle, clear of all three switch boxes.
+  \draw[-{Stealth[length=2.6mm]}, accent!85, line width=1.6pt]
+      (2.5,0.95) circle (0.46);
+  \node[font=\tiny\bfseries, text=accent!75!black, align=center] at (2.5,-0.95)
+      {one broadcast circulates\\for ever};
+
+  %======== right: the tree
+  \node[hdr] at (10.5,2.95) {With spanning tree};
+  \node[dv=dom2] (a2) at (10.5,2.05) {\faIcon{sitemap}\\SW1};
+  \node[font=\tiny\bfseries, text=dom2!50!black] at (10.5,3.0) {};
+  \node[dv=dom2] (b2) at (9.1,0.25) {\faIcon{sitemap}\\SW2};
+  \node[dv=dom2] (c2) at (11.9,0.25) {\faIcon{sitemap}\\SW3};
+  \draw[w] (a2) -- (b2);  \draw[w] (a2) -- (c2);
+  \draw[w, accent!70, dash pattern=on 3pt off 2.5pt] (b2) -- (c2);
+
+  \node[circle, draw=accent!85, fill=white, line width=1.1pt,
+        inner sep=1.2pt, font=\tiny\bfseries, text=accent!75!black]
+      at (10.5,0.25) {BLK};
+  \node[font=\tiny\bfseries, text=dom2!45!black, anchor=west] at (11.3,2.05)
+      {ROOT};
+  \node[font=\tiny, text=neutral!85!black, align=center] at (10.5,-0.95)
+      {one port blocks, so there is\\exactly one path between any two};
+
+  \node[font=\scriptsize\bfseries, text=neutral!45!black] at (6.5,1.2)
+      {$\Longrightarrow$};
+\end{tikzpicture}}%
+{Spanning tree does not remove the cable. It blocks one port, so the physical
+redundancy is still there and can be brought back automatically when a link
+fails.}{stploop}
+
 \section{How the tree is chosen}
 
 \begin{definitionbox}[Bridge ID and root election]
@@ -59,6 +105,37 @@ Default priority is 32768. Because the extended system ID adds the VLAN number,
 the effective priority in VLAN 10 is $32768+10=32778$. Priorities are configured
 in steps of 4096.
 \end{definitionbox}
+
+\begin{worked}[Which of these three is the root, in VLAN 10?]
+Three switches, all left at defaults:
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\cmd{SW1} & priority 32768 & MAC \cmd{0011.2233.0100} \\
+\cmd{SW2} & priority 32768 & MAC \cmd{0011.2233.0050} \\
+\cmd{SW3} & priority 32768 & MAC \cmd{0011.2233.0200} \\
+\end{tabular}
+\end{center}
+
+\textbf{Step 1 --- compare priority.} All three are 32768, and all three are in
+VLAN 10, so all three have the same effective priority of $32768+10 = 32778$.
+No winner yet.
+
+\textbf{Step 2 --- the tie-break is the MAC address, and lowest wins.} Compare
+them left to right, as you would compare words alphabetically. The first eight
+digits are identical, so the decision comes down to the last four:
+\cmd{0100}, \cmd{0050}, \cmd{0200}.
+
+In hex, \cmd{0050} is the smallest of the three (\chref{ethernet} if the hex is
+not yet automatic --- \cmd{0050} is 80 in decimal, \cmd{0100} is 256).
+
+\textbf{\cmd{SW2} is the root bridge.}
+
+\medskip
+Now notice what just happened: \textbf{nobody chose this}. The winner is
+whichever switch happens to have the lowest MAC address, which correlates with
+nothing except manufacturing date. That is the point of the alert below.
+\end{worked}
 
 \begin{alertbox}[Left alone, the oldest switch wins]
 If every switch keeps the default priority, the election is decided by the lowest

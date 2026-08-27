@@ -1,4 +1,460 @@
 \chapter{A Troubleshooting Method for the 28 Per Cent}\label{ch:tshootmethod}
 \bp{2.4}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Apply} a seven-step cycle to any fault, rather than guessing in a
+        familiar order.
+  \item \textbf{Choose} between the five structured methods and justify the
+        choice from the symptom.
+  \item \textbf{Scope} a fault before touching anything, using four questions
+        that routinely halve the search.
+  \item \textbf{Work} evidence-first: record before you change, change one thing,
+        and undo what did not help.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+Everything. This chapter is the method that the rest of the book supplies the
+knowledge for. \chref{transport} for the diagnostic tools and \chref{tshootl2}
+for layer 2 in particular; the symptom index in Section~\ref{sec:symptomindex} points at all the
+others.
+\end{prereq}
+
+\begin{keyterms}
+scoping $\bullet$ top-down $\bullet$ bottom-up $\bullet$ divide and conquer
+$\bullet$ follow the path $\bullet$ compare working to broken $\bullet$
+hypothesis $\bullet$ blast radius $\bullet$ handover
+\end{keyterms}
+
+\begin{examnote}[What topic 2.4 actually says]
+\emph{Troubleshoot basic Layer 2/Layer 3 connectivity and device operations using
+show commands (including show logs), ping, extended ping, trace route, and packet
+capture output.}
+
+Every tool in that list has already been taught --- \chref{transport} for ping,
+extended ping, traceroute and reading captures; \chref{management} for
+\cmd{show logging}; \chref{tshootl2} for layer 2. This chapter deliberately does
+not repeat them.
+
+What it adds is the thing the tools cannot supply: \textbf{an order to use them
+in}. Eight of the twenty-nine topics begin \emph{Troubleshoot} or
+\emph{Diagnose}, which is 28\% of the blueprint, and in every one of them the
+examiner already knows you can type \cmd{show ip interface brief}. What is being
+tested is whether you can decide to.
+\end{examnote}
+
+\section{Why method beats knowledge under pressure}
+
+Two engineers with identical knowledge produce very different results on a fault
+neither has seen. The difference is almost never what they know; it is whether
+they have an order to work in when the obvious answer turns out to be wrong.
+
+An unstructured approach checks the thing that was broken last time, then the
+thing the person before you suggested, then something at random. It works
+quickly when the fault is familiar and collapses when it is not --- and the exam,
+like a bad morning, specialises in faults that are not.
+
+\begin{alertbox}[The failure mode to design against]
+The characteristic mistake is \textbf{finding a fault and stopping}. There is a
+misconfiguration on the path, you fix it, and the symptom persists --- because it
+was not \emph{the} fault, or not the only one.
+
+A method protects against this by making you state what you expect the fix to do
+\emph{before} you apply it. If the prediction fails, you have learned something;
+if you had no prediction, you have only changed something.
+\end{alertbox}
+
+\section{The cycle}
+
+\ccnafigh{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    st/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, text width=2.55cm, align=center,
+               minimum height=1.35cm, font=\tiny\bfseries},
+    a/.style={-{Stealth[length=2.2mm]}, line width=0.9pt, neutral!70}}
+
+  \node[st=dom1] (s1) at (0,0)     {1. DEFINE\\[2pt]\mdseries what exactly is
+      broken, for whom};
+  \node[st=dom1] (s2) at (3.35,0)  {2. GATHER\\[2pt]\mdseries scope it before
+      touching anything};
+  \node[st=dom1] (s3) at (6.7,0)   {3. ANALYSE\\[2pt]\mdseries which layers can
+      this be};
+  \node[st=dom1] (s4) at (10.05,0) {4. ELIMINATE\\[2pt]\mdseries rule out whole
+      areas at once};
+  \node[st=dom4] (s5) at (13.4,0)  {5. HYPOTHESISE\\[2pt]\mdseries one cause,
+      and a prediction};
+
+  \node[st=dom4] (s6) at (10.05,-2.3) {6. TEST\\[2pt]\mdseries change one thing,
+      check the prediction};
+  \node[st=dom2] (s7) at (13.4,-2.3)  {7. SOLVE\\[2pt]\mdseries fix, verify,
+      \textbf{document}};
+
+  \draw[a] (s1) -- (s2);  \draw[a] (s2) -- (s3);
+  \draw[a] (s3) -- (s4);  \draw[a] (s4) -- (s5);
+  \draw[a] (s5) -- (s6);
+  \draw[a] (s6) -- (s7);
+
+  \draw[a, dom4!70] (s6) to[bend left=30]
+      node[font=\tiny, text=dom4!45!black, midway, left=2pt, align=right]
+      {prediction\\failed} (s5);
+\end{tikzpicture}}%
+{The loop is between 5 and 6, and it is the point. A hypothesis that does not
+predict correctly is discarded, not patched.}{tscycle}
+
+\begin{conceptbox}[Step 5 is where amateurs and professionals separate]
+``I think it is the trunk allowed list'' is not a hypothesis. \textbf{``I think
+VLAN 30 is missing from the allowed list on the uplink, in which case
+\cmd{show interfaces trunk} will not list it, and VLANs 10 and 20 will be
+unaffected''} is one --- because it can be wrong, and you will know immediately.
+
+Say what you expect to see before you run the command. It takes three seconds and
+it converts every check into information whichever way it goes.
+\end{conceptbox}
+
+\section{Five structured methods}
+
+\begin{longtable}{@{}L{3.2cm}L{5.4cm}L{6.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Method} & \textbf{How it works} & \textbf{Use it when} \\
+\midrule
+\endhead
+\textbf{Bottom-up} &
+Start at layer 1 and work up. Cable, link light, duplex, VLAN, address, route &
+You suspect hardware or physical change; a new install; nothing works at all \\
+\rowcolor{lightbg}
+\textbf{Top-down} &
+Start at the application and work down &
+Most of the network is fine and one application is not. Avoids inspecting a
+switch for a DNS fault \\
+\textbf{Divide and conquer} &
+Start in the middle --- usually layer 3. Ping the gateway; if it works, layers
+1--3 are fine &
+You have no strong prior. \textbf{This is the default}, and the fastest on
+average \\
+\rowcolor{lightbg}
+\textbf{Follow the path} &
+Trace the actual route the traffic takes, device by device, checking each hop &
+Connectivity fails between two specific points and works elsewhere \\
+\textbf{Compare working to broken} &
+Diff a failing device or port against an identical working one &
+Some members of an identical set work. Frequently the fastest of all \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Compare-to-working is under-used and enormously effective]
+Twenty-four ports configured the same way, one of them broken. Do not reason
+about it --- \cmd{show running-config interface} on both and read the difference.
+
+The same applies to a device: if three hypervisor hosts work and the fourth does
+not (\chref{virtualisation}), the fault is in what is \emph{not} identical, and
+that is a much smaller search space than ``what could be wrong with a hypervisor
+uplink''.
+
+Whenever a working comparison exists, use it first. It converts an open-ended
+diagnosis into a diff.
+\end{alertbox}
+
+\section{Scope before you touch}
+
+Four questions, asked before any command, routinely eliminate most of the
+possible causes.
+
+\begin{longtable}{@{}L{4.5cm}L{10.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Question} & \textbf{What the answer eliminates} \\
+\midrule
+\endhead
+\textbf{One user, or many?} &
+One user: the host, its port, its cable. Many on one switch: that switch or its
+uplink. Many across sites: routing, DNS, DHCP, or the service itself. This single
+question sets the whole search space \\
+\rowcolor{lightbg}
+\textbf{When did it start, and has it ever worked?} &
+``Never worked'' is a configuration fault --- something was built wrong.
+``Worked until Tuesday'' is a change fault. They are searched completely
+differently \\
+\textbf{What changed?} &
+Almost every fault in a previously working network follows a change. Ask about
+changes to anything, not just the network --- a server move, a firmware update,
+a contractor in the comms room \\
+\rowcolor{lightbg}
+\textbf{Does it fail by name but work by address?} &
+Answers ``is this DNS'' in one test, and DNS is a large fraction of reported
+network faults that are not network faults (\chref{dns}) \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[``What changed?'' is the highest-yield question in operations]
+A network that worked on Monday and fails on Tuesday was changed. The change may
+be undocumented, may have been made by someone else, may not look related, and
+the person who made it may sincerely believe it could not have caused this.
+
+Ask anyway, ask broadly, and check the evidence rather than the recollection:
+\cmd{show logging} for \cmd{\%SYS-5-CONFIG\_I} messages (\chref{management}),
+\cmd{show archive config differences}, and the change record.
+
+The answer is often ``nothing'', and it is often wrong.
+\end{conceptbox}
+
+\section{Evidence discipline}
+
+Three rules. They are boring, they are what separates a twenty-minute fault from
+a three-hour one, and they are equally true in an exam simulation.
+
+\begin{tight}
+  \item \textbf{Record before you change.} Capture the current state ---
+        \cmd{show running-config}, the relevant \cmd{show} output, the exact
+        symptom. A configuration you overwrote without reading is evidence you
+        destroyed, and if the change makes things worse you cannot get back.
+  \item \textbf{Change one thing at a time.} Two simultaneous changes that fix
+        the fault leave you not knowing which one did, and one of them may have
+        introduced tomorrow's problem.
+  \item \textbf{Undo what did not help.} An accumulation of speculative changes
+        is how a network becomes undiagnosable. If your prediction was wrong,
+        put it back before trying the next idea.
+\end{tight}
+
+\begin{alertbox}[The exception, and know that you are taking it]
+Under a major outage there is pressure to restore service first and understand
+later. That is a legitimate decision --- but take it deliberately, say out loud
+that you are taking it, and capture what you can as you go. The failure is not
+choosing speed; it is choosing speed by accident and having no idea afterwards
+what you did.
+\end{alertbox}
+
+\section{Symptom index}\label{sec:symptomindex}
+
+Where to go in this volume, given what the user actually said.
+
+\begin{longtable}{@{}L{6.5cm}L{8.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Symptom} & \textbf{Start here} \\
+\midrule
+\endhead
+No link light, or errors climbing &
+\chref{physical} --- cable, duplex, speed, transceiver \\
+\rowcolor{lightbg}
+Host has \cmd{169.254.x.x} &
+\chref{dhcp}, then \chref{tshootl2}. Nothing answered its request \\
+Works within its VLAN, nothing beyond &
+Gateway or mask: \chref{clienttshoot}, then \chref{routingtable} \\
+\rowcolor{lightbg}
+Works by address, fails by name &
+\chref{dns}. Not a network fault \\
+One whole VLAN dead, others fine &
+\chref{vlans}, \chref{trunking} --- allowed list, SVI, or a per-SVI setting \\
+\rowcolor{lightbg}
+Intermittent, slow, MAC flapping &
+\chref{stp} --- suspect a loop \\
+Port \cmd{err-disabled} &
+\chref{l2security} for port security or BPDU guard; \chref{management} to read
+the reason \\
+\rowcolor{lightbg}
+Some destinations reachable, others not &
+\chref{routingtable} for longest-prefix match, then \chref{acl} \\
+OSPF neighbours will not form &
+\chref{ospfv2} --- area, timers, MTU, network type, duplicate router ID \\
+\rowcolor{lightbg}
+Internet works for a while then stops &
+\chref{nat} --- pool exhaustion, or a missing \cmd{overload} \\
+Two gateways both claim to be active &
+\chref{fhrp} --- group numbers or subnet mismatch \\
+\rowcolor{lightbg}
+Wireless: connects, no access &
+\chref{clienttshoot} --- security parameters, or MAC randomisation \\
+Wireless: strong signal, unusable &
+\chref{wireless} --- check the noise floor, not the signal \\
+\rowcolor{lightbg}
+VMs on one host unreachable &
+\chref{virtualisation} --- the uplink is probably an access port \\
+``The log shows nothing'' &
+\chref{management} --- check the severity thresholds first \\
+\bottomrule
+\end{longtable}
+
+\section{Handing it over}
+
+Faults outlive shifts. A handover that says ``still looking at the VLAN issue''
+wastes the next person's first hour.
+
+\begin{tight}
+  \item \textbf{The symptom}, precisely, and who is affected.
+  \item \textbf{What has been ruled out}, and the evidence that ruled it out.
+        This is the most valuable part and the most often omitted.
+  \item \textbf{What has been changed}, including anything not yet undone.
+  \item \textbf{The current hypothesis} and the next test.
+\end{tight}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Starting to type before scoping.} Four questions first.
+  \item \textbf{Checking what broke last time.} Familiarity is not evidence.
+  \item \textbf{No prediction before a change.} You learn nothing from the
+        result.
+  \item \textbf{Two changes at once.} Now you do not know which worked.
+  \item \textbf{Leaving failed changes in place.} They become the next fault.
+  \item \textbf{Fixing the first fault found and declaring victory} without
+        re-testing the original symptom.
+  \item \textbf{Ignoring an available working comparison.}
+  \item \textbf{Believing ``nothing changed''.} Check the logs.
+  \item \textbf{Not writing it down.} You will meet this fault again.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[Two faults at once, and fixing the first one changes nothing.]
+Users on the second floor report that the file server is unreachable. You find
+that the uplink from \cmd{SW2} has VLAN~20 missing from its trunk allowed list,
+which would certainly do it. You add it, confirm \cmd{show interfaces trunk} now
+lists VLAN~20 --- and the users report no improvement at all.
+
+\textbf{The instinct} is to assume the fix did not take, and to re-check the
+trunk. Resist it: you verified it, and it is correct. A correct fix that does not
+resolve the symptom means \textbf{your hypothesis explained a real fault, but not
+this one}.
+
+\textbf{Go back to scoping}, which is where the answer was all along.
+
+\begin{tight}
+  \item \textbf{One user or many?} All of the second floor --- consistent with
+        the trunk.
+  \item \textbf{Has anyone \emph{else} lost the server?} Nobody asked. It turns
+        out the third floor cannot reach it either, and they are on a different
+        switch with a correct trunk.
+\end{tight}
+
+That second answer eliminates the trunk as the cause of the reported symptom
+immediately: a fault common to two switches with different configurations is not
+in either switch.
+
+\begin{verify}{R1}{show ip route 10.20.0.0}
+% Network not in table
+\end{verify}
+
+\textbf{Diagnosis.} The server's subnet is not in the routing table. Its route was
+lost overnight --- and \emph{that} is why nobody can reach it, from any floor.
+
+The missing VLAN on \cmd{SW2}'s trunk was a second, genuine, unrelated fault. It
+had been there for weeks without being noticed, because nothing in VLAN~20 on the
+second floor had needed the uplink until the server was investigated. Finding it
+was useful. Believing it was the cause was the error.
+
+\textbf{The lesson, and it is the one this chapter exists for.} Two things went
+wrong here, and only one of them was reported:
+
+\begin{tight}
+  \item \textbf{The scope was never established.} One question --- ``is anyone
+        else affected?'' --- would have ruled out the trunk before it was
+        touched.
+  \item \textbf{There was no prediction.} ``Adding VLAN 20 will restore access
+        for the second floor'' is testable, and it failed. Because no prediction
+        was stated, the failure read as ``the fix did not work'' rather than as
+        ``the hypothesis was wrong'', and the next twenty minutes went into
+        re-checking a trunk that was already correct.
+\end{tight}
+
+Fix the routing fault. Keep the trunk fix --- it was a real defect --- but record
+it separately, as a second issue found during the investigation, so the change
+record reflects what actually happened.
+\end{breakfix}
+
+\begin{lab}{Faults you did not create}{Packet Tracer or CML, in pairs}
+\textbf{Platform note.} The value here is entirely in \emph{not} knowing the
+fault, so this lab must be done in pairs or by exchanging saved files. Working
+alone on a fault you injected yourself teaches nothing.
+
+\textbf{Topology.} Any multi-VLAN, multi-router topology from Parts II and III
+that both of you have working.
+
+\begin{tasks}
+  \item Each of you takes a working copy and injects \textbf{three} faults from
+        different layers --- one physical or layer 2, one layer 3, one a service
+        (DHCP, DNS, NAT or an ACL). Record them privately. At least one should
+        be silent, producing no log message.
+  \item Exchange files. Before running a single command, write down your scoping
+        questions and what each possible answer would eliminate.
+  \item Diagnose. For every check, write the prediction \emph{before} you run it,
+        and whether it held. Keep this record --- it is the deliverable.
+  \item Fix one fault at a time and re-test the original symptom after each. Note
+        any case where a correct fix did not change the symptom, and what you
+        concluded.
+  \item Time yourself. Compare against your partner on the same set of faults.
+  \item Write the handover you would give if you ran out of time halfway.
+  \item \textbf{Round 2.} Inject three more, but this time include \textbf{two
+        faults on the same path} so that fixing one changes nothing. This is the
+        Break \& Fix above, and it is the most valuable version of this exercise.
+  \item \textbf{Round 3.} Inject one fault into \emph{one} of twenty-four
+        identically configured ports. Time how long it takes with reasoning
+        versus with a configuration diff.
+  \item \textbf{Extension.} Build a one-page fault-finding card for your own use:
+        the four scoping questions, the five methods, and the symptom index
+        trimmed to what you personally forget.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Give the seven steps of the cycle and say which two form a loop.
+  \item Name the five structured methods and give the symptom that selects each.
+  \item What are the four scoping questions, and what does each eliminate?
+  \item Why must you state a prediction before making a change?
+  \item A correct fix does not resolve the reported symptom. What does this tell
+        you, and what should you do next?
+  \item What are the four things a handover must contain?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Define, gather, analyse, eliminate, hypothesise, test, solve --- and loop
+        between hypothesis and test until the prediction holds.
+  \item A hypothesis must predict something that could be wrong. State it before
+        you run the command.
+  \item Five methods: bottom-up for physical, top-down for one application,
+        divide and conquer as the default, follow the path between two points,
+        and compare-to-working whenever an identical working case exists.
+  \item Scope first: one user or many, has it ever worked, what changed, does it
+        fail by name but work by address.
+  \item ``What changed'' is the highest-yield question, and ``nothing'' is often
+        wrong. Check \cmd{show logging} and the archive diff.
+  \item Record before changing, change one thing, undo what did not help.
+  \item A correct fix that does not resolve the symptom means the hypothesis was
+        wrong --- or that there is more than one fault.
+  \item A handover states the symptom, what has been ruled out and how, what was
+        changed, and the next test.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which method should you reach for first when eight of
+        twenty-four identically configured ports are failing?
+        \begin{tight}
+          \item[(a)] Bottom-up \quad (b)~Top-down
+          \item[(c)] Compare working to broken \quad (d)~Follow the path
+        \end{tight}
+  \item \textbf{(MCQ)} A user reports the intranet is down. \cmd{ping} by IP
+        address succeeds and by name fails. Which method has this already
+        applied, and what does the result establish?
+        \begin{tight}
+          \item[(a)] Bottom-up; the cable is fine
+          \item[(b)] Divide and conquer; layers 1--3 work and the fault is DNS
+          \item[(c)] Follow the path; the route is correct
+          \item[(d)] Compare to working; the host is misconfigured
+        \end{tight}
+  \item \textbf{(Short)} Explain why ``I think it is the trunk'' is not a
+        hypothesis, and rewrite it as one.
+  \item \textbf{(Short)} You fix a genuine misconfiguration and the reported
+        symptom is unchanged. Give the two possible explanations and the next
+        step for each.
+  \item \textbf{(Applied)} A whole floor loses connectivity at 09:10 on a Monday.
+        Write out your first five minutes: the questions you ask, the commands
+        you run, and what each result would eliminate. Do not assume a cause.
+  \item \textbf{(Applied)} You must hand over an unresolved fault at the end of a
+        shift. Write the handover, inventing plausible detail, and mark which
+        part of it the next engineer will find most valuable and why.
+\end{reviewq}

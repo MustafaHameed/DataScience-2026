@@ -52,6 +52,50 @@ inter-VLAN routing, voice VLANs --- is machinery for coping with the consequence
 of that one rule.
 \end{conceptbox}
 
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.3cm, minimum height=0.95cm,
+               align=center, font=\tiny\bfseries},
+    w/.style={line width=0.85pt, neutral!75},
+    % NB: not "cap" -- that is a built-in PGF line-cap key and collides.
+    hdr/.style={font=\scriptsize\bfseries, text=neutral!45!black}}
+
+  %---- left: what you bought
+  \node[hdr] at (2.6,2.75) {What you bought};
+  \node[dv=dom2, minimum width=5.0cm] (sw) at (2.6,1.15) {\faIcon{sitemap}\\SW1};
+  \foreach \x/\n/\v in {0.8/PC1/10, 2.0/PC2/20, 3.2/PC3/10, 4.4/PC4/20} {
+    \node[dv=neutral] (\n) at (\x,-0.7) {\faIcon{desktop}\\\n};
+    \draw[w] (\n) -- (\x,0.68);
+  }
+  \node[font=\tiny, text=neutral!85!black, align=center] at (2.6,-1.75)
+      {one switch,\\one broadcast domain};
+
+  %---- arrow
+  \node[font=\scriptsize\bfseries, text=dom2!45!black, align=center]
+      at (7.2,1.15) {assign\\VLANs\\[2pt]$\Longrightarrow$};
+
+  %---- right: what it becomes
+  \node[hdr] at (11.8,2.75) {What it behaves like};
+  \node[dv=dom2, minimum width=2.3cm] (a) at (10.1,1.15) {\faIcon{sitemap}\\VLAN 10};
+  \node[dv=dom4, minimum width=2.3cm] (b) at (13.5,1.15) {\faIcon{sitemap}\\VLAN 20};
+
+  \foreach \x/\n in {9.5/PC1, 10.7/PC3} {
+    \node[dv=neutral] at (\x,-0.7) {\faIcon{desktop}\\\n};
+    \draw[w] (\x,-0.22) -- (\x,0.68);}
+  \foreach \x/\n in {12.9/PC2, 14.1/PC4} {
+    \node[dv=neutral] at (\x,-0.7) {\faIcon{desktop}\\\n};
+    \draw[w] (\x,-0.22) -- (\x,0.68);}
+
+  \draw[accent!75, line width=1pt, dash pattern=on 3pt off 2pt]
+      (11.8,2.2) -- (11.8,-1.3);
+  \node[font=\tiny\bfseries, text=accent!70!black, align=center] at (11.8,-1.75)
+      {no frame crosses\\this line};
+\end{tikzpicture}}%
+{The whole idea, in one picture. Four ports on one switch become two broadcast
+domains that cannot reach each other --- and nothing physical changed.}{vlansplit}
+
 \begin{alertbox}[The consequence people forget]
 If two devices are in different VLANs they cannot communicate, \emph{even if they
 are in the same IP subnet, plugged into adjacent ports on the same switch}. The

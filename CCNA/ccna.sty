@@ -97,6 +97,14 @@
 \renewcommand{\_}{\ccnaunderscore\ifmmode\else\allowbreak\fi}
 
 % Float placement: keep a figure on the page that discusses it.
+%
+% bottomfraction is deliberately well below topfraction. A tall figure
+% attached to the BOTTOM of a page that LaTeX has already filled with
+% text overflows it -- the symptom is "Overfull \vbox has occurred while
+% \output is active", with no file or line to point at, and the caption
+% printing below the footer rule. Bottom floats here are therefore
+% capped at a little over a third of the page; tall figures go to the
+% top, or to a float page.
 \setcounter{topnumber}{3}
 \setcounter{bottomnumber}{2}
 \setcounter{totalnumber}{4}
@@ -305,6 +313,43 @@
   aboveskip=0pt, belowskip=0pt,
   xleftmargin=0pt, framexleftmargin=0pt,
 }
+% YAML, for the Ansible chapter. Topic 5.5 says "use", so playbooks are
+% shown as real runnable files rather than described, and they need a
+% highlighter that is not the IOS one -- "name", "host" and "state" are
+% IOS keywords and colouring them inside YAML would be actively
+% misleading.
+\lstdefinelanguage{AnsibleYAML}{
+  morekeywords={
+    name,hosts,tasks,vars,vars_files,gather_facts,become,become_user,
+    register,when,loop,with_items,connection,roles,handlers,notify,
+    changed_when,failed_when,ignore_errors,delegate_to,tags,block,
+    rescue,always,debug,msg,var,set_fact,serial,any_errors_fatal,
+    lines,parents,src,save_when,match,replace,backup,diff,check_mode,
+    commands,wait_for,retries,delay,until,
+  },
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]",
+  morestring=[b]',
+  literate={-}{{\textcolor{dom5!80!black}{-}}}1 {:}{{\textcolor{dom5!80!black}{:}}}1,
+}
+
+\lstdefinestyle{yamlcfg}{
+  language=AnsibleYAML,
+  basicstyle=\ttfamily\footnotesize\color{black!85},
+  keywordstyle=\color{dom5!70!black}\bfseries,
+  commentstyle=\color{neutral}\itshape,
+  stringstyle=\color{greenhl!70!black},
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=true,
+  breakindent=1.2em,
+  columns=fullflexible,
+  keepspaces=true,
+  aboveskip=0pt, belowskip=0pt,
+  xleftmargin=0pt, framexleftmargin=0pt,
+}
+
 \lstset{style=ioscfg}
 
 %---------------------------------------------------------------------
@@ -339,6 +384,39 @@
   title={\faIcon{search}~\texttt{#1\#\ #2}}, fonttitle=\bfseries\footnotesize,
   boxrule=0.5pt, leftrule=4pt, arc=2pt,
   top=3pt, bottom=3pt, left=7pt, right=7pt,
+  before skip=7pt, after skip=7pt}
+
+%---------------------------------------------------------------------
+% hostcmd -- a command run on an end host rather than on IOS: dig,
+% nslookup, ipconfig, ip addr. Topic 1.6 names Windows, macOS and Linux
+% explicitly, so the operating system is part of the title rather than
+% a guessed prompt glyph -- "C:\>" and "$" are not interchangeable and
+% pretending otherwise teaches the wrong habit.
+%
+%   \begin{hostcmd}{Linux}{dig www.example.com}
+%---------------------------------------------------------------------
+\newtcblisting{hostcmd}[2]{%
+  listing only, listing style=iosout,
+  enhanced, breakable,
+  colback=white, colframe=dom1!65,
+  colbacktitle=dom1!65, coltitle=white,
+  title={\faIcon{terminal}~#1~---~\texttt{#2}}, fonttitle=\bfseries\footnotesize,
+  boxrule=0.5pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=7pt, right=7pt,
+  before skip=7pt, after skip=7pt}
+
+%---------------------------------------------------------------------
+% playbook -- a YAML file, for Chapter 31. #1 names the file, because a
+% playbook without its filename cannot be run.
+%---------------------------------------------------------------------
+\newtcblisting{playbook}[1]{%
+  listing only, listing style=yamlcfg,
+  enhanced, breakable,
+  colback=codebg, colframe=dom5,
+  colbacktitle=dom5, coltitle=white,
+  title={\faIcon{file-code}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=4pt, bottom=4pt, left=7pt, right=7pt,
   before skip=7pt, after skip=7pt}
 
 %---------------------------------------------------------------------
@@ -552,6 +630,14 @@
 \newcommand{\normalfigures}{%
   \renewcommand{\thefigure}{\thechapter.\arabic{figure}}%
   \renewcommand{\thetable}{\thechapter.\arabic{table}}}
+
+% ...and every chapter must take it back. Without this the prefix set by
+% the part opener stays in force for the whole part, and because
+% report.cls resets the figure counter at each \chapter, EVERY chapter
+% figure in the part comes out numbered "PN.1" -- five different figures
+% sharing one number, with the List of Figures pointing at all of them.
+% Do it here rather than asking 34 chapter files to remember.
+\AddToHook{cmd/chapter/before}{\normalfigures}
 
 %---------------------------------------------------------------------
 % Small helpers

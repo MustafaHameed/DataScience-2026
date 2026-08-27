@@ -1,4 +1,579 @@
 \chapter{Wireless Principles}\label{ch:wireless}
 \bp{1.5}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Select} a band and a channel plan, and explain why 2.4\,GHz has
+        only three usable channels.
+  \item \textbf{Describe} the RF characteristics that decide whether a link
+        works: signal strength, noise, SNR, and what happens to radio waves on
+        the way.
+  \item \textbf{Compare} WEP, WPA, WPA2 and WPA3, and distinguish personal from
+        enterprise authentication.
+  \item \textbf{Identify} causes of interference, and tell co-channel
+        interference apart from adjacent-channel interference.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ethernet} --- wireless is a shared medium with collision \emph{avoidance}
+rather than detection, and the contrast is the quickest way in.
+\chref{edgehost} for how access points attach to the wired network.
+\chref{aaa} for RADIUS, which is what ``enterprise'' wireless authenticates
+against.
+\end{prereq}
+
+\begin{keyterms}
+band $\bullet$ channel $\bullet$ non-overlapping $\bullet$ channel bonding
+$\bullet$ dBm $\bullet$ RSSI $\bullet$ SNR $\bullet$ noise floor $\bullet$
+attenuation $\bullet$ SSID $\bullet$ BSSID $\bullet$ WPA2 $\bullet$ WPA3
+$\bullet$ SAE $\bullet$ 802.1X $\bullet$ co-channel interference
+\end{keyterms}
+
+\begin{examnote}[Four named sub-topics, and the verb is \emph{describe}]
+Topic~\tp{1.5} is \emph{describe wireless principles}, with four sub-topics named
+explicitly: \tp{1.5.a} band and channel selection, \tp{1.5.b} RF characteristics,
+\tp{1.5.c} security protocols, \tp{1.5.d} cause of interference.
+
+There is \textbf{no wireless configuration on this blueprint.} v1.1 asked you to
+build a WLAN in a controller GUI; v2.0 does not. Do not spend time learning WLC
+menus for this exam --- spend it on the four lists in this chapter, because that
+is exactly what is examined.
+
+Access points do appear elsewhere: \tp{2.2} covers connecting them to a switch
+port, which is Chapter~9's material, and \tp{1.6} covers the client end, which is
+Chapter~28's.
+\end{examnote}
+
+\section{Why wireless is different}
+
+A switch port is a private, full-duplex conversation between two devices. A radio
+channel is a room everybody shouts across. Three consequences shape everything
+else in this chapter.
+
+\begin{tight}
+  \item \textbf{It is half duplex and shared.} Only one device on a channel may
+        transmit at a time. Ten clients on one access point share the airtime
+        between them --- the advertised data rate is not per-client bandwidth.
+  \item \textbf{Collisions cannot be detected, only avoided.} A radio cannot
+        listen while it transmits, so Ethernet's CSMA/CD is impossible. Wireless
+        uses CSMA/CA: listen, wait a random interval, transmit, and expect an
+        acknowledgement for every frame.
+  \item \textbf{The medium is unlicensed and shared with strangers.} Your
+        neighbour's network, a microwave oven and a Bluetooth headset all have
+        the same right to the spectrum that you do.
+\end{tight}
+
+\begin{definitionbox}[Four names that get confused]
+\begin{tight}
+  \item \textbf{SSID} --- the network's name, as a human sees it. Several APs
+        normally share one.
+  \item \textbf{BSSID} --- the MAC address of one radio on one AP. This is what a
+        client is actually associated \emph{to}.
+  \item \textbf{BSS} --- one AP's coverage area. \textbf{ESS} --- several APs
+        sharing an SSID so a client can roam between them.
+  \item \textbf{Roaming} --- a client deciding, on its own, to move from one
+        BSSID to another within the same ESS. \emph{The client decides}, not the
+        network. This matters in Chapter~28.
+\end{tight}
+\end{definitionbox}
+
+\section{Bands and channels}
+
+\begin{longtable}{@{}L{2.4cm}L{3.4cm}L{4.2cm}L{4.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Band} & \textbf{Usable width} & \textbf{Non-overlapping 20\,MHz channels} & \textbf{Character} \\
+\midrule
+\endhead
+2.4\,GHz & About 83\,MHz &
+\textbf{Three}: 1, 6 and 11 &
+Long range, penetrates walls, hopelessly crowded \\
+\rowcolor{lightbg}
+5\,GHz & About 500\,MHz &
+Around \textbf{25}, some requiring DFS &
+Shorter range, far more room, the sensible default \\
+6\,GHz & 1200\,MHz &
+\textbf{59} &
+Wi-Fi 6E and later only. Clean, but short range and newer clients only \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Why 2.4\,GHz has only three channels]
+The band is divided into channels numbered 1 to 11 in North America (1 to 13 in
+much of the rest of the world), spaced 5\,MHz apart. But each channel is
+\textbf{20\,MHz wide}. A 20\,MHz signal spaced 5\,MHz from its neighbour overlaps
+it heavily.
+
+To avoid overlap you need five channel numbers of separation --- which in a band
+of eleven gives you exactly three: \textbf{1, 6 and 11}. Any other plan puts two
+networks partly on top of each other, which is worse than putting them fully on
+top of each other. That last point is the one the exam tests, and it is explained
+below.
+\end{alertbox}
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \draw[neutral!60, line width=0.8pt] (0,0) -- (13.2,0);
+  \foreach \c/\x in {1/0.6, 2/1.2, 3/1.8, 4/2.4, 5/3.0, 6/3.6, 7/4.2, 8/4.8,
+                     9/5.4, 10/6.0, 11/6.6} {
+    \draw[neutral!60, line width=0.6pt] (\x,0) -- (\x,-0.14);
+    \node[font=\tiny, text=neutral!85!black] at (\x,-0.38) {\c};
+  }
+  \node[font=\tiny, text=neutral!85!black, anchor=west] at (7.1,-0.38)
+      {channel number, 5\,MHz apart};
+
+  \foreach \x/\col in {0.6/dom2, 3.6/dom3, 6.6/dom4} {
+    \draw[\col, fill=\col!14, line width=0.9pt]
+      (\x-1.2,0.15) -- (\x-0.6,1.25) -- (\x+0.6,1.25) -- (\x+1.2,0.15) -- cycle;
+  }
+  \node[font=\tiny\bfseries, text=dom2!45!black] at (0.6,0.72) {1};
+  \node[font=\tiny\bfseries, text=dom3!45!black] at (3.6,0.72) {6};
+  \node[font=\tiny\bfseries, text=dom4!45!black] at (6.6,0.72) {11};
+
+  % an overlapping choice
+  \draw[accent, dash pattern=on 2.5pt off 2pt, fill=accent!10, line width=0.9pt]
+    (1.2,0.15) -- (1.8,1.25) -- (3.0,1.25) -- (3.6,0.15) -- cycle;
+  \node[font=\tiny\bfseries, text=accent!70!black] at (2.4,0.72) {3};
+  \node[font=\tiny, text=accent!70!black, align=center, anchor=north]
+    at (2.4,-0.75) {channel 3 overlaps\\both 1 and 6};
+
+  \node[font=\tiny, text=neutral!85!black, anchor=west] at (8.4,0.9)
+      {each channel is 20\,MHz wide};
+\end{tikzpicture}}%
+{The 2.4\,GHz band. Channels 1, 6 and 11 are the only trio that does not overlap;
+anything between them interferes with two networks instead of sharing one.}{chan24}
+
+\subsection{Channel bonding}
+
+Wider channels carry more data. 802.11n and later can bond adjacent 20\,MHz
+channels into 40, 80 or 160\,MHz.
+
+\begin{alertbox}[The trade-off, which is examinable]
+Every doubling of channel width roughly doubles throughput --- and \textbf{halves
+the number of non-overlapping channels available}, and raises the noise floor by
+about 3\,dB because the receiver is listening to twice as much spectrum.
+
+So: bonding is sensible at 5 and 6\,GHz where there is room, and in a
+low-density deployment. It is \textbf{never} sensible at 2.4\,GHz, where a
+40\,MHz channel consumes most of the band and leaves no clean plan for anyone,
+including you.
+\end{alertbox}
+
+\begin{conceptbox}[DFS channels]
+Part of the 5\,GHz band is shared with weather and military radar. Access points
+using those channels must run \term{dynamic frequency selection}: listen before
+transmitting, and vacate the channel within seconds if radar appears.
+
+The practical consequence is a real fault you will meet: a DFS event moves an AP
+to a different channel and every client on it is briefly disconnected. If a site
+reports unexplained drops on 5\,GHz at irregular intervals --- particularly near
+an airport or a coast --- DFS is the first thing to check.
+\end{conceptbox}
+
+\section{RF characteristics}
+
+\subsection{Measuring power in decibels}
+
+Radio power spans an enormous range, so it is measured logarithmically.
+
+\begin{tight}
+  \item \textbf{dBm} --- power relative to 1\,milliwatt. 0\,dBm is 1\,mW.
+        Absolute.
+  \item \textbf{dB} --- a ratio, with no unit of its own. A gain or a loss.
+  \item \textbf{dBi} --- antenna gain relative to a theoretical isotropic
+        radiator.
+\end{tight}
+
+\begin{worked}[The two rules that replace a calculator]
+\textbf{The 3\,dB rule:} $+3$\,dB doubles power, $-3$\,dB halves it.\\
+\textbf{The 10\,dB rule:} $+10$\,dB multiplies by ten, $-10$\,dB divides by ten.
+
+So 20\,dBm is $10 \times 10 \times 1\,\text{mW} = 100\,$mW. And 23\,dBm is
+double that again --- 200\,mW.
+
+Going the other way: a client receiving $-70$\,dBm is receiving one ten-millionth
+of a milliwatt. Radio receivers are extraordinarily sensitive, which is why small
+amounts of noise matter so much.
+\end{worked}
+
+\subsection{Signal, noise and the number that actually matters}
+
+\begin{longtable}{@{}L{2.8cm}L{5.5cm}L{6.7cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Measure} & \textbf{What it is} & \textbf{Rule of thumb} \\
+\midrule
+\endhead
+RSSI &
+Received signal strength, in dBm. Always negative in practice &
+$-67$\,dBm or better for voice and video; $-70$ for data;
+below $-80$ is unusable \\
+\rowcolor{lightbg}
+Noise floor &
+The background RF energy on the channel, in dBm &
+Around $-92$\,dBm is clean. $-80$ is a problem \\
+SNR &
+The \emph{gap} between signal and noise, in dB &
+25\,dB or better for voice; 20\,dB minimum for reliable data \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Signal strength alone tells you almost nothing]
+A client at $-65$\,dBm sounds healthy. If the noise floor on that channel is
+$-70$\,dBm, the SNR is 5\,dB and the link is unusable.
+
+A client at $-75$\,dBm sounds marginal. With a noise floor of $-95$\,dBm the SNR
+is 20\,dB and it works perfectly well.
+
+\textbf{SNR is the number that decides whether a link works.} Users and helpdesk
+tools report bars and RSSI; you should ask for the noise floor before drawing any
+conclusion. This is the single most useful idea in the chapter and it comes up
+again in Chapter~28.
+\end{alertbox}
+
+\subsection{What happens to a wave on the way}
+
+\begin{longtable}{@{}L{3.2cm}L{5.6cm}L{6.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Effect} & \textbf{What happens} & \textbf{Where you meet it} \\
+\midrule
+\endhead
+Absorption &
+Energy converted to heat by the material &
+Walls, concrete, and \textbf{water} --- which means people. A room that works
+when empty and fails when full \\
+\rowcolor{lightbg}
+Reflection &
+The wave bounces off a smooth surface &
+Metal, glass, lift shafts, warehouse racking. Causes multipath \\
+Refraction &
+The wave bends passing between materials &
+Glass, water, atmospheric layers on long outdoor links \\
+\rowcolor{lightbg}
+Diffraction &
+The wave bends around an obstacle, leaving a shadow behind it &
+Pillars, corners. Why coverage dies just around a corner \\
+Scattering &
+The wave breaks up against an uneven surface or particles &
+Rough plaster, chain-link fence, dust, heavy rain \\
+\rowcolor{lightbg}
+Free-space loss &
+Signal weakens with distance regardless of obstacles &
+Everywhere. Doubling the distance costs about 6\,dB \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Antennas do not amplify]
+An antenna with 9\,dBi of gain does not create energy. It \emph{shapes} the same
+energy into a narrower pattern --- more in the direction you want, less
+everywhere else.
+
+\begin{tight}
+  \item \textbf{Omnidirectional} --- radiates in a doughnut around the antenna.
+        Ceiling APs in offices. Low gain, wide coverage.
+  \item \textbf{Directional} (patch, Yagi, parabolic) --- radiates into a cone.
+        Point-to-point links, long corridors, lecture theatres, warehouse aisles.
+        High gain, narrow coverage.
+\end{tight}
+
+A common failure at scale: replacing omnidirectional antennas with high-gain ones
+to ``fix'' coverage, and discovering the new pattern misses the floor directly
+below the AP entirely.
+\end{conceptbox}
+
+\section{Security protocols}
+
+\begin{longtable}{@{}L{1.9cm}L{2.9cm}L{3.6cm}L{6.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Encryption} & \textbf{Key exchange} & \textbf{Status} \\
+\midrule
+\endhead
+WEP & RC4, static key & None worth the name &
+\textbf{Broken since 2001.} Recoverable in minutes. Never deploy \\
+\rowcolor{lightbg}
+WPA & TKIP (RC4) & 4-way handshake &
+Deprecated. A stopgap for WEP-era hardware \\
+WPA2 & \textbf{AES-CCMP} & 4-way handshake, PSK or 802.1X &
+The long-standing default. Vulnerable to offline dictionary attack on weak
+pre-shared keys \\
+\rowcolor{lightbg}
+WPA3 & AES-GCMP &
+\textbf{SAE} (Simultaneous Authentication of Equals) &
+Current. Resists offline attack, adds forward secrecy, and adds OWE for open
+networks \\
+\bottomrule
+\end{longtable}
+
+\begin{examnote}[The two distinctions to get right]
+\textbf{Personal against Enterprise} is about \emph{who} authenticates.
+
+\begin{tight}
+  \item \textbf{Personal (PSK)} --- one shared passphrase for everyone. Simple.
+        Nobody is individually identified, and changing it means changing it on
+        every device.
+  \item \textbf{Enterprise (802.1X/EAP)} --- each user authenticates
+        individually against a RADIUS server (\chref{aaa}). Revoke one account
+        without touching anyone else. This is what a campus should run.
+\end{tight}
+
+\textbf{WPA2 against WPA3} is about \emph{how the key is agreed}. WPA2-Personal's
+4-way handshake can be captured and attacked offline, so a weak passphrase falls.
+WPA3 replaces it with SAE, where an attacker must guess against the live network
+each time --- so offline attack is not possible, and each session has its own key
+even if the passphrase is later disclosed.
+\end{examnote}
+
+\begin{conceptbox}[Open networks and OWE]
+An open network with no passphrase sends everything in clear. \term{Opportunistic
+Wireless Encryption}, part of the WPA3 family and marketed as ``Enhanced Open'',
+encrypts the traffic anyway using an unauthenticated key agreement.
+
+It stops passive eavesdropping on a guest network. It does \textbf{not}
+authenticate the AP, so it does not stop somebody standing up a fake one. Worth
+deploying on guest SSIDs; not worth mistaking for security.
+\end{conceptbox}
+
+\section{Causes of interference}
+
+\subsection{Wi-Fi interfering with Wi-Fi}
+
+\begin{longtable}{@{}L{4.2cm}L{5.2cm}L{5.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Co-channel (CCI)} & \textbf{Adjacent-channel (ACI)} \\
+\midrule
+\endhead
+Cause & Two APs on the \emph{same} channel &
+Two APs on \emph{partly overlapping} channels \\
+\rowcolor{lightbg}
+What happens & They hear each other and take turns politely &
+They cannot decode each other, so they transmit over each other \\
+Result & Reduced throughput. Everyone shares the airtime &
+\textbf{Corruption and retransmission.} Much worse \\
+\rowcolor{lightbg}
+Verdict & Tolerable, and unavoidable at density &
+To be eliminated. This is why the plan is 1, 6, 11 \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Counter-intuitive, and a favourite question]
+\textbf{Co-channel interference is better than adjacent-channel interference.}
+
+Two APs on channel 6 can hear one another, so CSMA/CA works: they defer to each
+other and share the channel. Throughput halves; nothing is corrupted.
+
+Two APs on channels 6 and 8 cannot decode one another --- each sees the other
+only as raised noise. Neither defers, both transmit, and frames are destroyed and
+retransmitted. Throughput collapses.
+
+So a bad channel plan is worse than no channel plan. If you take one thing from
+this section: \textbf{overlap, do not straddle.}
+\end{alertbox}
+
+\subsection{Everything else}
+
+\begin{tight}
+  \item \textbf{Microwave ovens} --- 2.4\,GHz, high power, intermittent. Classic
+        symptom: wireless fails in the staff room at 12:30 every day.
+  \item \textbf{Bluetooth and wireless headsets} --- 2.4\,GHz frequency hopping,
+        low power, constant.
+  \item \textbf{Cordless phones, video senders, wireless cameras, baby
+        monitors} --- often 2.4\,GHz, often continuous, often invisible to
+        Wi-Fi tools because they are not Wi-Fi.
+  \item \textbf{Radar} --- 5\,GHz, and triggers DFS events rather than plain
+        interference.
+  \item \textbf{Too much of your own network} --- APs at full transmit power in a
+        dense deployment interfere with each other. Reducing power often improves
+        a busy site.
+  \item \textbf{Physical obstruction} --- not interference strictly, but it
+        presents identically to a user. Lift shafts, fire doors, foil-backed
+        insulation, and fish tanks.
+\end{tight}
+
+\begin{conceptbox}[Non-Wi-Fi interference needs a spectrum analyser]
+A Wi-Fi analyser on a laptop shows you Wi-Fi. A microwave oven does not appear in
+it, because it transmits no frames --- it just raises the noise floor.
+
+So a channel that looks empty in a Wi-Fi scan and performs terribly is the
+signature of a non-Wi-Fi source. Finding it needs a spectrum analyser, which
+looks at raw RF energy rather than at decoded frames. Knowing \emph{that the
+distinction exists} is the examinable part.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Using any 2.4\,GHz channel other than 1, 6 or 11.} Creates ACI
+        for two networks instead of sharing with one.
+  \item \textbf{Bonding channels at 2.4\,GHz.} Consumes the band.
+  \item \textbf{Reading RSSI without the noise floor.} SNR is the number that
+        matters.
+  \item \textbf{Turning transmit power up to fix coverage.} In a dense
+        deployment this usually makes things worse, and it does nothing for the
+        client's weaker transmitter on the return path.
+  \item \textbf{Confusing SSID with BSSID.} A client roams between BSSIDs while
+        the SSID never changes.
+  \item \textbf{Assuming the AP controls roaming.} The client decides.
+  \item \textbf{Treating WPA2-Personal as adequate for a campus.} Use Enterprise;
+        a shared passphrase cannot be revoked for one person.
+  \item \textbf{Expecting a Wi-Fi scanner to reveal a microwave oven.}
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[One lecture theatre is unusable when full and perfect when empty.]
+A 200-seat theatre has four access points and tests clean every morning. During
+lectures, clients associate but throughput collapses and voice calls fail. The
+wired network behind the APs shows no errors and no congestion. A survey taken at
+08:00 shows every seat at $-58$\,dBm or better.
+
+% A listing nested inside a breakable box cannot itself be split, so
+% without this tcolorbox forces it onto the page and reports an overfull
+% vbox. Break the outer box early instead.
+\needspace{8\baselineskip}
+\begin{hostcmd}{Survey, taken during a full lecture}{wifi scan --- summary}
+BSSID              SSID        Chan  Width  RSSI    Noise   SNR
+00:11:22:aa:bb:01  CAMPUS      6     20     -61     -73      12
+00:11:22:aa:bb:02  CAMPUS      6     20     -64     -73       9
+00:11:22:aa:bb:03  CAMPUS      8     20     -59     -73      14
+00:11:22:aa:bb:04  CAMPUS      11    20     -66     -73       7
+\end{hostcmd}
+
+\textbf{Diagnosis.} Three faults are visible in that one table, and they compound.
+
+\textbf{First, the noise floor is $-73$\,dBm.} A clean environment is around
+$-92$. Something is raising it by nearly 20\,dB, and the strong signal readings
+are therefore worthless --- every SNR here is below the 20\,dB minimum for
+reliable data.
+
+\textbf{Second, the channel plan is wrong.} Four APs in one room are using
+channels 6, 6, 8 and 11. The pair on channel 6 is co-channel interference, which
+is merely wasteful. But \textbf{channel 8 overlaps both 6 and 11} --- it is
+adjacent-channel interference against three other radios simultaneously, and that
+is corruption rather than sharing.
+
+\textbf{Third, the room is full of people.} Bodies are largely water, which
+absorbs 2.4\,GHz strongly. This is why it works when empty: the morning survey
+measured a room with no attenuation in it and no clients contending.
+
+\textbf{Fix, in order of value.}
+
+\begin{tight}
+  \item Move the channel-8 radio to 1. That converts the worst interference in
+        the room from ACI to CCI and costs nothing.
+  \item Move as many clients as possible to 5\,GHz, where there is enough
+        spectrum to give all four APs non-overlapping channels. In a dense room
+        this is the real fix.
+  \item Reduce transmit power so the four cells are smaller and clients associate
+        with the nearest AP instead of the loudest.
+  \item Find the noise source. Nothing in a Wi-Fi scan explains a $-73$\,dBm
+        floor, so bring a spectrum analyser during a lecture.
+\end{tight}
+
+\textbf{And change the survey practice.} A survey of an empty room measures a room
+that will never be used. Survey when occupied, or accept that the numbers are
+optimistic by 10\,dB or more.
+\end{breakfix}
+
+\begin{lab}{A survey of somewhere you actually use}{Any laptop or phone with a Wi-Fi analyser}
+\textbf{Platform note.} This topic has no configuration on the blueprint, so this
+lab is measurement rather than building. Use any Wi-Fi analyser --- built-in
+tools work: \cmd{netsh wlan show interfaces} on Windows, the option-click Wi-Fi
+menu on macOS, \cmd{iw dev wlan0 scan} on Linux.
+
+\textbf{Location.} A room you can visit twice, ideally once empty and once busy.
+
+\begin{tasks}
+  \item Record every visible SSID, its BSSIDs, band, channel and channel width.
+        Draw the channel occupancy of 2.4\,GHz as a diagram like the one in this
+        chapter.
+  \item Identify every case of adjacent-channel interference in what you found.
+        For each, name the channel that should have been used instead.
+  \item Record RSSI \emph{and} noise for your own connection at five points:
+        beside the AP, across the room, behind a wall, around a corner, and at
+        the far edge of coverage. Calculate SNR at each.
+  \item Plot RSSI against distance. Confirm the roughly 6\,dB loss per doubling
+        of distance, and identify where your measurements depart from it and why.
+  \item Find one place where signal is strong and SNR is poor. Explain what that
+        tells you.
+  \item Identify the security protocol in use on each SSID you can see. Note any
+        still offering WPA or WEP.
+  \item Move between two APs on the same SSID while watching the BSSID. Record
+        the RSSI at which your client chose to roam --- and note that you did not
+        choose it and the network did not either.
+  \item \textbf{If you can:} repeat the RSSI and noise measurements with the room
+        occupied. Compare, and quantify the absorption.
+  \item \textbf{Extension.} Write the one-page recommendation you would give the
+        building's network team, with the evidence for each point.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why does the 2.4\,GHz band have only three non-overlapping channels, and
+        which are they?
+  \item Which is worse, co-channel or adjacent-channel interference, and why?
+  \item A client reports $-62$\,dBm and cannot hold a call. What is the next
+        number you ask for, and what would make this normal?
+  \item State the difference between WPA2-Personal and WPA2-Enterprise, and
+        between WPA2 and WPA3.
+  \item Give two reasons a room might work when empty and fail when full.
+  \item What kind of interference is invisible to a Wi-Fi analyser, and what tool
+        finds it?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Wireless is half duplex, shared, and uses collision \emph{avoidance}. The
+        advertised rate is shared between everyone on the channel.
+  \item SSID is the name, BSSID is the radio's MAC. The \emph{client} decides
+        when to roam.
+  \item 2.4\,GHz: three non-overlapping channels, 1, 6 and 11. 5\,GHz: around 25,
+        some DFS. 6\,GHz: 59, newest clients only.
+  \item Channel bonding doubles throughput, halves the channel count and raises
+        the noise floor. Never at 2.4\,GHz.
+  \item $+3$\,dB doubles power, $+10$\,dB multiplies by ten. 0\,dBm is 1\,mW.
+  \item \textbf{SNR decides whether a link works}, not RSSI. Aim for 25\,dB for
+        voice, 20\,dB minimum for data.
+  \item Radio waves are absorbed, reflected, refracted, diffracted and scattered;
+        free-space loss costs about 6\,dB per doubling of distance.
+  \item WEP is broken, WPA deprecated, WPA2 uses AES-CCMP with a 4-way handshake,
+        WPA3 uses SAE and resists offline attack. Personal shares a passphrase;
+        Enterprise authenticates each user via RADIUS.
+  \item Co-channel interference shares politely; adjacent-channel interference
+        corrupts. A bad plan is worse than no plan.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which set of 2.4\,GHz channels does not overlap?
+        \begin{tight}
+          \item[(a)] 1, 5, 9 \quad (b)~1, 6, 11 \quad (c)~2, 7, 12
+          \quad (d)~1, 4, 8
+        \end{tight}
+  \item \textbf{(MCQ)} A client shows RSSI $-68$\,dBm and a noise floor of
+        $-88$\,dBm. What is the SNR, and is it adequate for data?
+        \begin{tight}
+          \item[(a)] 20\,dB, adequate \quad (b)~20\,dB, inadequate
+          \item[(c)] 156\,dB, adequate \quad (d)~$-20$\,dB, inadequate
+        \end{tight}
+  \item \textbf{(MCQ)} Which WPA3 mechanism replaces the WPA2 4-way handshake and
+        prevents offline dictionary attack?
+        \begin{tight}
+          \item[(a)] TKIP \quad (b)~CCMP \quad (c)~SAE \quad (d)~OWE
+        \end{tight}
+  \item \textbf{(Short)} Explain why two APs on channel 6 perform better than two
+        APs on channels 6 and 8.
+  \item \textbf{(Short)} An outdoor link works in dry weather and fails in heavy
+        rain. Name the two RF effects responsible and explain each.
+  \item \textbf{(Applied)} You are given a floor with six APs, all on 2.4\,GHz, on
+        channels 1, 3, 6, 8, 11 and 11. Propose a corrected plan, justify each
+        change, and state the one further recommendation that would help more
+        than any channel change.
+  \item \textbf{(Applied)} A site reports that wireless drops for a few seconds at
+        unpredictable times on 5\,GHz only, and never on 2.4\,GHz. Give the most
+        likely cause, explain the mechanism, and state how you would confirm it.
+\end{reviewq}

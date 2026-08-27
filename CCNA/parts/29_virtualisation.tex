@@ -1,4 +1,532 @@
 \chapter{Hypervisors, Virtual Machines and Containers}\label{ch:virtualisation}
 \bp{1.2}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} a type~1 from a type~2 hypervisor and say where each
+        belongs.
+  \item \textbf{Describe} what a virtual machine contains and how a virtual
+        switch connects it to the physical network.
+  \item \textbf{Compare} virtual machines with containers on isolation, start
+        time, size and what they share.
+  \item \textbf{Configure} the physical switch port a hypervisor host attaches to
+        --- which is the part of this topic that is actually your job.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{vlans} and \chref{trunking} --- a hypervisor uplink is a trunk, and this
+chapter will not make sense without knowing what one is. \chref{l2security} for
+port security, which is the wrong tool on such a port. \chref{ethernet} for MAC
+learning.
+\end{prereq}
+
+\begin{keyterms}
+hypervisor $\bullet$ type 1 $\bullet$ type 2 $\bullet$ virtual machine $\bullet$
+guest OS $\bullet$ vNIC $\bullet$ virtual switch $\bullet$ port group $\bullet$
+container $\bullet$ image $\bullet$ kernel $\bullet$ orchestration $\bullet$
+east-west traffic $\bullet$ live migration
+\end{keyterms}
+
+\begin{examnote}[\emph{Describe the role and function}]
+Topic~\tp{1.2} is \emph{describe the role and function of hypervisors, virtual
+machines, and containers}. No configuration of any hypervisor is required, and no
+vendor product is named.
+
+But it sits in domain~1, \emph{Network Infrastructure and Connectivity}, and not
+by accident. A CCNA is not asked to administer a hypervisor; a CCNA is asked to
+\textbf{connect one correctly}, and to recognise the several things a virtualised
+server does to a network that a physical server never did. Section~\ref{sec:vnetimpact} is where
+those live, and it is the part of this chapter you will use at work next week.
+\end{examnote}
+
+\section{Why any of this exists}
+
+A physical server running one application typically uses 5 to 15\% of its
+capacity. The other 85\% is bought, powered, cooled and wasted. Virtualisation
+puts many logical servers on one physical one, each believing it has the machine
+to itself.
+
+\begin{definitionbox}[Hypervisor]
+Software that presents virtual hardware --- CPU, memory, disk, network interface
+--- to several guest operating systems at once, and schedules the real hardware
+between them. Also called a \term{virtual machine monitor}.
+\end{definitionbox}
+
+\subsection{Type 1 and type 2}
+
+\ccnafigh{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    lay/.style={draw=#1, fill=#1!10, text=#1!40!black, minimum height=0.62cm,
+                align=center, font=\tiny\bfseries, line width=0.7pt},
+    ttl/.style={font=\scriptsize\bfseries, text=neutral!45!black}}
+
+  % Type 1
+  \node[ttl] at (3.3,3.35) {Type 1 --- bare metal};
+  \node[lay=neutral, minimum width=6.6cm] at (3.3,0.0) {Physical hardware};
+  \node[lay=dom3,    minimum width=6.6cm] at (3.3,0.75) {Hypervisor (ESXi, Hyper-V, KVM, Xen)};
+  \foreach \x/\n in {1.25/VM, 3.3/VM, 5.35/VM} {
+    \node[lay=dom1, minimum width=1.9cm] at (\x,1.6) {Guest OS};
+    \node[lay=dom1, fill=dom1!22, minimum width=1.9cm] at (\x,2.3) {App};
+  }
+  \node[font=\tiny, text=neutral!85!black, align=center] at (3.3,2.85)
+      {data centre, production};
+
+  % Type 2
+  \node[ttl] at (11.0,3.35) {Type 2 --- hosted};
+  \node[lay=neutral, minimum width=5.4cm] at (11.0,0.0)  {Physical hardware};
+  \node[lay=dom2,    minimum width=5.4cm] at (11.0,0.75) {Host OS (Windows, macOS, Linux)};
+  \node[lay=dom3,    minimum width=5.4cm] at (11.0,1.5)  {Hypervisor (Workstation, VirtualBox)};
+  \foreach \x in {9.7, 12.3} {
+    \node[lay=dom1, minimum width=2.2cm] at (\x,2.3) {Guest OS + App};
+  }
+  \node[font=\tiny, text=neutral!85!black, align=center] at (11.0,2.85)
+      {laptop, lab, your CML};
+\end{tikzpicture}}%
+{The difference is one layer. A type~1 hypervisor \emph{is} the operating system;
+a type~2 hypervisor is an application running on one.}{hypervisors}
+
+\begin{longtable}{@{}L{3.0cm}L{5.8cm}L{6.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Type 1 (bare metal, native)} & \textbf{Type 2 (hosted)} \\
+\midrule
+\endhead
+Runs on & The hardware directly &
+On top of a normal host operating system \\
+\rowcolor{lightbg}
+Performance & Higher --- no host OS in the path &
+Lower --- every operation passes through the host OS \\
+Examples & VMware ESXi, Microsoft Hyper-V, KVM, Xen &
+VMware Workstation and Fusion, Oracle VirtualBox, Parallels \\
+\rowcolor{lightbg}
+Used for & Production servers, data centres, cloud &
+Development, testing, labs, running one OS inside another \\
+Boots into & The hypervisor itself &
+The host OS; the hypervisor is launched afterwards \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[You have almost certainly used both]
+The CML or GNS3 you run the labs in this book on is a type~2 hypervisor, or runs
+inside one. The cloud instances your university's systems run on are type~1.
+
+If an exam question describes a hypervisor installed \emph{onto} a server with no
+other operating system, it is type~1. If it describes one installed \emph{into}
+Windows or macOS, it is type~2. That is the whole distinction.
+\end{conceptbox}
+
+\section{What a virtual machine is}
+
+A VM is a set of files --- a configuration file describing its virtual hardware,
+and one or more virtual disk files --- plus the state the hypervisor keeps while
+it runs. It contains a complete guest operating system with its own kernel,
+drivers, and boot process.
+
+Because it is files, it can be copied, snapshotted, moved between hosts while
+running (\term{live migration}, or vMotion), and restored. Those conveniences are
+also what makes it a networking problem, which is Section~\ref{sec:vnetimpact}.
+
+\subsection{The virtual switch}
+
+Every VM has one or more \term{vNICs}, each with its own MAC address. Those
+vNICs plug into a \term{virtual switch} inside the hypervisor, and the virtual
+switch has one or more physical NICs as uplinks to the real network.
+
+\ccnafigh{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    vm/.style={rounded corners=2pt, draw=dom1, fill=dom1!8, text=dom1!45!black,
+               line width=0.8pt, minimum width=1.75cm, minimum height=0.95cm,
+               align=center, font=\tiny\bfseries},
+    w/.style={line width=0.85pt, neutral!75}}
+
+  % Vertical budget, so nothing collides: host box -0.55 to 3.05;
+  % its own label occupies the top-right corner, the east-west arc and
+  % its caption the band from 1.9 to 2.7, the VMs 0.88 to 1.83, and the
+  % virtual switch -0.38 to 0.28.
+  \draw[dom3!45, fill=dom3!4, line width=1pt, rounded corners=4pt]
+      (-0.5,-0.55) rectangle (8.6,3.05);
+  \node[font=\tiny\bfseries, text=dom3!45!black, anchor=north east]
+      at (8.5,2.98) {HYPERVISOR HOST};
+
+  \node[vm] (v1) at (0.9,1.35) {VM 1\\\tiny\mdseries VLAN 10};
+  \node[vm] (v2) at (3.2,1.35) {VM 2\\\tiny\mdseries VLAN 10};
+  \node[vm] (v3) at (5.5,1.35) {VM 3\\\tiny\mdseries VLAN 20};
+  \node[vm] (v4) at (7.7,1.35) {VM 4\\\tiny\mdseries VLAN 30};
+
+  \node[rounded corners=2pt, draw=dom2, fill=dom2!10, text=dom2!45!black,
+        line width=0.9pt, minimum width=8.0cm, minimum height=0.66cm,
+        font=\tiny\bfseries] (vs) at (4.0,-0.05) {VIRTUAL SWITCH \quad
+        \mdseries port groups: VLAN 10 $\cdot$ VLAN 20 $\cdot$ VLAN 30};
+
+  \foreach \v in {v1,v2,v3,v4} \draw[w] (\v) -- (\v |- vs.north);
+
+  \node[rounded corners=3pt, draw=dom2, fill=dom2!8, text=dom2!45!black,
+        line width=0.9pt, minimum width=1.5cm, minimum height=1.0cm,
+        align=center, font=\scriptsize\bfseries] (sw) at (11.9,-0.05)
+        {\faIcon{sitemap}\\SW1};
+
+  % pos=0.5 keeps the two-line label clear of the host box's right edge.
+  \draw[w, dash pattern=on 3pt off 2pt] (vs.east) -- (sw.west)
+      node[font=\tiny, text=dom2!45!black, pos=0.5, above=2pt, align=center]
+      {\textbf{802.1Q trunk}\\VLANs 10, 20, 30};
+
+  % East--west traffic arcs over the two VMs rather than through them.
+  \draw[{Stealth[length=2mm]}-{Stealth[length=2mm]}, dom4!70, line width=0.9pt]
+      (v1.north) to[bend left=45] (v2.north);
+  \node[font=\tiny, text=dom4!45!black, align=center, anchor=south]
+      at (2.05,2.28) {east--west: never leaves the host};
+\end{tikzpicture}}%
+{VM 1 talking to VM 2 never reaches SW1. Everything else does, over a trunk --- a
+single physical port carrying three VLANs.}{vswitch}
+
+\begin{definitionbox}[Port group]
+A named policy on the virtual switch --- a VLAN ID, security settings and traffic
+shaping --- that VMs are attached to. It is the virtual equivalent of deciding
+which VLAN a switch port belongs to, and the VLAN ID configured on it must match
+one the physical switch actually trunks.
+\end{definitionbox}
+
+\section{Containers}
+
+A container does not virtualise the hardware. It virtualises the \emph{operating
+system}: several isolated user-space environments share one kernel.
+
+\ccnafigh{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    lay/.style={draw=#1, fill=#1!10, text=#1!40!black, minimum height=0.62cm,
+                align=center, font=\tiny\bfseries, line width=0.7pt},
+    ttl/.style={font=\scriptsize\bfseries, text=neutral!45!black}}
+
+  \node[ttl] at (3.3,3.35) {Virtual machines};
+  \node[lay=neutral, minimum width=6.6cm] at (3.3,0.0)  {Physical hardware};
+  \node[lay=dom3,    minimum width=6.6cm] at (3.3,0.72) {Hypervisor};
+  \foreach \x in {1.25, 3.3, 5.35} {
+    \node[lay=dom1, minimum width=1.9cm] at (\x,1.44) {\textbf{Guest OS}};
+    \node[lay=dom1, fill=dom1!22, minimum width=1.9cm] at (\x,2.16) {App + libs};
+  }
+  \node[font=\tiny, text=accent!70!black, align=center] at (3.3,2.82)
+      {GB in size, seconds to minutes to boot};
+
+  \node[ttl] at (11.0,3.35) {Containers};
+  \node[lay=neutral, minimum width=6.6cm] at (11.0,0.0)  {Physical hardware};
+  \node[lay=dom2,    minimum width=6.6cm] at (11.0,0.72) {\textbf{Host OS --- one shared kernel}};
+  \node[lay=dom3,    minimum width=6.6cm] at (11.0,1.44) {Container engine};
+  \foreach \x in {8.95, 11.0, 13.05} {
+    \node[lay=dom1, fill=dom1!22, minimum width=1.9cm] at (\x,2.16) {App + libs};
+  }
+  \node[font=\tiny, text=dom2!45!black, align=center] at (11.0,2.82)
+      {MB in size, milliseconds to start};
+\end{tikzpicture}}%
+{One layer removed. Containers share the host's kernel, which is why they are
+small and fast --- and why the isolation between them is weaker.}{containers}
+
+\begin{longtable}{@{}L{3.0cm}L{5.8cm}L{6.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Virtual machine} & \textbf{Container} \\
+\midrule
+\endhead
+Contains & A full guest OS with its own kernel &
+An application and its libraries only \\
+\rowcolor{lightbg}
+Shares & Nothing above the hypervisor &
+\textbf{The host's kernel} \\
+Size & Gigabytes & Megabytes \\
+\rowcolor{lightbg}
+Start time & Seconds to minutes --- it boots &
+Milliseconds --- there is nothing to boot \\
+Isolation & Strong. A compromised guest is still inside its VM &
+Weaker. A kernel vulnerability is shared by every container on the host \\
+\rowcolor{lightbg}
+Guest OS choice & Any, including a different family from the host &
+Must be compatible with the host kernel \\
+Typical use & Consolidating servers; running different operating systems &
+Packaging and scaling one application; microservices \\
+\rowcolor{lightbg}
+Managed by & The hypervisor, and tools such as vCenter &
+A container engine, and an orchestrator such as Kubernetes \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[They are not competitors]
+The common real deployment is containers \emph{inside} virtual machines: the VM
+provides hard isolation and the ability to move workloads between hosts, and the
+container provides fast, repeatable application packaging inside it. Every major
+cloud provider runs some version of this.
+
+An exam question asking you to choose between them is asking about the properties
+in the table --- kernel sharing, size, start time, isolation --- not about which
+is better.
+\end{conceptbox}
+
+\begin{definitionbox}[Orchestration]
+Running one container by hand is easy. Running four hundred across thirty hosts,
+restarting the ones that fail, scaling with demand and routing traffic to
+whichever are healthy is not. An \term{orchestrator} --- Kubernetes is the
+dominant one --- does that scheduling, health-checking and service discovery.
+
+For this exam, know what the word means and what problem it solves.
+\end{definitionbox}
+
+\section{What this does to your network}\label{sec:vnetimpact}
+
+This is the section that matters to a network engineer, and it is where the
+blueprint's placement of this topic in domain~1 makes sense.
+
+\begin{longtable}{@{}L{4.6cm}L{10.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Consequence} & \textbf{What it means for you} \\
+\midrule
+\endhead
+\textbf{The uplink is a trunk} &
+One physical port carries every VLAN the host's VMs live in. Configuring it as an
+access port strands every VM outside that one VLAN \\
+\rowcolor{lightbg}
+\textbf{Many MACs on one port} &
+Dozens, changing as VMs start and stop. Port security on that port is simply
+the wrong tool \\
+\textbf{MACs move without anyone touching a cable} &
+Live migration relocates a running VM to another host, and its MAC appears on a
+different switch port seconds later. This looks exactly like a loop \\
+\rowcolor{lightbg}
+\textbf{East--west traffic is invisible} &
+Two VMs on the same host and VLAN never reach the physical switch. You cannot
+see it, filter it with a physical ACL, or capture it from the network \\
+\textbf{The server team owns a switch now} &
+The virtual switch's VLAN configuration is set by whoever administers the
+hypervisor. A mismatch between their port group and your trunk is a shared fault
+with two owners \\
+\rowcolor{lightbg}
+\textbf{Nothing has a fixed location} &
+Documentation naming a physical port for a service goes stale immediately \\
+\bottomrule
+\end{longtable}
+
+\begin{config}{the physical switch port a hypervisor host attaches to}
+interface GigabitEthernet1/0/24
+ description ESXi host 3 -- vmnic0
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30
+ switchport nonegotiate
+!
+! No port security: a hypervisor presents many MAC addresses and they
+! change as machines start, stop and migrate.
+!
+! PortFast trunk, because the far side is a virtual switch that does
+! not run spanning tree and will never send a BPDU.
+ spanning-tree portfast trunk
+!
+! BPDU guard is still correct: nothing on this port should ever send
+! a BPDU, so one arriving means something is wrong.
+ spanning-tree bpduguard enable
+\end{config}
+
+\begin{alertbox}[The virtual switch does not run spanning tree]
+A vSwitch is not a learning switch in the ordinary sense: it does not forward
+traffic between its uplinks, so it cannot create a loop, and it does not
+participate in STP.
+
+Two consequences. \cmd{spanning-tree portfast trunk} is appropriate on the
+physical port, because there is no risk of a loop and waiting 30 seconds on every
+host reboot is pure cost. And \textbf{BPDU guard should still be enabled} ---
+precisely because a correctly configured vSwitch will never send a BPDU, one
+arriving means somebody has attached something else.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Access port on a hypervisor uplink.} Everything in one VLAN
+        works, everything else is stranded, and the fault looks like a VM
+        problem.
+  \item \textbf{Port security on a hypervisor uplink.} Err-disables the port and
+        takes down every VM on the host.
+  \item \textbf{Reading migration MAC moves as a loop.} A MAC flap between two
+        \emph{access-layer uplinks} at the moment a VM migrated is expected
+        behaviour.
+  \item \textbf{Forgetting to add a VLAN to \cmd{allowed}} when the server team
+        adds a port group. Their side is right, yours is not, and neither team
+        sees both halves.
+  \item \textbf{Expecting to capture east--west traffic} on the physical switch.
+        It never gets there.
+  \item \textbf{Assuming containers are just small VMs.} The shared kernel is the
+        whole difference, and it is where the exam question will be.
+  \item \textbf{Confusing type 1 with type 2.} Type 1 replaces the OS; type 2
+        runs on one.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[A new hypervisor host is racked. VMs in VLAN 10 work; VMs in VLANs 20 and 30 are dead.]
+The server team reports that of twelve VMs on the new host, the four in VLAN~10
+have full connectivity and the eight in VLANs 20 and 30 cannot reach anything,
+including their own default gateways. The vSwitch configuration is identical to
+the three existing hosts, which all work. Later in the morning the port
+err-disables entirely and all twelve VMs drop.
+
+\begin{verify}{SW1}{show interfaces GigabitEthernet1/0/24 switchport}
+Name: Gi1/0/24
+Switchport: Enabled
+Administrative Mode: static access
+Operational Mode: static access
+Access Mode VLAN: 10 (STAFF)
+Trunking Native Mode VLAN: 1 (default)
+\end{verify}
+
+\begin{verify}{SW1}{show interfaces status err-disabled}
+Port      Name               Status       Reason               Err-disabled Vlans
+Gi1/0/24  ESXi host 4        err-disabled psecure-violation
+\end{verify}
+
+\textbf{Diagnosis.} Two faults on one port, and the first explains the pattern
+while the second explains the timing.
+
+\textbf{The port is an access port in VLAN 10.} A hypervisor uplink must be a
+trunk. VMs in the port group tagged VLAN~10 happen to work because the vSwitch
+sends their frames untagged and the access port puts them in VLAN~10 --- the
+right answer by accident. Frames from VLANs 20 and 30 arrive tagged, and an
+access port discards tagged frames for other VLANs. Eight VMs are stranded.
+
+\textbf{The port also has port security.} A hypervisor presents one MAC per vNIC
+plus the host's own management address --- thirteen or more on this host. As the
+remaining VMs powered on through the morning, the maximum was exceeded and the
+port err-disabled, which is why the working four then failed too.
+
+The tell that this is a switch-port fault and not a hypervisor fault is that the
+vSwitch configuration matches three working hosts. When one member of an
+identical set behaves differently, look at what is \emph{not} identical --- which
+here is the physical port it was patched into.
+
+\textbf{Fix.}
+
+\begin{config}{correcting the uplink}
+interface GigabitEthernet1/0/24
+ description ESXi host 4 -- vmnic0
+ no switchport port-security
+ no switchport access vlan 10
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30
+ switchport nonegotiate
+ spanning-tree portfast trunk
+ spanning-tree bpduguard enable
+!
+ shutdown
+ no shutdown
+\end{config}
+
+The \cmd{shutdown} then \cmd{no shutdown} is required: removing the port security
+configuration does not clear an existing \cmd{err-disabled} state.
+
+\textbf{The process lesson.} This port was almost certainly configured from the
+site's standard access-port template, which is correct for a desk and wrong for a
+server. Sites that hit this repeatedly keep a separate documented template for
+hypervisor uplinks --- trunk, explicit allowed list, no port security,
+\cmd{portfast trunk}, BPDU guard --- and name it in the change request.
+\end{breakfix}
+
+\begin{lab}{Connecting a hypervisor properly}{VirtualBox, VMware Workstation, or CML}
+\textbf{Platform note.} You do not need a data centre. Any type~2 hypervisor on
+your own machine demonstrates every concept here; the switch-side tasks can be
+done in Packet Tracer or CML against a simulated host.
+
+\begin{tasks}
+  \item Identify the hypervisor you already use for the labs in this book and
+        classify it as type~1 or type~2. Justify the classification in one
+        sentence.
+  \item Create two VMs. Record the MAC address of each vNIC, and confirm they
+        differ from the host's physical NIC.
+  \item Put both VMs on a \emph{host-only} or internal network. Confirm they can
+        reach each other and that this traffic never appears on your physical
+        network --- capture on the physical interface to prove it. This is
+        east--west traffic.
+  \item Switch both to bridged networking. Confirm they now appear on the
+        physical network with their own MAC addresses, and find them in your
+        switch's MAC address table.
+  \item \textbf{Switch side.} Configure the port your host connects to as an
+        access port in one VLAN. Put one VM in that VLAN and one in another.
+        Reproduce the Break \& Fix symptom, then convert the port to a trunk.
+  \item Apply \cmd{switchport port-security maximum 1} to that trunk. Power on
+        the second VM and observe. Recover the port.
+  \item \textbf{Containers.} Install a container engine and run two containers.
+        Compare their start time and image size against your VMs' boot time and
+        disk size. Record actual numbers.
+  \item Inspect the container network. Find the bridge, the addresses assigned,
+        and confirm that outbound traffic is being NATted by the host. Relate
+        this to \chref{nat}.
+  \item Run \cmd{uname -r} inside two containers and on the host. Explain the
+        result, and state what it implies for isolation.
+  \item \textbf{Extension.} Write the switch-port template your site should use
+        for hypervisor uplinks, with a one-line justification per command, and
+        say what is different from your standard access-port template.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item What is the single structural difference between a type~1 and a type~2
+        hypervisor?
+  \item What does a container share with its host that a virtual machine does
+        not, and what are the two main consequences?
+  \item Why must a hypervisor uplink be a trunk?
+  \item Why is port security inappropriate on that port?
+  \item What is east--west traffic, and why can you not capture it on the
+        physical switch?
+  \item A MAC address moves between two switch ports with no cable change. Give a
+        legitimate explanation.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A hypervisor presents virtual hardware to several guest operating
+        systems. Type~1 runs on the bare metal; type~2 runs on a host OS.
+  \item A VM is files: a configuration and virtual disks, containing a complete
+        guest OS with its own kernel. It can be copied, snapshotted and migrated
+        while running.
+  \item Each vNIC has its own MAC and attaches to a virtual switch, whose port
+        groups carry VLAN IDs that must match the physical trunk.
+  \item Containers share the host kernel: megabytes rather than gigabytes,
+        milliseconds rather than seconds, weaker isolation. Orchestrators such as
+        Kubernetes schedule them at scale.
+  \item The two are commonly combined --- containers inside VMs.
+  \item The physical port to a hypervisor is a \textbf{trunk} with an explicit
+        allowed list, \textbf{no port security}, \cmd{portfast trunk} and BPDU
+        guard.
+  \item Live migration moves MAC addresses between ports legitimately. East--west
+        traffic never reaches the physical network at all.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which describes a type~1 hypervisor?
+        \begin{tight}
+          \item[(a)] Runs as an application on Windows or macOS
+          \item[(b)] Runs directly on the physical hardware with no host OS
+          \item[(c)] Shares the host operating system's kernel with its guests
+          \item[(d)] Requires an orchestrator such as Kubernetes
+        \end{tight}
+  \item \textbf{(MCQ)} What do containers share that virtual machines do not?
+        \begin{tight}
+          \item[(a)] The physical NIC \quad (b)~The host's kernel
+          \item[(c)] The hypervisor \quad (d)~A single MAC address
+        \end{tight}
+  \item \textbf{(Short)} Explain why applying port security to a hypervisor
+        uplink causes an outage, and what you should do instead.
+  \item \textbf{(Short)} A monitoring team asks why they cannot see traffic
+        between two application servers that are known to communicate constantly.
+        Give the explanation and one thing that would let them see it.
+  \item \textbf{(Applied)} A hypervisor host has VMs in VLANs 10, 20 and 40.
+        Write the complete configuration for the switch port it attaches to,
+        justify each line, and state which single line would strand two-thirds of
+        the VMs if omitted.
+  \item \textbf{(Applied)} Compare virtual machines and containers across
+        isolation, start time, size and guest OS flexibility, and recommend one
+        for each of: running a legacy Windows application, and scaling a web
+        front end from 3 to 300 instances during registration week.
+\end{reviewq}

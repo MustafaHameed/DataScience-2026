@@ -1,4 +1,549 @@
 \chapter{Troubleshooting Client Connectivity}\label{ch:clienttshoot}
 \bp{1.6}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Read} a host's IP configuration on Windows, macOS and Linux, and
+        recognise the four configurations that cannot work.
+  \item \textbf{Apply} a reachability ladder that localises a fault in five
+        commands.
+  \item \textbf{Check} wireless security parameters on all three operating
+        systems, including the modern default that breaks MAC-based
+        authorisation.
+  \item \textbf{Decide}, from the host alone, whether a fault is the client's, the
+        access layer's, or the network's --- before escalating it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ipv4} and \chref{ipv6} for addressing. \chref{dhcp} for what an address
+means when it arrives. \chref{dns} for name resolution. \chref{wireless} for RSSI,
+SNR and the security protocols this chapter checks the settings of.
+\end{prereq}
+
+\begin{keyterms}
+APIPA $\bullet$ default gateway $\bullet$ subnet mask $\bullet$ reachability
+ladder $\bullet$ \cmd{ipconfig} $\bullet$ \cmd{ip addr} $\bullet$ ARP cache
+$\bullet$ MAC randomisation $\bullet$ supplicant $\bullet$ EAP method
+\end{keyterms}
+
+\begin{examnote}[Three areas, three operating systems, named explicitly]
+Topic~\tp{1.6} is \emph{troubleshoot wired and wireless client connectivity (IP
+configuration, network reachability, and wireless security parameters on Windows,
+MacOS, and Linux)}.
+
+The three operating systems are named in the topic statement. That is a strong
+signal: you are expected to know the \emph{equivalent command on each}, not just
+the one you happen to use. The table in Section~\ref{sec:oscmds} is the single most
+examinable page in this chapter, and it is worth memorising in all three
+columns.
+
+Note also what is \emph{not} here: no server-side configuration, no controller.
+Everything in this topic is done standing at the affected machine.
+\end{examnote}
+
+\section{Start at the host}
+
+The instinct when a user cannot connect is to go and look at the switch. Resist
+it. Four commands at the host tell you whether there is any point.
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    step/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+                 line width=0.9pt, text width=3.5cm, align=left,
+                 minimum height=1.0cm, font=\scriptsize, inner sep=5pt},
+    res/.style={font=\tiny, text=#1!45!black, align=left, anchor=west},
+    fl/.style={-{Stealth[length=2.2mm]}, line width=0.9pt, neutral!70}}
+
+  \node[step=dom1] (s1) at (0,0)    {\textbf{1.} Do I have an address?\\
+      \cmd{ipconfig /all}};
+  \node[step=dom1] (s2) at (0,-1.5) {\textbf{2.} Ping my own gateway};
+  \node[step=dom1] (s3) at (0,-3.0) {\textbf{3.} Ping something remote\\
+      \emph{by IP address}};
+  \node[step=dom1] (s4) at (0,-4.5) {\textbf{4.} Ping the same thing\\
+      \emph{by name}};
+  \node[step=dom2] (ok) at (0,-6.0) {\textbf{5.} It is not the network};
+
+  \foreach \a/\b in {s1/s2, s2/s3, s3/s4, s4/ok} \draw[fl] (\a) -- (\b);
+
+  \node[res=accent] at (2.4,-0.75)
+      {fails $\rightarrow$ \textbf{DHCP or layer 2}\\Chapters 20, 14};
+  \node[res=accent] at (2.4,-2.25)
+      {fails $\rightarrow$ \textbf{local segment}\\VLAN, cable, ARP, wireless assoc.};
+  \node[res=accent] at (2.4,-3.75)
+      {fails $\rightarrow$ \textbf{routing, NAT or ACL}\\Chapters 15, 22, 24};
+  \node[res=accent] at (2.4,-5.25)
+      {fails $\rightarrow$ \textbf{DNS only}\\Chapter 21};
+\end{tikzpicture}}%
+{The reachability ladder. Each rung that passes eliminates everything below it;
+the first rung that fails names the area to investigate.}{ladder}
+
+\begin{conceptbox}[Why the order matters]
+Each step depends on every step above it. So the \emph{first} failure is the
+fault, and everything below it is a symptom rather than a cause.
+
+The commonest mistake in practice is starting at step 4 --- ``the website does not
+load'' --- and reasoning about DNS for twenty minutes on a machine that never had
+a valid address. Four commands, in order, cost ninety seconds and stop that
+happening.
+\end{conceptbox}
+
+\section{The same job on three operating systems}\label{sec:oscmds}
+
+\begin{longtable}{@{}L{2.8cm}L{4.1cm}L{4.0cm}L{4.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Task} & \textbf{Windows} & \textbf{macOS} & \textbf{Linux} \\
+\midrule
+\endhead
+Full IP configuration &
+\cmd{ipconfig /all} &
+\cmd{ifconfig} \newline \cmd{ipconfig getpacket en0} &
+\cmd{ip addr} \newline \cmd{ip a} \\
+\rowcolor{lightbg}
+Routing table &
+\cmd{route print} &
+\cmd{netstat -rn} &
+\cmd{ip route} \\
+ARP cache &
+\cmd{arp -a} &
+\cmd{arp -a} &
+\cmd{ip neigh} \\
+\rowcolor{lightbg}
+Release and renew &
+\cmd{ipconfig /release} \newline \cmd{ipconfig /renew} &
+\cmd{ipconfig set en0 NONE} \newline \cmd{ipconfig set en0 DHCP} &
+\cmd{dhclient -r} \newline \cmd{dhclient} \\
+Name resolution &
+\cmd{nslookup} &
+\cmd{dig} \newline \cmd{scutil --dns} &
+\cmd{dig} \newline \cmd{resolvectl status} \\
+\rowcolor{lightbg}
+Flush DNS cache &
+\cmd{ipconfig /flushdns} &
+\cmd{killall -HUP mDNSResponder} &
+\cmd{resolvectl flush-caches} \\
+Path to a destination &
+\cmd{tracert} &
+\cmd{traceroute} &
+\cmd{traceroute} \newline \cmd{tracepath} \\
+\rowcolor{lightbg}
+Test a TCP port &
+\cmd{Test-NetConnection -Port} &
+\cmd{nc -zv} &
+\cmd{nc -zv} \\
+Wireless status &
+\cmd{netsh wlan show interfaces} &
+option-click the Wi-Fi menu &
+\cmd{iw dev wlan0 link} \newline \cmd{nmcli dev wifi} \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Two differences worth knowing rather than guessing]
+\textbf{\cmd{ifconfig} is deprecated on Linux} and absent from many modern
+distributions. \cmd{ip} replaced it. On macOS \cmd{ifconfig} is still the normal
+tool. Same command name, opposite advice, depending on the platform in front of
+you.
+
+\textbf{macOS does not release and renew the way Windows does.} Setting the
+interface to \cmd{NONE} and back to \cmd{DHCP} is the equivalent; there is no
+single ``renew'' verb. In the GUI it is the Renew DHCP Lease button in the
+TCP/IP pane.
+\end{alertbox}
+
+\section{Step 1: reading the IP configuration}
+
+\begin{hostcmd}{Windows}{ipconfig /all}
+Wireless LAN adapter Wi-Fi:
+
+   Description . . . . . . . . . . . : Intel(R) Wi-Fi 6 AX201
+   Physical Address. . . . . . . . . : 8A-3C-D1-77-04-B2
+   DHCP Enabled. . . . . . . . . . . : Yes
+   IPv4 Address. . . . . . . . . . . : 192.168.10.34(Preferred)
+   Subnet Mask . . . . . . . . . . . : 255.255.255.0
+   Lease Obtained. . . . . . . . . . : 27 August 2026 08:14:02
+   Lease Expires . . . . . . . . . . : 27 August 2026 16:14:02
+   Default Gateway . . . . . . . . . : 192.168.10.1
+   DHCP Server . . . . . . . . . . . : 10.0.0.5
+   DNS Servers . . . . . . . . . . . : 192.168.20.10
+                                       192.168.20.11
+\end{hostcmd}
+
+\begin{hostcmd}{Linux}{ip addr show wlan0}
+3: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP
+    link/ether 8a:3c:d1:77:04:b2 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.10.34/24 brd 192.168.10.255 scope global dynamic wlan0
+       valid_lft 21847sec preferred_lft 21847sec
+    inet6 2001:db8:acad:10:8a3c:d1ff:fe77:4b2/64 scope global dynamic
+\end{hostcmd}
+
+\subsection{The four configurations that cannot work}
+
+\begin{longtable}{@{}L{3.9cm}L{4.8cm}L{6.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{What you see} & \textbf{What it means} & \textbf{Where to go next} \\
+\midrule
+\endhead
+\cmd{169.254.x.x}, or no address at all &
+The host asked for a lease and heard nothing &
+Layer 2 first: is the port in the right VLAN, is the cable good, did the wireless
+association actually complete? Then the relay (\chref{dhcp}) \\
+\rowcolor{lightbg}
+Address correct, \textbf{gateway blank or wrong} &
+The host can reach its own subnet and nothing else &
+The DHCP pool's \cmd{default-router} option, or a leftover static configuration \\
+Address correct, \textbf{mask wrong} &
+The host misjudges which addresses are local. Some destinations work and others
+do not, unpredictably &
+The pool's \cmd{network} statement, or a static entry. This one is genuinely
+confusing to diagnose from the symptom \\
+\rowcolor{lightbg}
+Address correct, \textbf{no DNS servers} &
+Everything works by IP address and nothing by name &
+The pool's \cmd{dns-server} option \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[The wrong-mask fault, because it is worth recognising]
+A host configured \cmd{192.168.10.34/16} instead of \cmd{/24} believes the whole
+of \cmd{192.168.0.0/16} is on its local segment. So for a destination in
+\cmd{192.168.20.0/24} it ARPs directly instead of sending to the gateway ---
+gets no answer, and fails. For \cmd{8.8.8.8} it uses the gateway correctly, and
+works.
+
+The symptom is therefore ``the internet works but the file server does not'',
+which sounds like a server problem and is not. Check the mask whenever
+connectivity is selectively broken toward \emph{internal} destinations.
+\end{conceptbox}
+
+\section{Steps 2 to 4: the reachability ladder}
+
+\begin{hostcmd}{Windows}{ping 192.168.10.1}
+Pinging 192.168.10.1 with 32 bytes of data:
+Reply from 192.168.10.1: bytes=32 time=1ms TTL=255
+Reply from 192.168.10.1: bytes=32 time=1ms TTL=255
+
+Ping statistics for 192.168.10.1:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss)
+\end{hostcmd}
+
+\begin{tight}
+  \item \textbf{Gateway fails} $\rightarrow$ the problem is on this segment. Wrong
+        VLAN, a bad cable, a wireless client associated but not authorised, or an
+        ACL on the SVI. Check the ARP cache: if the gateway has no MAC entry, the
+        host cannot even find it.
+  \item \textbf{Gateway works, remote IP fails} $\rightarrow$ the host is fine.
+        The fault is routing, NAT or a filter. Run a trace to find where it
+        stops.
+  \item \textbf{Remote IP works, remote name fails} $\rightarrow$ DNS, and only
+        DNS. Go to \chref{dns} and stop looking at anything else.
+\end{tight}
+
+\begin{hostcmd}{Linux}{ip neigh}
+192.168.10.1 dev wlan0 lladdr 00:1a:2b:3c:4d:5e REACHABLE
+192.168.10.22 dev wlan0 lladdr 00:50:79:66:68:22 STALE
+192.168.10.99 dev wlan0  FAILED
+\end{hostcmd}
+
+\cmd{FAILED} against an address means the host ARPed for it and nothing replied
+--- so that address is either absent or not on this segment after all. It is a
+fast way to confirm a wrong-mask fault.
+
+\begin{alertbox}[A ping that fails does not always mean unreachable]
+Plenty of hosts and firewalls drop ICMP by policy. Before concluding that a
+server is down, test the port the application actually uses:
+
+\begin{tight}
+  \item Windows: \cmd{Test-NetConnection server.example.edu -Port 443}
+  \item macOS and Linux: \cmd{nc -zv server.example.edu 443}
+\end{tight}
+
+A successful TCP connection to port 443 on a host that ignores ping is a working
+server. Reporting it as down because it did not answer ICMP is a common and
+avoidable error.
+\end{alertbox}
+
+\section{Wireless security parameters}
+
+Wireless adds a step before the ladder even starts: the client must associate
+\emph{and} authenticate. A client can be fully associated and still have no
+network access.
+
+\begin{hostcmd}{Windows}{netsh wlan show interfaces}
+    Name                   : Wi-Fi
+    State                  : connected
+    SSID                   : CAMPUS-STAFF
+    BSSID                  : 00:11:22:aa:bb:03
+    Network type           : Infrastructure
+    Radio type             : 802.11ax
+    Authentication         : WPA2-Enterprise
+    Cipher                 : CCMP
+    Channel                : 44
+    Signal                 : 78%
+\end{hostcmd}
+
+\begin{hostcmd}{Linux}{iw dev wlan0 link}
+Connected to 00:11:22:aa:bb:03 (on wlan0)
+        SSID: CAMPUS-STAFF
+        freq: 5220
+        signal: -58 dBm
+        rx bitrate: 780.0 MBit/s
+        tx bitrate: 585.0 MBit/s
+\end{hostcmd}
+
+\begin{conceptbox}[Windows reports signal as a percentage, and it is not one]
+That \cmd{Signal : 78\%} is a rescaling of RSSI, not a physical quantity, and
+different drivers scale it differently. It also tells you nothing about the noise
+floor, which \chref{wireless} established is the number that decides whether a
+link works.
+
+Prefer a tool that reports dBm. On Linux \cmd{iw} gives it directly; on macOS the
+option-click menu shows RSSI and noise together; on Windows a third-party
+analyser is usually needed.
+\end{conceptbox}
+
+\subsection{What actually goes wrong}
+
+\begin{longtable}{@{}L{4.3cm}L{5.2cm}L{5.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Fault} & \textbf{Symptom} & \textbf{Check} \\
+\midrule
+\endhead
+Wrong pre-shared key &
+Repeated association attempts, never connects &
+Retype it. On WPA3 the failure is immediate rather than after a timeout \\
+\rowcolor{lightbg}
+Wrong EAP method or identity &
+Associates, then drops. Prompts for credentials repeatedly &
+The saved 802.1X profile: method (PEAP, EAP-TLS), identity, and whether it uses
+machine or user credentials \\
+Untrusted or expired server certificate &
+Connects on some devices and not others; a security warning &
+The RADIUS server's certificate chain, and whether the client trusts the issuer \\
+\rowcolor{lightbg}
+Stale saved profile &
+Worked yesterday, fails today, works for colleagues &
+Forget the network and re-add it. This genuinely is the fix more often than it
+deserves to be \\
+Band steering or 802.11r &
+Drops when moving between areas &
+Whether the client supports fast roaming; try locking to one band to confirm \\
+\rowcolor{lightbg}
+\textbf{MAC randomisation} &
+Associates and authenticates, then gets no address or the wrong VLAN &
+See below --- this is the modern one \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[MAC randomisation, and why it breaks things that used to work]
+Windows, macOS, iOS, Android and most Linux distributions now generate a
+\textbf{random MAC address per network by default}, and some re-randomise
+periodically. It is a privacy feature and it is on unless somebody turned it off.
+
+It breaks anything that identifies a device by MAC address:
+
+\begin{tight}
+  \item MAC-based authorisation or filtering --- the device is unknown.
+  \item DHCP reservations --- the printer that always had \cmd{.50} now does not.
+  \item Per-device VLAN assignment.
+  \item Any audit trail that assumed a MAC identified a machine.
+\end{tight}
+
+\textbf{The diagnostic tell:} the MAC in \cmd{ipconfig /all} does not match the
+MAC on the device's label or in the network's records, and the second octet's
+low-order bits mark it as locally administered.
+
+\textbf{Where to turn it off} --- and note the topic names all three:
+\begin{tight}
+  \item \textbf{Windows} --- Settings, Network, Wi-Fi, the network's properties:
+        ``Random hardware addresses''.
+  \item \textbf{macOS and iOS} --- the network's info panel: ``Private Wi-Fi
+        Address''.
+  \item \textbf{Linux (NetworkManager)} --- \cmd{wifi.cloned-mac-address} set to
+        \cmd{permanent} on the connection profile.
+\end{tight}
+
+The better long-term answer is to stop authenticating by MAC address at all and
+use 802.1X, which identifies the \emph{user}. But the exam and the helpdesk both
+need the short answer.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Starting at DNS.} Run the ladder in order.
+  \item \textbf{Concluding ``down'' from a failed ping.} Test the actual port.
+  \item \textbf{Trusting a signal percentage.} Get dBm, and get the noise floor.
+  \item \textbf{Ignoring the subnet mask} when connectivity is selectively broken
+        toward internal hosts.
+  \item \textbf{Forgetting that \cmd{ifconfig} is deprecated on Linux} and normal
+        on macOS.
+  \item \textbf{Assuming a MAC address identifies a device.} It has not been safe
+        to assume that since roughly 2020.
+  \item \textbf{Not checking whether it is one host or many.} One host is the
+        host; a whole VLAN is the network. Ask before you start.
+  \item \textbf{Fixing it without recording what it was.} A configuration you
+        overwrote is evidence you destroyed.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[One laptop associates to the staff wireless, authenticates, and gets no address. Everyone else is fine.]
+A user's laptop connects to \cmd{CAMPUS-STAFF}, shows as connected, and has
+\cmd{169.254.x.x}. The same laptop works on the wired dock. Other laptops in the
+same room work on the same SSID. The wireless team confirms the client is
+associated and that 802.1X authentication succeeded.
+
+\begin{hostcmd}{Windows}{ipconfig /all}
+Wireless LAN adapter Wi-Fi:
+
+   Physical Address. . . . . . . . . : 8A-3C-D1-77-04-B2
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration IPv4 Address. . : 169.254.88.14(Preferred)
+   Subnet Mask . . . . . . . . . . . : 255.255.0.0
+   Default Gateway . . . . . . . . . :
+\end{hostcmd}
+
+\begin{verify}{DSW1}{show ip dhcp snooping binding | include 8a3c}
+\end{verify}
+
+\textbf{Diagnosis.} Work through what has already been ruled out, because it is
+most of the problem.
+
+Association and 802.1X both succeeded, so the passphrase, the EAP method, the
+certificate and the RSSI are all fine --- the radio link is working and the user
+is authorised. The wired dock working proves the laptop's TCP/IP stack and the
+user's credentials are fine. Other laptops working on the same SSID in the same
+room proves the AP, the WLAN and the DHCP scope are fine.
+
+That leaves something specific to \emph{this device on wireless}. The MAC address
+is the clue: \cmd{8A-3C-D1-77-04-B2}. The first octet, \cmd{8A}, is
+\cmd{10001010} in binary --- and the second-lowest bit is set, which marks the
+address as \textbf{locally administered} rather than assigned by a manufacturer.
+This is a randomised MAC.
+
+The site assigns the staff VLAN by MAC address for devices in its asset register.
+The randomised address is not in the register, so the client is placed in a
+quarantine VLAN with no DHCP scope. Association succeeds, authentication
+succeeds, and no address is ever offered.
+
+The confirming detail is the empty snooping binding query: the switch has no
+record of this MAC leasing anything, which is consistent with no offer having
+been made rather than with an offer being lost.
+
+\textbf{Immediate fix.} Turn off random hardware addresses for this network in
+Windows Settings, then disconnect and reconnect. The laptop presents its burned-in
+address, matches the register, lands in the staff VLAN and leases normally.
+
+\textbf{The real fix} is at the other end. MAC-based VLAN assignment stopped being
+viable when every major operating system began randomising by default. The site
+already runs 802.1X --- authentication succeeded --- so it should assign the VLAN
+from the RADIUS response based on the authenticated \emph{user}, not from a MAC
+table. That works regardless of what address the client presents, and it is the
+answer to give when this is reported for the fifth time.
+\end{breakfix}
+
+\begin{lab}{The same fault on three operating systems}{Any three machines, or virtual machines}
+\textbf{Platform note.} This lab needs real operating systems rather than a
+network simulator, because the whole topic is about host-side tools. Virtual
+machines are fine. If you have only one machine, run Linux and Windows as VMs and
+use the host as the third.
+
+\begin{tasks}
+  \item On each of Windows, macOS and Linux, produce the full IP configuration,
+        the routing table and the ARP cache. Build your own version of the
+        command table in Section~\ref{sec:oscmds} from what actually worked --- including any
+        command that was missing on your distribution.
+  \item Run the reachability ladder on each machine while everything works, and
+        record the normal output of each step. You cannot recognise abnormal
+        output without this.
+  \item \textbf{Break 1.} Set a static address with the correct address and a
+        \emph{wrong gateway}. Predict which ladder step fails, then test.
+  \item \textbf{Break 2.} Set the mask to \cmd{/16} on a \cmd{/24} network. Find
+        two destinations that behave differently and explain the difference using
+        the ARP cache.
+  \item \textbf{Break 3.} Remove the DNS servers. Confirm that steps 1 to 3 pass
+        and step 4 fails, and that this is the \emph{only} configuration that
+        produces that pattern.
+  \item \textbf{Break 4.} Disconnect the network and observe APIPA. Note the
+        address and mask each operating system chooses.
+  \item Release and renew the lease on all three, using the correct command for
+        each. Note that macOS has no direct equivalent.
+  \item \textbf{Wireless.} Report SSID, BSSID, channel, authentication method and
+        signal on each operating system. Compare what each tool tells you and
+        what it omits.
+  \item \textbf{MAC randomisation.} Find the setting on each operating system.
+        Record the MAC with it on and off, and confirm the locally-administered
+        bit in the randomised one.
+  \item \textbf{Extension.} Write the four-step diagnostic script you would give
+        a first-line helpdesk, in the form of exact commands and what each result
+        means. Keep it to one page.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Give the four rungs of the reachability ladder and the area each failure
+        points to.
+  \item Name the command to show the full IP configuration on each of the three
+        operating systems.
+  \item A host has a correct address and a blank default gateway. What works and
+        what does not?
+  \item Why does a wrong subnet mask break some internal destinations and not
+        others?
+  \item A device authenticates to wireless successfully and receives no address.
+        Give two possible causes and how you would tell them apart.
+  \item How can you tell a randomised MAC address from a real one by inspection?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Diagnose at the host first. Address, gateway, remote by IP, remote by
+        name --- in that order. The first failure is the fault.
+  \item \cmd{ipconfig /all} on Windows, \cmd{ifconfig} on macOS, \cmd{ip addr} on
+        Linux. \cmd{ifconfig} is deprecated on Linux and normal on macOS.
+  \item Four broken configurations: no address (\cmd{169.254}), no gateway, wrong
+        mask, no DNS. Each has a distinct signature in the ladder.
+  \item A wrong mask breaks internal destinations selectively, which is why it
+        looks like a server fault.
+  \item A failed ping is not proof of a dead host. Test the port with
+        \cmd{Test-NetConnection} or \cmd{nc -zv}.
+  \item Wireless clients can be associated and authenticated and still have no
+        access. Check the security parameters separately from the radio.
+  \item Windows reports signal as a meaningless percentage. Get dBm and the noise
+        floor.
+  \item MAC randomisation is on by default everywhere and breaks MAC-based
+        authorisation, DHCP reservations and VLAN assignment. Identify it by the
+        locally-administered bit.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A host pings its gateway successfully, pings \cmd{8.8.8.8}
+        successfully, and cannot resolve any name. What is at fault?
+        \begin{tight}
+          \item[(a)] The default gateway \quad (b)~The subnet mask
+          \item[(c)] DNS configuration \quad (d)~The DHCP relay
+        \end{tight}
+  \item \textbf{(MCQ)} Which command shows the ARP cache on Linux?
+        \begin{tight}
+          \item[(a)] \cmd{arp -a} \quad (b)~\cmd{ip neigh}
+          \quad (c)~\cmd{netstat -rn} \quad (d)~\cmd{ip route}
+        \end{tight}
+  \item \textbf{(Short)} Explain why a host with a \cmd{/16} mask on a \cmd{/24}
+        network can reach the internet but not a server two VLANs away.
+  \item \textbf{(Short)} A user reports that a server is down because it does not
+        respond to ping. Give the command you would run instead, on each of the
+        three operating systems, and explain what a success would prove.
+  \item \textbf{(Applied)} A single laptop associates to an SSID, authenticates,
+        and receives \cmd{169.254.x.x}, while every other device on the same SSID
+        works. List, in order, the checks you would make at the host, and state
+        what each one rules out.
+  \item \textbf{(Applied)} A site has assigned VLANs by MAC address for ten
+        years. Explain in three sentences why this has begun failing, and
+        recommend a replacement with a justification the site's manager would
+        accept.
+\end{reviewq}

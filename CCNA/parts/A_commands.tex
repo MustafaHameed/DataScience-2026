@@ -1,3 +1,315 @@
 \chapter{Command Reference}\label{app:commands}
 
-% TODO: appendix content.
+Grouped by the job you are doing, not alphabetically, because that is how you
+will look them up. Commands are shown in the mode they are entered in; the
+chapter that teaches each group is named beside it.
+
+\begin{alertbox}[Two conventions used throughout]
+Angle brackets mark something you supply: \cmd{<vlan-id>}. A command shown
+indented belongs in the sub-mode above it.
+
+\textbf{These are written for IOS and IOS XE and have not been verified on live
+hardware.} Run each one on your own platform before relying on it, and check
+interface naming --- IOS XE uses \cmd{GigabitEthernet0/0/0}, classic IOS
+\cmd{GigabitEthernet0/0}, and a Catalyst switch \cmd{GigabitEthernet1/0/1}.
+\end{alertbox}
+
+\section{Getting on the box \textnormal{(\chref{cli}, \chref{aaa})}}
+
+\begin{longtable}{@{}L{8.4cm}L{7.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Command} & \textbf{What it does} \\
+\midrule
+\endhead
+\cmd{enable} & Privileged EXEC mode \\
+\rowcolor{lightbg}
+\cmd{configure terminal} & Global configuration mode \\
+\cmd{hostname <name>} & Sets the name, and is required before RSA keys \\
+\rowcolor{lightbg}
+\cmd{ip domain name <domain>} & Also required before RSA keys \\
+\cmd{crypto key generate rsa modulus 2048} & Generates the SSH host key \\
+\rowcolor{lightbg}
+\cmd{ip ssh version 2} & Refuses SSHv1 \\
+\cmd{username <u> privilege 15 algorithm-type scrypt secret <p>} &
+A local user with a type-9 hash \\
+\rowcolor{lightbg}
+\cmd{enable algorithm-type scrypt secret <p>} & The enable secret, hashed \\
+\cmd{line console 0} \newline
+\cmd{~~login local} \newline
+\cmd{~~exec-timeout 10 0} \newline
+\cmd{~~logging synchronous} &
+Console: authenticate locally, time out after ten minutes, and stop log
+messages scrambling what you type \\
+\rowcolor{lightbg}
+\cmd{line vty 0 15} \newline
+\cmd{~~login local} \newline
+\cmd{~~transport input ssh} &
+Remote access by SSH only. Without the last line Telnet still works \\
+\cmd{~~access-class <acl> in} & Restricts which hosts may connect \\
+\rowcolor{lightbg}
+\cmd{no ip domain lookup} & Stops a mistyped command hanging the CLI \\
+\cmd{copy running-config startup-config} & Saves. Also \cmd{write memory} \\
+\bottomrule
+\end{longtable}
+
+\section{Interfaces \textnormal{(\chref{physical}, \chref{trunking})}}
+
+\begin{longtable}{@{}L{8.4cm}L{7.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Command} & \textbf{What it does} \\
+\midrule
+\endhead
+\cmd{interface <type><n>} & Enter interface configuration \\
+\rowcolor{lightbg}
+\cmd{interface range <type><a> - <b>} & Several at once \\
+\cmd{~~description <text>} & Free text. Costs nothing, saves hours \\
+\rowcolor{lightbg}
+\cmd{~~ip address <addr> <mask>} & IPv4 address \\
+\cmd{~~ipv6 address <addr>/<len>} & IPv6 address \\
+\rowcolor{lightbg}
+\cmd{~~ipv6 address <prefix>/64 eui-64} & Host portion from the MAC \\
+\cmd{~~no shutdown} & Enables it. Router interfaces are down by default \\
+\rowcolor{lightbg}
+\cmd{~~duplex auto} / \cmd{~~speed auto} & Negotiate. Set both ends the same
+way or neither \\
+\cmd{~~no switchport} & Makes a switch port a routed port \\
+\rowcolor{lightbg}
+\cmd{interface vlan <id>} & An SVI \\
+\cmd{ip routing} & Enables routing on a layer 3 switch. Without it, SVIs do not
+route \\
+\bottomrule
+\end{longtable}
+
+\section{VLANs, trunks and edge ports \textnormal{(\chref{vlans}--\chref{trunking})}}
+
+\begin{longtable}{@{}L{8.4cm}L{7.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Command} & \textbf{What it does} \\
+\midrule
+\endhead
+\cmd{vlan <id>} \newline \cmd{~~name <name>} & Creates and names a VLAN \\
+\rowcolor{lightbg}
+\cmd{~~switchport mode access} & Fixes the port as an access port.
+\textbf{Before} assigning a VLAN \\
+\cmd{~~switchport access vlan <id>} & Puts it in that VLAN \\
+\rowcolor{lightbg}
+\cmd{~~switchport voice vlan <id>} & Adds a tagged voice VLAN for a phone \\
+\cmd{~~switchport trunk encapsulation dot1q} & Required on platforms that
+support ISL \\
+\rowcolor{lightbg}
+\cmd{~~switchport mode trunk} & Fixes the port as a trunk \\
+\cmd{~~switchport trunk allowed vlan <list>} &
+\textbf{Replaces} the list. This is an outage waiting to happen \\
+\rowcolor{lightbg}
+\cmd{~~switchport trunk allowed vlan add <list>} &
+\textbf{Adds} to it. Almost always what you meant \\
+\cmd{~~switchport trunk native vlan <id>} & Sets the untagged VLAN. Must match
+both ends \\
+\rowcolor{lightbg}
+\cmd{~~switchport nonegotiate} & Stops DTP frames \\
+\cmd{~~power inline auto} / \cmd{never} & PoE on or off for the port \\
+\bottomrule
+\end{longtable}
+
+\section{EtherChannel and spanning tree \textnormal{(\chref{etherchannel}, \chref{stp})}}
+
+\begin{longtable}{@{}L{8.4cm}L{7.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Command} & \textbf{What it does} \\
+\midrule
+\endhead
+\cmd{~~channel-group <n> mode active} & LACP, actively negotiating \\
+\rowcolor{lightbg}
+\cmd{~~channel-group <n> mode passive} & LACP, responding only. Two passive ends
+never form \\
+\cmd{~~channel-group <n> mode on} & No negotiation. Both ends must be \cmd{on} \\
+\rowcolor{lightbg}
+\cmd{interface port-channel <n>} & Configure the bundle, not its members \\
+\cmd{spanning-tree mode rapid-pvst} & Rapid PVST+ \\
+\rowcolor{lightbg}
+\cmd{spanning-tree vlan <id> root primary} & Lowers the priority enough to win \\
+\cmd{spanning-tree vlan <id> priority <n>} & Explicit priority, in steps of
+4096 \\
+\rowcolor{lightbg}
+\cmd{~~spanning-tree portfast} & Access port goes straight to forwarding \\
+\cmd{~~spanning-tree portfast trunk} & The same on a trunk to a host or
+hypervisor \\
+\rowcolor{lightbg}
+\cmd{~~spanning-tree bpduguard enable} & Err-disables the port if a BPDU
+arrives \\
+\cmd{~~spanning-tree guard root} & Refuses a superior BPDU on this port \\
+\rowcolor{lightbg}
+\cmd{~~spanning-tree guard loop} & Protects against a link that stops sending
+BPDUs \\
+\bottomrule
+\end{longtable}
+
+\section{Routing \textnormal{(\chref{static}--\chref{fhrp})}}
+
+\begin{longtable}{@{}L{8.4cm}L{7.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Command} & \textbf{What it does} \\
+\midrule
+\endhead
+\cmd{ip route <net> <mask> <next-hop>} & Static route \\
+\rowcolor{lightbg}
+\cmd{ip route 0.0.0.0 0.0.0.0 <next-hop>} & Default route \\
+\cmd{ip route <net> <mask> <next-hop> <ad>} & Floating static, for backup \\
+\rowcolor{lightbg}
+\cmd{ipv6 unicast-routing} & Enables IPv6 forwarding. Nothing routes without
+it \\
+\cmd{ipv6 route <prefix>/<len> <interface> <link-local>} &
+IPv6 static via a link-local next hop --- the interface is required \\
+\rowcolor{lightbg}
+\cmd{router ospf <pid>} \newline
+\cmd{~~router-id <a.b.c.d>} \newline
+\cmd{~~network <addr> <wildcard> area <n>} \newline
+\cmd{~~passive-interface <int>} &
+OSPFv2. The wildcard is inverted; passive advertises without sending hellos \\
+\cmd{ipv6 router ospf <pid>} \newline \cmd{~~router-id <a.b.c.d>} &
+OSPFv3. The router ID is \textbf{mandatory} on an IPv6-only router \\
+\rowcolor{lightbg}
+\cmd{~~ipv6 ospf <pid> area <n>} & Enables OSPFv3 \emph{on the interface}. There
+are no network statements \\
+\cmd{~~ip ospf network point-to-point} & No DR election on a two-router link \\
+\rowcolor{lightbg}
+\cmd{~~standby <grp> ip <vip>} \newline
+\cmd{~~standby <grp> priority <n>} \newline
+\cmd{~~standby <grp> preempt} &
+HSRP. Without \cmd{preempt} a recovered router stays standby \\
+\cmd{~~vrrp <grp> ip <vip>} & VRRP. Preempts by default \\
+\bottomrule
+\end{longtable}
+
+\section{Services \textnormal{(\chref{dhcp}, \chref{nat})}}
+
+\begin{longtable}{@{}L{8.4cm}L{7.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Command} & \textbf{What it does} \\
+\midrule
+\endhead
+\cmd{ip dhcp excluded-address <first> <last>} &
+Reserves addresses. \textbf{Enter this before the pool} \\
+\rowcolor{lightbg}
+\cmd{ip dhcp pool <name>} \newline
+\cmd{~~network <net> <mask>} \newline
+\cmd{~~default-router <addr>} \newline
+\cmd{~~dns-server <addr>} \newline
+\cmd{~~lease <days> <hours> <mins>} &
+A pool. The \cmd{network} statement must match the serving interface's subnet
+exactly \\
+\cmd{~~ip helper-address <server>} &
+Relay. Goes on the interface facing the \textbf{clients} \\
+\rowcolor{lightbg}
+\cmd{~~ip address dhcp} & The router leases its own address \\
+\cmd{~~ip nat inside} / \cmd{~~ip nat outside} &
+Marks the NAT boundary. Both are required or nothing is translated \\
+\rowcolor{lightbg}
+\cmd{ip nat inside source static <local> <global>} & Static one-to-one NAT \\
+\cmd{ip nat inside source static tcp <local> <port> <global> <port>} &
+Port forwarding \\
+\rowcolor{lightbg}
+\cmd{ip nat inside source list <acl> interface <int> overload} &
+PAT onto the interface address. \cmd{overload} is the keyword that matters \\
+\cmd{clear ip nat translation *} & After every change, or you test stale
+entries \\
+\bottomrule
+\end{longtable}
+
+\section{Security \textnormal{(\chref{acl}, \chref{l2security}, \chref{aaa})}}
+
+\begin{longtable}{@{}L{8.4cm}L{7.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Command} & \textbf{What it does} \\
+\midrule
+\endhead
+\cmd{access-list <1-99> \{permit|deny\} <src> <wildcard>} & Numbered standard
+ACL \\
+\rowcolor{lightbg}
+\cmd{access-list <100-199> \{permit|deny\} <proto> <src> <sw> <dst> <dw> eq <port>} &
+Numbered extended ACL \\
+\cmd{ip access-list \{standard|extended\} <name>} &
+Named ACL, with sequence numbers you can edit one at a time \\
+\rowcolor{lightbg}
+\cmd{~~ip access-group <acl> \{in|out\}} & Applies it to an interface \\
+\cmd{~~switchport port-security} \newline
+\cmd{~~switchport port-security maximum <n>} \newline
+\cmd{~~switchport port-security mac-address sticky} \newline
+\cmd{~~switchport port-security violation \{protect|restrict|shutdown\}} &
+Port security. Needs \cmd{switchport mode access} first. Use 3 for a phone plus
+PC \\
+\rowcolor{lightbg}
+\cmd{errdisable recovery cause psecure-violation} \newline
+\cmd{errdisable recovery interval <sec>} &
+Automatic recovery. Manual is \cmd{shutdown} then \cmd{no shutdown} \\
+\cmd{ip dhcp snooping} \newline
+\cmd{ip dhcp snooping vlan <list>} \newline
+\cmd{no ip dhcp snooping information option} \newline
+\cmd{~~ip dhcp snooping trust} &
+Snooping. Trust the uplink, and expect to disable option 82 \\
+\rowcolor{lightbg}
+\cmd{ip arp inspection vlan <list>} \newline \cmd{~~ip arp inspection trust} &
+DAI. Requires snooping first \\
+\cmd{arp access-list <name>} \newline
+\cmd{~~permit ip host <addr> mac host <mac>} \newline
+\cmd{ip arp inspection filter <name> vlan <id>} &
+Permits statically addressed hosts, which have no snooping binding \\
+\rowcolor{lightbg}
+\cmd{~~storm-control broadcast level <rise> <fall>} \newline
+\cmd{~~storm-control action \{trap|shutdown\}} & Storm control \\
+\cmd{ipv6 nd raguard policy <name>} \newline
+\cmd{~~device-role \{host|router\}} \newline
+\cmd{~~ipv6 nd raguard attach-policy <name>} & RA guard \\
+\rowcolor{lightbg}
+\cmd{aaa new-model} \newline
+\cmd{aaa authentication login default group <grp> local} &
+AAA with a local fallback. \textbf{Never omit the trailing \cmd{local}} \\
+\cmd{tacacs server <name>} \newline
+\cmd{~~address ipv4 <addr>} \newline \cmd{~~key <secret>} & A TACACS+ server \\
+\rowcolor{lightbg}
+\cmd{ip tacacs source-interface Loopback0} & A stable source address \\
+\bottomrule
+\end{longtable}
+
+\section{Management and files \textnormal{(\chref{management}, \chref{aaa})}}
+
+\begin{longtable}{@{}L{8.4cm}L{7.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Command} & \textbf{What it does} \\
+\midrule
+\endhead
+\cmd{service timestamps log datetime msec localtime show-timezone} &
+\textbf{Do this first, everywhere.} Otherwise messages carry only uptime \\
+\rowcolor{lightbg}
+\cmd{logging buffered <size> informational} & Local buffer \\
+\cmd{logging console warnings} & Keeps the CLI usable \\
+\rowcolor{lightbg}
+\cmd{logging host <addr>} \newline \cmd{logging trap notifications} &
+Central server, and its severity threshold. Nothing to do with SNMP traps \\
+\cmd{logging source-interface Loopback0} & A stable source address \\
+\rowcolor{lightbg}
+\cmd{snmp-server user <u> <grp> v3 auth sha <p> priv aes 128 <p>} & SNMPv3
+authPriv \\
+\cmd{snmp-server host <addr> version 3 priv <user>} & Where notifications go \\
+\rowcolor{lightbg}
+\cmd{cdp run} / \cmd{no cdp run} & CDP globally \\
+\cmd{lldp run} & LLDP is off by default \\
+\rowcolor{lightbg}
+\cmd{ip scp server enable} &
+SCP server. Also needs \cmd{aaa new-model}, an authentication method and
+\cmd{aaa authorization exec} \\
+\cmd{copy sftp: flash:} & Fetch a file. IOS is an SFTP client, not a server \\
+\rowcolor{lightbg}
+\cmd{verify /md5 flash:<image>} & Check an image before reloading onto it \\
+\cmd{archive} \newline \cmd{~~path scp://<user>@<host>/<prefix>} \newline
+\cmd{~~write-memory} & Off-box backup on every save \\
+\bottomrule
+\end{longtable}

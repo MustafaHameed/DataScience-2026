@@ -1,4 +1,576 @@
 \chapter{Layer 2 Security}\label{ch:l2security}
 \bp{4.7}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Configure} port security with an appropriate maximum, learning
+        method and violation mode.
+  \item \textbf{Configure} DHCP snooping, and explain which ports must be trusted
+        and why.
+  \item \textbf{Configure} dynamic ARP inspection, including the case it cannot
+        handle without help.
+  \item \textbf{Configure} storm control and IPv6 RA guard.
+  \item \textbf{Predict} the outage each of these causes when deployed carelessly
+        --- which is how they are examined and how they fail in practice.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ethernet} for MAC learning. \chref{vlans} for access ports.
+\chref{dhcp} --- DHCP snooping is unintelligible without DORA. \chref{ipv6} for
+router advertisements, which RA guard exists to police.
+\end{prereq}
+
+\begin{keyterms}
+port security $\bullet$ sticky MAC $\bullet$ violation mode $\bullet$
+err-disabled $\bullet$ DHCP snooping $\bullet$ trusted port $\bullet$ binding
+database $\bullet$ dynamic ARP inspection $\bullet$ ARP ACL $\bullet$ storm
+control $\bullet$ RA guard
+\end{keyterms}
+
+\begin{examnote}[Five named sub-topics, all \emph{configure}]
+Topic~\tp{4.7} enumerates them: \tp{4.7.a} DHCP snooping, \tp{4.7.b} dynamic ARP
+inspection, \tp{4.7.c} storm control, \tp{4.7.d} RA guard, \tp{4.7.e} port
+security.
+
+Five features, one idea: \textbf{the access port is where the network meets
+people it does not control}, and each of these constrains one thing an attached
+device could otherwise do --- claim many identities, answer as a DHCP server, lie
+in ARP, flood the segment, or claim to be an IPv6 router.
+
+Learn them as that list of five abuses and the configuration follows.
+\end{examnote}
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.6cm, minimum height=1.0cm,
+               align=center, font=\tiny\bfseries},
+    ft/.style={rounded corners=3pt, draw=dom4!70, fill=dom4!7, line width=0.8pt,
+               text width=2.5cm, align=center, font=\tiny,
+               text=dom4!40!black, inner sep=4pt, minimum height=1.35cm},
+    w/.style={line width=0.9pt, neutral!65},
+    lk/.style={dom4!45, line width=0.7pt, dash pattern=on 2pt off 2pt}}
+
+  \node[dv=neutral] (h)  at (0,0)   {\faIcon{laptop}\\attacker\\or user};
+  \node[dv=dom2, minimum width=2.0cm] (sw) at (5.0,0) {\faIcon{sitemap}\\SW1};
+  \node[dv=dom3] (up) at (10.0,0) {\faIcon{route}\\uplink};
+  \draw[w, line width=1.5pt] (h) -- (sw);
+  \draw[w] (sw) -- (up);
+  % Kept short and pulled left: the longer label ran into SW1's box.
+  \node[font=\tiny\bfseries, text=accent!70!black] at (2.2,0.5)
+      {untrusted access port};
+  \node[font=\tiny\bfseries, text=dom2!45!black] at (7.5,0.5) {trusted uplink};
+
+  \foreach \x/\t/\b in {
+      -0.6/\faIcon{id-badge}~Port security/{many MACs, or the wrong one},
+      2.4/\faIcon{address-card}~DHCP snooping/{a rogue DHCP server},
+      5.4/\faIcon{exchange-alt}~Dynamic ARP inspection/{ARP poisoning},
+      8.4/\faIcon{water}~Storm control/{flooding the segment},
+      11.4/\faIcon{shield-alt}~RA guard/{a rogue IPv6 router}} {
+    \node[ft, anchor=north west] at (\x,-1.5) {\textbf{\t}\\[2pt]stops \b};}
+
+  % A brace spanning all five, rather than a leader pointing at one of them.
+  \draw[lk, decorate, decoration={brace, amplitude=4pt, mirror}]
+      (-0.6,-1.35) -- (13.9,-1.35);
+  \draw[lk] (2.5,-0.35) -- (2.5,-1.25);
+  \node[font=\tiny, text=neutral!85!black, align=center, text width=13.5cm,
+        anchor=north] at (5.7,-3.35)
+      {All five live on the \emph{access} port, and all five exist because the
+       device plugged into it is not under your control.};
+\end{tikzpicture}}%
+{Five features, five abuses, one port. The uplink is trusted; everything facing a
+user is not.}{l2sec}
+
+\begin{examnote}[Deploy them one at a time]
+Each of these can black-hole a floor on its own, and two of them --- DHCP snooping
+and dynamic ARP inspection --- will do so if the uplink is left untrusted. Turn
+one on, on one switch, and watch it before doing the next.
+\end{examnote}
+
+\section{Port security --- limiting who may appear on a port}
+
+\begin{config}{a normal user access port}
+interface GigabitEthernet1/0/5
+ description Desk 5
+ switchport mode access
+ switchport access vlan 10
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+!
+ switchport port-security
+ switchport port-security maximum 2
+ switchport port-security mac-address sticky
+ switchport port-security violation restrict
+ switchport port-security aging time 60
+ switchport port-security aging type inactivity
+\end{config}
+
+\begin{alertbox}[\cmd{switchport mode access} must come first]
+Port security cannot be enabled on a port still in dynamic negotiation mode. If
+you type \cmd{switchport port-security} on a default port, IOS rejects it. Set
+the mode, then secure it --- the same command-order rule as VLAN assignment in
+\chref{vlans}.
+\end{alertbox}
+
+\subsection{Choosing the maximum}
+
+The default is 1, which is almost never right.
+
+\begin{tight}
+  \item \textbf{One} device on the port: 1.
+  \item \textbf{A PC behind an IP phone}: \textbf{3}. The phone appears in the
+        voice VLAN, the PC in the data VLAN, and the phone commonly registers a
+        second address of its own. Setting 2 here produces violations that come
+        and go with the phone's firmware --- a genuinely miserable fault to
+        chase.
+  \item \textbf{A small unmanaged switch or a lab bench}: count the devices and
+        add headroom, or do not use port security on that port at all.
+  \item \textbf{A virtualisation host}: port security is usually the wrong tool.
+        Every VM has its own MAC.
+\end{tight}
+
+\subsection{The three violation modes}
+
+\begin{longtable}{@{}L{2.5cm}L{4.0cm}L{4.2cm}L{4.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Mode} & \textbf{Traffic} & \textbf{Notification} & \textbf{Use when} \\
+\midrule
+\endhead
+\cmd{protect} & Offending frames dropped, port stays up &
+\textbf{None at all.} No counter, no log &
+Almost never. Silent failure is worse than an outage \\
+\rowcolor{lightbg}
+\cmd{restrict} & Offending frames dropped, port stays up &
+Counter increments, syslog and SNMP trap &
+User ports where you want evidence without an outage \\
+\cmd{shutdown} & Port goes \cmd{err-disabled} --- everything stops &
+Syslog, trap, and a very fast phone call &
+\textbf{The default.} High-security areas \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[\cmd{protect} is a trap, and the exam knows it]
+It sounds like the gentle, sensible option. It is the one mode that gives you no
+evidence whatsoever: a user whose traffic is being silently discarded reports
+``the network is slow'', and nothing anywhere records why.
+
+Prefer \cmd{restrict} when you do not want to drop the port, and \cmd{shutdown}
+when you do.
+\end{conceptbox}
+
+\subsection{Recovering an err-disabled port}
+
+Manual recovery is \cmd{shutdown} then \cmd{no shutdown} on the interface ---
+both, in that order; \cmd{no shutdown} alone does nothing to a port in
+\cmd{err-disabled}. To recover automatically:
+
+\begin{config}{automatic recovery after five minutes}
+errdisable recovery cause psecure-violation
+errdisable recovery cause bpduguard
+errdisable recovery interval 300
+\end{config}
+
+\begin{verify}{SW1}{show port-security interface GigabitEthernet1/0/5}
+Port Security              : Enabled
+Port Status                : Secure-up
+Violation Mode             : Restrict
+Aging Time                 : 60 mins
+Aging Type                 : Inactivity
+Maximum MAC Addresses      : 2
+Total MAC Addresses        : 2
+Configured MAC Addresses   : 0
+Sticky MAC Addresses       : 2
+Last Source Address:Vlan   : 0050.7966.6800:10
+Security Violation Count   : 14
+\end{verify}
+
+A non-zero \cmd{Security Violation Count} on a \cmd{Secure-up} port is the useful
+signal here: the port is working, and something is repeatedly being refused. That
+is either an attack or --- far more often --- a maximum set too low.
+
+\begin{alertbox}[Sticky addresses are learned, not saved]
+\cmd{mac-address sticky} converts dynamically learned addresses into
+running-configuration entries. They are \emph{not} written to the startup
+configuration until you save. Reload without saving and the port relearns
+whatever is plugged in at that moment --- which may be the wrong device, now
+permanently authorised.
+
+If you use sticky, \cmd{write memory} is part of the procedure, not an
+afterthought.
+\end{alertbox}
+
+\section{DHCP snooping --- stopping rogue servers}
+
+An attacker --- or a helpful colleague with a home router --- who answers DHCP
+first becomes the default gateway for everyone who believed them. DHCP snooping
+fixes this by deciding which ports are allowed to send \emph{server} messages.
+
+\begin{definitionbox}[Trusted and untrusted]
+On an untrusted port, DHCP \emph{server} messages (OFFER, ACK, NAK) are dropped.
+Client messages pass. On a trusted port everything passes.
+
+Every port is untrusted once snooping is enabled on a VLAN. You must explicitly
+trust the path toward the legitimate server.
+\end{definitionbox}
+
+\begin{config}{DHCP snooping on an access switch}
+ip dhcp snooping
+ip dhcp snooping vlan 10,20,30
+!
+! Almost always required. The switch inserts option 82 into relayed
+! requests; a router that is not configured to expect it discards the
+! request, and every client fails. See the alert below.
+no ip dhcp snooping information option
+!
+! The uplink carries the server's replies. Trust it.
+interface GigabitEthernet1/0/48
+ description Uplink to distribution
+ ip dhcp snooping trust
+!
+! User ports stay untrusted, and are rate-limited so a single host
+! cannot exhaust the pool by flooding requests.
+interface range GigabitEthernet1/0/1-46
+ ip dhcp snooping limit rate 10
+\end{config}
+
+\begin{alertbox}[The two faults that make snooping look broken]
+\begin{tight}
+  \item \textbf{The uplink is not trusted.} The server's OFFER arrives on an
+        untrusted port and is dropped. \emph{Every} client on the switch fails,
+        and the DHCP server logs nothing wrong because it answered.
+  \item \textbf{Option 82.} By default the switch adds option 82 to requests it
+        forwards, but with a \cmd{giaddr} of \cmd{0.0.0.0}. Cisco routers
+        discard such packets unless told otherwise. Either
+        \cmd{no ip dhcp snooping information option} on the switch, or
+        \cmd{ip dhcp relay information trust-all} on the router.
+\end{tight}
+
+Both produce the same symptom --- a whole switch full of clients with no
+addresses, immediately after a change that ``should have been transparent''.
+\end{alertbox}
+
+\begin{verify}{SW1}{show ip dhcp snooping binding}
+MacAddress          IpAddress        Lease(sec)  Type           VLAN  Interface
+------------------  ---------------  ----------  -------------  ----  ---------------
+00:50:79:66:68:00   192.168.10.21    27154       dhcp-snooping   10   GigabitEthernet1/0/5
+00:50:79:66:68:22   192.168.10.22    27301       dhcp-snooping   10   GigabitEthernet1/0/7
+\end{verify}
+
+\begin{conceptbox}[The binding table is the point]
+Stopping rogue servers is useful. Building this table is what makes the next two
+features possible: it is the switch's record of \emph{which MAC legitimately
+holds which IP on which port}. Dynamic ARP inspection and IP source guard both
+consult it.
+
+So DHCP snooping is not an optional extra you turn on afterwards. It is the
+foundation, and it has to go first.
+\end{conceptbox}
+
+\section{Dynamic ARP inspection --- stopping ARP lies}
+
+ARP has no authentication. Any host can claim any address, and a host that claims
+to be the default gateway receives everyone's traffic. DAI checks every ARP
+message on an untrusted port against the snooping binding table and drops
+anything that disagrees.
+
+\begin{config}{DAI on the same switch}
+! DHCP snooping must already be running on these VLANs.
+ip arp inspection vlan 10,20,30
+!
+! Optional but recommended: also check that the Ethernet header
+! addresses agree with the ARP payload, and that the IP is sane.
+ip arp inspection validate src-mac dst-mac ip
+!
+! Trust the uplink, exactly as for snooping. Switch-to-switch links
+! must be trusted or legitimate ARP is dropped between switches.
+interface GigabitEthernet1/0/48
+ ip arp inspection trust
+!
+! Rate-limit user ports. The default is 15 packets per second, and
+! exceeding it err-disables the port.
+interface range GigabitEthernet1/0/1-46
+ ip arp inspection limit rate 15
+\end{config}
+
+\begin{alertbox}[The case DAI cannot handle on its own]
+A statically addressed device --- a server, a printer, a legacy controller ---
+never asks for a DHCP lease, so it has \textbf{no entry in the binding table}.
+When DAI is enabled, its ARP replies match nothing and are dropped, and the
+device disappears from the network.
+
+The fix is an ARP ACL naming the address and MAC explicitly:
+
+\begin{config}{permitting statically addressed hosts}
+arp access-list STATIC-SERVERS
+ permit ip host 192.168.20.15 mac host 0011.2233.4455
+ permit ip host 192.168.20.16 mac host 0011.2233.4456
+!
+ip arp inspection filter STATIC-SERVERS vlan 20
+\end{config}
+
+Inventory your static devices \emph{before} enabling DAI, not after the calls
+start.
+\end{alertbox}
+
+\begin{verify}{SW1}{show ip arp inspection statistics vlan 10}
+ Vlan      Forwarded        Dropped     DHCP Drops      ACL Drops
+ ----      ---------        -------     ----------      ---------
+   10          88214             37             37              0
+\end{verify}
+
+\section{Storm control --- limiting flooding}
+
+A broadcast storm --- from a loop, a faulty NIC or a deliberate flood --- can
+saturate a segment. Storm control caps how much of a port's bandwidth may be
+broadcast, multicast or unknown unicast.
+
+\begin{config}{storm control on user ports}
+interface range GigabitEthernet1/0/1-46
+ storm-control broadcast level 5.00 3.00
+ storm-control multicast level 10.00
+ storm-control action trap
+\end{config}
+
+Two numbers on the first line: the port suppresses broadcast traffic when it
+exceeds 5\% of bandwidth and resumes when it falls below 3\%. The gap prevents
+the port oscillating on and off at the threshold.
+
+\begin{tight}
+  \item \cmd{action trap} sends a notification and keeps suppressing --- the
+        usual choice.
+  \item \cmd{action shutdown} err-disables the port. Decisive, and it turns a
+        performance problem into an outage, so reserve it for ports where that is
+        the right trade.
+  \item Levels can also be given in \cmd{pps} or \cmd{bps} where a percentage is
+        awkward.
+\end{tight}
+
+\begin{verify}{SW1}{show storm-control broadcast}
+Interface  Filter State   Upper        Lower        Current
+---------  -------------  -----------  -----------  ---------
+Gi1/0/1    Forwarding     5.00%        3.00%        0.42%
+Gi1/0/7    Blocking       5.00%        3.00%        6.11%
+\end{verify}
+
+\cmd{Blocking} on \cmd{Gi1/0/7} means it is suppressing right now. Storm control
+treats the symptom; a port that blocks repeatedly is telling you to go and find
+the loop (\chref{stp}).
+
+\section{RA guard --- the IPv6 equivalent}
+
+In IPv6 there is no DHCP server to impersonate for basic connectivity. Hosts
+learn their prefix and gateway from \term{router advertisements}, so a host that
+sends RAs --- maliciously, or because someone enabled internet sharing on a
+laptop --- becomes the default gateway for the segment. RA guard drops RAs
+arriving on ports that should not have any.
+
+\begin{config}{RA guard on access ports}
+ipv6 nd raguard policy ACCESS-PORTS
+ device-role host
+!
+ipv6 nd raguard policy UPLINKS
+ device-role router
+!
+interface range GigabitEthernet1/0/1-46
+ ipv6 nd raguard attach-policy ACCESS-PORTS
+!
+interface GigabitEthernet1/0/48
+ ipv6 nd raguard attach-policy UPLINKS
+\end{config}
+
+\begin{examnote}[Map each feature to the abuse it prevents]
+\begin{tight}
+  \item \textbf{Port security} --- one device claiming many MAC addresses, or an
+        unauthorised device on a port.
+  \item \textbf{DHCP snooping} --- a rogue DHCP server handing out gateways.
+  \item \textbf{Dynamic ARP inspection} --- ARP poisoning, the on-path attack.
+  \item \textbf{Storm control} --- flooding, whether hostile or accidental.
+  \item \textbf{RA guard} --- a rogue IPv6 router. The v6 counterpart of DHCP
+        snooping.
+\end{tight}
+Matching questions on this list are close to free marks. Learn the five pairs.
+\end{examnote}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Not trusting the uplink} for DHCP snooping or DAI. Takes out an
+        entire switch.
+  \item \textbf{Option 82 left on} with a Cisco relay that discards it. Same
+        symptom, different cause.
+  \item \textbf{Enabling DAI before inventorying static hosts.} Servers and
+        printers vanish.
+  \item \textbf{Port security maximum of 2 on a phone port.} Should be 3.
+  \item \textbf{Using \cmd{protect}.} Silent drops and no evidence.
+  \item \textbf{Sticky MACs never saved.} A reload re-learns whatever is plugged
+        in.
+  \item \textbf{\cmd{no shutdown} alone on an err-disabled port.} You must
+        \cmd{shutdown} first.
+  \item \textbf{Storm control with \cmd{action shutdown} on user ports.} Turns a
+        transient into a truck roll.
+  \item \textbf{Enabling everything at once on a Friday.} Each of these features
+        can black-hole a floor. Deploy one at a time, on one switch, and watch.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[After a security rollout, two servers and every printer stop responding. PCs are fine.]
+DHCP snooping and DAI were enabled across the access layer overnight. In the
+morning, all DHCP clients work normally --- addresses lease, browsing works. But
+two application servers and every network printer are unreachable from
+everywhere, including from hosts in their own VLAN. The devices themselves are
+powered on, their link lights are up, and their switch ports show
+\cmd{connected}.
+
+\begin{verify}{SW1}{show ip arp inspection statistics vlan 20}
+ Vlan      Forwarded        Dropped     DHCP Drops      ACL Drops
+ ----      ---------        -------     ----------      ---------
+   20           4471           1902           1902              0
+\end{verify}
+
+\begin{verify}{SW1}{show ip dhcp snooping binding | include 192.168.20}
+\end{verify}
+
+\textbf{Diagnosis.} The binding query returns nothing for the server subnet. The
+servers and printers are statically addressed, so they never leased anything and
+never appeared in the snooping binding table.
+
+DAI validates every ARP message on an untrusted port against that table. With no
+entry, every ARP reply these devices send is dropped --- so no other host can
+ever resolve their MAC address, and they become unreachable while remaining
+perfectly healthy. The \cmd{DHCP Drops} column confirms it: 1902 packets dropped
+specifically for having no binding, and zero ACL drops because no ARP ACL exists.
+
+Two details make the diagnosis clean. First, DHCP clients are unaffected ---
+they have bindings, so this is not a general layer 2 fault. Second, the devices
+are unreachable \emph{within} their own VLAN, which rules out routing entirely:
+ARP is the only thing that operates there.
+
+\textbf{Fix.} Give the static devices explicit permission.
+
+\begin{config}{an ARP ACL for the static estate}
+arp access-list STATIC-HOSTS
+ permit ip host 192.168.20.15 mac host 0011.2233.4455
+ permit ip host 192.168.20.16 mac host 0011.2233.4456
+ permit ip host 192.168.20.30 mac host 00aa.bbcc.dd01
+ permit ip host 192.168.20.31 mac host 00aa.bbcc.dd02
+!
+ip arp inspection filter STATIC-HOSTS vlan 20
+\end{config}
+
+\textbf{The process lesson.} The rollout was not wrong, it was incomplete. DAI's
+dependency on the binding table is documented and predictable, and the work that
+was skipped was the inventory: every statically addressed device, its address and
+its MAC, before the feature is enabled. On a site of any size, the alternative is
+DHCP reservations for those devices instead, so that they build bindings like
+everyone else --- which is the better long-term answer.
+\end{breakfix}
+
+\begin{lab}{Securing an access switch, one feature at a time}{Packet Tracer for tasks 1--6; CML for RA guard}
+\textbf{Platform note.} Packet Tracer supports port security, DHCP snooping, DAI
+and storm control. RA guard needs a real IOS image, so task~7 requires CML or
+GNS3.
+
+\textbf{Topology.} \cmd{SW1} with access ports in VLANs 10 and 20, an uplink to
+\cmd{DSW1}, a DHCP server beyond it, one statically addressed server in VLAN~20,
+a laptop you will use as the attacker, and an IP phone with a PC behind it.
+
+\begin{tasks}
+  \item Baseline: confirm every host has connectivity and can obtain a lease.
+        Record the MAC address of every device --- you will need them.
+  \item Configure port security on one access port with a maximum of 1 and
+        \cmd{violation shutdown}. Move the cable to a second device and observe
+        the err-disable. Recover it manually, then configure automatic recovery
+        and repeat.
+  \item Set the phone port to a maximum of 2 and confirm the violation. Raise it
+        to 3 and confirm it clears. Explain the third address.
+  \item Configure sticky learning, verify with
+        \cmd{show run interface}, then reload \emph{without} saving. Explain what
+        you find.
+  \item Attach the laptop running a DHCP server to an access port and confirm it
+        can poison a client. Then enable DHCP snooping --- \textbf{deliberately
+        omitting} the trust on the uplink --- and record the resulting symptom
+        before fixing it.
+  \item Enable DAI. Confirm the statically addressed server becomes unreachable,
+        diagnose it from \cmd{show ip arp inspection statistics}, and repair it
+        with an ARP ACL.
+  \item Configure storm control at 1\% with \cmd{action trap}, generate broadcast
+        traffic, and watch the filter state change. Then change to
+        \cmd{action shutdown} and compare the consequences.
+  \item \textbf{RA guard (CML).} Enable IPv6 on the VLAN, confirm hosts get
+        addresses by SLAAC, then advertise a rogue prefix from the laptop.
+        Observe the hosts move to it. Apply RA guard and confirm the rogue RAs
+        are dropped.
+  \item \textbf{Extension.} Write the deployment runbook you would actually use
+        for this rollout: the order, the pre-checks, what you would verify after
+        each step, and the rollback for each.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Name each of the five features and the specific abuse it prevents.
+  \item Why must DHCP snooping be configured before DAI, and what does DAI
+        consult?
+  \item What is wrong with \cmd{violation protect}?
+  \item Why is 3 the right port-security maximum on a port with a phone and a PC?
+  \item A statically addressed printer stops responding after DAI is enabled.
+        Explain the mechanism and give the fix.
+  \item Which two ports on an access switch almost always need to be trusted, and
+        for which two features?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Five features, five abuses: port security (identity), DHCP snooping
+        (rogue server), DAI (ARP poisoning), storm control (flooding), RA guard
+        (rogue IPv6 router).
+  \item Port security needs \cmd{switchport mode access} first. Maximum 3 for a
+        phone plus PC. \cmd{restrict} for evidence without an outage,
+        \cmd{shutdown} for enforcement, \cmd{protect} essentially never.
+  \item Sticky addresses live in the running configuration only until you save.
+  \item Recover an err-disabled port with \cmd{shutdown} then \cmd{no shutdown},
+        or configure \cmd{errdisable recovery}.
+  \item DHCP snooping makes every port untrusted; trust the uplink, and expect to
+        disable option 82 insertion.
+  \item Its binding table is what DAI validates against --- which is why
+        statically addressed devices need an ARP ACL.
+  \item Storm control has a rising and a falling threshold; \cmd{trap} suppresses
+        and reports, \cmd{shutdown} err-disables.
+  \item RA guard classifies ports as \cmd{host} or \cmd{router} and drops RAs
+        from hosts.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which violation mode drops offending traffic, keeps the
+        port up, and generates no notification of any kind?
+        \begin{tight}
+          \item[(a)] \cmd{restrict} \quad (b)~\cmd{shutdown}
+          \quad (c)~\cmd{protect} \quad (d)~\cmd{err-disable}
+        \end{tight}
+  \item \textbf{(MCQ)} Dynamic ARP inspection validates ARP packets against:
+        \begin{tight}
+          \item[(a)] the MAC address table
+          \item[(b)] the DHCP snooping binding table
+          \item[(c)] the routing table
+          \item[(d)] the CAM table's sticky entries
+        \end{tight}
+  \item \textbf{(Short)} Every client on one switch loses DHCP immediately after
+        snooping is enabled. Give two distinct causes and the command that fixes
+        each.
+  \item \textbf{(Short)} Explain why sticky MAC addresses can become a security
+        problem after an unplanned reload.
+  \item \textbf{(Applied)} Write the configuration securing a 24-port access
+        switch: user ports in VLAN 10 with phones, an uplink on port 24, DHCP
+        snooping and DAI on VLAN 10, storm control at 3\%, and RA guard. Mark
+        clearly which commands are global and which are per-interface, and state
+        the order you would deploy them in.
+  \item \textbf{(Applied)} You must enable DAI on a campus with an unknown number
+        of statically addressed devices. Describe the procedure you would follow
+        to avoid the outage in this chapter's Break \& Fix, including what you
+        would collect beforehand and how you would stage the change.
+\end{reviewq}

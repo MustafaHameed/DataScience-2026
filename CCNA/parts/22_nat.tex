@@ -1,4 +1,480 @@
 \chapter{NAT and PAT on IOS XE}\label{ch:nat}
 \bp{4.3}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} the four NAT address terms and identify each one in a
+        translation table.
+  \item \textbf{Configure} static NAT, dynamic NAT and PAT on an IOS XE router,
+        including port forwarding.
+  \item \textbf{Interpret} \cmd{show ip nat translations} and
+        \cmd{show ip nat statistics}.
+  \item \textbf{Troubleshoot} the four faults that account for almost every broken
+        NAT: missing interface markers, a wrong ACL, an exhausted pool, and an
+        order-of-operations misunderstanding.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ipv4} for private address ranges. \chref{routingtable} --- NAT does not
+replace routing, and a router that cannot route to the internet will not be fixed
+by NAT. \chref{transport} for port numbers, which is what PAT actually
+manipulates.
+\end{prereq}
+
+\begin{keyterms}
+inside local $\bullet$ inside global $\bullet$ outside global $\bullet$ outside
+local $\bullet$ static NAT $\bullet$ dynamic NAT $\bullet$ PAT $\bullet$ overload
+$\bullet$ translation table $\bullet$ port forwarding
+\end{keyterms}
+
+\begin{examnote}[IOS XE is named in the topic]
+Topic~\tp{4.3} is \emph{configure NAT/PAT on IOS XE routers}. The NAT
+configuration syntax is the same on IOS and IOS XE, so nothing here is wasted on
+either platform --- but the interface names differ
+(\cmd{GigabitEthernet0/0/0} on XE against \cmd{GigabitEthernet0/0} on classic
+IOS), and this chapter uses XE names throughout so that they look normal to you
+in the exam.
+\end{examnote}
+
+\section{The problem NAT solves, and the one it does not}
+
+There are about 3.7 billion usable public IPv4 addresses and far more devices
+than that. RFC~1918 set aside three ranges --- \cmd{10.0.0.0/8},
+\cmd{172.16.0.0/12} and \cmd{192.168.0.0/16} --- that anyone may use internally
+and that no router on the internet will forward. NAT is what lets a network built
+from those addresses reach the internet anyway.
+
+\begin{alertbox}[NAT is not a security feature]
+It is frequently described as one, and it is not. It happens to make unsolicited
+inbound connections difficult, because there is no translation entry to match
+them against --- but that is a side effect of an address-conservation mechanism,
+not a policy. Anything you actually want blocked should be blocked by an ACL
+(\chref{acl}) or a firewall, which can be audited and which says what it means.
+
+The exam has been known to ask this directly. NAT conserves addresses.
+\end{alertbox}
+
+\section{The four terms}
+
+This is the part students get wrong, and it is worth slowing down for. There are
+two axes, not one. \textbf{Inside} and \textbf{outside} say which \emph{host} you
+mean. \textbf{Local} and \textbf{global} say which \emph{side of the router} you
+are standing on when you look at the address.
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \node[rounded corners=3pt, draw=neutral, fill=neutral!8, text=neutral!45!black,
+        line width=0.9pt, minimum width=1.45cm, minimum height=1.05cm,
+        align=center, font=\scriptsize\bfseries] (pc) at (0,0)
+        {\faIcon{desktop}\\PC1};
+  \node[rounded corners=3pt, draw=dom3, fill=dom3!8, text=dom3!45!black,
+        line width=0.9pt, minimum width=1.45cm, minimum height=1.05cm,
+        align=center, font=\scriptsize\bfseries] (r) at (5.3,0)
+        {\faIcon{route}\\R1};
+  \node[rounded corners=3pt, draw=dom1, fill=dom1!8, text=dom1!45!black,
+        line width=0.9pt, minimum width=1.45cm, minimum height=1.05cm,
+        align=center, font=\scriptsize\bfseries] (web) at (10.6,0)
+        {\faIcon{server}\\Server};
+
+  \draw[line width=0.9pt, neutral!75] (pc) -- (r);
+  \draw[line width=0.9pt, neutral!75] (r) -- (web);
+
+  \draw[dom4!50, dash pattern=on 3pt off 2pt, line width=0.8pt]
+        (5.3,1.5) -- (5.3,-2.3);
+  \node[font=\tiny\bfseries, text=dom4!45!black] at (3.2,1.35) {INSIDE};
+  \node[font=\tiny\bfseries, text=dom4!45!black] at (7.4,1.35) {OUTSIDE};
+  \node[font=\tiny, text=neutral!85!black] at (2.4,0.55) {\cmd{ip nat inside}};
+  \node[font=\tiny, text=neutral!85!black] at (8.2,0.55) {\cmd{ip nat outside}};
+
+  \node[font=\tiny, align=center, text=dom4!45!black] at (0,-1.15)
+      {\textbf{inside local}\\192.168.10.5};
+  \node[font=\tiny, align=center, text=dom4!45!black] at (3.4,-1.9)
+      {\textbf{inside global}\\203.0.113.2};
+  \node[font=\tiny, align=center, text=dom1!45!black] at (10.6,-1.15)
+      {\textbf{outside global}\\198.51.100.7};
+  \node[font=\tiny, align=center, text=dom1!45!black] at (7.2,-1.9)
+      {\textbf{outside local}\\198.51.100.7};
+\end{tikzpicture}}%
+{The same two hosts, four names. \emph{Inside} and \emph{outside} name the host;
+\emph{local} and \emph{global} name the viewpoint.}{natterms}
+
+\begin{longtable}{@{}L{3.0cm}L{5.6cm}L{6.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Term} & \textbf{What it is} & \textbf{Who sees it} \\
+\midrule
+\endhead
+Inside local &
+The private address really configured on the internal host &
+The internal host and everything inside \\
+\rowcolor{lightbg}
+Inside global &
+The public address the internal host is translated to &
+Everything on the internet \\
+Outside global &
+The real public address of the external host &
+Everyone, inside and out \\
+\rowcolor{lightbg}
+Outside local &
+How the external host appears to internal hosts &
+Internal hosts. Usually identical to outside global \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Why outside local usually equals outside global]
+Because plain NAT only rewrites the \emph{inside} host's address. The external
+server's address is untouched in both directions, so both names describe the same
+number. The two differ only when you translate the outside side as well
+(\cmd{ip nat outside source}), which is rare and outside this exam.
+
+That is good news: for CCNA purposes there are effectively \emph{three} addresses
+to track, and the one that changes is the inside host's.
+\end{conceptbox}
+
+\section{Three kinds of NAT}
+
+\subsection{Static NAT --- one to one, permanent}
+
+Used when an internal server must be reachable from outside at a fixed public
+address.
+
+\begin{config}{static NAT for an internal web server}
+! The mapping itself: inside local first, inside global second.
+ip nat inside source static 192.168.10.50 203.0.113.50
+!
+! Without these two lines nothing is translated. This is the most
+! commonly forgotten pair of commands in the whole topic.
+interface GigabitEthernet0/0/1
+ description LAN
+ ip address 192.168.10.1 255.255.255.0
+ ip nat inside
+!
+interface GigabitEthernet0/0/0
+ description WAN to ISP
+ ip address 203.0.113.2 255.255.255.252
+ ip nat outside
+\end{config}
+
+\subsection{Dynamic NAT --- many to a few, from a pool}
+
+Internal hosts borrow a public address from a pool for the life of a
+conversation. When the pool is empty, further hosts get nothing.
+
+\begin{config}{dynamic NAT from a small pool}
+! 1. Which internal addresses are allowed to be translated.
+access-list 1 permit 192.168.10.0 0.0.0.255
+!
+! 2. The public addresses available to lend.
+ip nat pool BRANCH-POOL 203.0.113.10 203.0.113.20 netmask 255.255.255.0
+!
+! 3. Tie them together.
+ip nat inside source list 1 pool BRANCH-POOL
+\end{config}
+
+\begin{alertbox}[Dynamic NAT fails silently when the pool runs out]
+Eleven addresses in that pool means the twelfth simultaneous host gets no
+translation and its packets are dropped. There is no message to the user and no
+log entry unless you asked for one. The symptom is ``the internet works in the
+morning and stops after lunch'', and the evidence is one line of
+\cmd{show ip nat statistics}.
+
+This is exactly why PAT exists, and why almost nobody deploys plain dynamic NAT.
+\end{alertbox}
+
+\subsection{PAT --- many to one, the normal case}
+
+PAT (also called NAT overload) translates the port as well as the address, so a
+single public address serves thousands of internal hosts. Add one keyword.
+
+\begin{config}{PAT onto the WAN interface address}
+access-list 1 permit 192.168.10.0 0.0.0.255
+!
+! "interface" instead of a pool: use whatever address the WAN
+! interface currently has. This survives a DHCP-assigned WAN address
+! changing, which a pool would not.
+ip nat inside source list 1 interface GigabitEthernet0/0/0 overload
+!
+interface GigabitEthernet0/0/1
+ ip nat inside
+!
+interface GigabitEthernet0/0/0
+ ip nat outside
+\end{config}
+
+\begin{examnote}[The word \cmd{overload} is the whole difference]
+\cmd{ip nat inside source list 1 pool BRANCH-POOL} is dynamic NAT.
+\cmd{ip nat inside source list 1 pool BRANCH-POOL overload} is PAT using a pool.
+\cmd{ip nat inside source list 1 interface Gi0/0/0 overload} is PAT using the
+interface address.
+
+One keyword changes the behaviour from ``runs out'' to ``does not run out''.
+Exam questions have been built on exactly that keyword being present or absent.
+\end{examnote}
+
+\subsection{Port forwarding --- one port in, one host}
+
+A special case of static NAT that maps a single port rather than the whole
+address, so one public address can host several internal services.
+
+\begin{config}{publishing two internal services on one public address}
+ip nat inside source static tcp 192.168.10.50 80  203.0.113.2 80
+ip nat inside source static tcp 192.168.10.60 22  203.0.113.2 2222
+!
+! The second line also changes the port: the outside world connects to
+! 2222 and the internal host still listens on 22.
+\end{config}
+
+\section{Verifying}
+
+\begin{verify}{R1}{show ip nat translations}
+Pro  Inside global        Inside local         Outside local        Outside global
+tcp  203.0.113.2:1055     192.168.10.5:1055    198.51.100.7:80      198.51.100.7:80
+tcp  203.0.113.2:1056     192.168.10.6:1055    198.51.100.7:80      198.51.100.7:80
+tcp  203.0.113.2:80       192.168.10.50:80     ---                  ---
+\end{verify}
+
+Read that output carefully, because it contains the whole idea of PAT in three
+lines.
+
+\begin{tight}
+  \item Rows one and two are two different internal hosts that both happened to
+        choose source port \cmd{1055}. The router gave the second one \cmd{1056}
+        on the outside. That port rewrite is the reason one public address can
+        serve a campus.
+  \item The \cmd{Pro} column shows \cmd{tcp}, so these are PAT entries. A plain
+        static or dynamic NAT entry has \cmd{---} in that column and no ports.
+  \item Row three has dashes in both outside columns. That is a static mapping
+        sitting ready with no conversation currently using it.
+\end{tight}
+
+\begin{verify}{R1}{show ip nat statistics}
+Total active translations: 3 (1 static, 2 dynamic; 2 extended)
+Peak translations: 412, occurred 00:31:09 ago
+Outside interfaces:
+  GigabitEthernet0/0/0
+Inside interfaces:
+  GigabitEthernet0/0/1
+Hits: 20481  Misses: 0
+Expired translations: 1173
+Dynamic mappings:
+-- Inside Source
+[Id: 1] access-list 1 interface GigabitEthernet0/0/0 refcount 2
+\end{verify}
+
+\begin{conceptbox}[The three lines to read first when NAT is broken]
+\begin{tight}
+  \item \textbf{Inside interfaces / Outside interfaces.} If either list is empty,
+        stop. Nothing else matters until both are populated.
+  \item \textbf{Misses.} A non-zero and rising miss count on a dynamic mapping
+        means packets arrived wanting translation and did not get one --- an
+        exhausted pool, or an ACL that did not match.
+  \item \textbf{Dynamic mappings.} Confirms which ACL and which pool or interface
+        are actually in force, which is not always the one you think you
+        configured.
+\end{tight}
+\end{conceptbox}
+
+\section{Order of operations, and why it catches people}
+
+The order in which a router applies routing, NAT and ACLs is not symmetric, and
+one exam-favourite consequence falls out of it.
+
+\begin{longtable}{@{}L{7.6cm}L{7.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Inside to outside} & \textbf{Outside to inside} \\
+\midrule
+\endhead
+1. Inbound ACL on the inside interface &
+1. Inbound ACL on the outside interface \\
+\rowcolor{lightbg}
+2. Routing decision &
+2. \textbf{Un-translate} (NAT outside to inside) \\
+3. \textbf{Translate} (NAT inside to outside) &
+3. Routing decision \\
+\rowcolor{lightbg}
+4. Outbound ACL on the outside interface &
+4. Outbound ACL on the inside interface \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The consequence you will be asked about]
+An inbound ACL on the \emph{outside} interface is evaluated \textbf{before} the
+packet is un-translated. So it sees the \emph{inside global} address ---
+\cmd{203.0.113.50} --- and not the private one. An ACL written against
+\cmd{192.168.10.50} on that interface will never match anything.
+
+An inbound ACL on the \emph{inside} interface is evaluated before translation
+too, so it sees the private address. Same rule, opposite result: \textbf{ACLs
+always see the address that is on the wire at the interface they are attached
+to.} If you can hold on to that sentence you never need to memorise the table.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{No \cmd{ip nat inside} / \cmd{ip nat outside}.} The single most
+        common NAT fault. The translation rule is present, the interfaces are not
+        marked, and nothing happens.
+  \item \textbf{Marking the wrong interface as inside.} On a router with several
+        LANs, only the marked ones are translated.
+  \item \textbf{A \cmd{permit ip any any} ACL used to select NAT traffic.} It
+        will translate traffic destined for other internal subnets too, breaking
+        internal routing in ways that look like a routing fault.
+  \item \textbf{Forgetting \cmd{overload}.} Works for the first few users and
+        then does not.
+  \item \textbf{Expecting to ping the inside global address from inside.} It
+        usually does not work, and it does not mean NAT is broken. Test from
+        outside.
+  \item \textbf{Editing a rule without clearing translations.} Existing entries
+        persist. \cmd{clear ip nat translation *} after every change, or you are
+        testing the old configuration.
+  \item \textbf{Using an ACL number twice.} The NAT selection ACL and a filtering
+        ACL with the same number are the same ACL.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[NAT is configured, the translation table is empty, and internal hosts cannot reach the internet.]
+\cmd{R1} has a default route, can ping its ISP next hop, and can ping
+\cmd{8.8.8.8} from its own CLI. Internal hosts can ping \cmd{R1}'s LAN interface
+but nothing beyond it. \cmd{show ip nat translations} returns nothing at all.
+
+\begin{verify}{R1}{show run | include ip nat}
+ip nat inside source list 1 interface GigabitEthernet0/0/0 overload
+ ip nat inside
+\end{verify}
+
+\begin{verify}{R1}{show ip nat statistics}
+Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+Outside interfaces:
+Inside interfaces:
+  GigabitEthernet0/0/1
+Hits: 0  Misses: 0
+\end{verify}
+
+\textbf{Diagnosis.} \cmd{Outside interfaces:} is empty. The WAN interface was
+never marked \cmd{ip nat outside}. NAT needs a boundary, and a boundary needs two
+sides --- with only one side declared, the router has no rule to apply and does
+not attempt translation at all.
+
+\cmd{Hits: 0} and \cmd{Misses: 0} together are the confirming detail, and they are
+worth separating. Misses would mean packets arrived wanting translation and could
+not get one --- a pool or ACL problem. Both counters at zero means no packet was
+ever \emph{considered} for translation. That distinction points at the interface
+markers rather than at the rule.
+
+The router itself reaching \cmd{8.8.8.8} is the red herring. Traffic the router
+originates is sourced from its own public interface and needs no translation, so
+it proves the WAN link and the default route are fine and says nothing about NAT.
+
+\textbf{Fix.}
+
+\begin{config}{declaring the outside boundary}
+interface GigabitEthernet0/0/0
+ ip nat outside
+\end{config}
+
+Then \cmd{clear ip nat translation *} and re-test from a host. Confirm entries
+appear and that \cmd{Hits} is climbing.
+\end{breakfix}
+
+\begin{lab}{PAT for a branch, then a published server}{CML or GNS3 with IOS XE}
+\textbf{Platform note.} Packet Tracer supports this lab, but the topic names IOS
+XE and the interface naming differs. If you use Packet Tracer, translate the
+interface names as you go and note where they differ.
+
+\textbf{Topology.} \cmd{R1} as the branch router with \cmd{192.168.10.0/24}
+inside and \cmd{203.0.113.0/30} to \cmd{ISP}; \cmd{ISP} with a loopback of
+\cmd{198.51.100.7} standing in for the internet; three internal hosts and one
+internal server at \cmd{192.168.10.50}.
+
+\begin{tasks}
+  \item Build and verify routing first, with no NAT. Confirm \cmd{R1} can ping
+        \cmd{198.51.100.7} and that internal hosts cannot. Explain precisely why
+        the hosts fail, in terms of the ISP's routing table.
+  \item Configure PAT using the WAN interface address. Verify from all three
+        hosts and read \cmd{show ip nat translations}.
+  \item Generate connections from two hosts using the same source port
+        (open the same service twice). Find the row where the router had to
+        change the port and record both values.
+  \item Add a static NAT mapping for the server and confirm from \cmd{ISP} that
+        it is reachable inbound.
+  \item Change the static mapping to port forwarding on port~8080, and confirm
+        the server still listens on 80.
+  \item \textbf{Break 1.} Remove \cmd{ip nat outside}. Predict what
+        \cmd{show ip nat statistics} will show \emph{before} you look, then look.
+  \item \textbf{Break 2.} Replace PAT with dynamic NAT from a two-address pool,
+        no \cmd{overload}. Bring up three simultaneous sessions and observe the
+        third fail. Find the miss counter.
+  \item \textbf{Break 3.} Apply an inbound ACL on the outside interface denying
+        \cmd{192.168.10.50}. Confirm it has no effect on inbound traffic to the
+        server, and explain why using the order-of-operations table.
+  \item \textbf{Extension.} Change the NAT selection ACL to
+        \cmd{permit ip any any}, add a second internal LAN, and observe what
+        breaks between the two internal subnets.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Give the four NAT terms for a host \cmd{10.1.1.9} translated to
+        \cmd{198.51.100.4} contacting a server at \cmd{203.0.113.80}.
+  \item What single keyword turns dynamic NAT into PAT, and what failure does it
+        prevent?
+  \item \cmd{show ip nat statistics} shows \cmd{Hits: 0} and \cmd{Misses: 0}.
+        What does that rule out, and what does it point to?
+  \item An inbound ACL on the outside interface must match a translated inside
+        host. Which address does it have to name, and why?
+  \item Why is NAT not a security control?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Inside/outside names the host; local/global names the viewpoint. Outside
+        local and outside global are normally the same address.
+  \item Static NAT is a permanent one-to-one map. Dynamic NAT lends from a pool
+        and fails silently when empty. PAT adds \cmd{overload} and translates
+        ports too, so it does not run out.
+  \item \cmd{ip nat inside} and \cmd{ip nat outside} on the interfaces are not
+        optional. Without both, no translation is attempted.
+  \item \cmd{show ip nat translations} for what is happening now;
+        \cmd{show ip nat statistics} for whether the rule is even being reached.
+  \item ACLs see the address on the wire at the interface they are attached to
+        --- translated on the outside, untranslated on the inside.
+  \item \cmd{clear ip nat translation *} after every change, or you are testing
+        stale entries.
+  \item NAT conserves addresses. It is not a firewall.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which command configures PAT using the WAN interface's own
+        address?
+        \begin{tight}
+          \item[(a)] \cmd{ip nat inside source list 1 interface Gi0/0/0}
+          \item[(b)] \cmd{ip nat inside source list 1 interface Gi0/0/0 overload}
+          \item[(c)] \cmd{ip nat inside source static 192.168.1.0 Gi0/0/0}
+          \item[(d)] \cmd{ip nat outside source list 1 interface Gi0/0/0 overload}
+        \end{tight}
+  \item \textbf{(MCQ)} In \cmd{show ip nat translations}, which column holds the
+        private address of the internal host?
+        \begin{tight}
+          \item[(a)] Inside global \quad (b)~Inside local
+          \quad (c)~Outside local \quad (d)~Outside global
+        \end{tight}
+  \item \textbf{(Short)} Explain why an ACL applied inbound on the outside
+        interface cannot match an internal host's private address.
+  \item \textbf{(Short)} Users report that internet access works early in the day
+        and fails later. Give the most likely NAT cause and the single show
+        command that would confirm it.
+  \item \textbf{(Applied)} Write a complete configuration for a branch translating
+        \cmd{172.16.4.0/24} to the address of \cmd{GigabitEthernet0/0/0}, while
+        also publishing an internal mail server at \cmd{172.16.4.25} on port~25
+        of the same public address. State the order in which you would enter the
+        commands and why the interface markers should go in first.
+  \item \textbf{(Applied)} A colleague reports that NAT ``stopped working'' right
+        after they corrected the selection ACL. The configuration is now correct.
+        Explain what they have most likely failed to do and give the command.
+\end{reviewq}

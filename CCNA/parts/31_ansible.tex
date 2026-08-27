@@ -1,4 +1,482 @@
 \chapter{Ansible and Configuration Management}\label{ch:ansible}
 \bp{5.5}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what agentless means and why it matters for network
+        devices.
+  \item \textbf{Read} an inventory file and a playbook, and say what each line
+        does.
+  \item \textbf{Use} Ansible to run show commands across many devices and to push
+        a configuration change.
+  \item \textbf{Recognise} the three failures that account for most broken
+        playbooks: YAML indentation, the wrong module, and a change that was
+        never saved.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{aaa} for SSH and credentials --- Ansible logs in exactly as you do.
+\chref{management} for the five management approaches; this chapter is the
+automation-based one made concrete. \chref{cli} for the commands being pushed.
+\end{prereq}
+
+\begin{keyterms}
+agentless $\bullet$ idempotent $\bullet$ control node $\bullet$ managed node
+$\bullet$ inventory $\bullet$ play $\bullet$ task $\bullet$ module $\bullet$
+playbook $\bullet$ facts $\bullet$ YAML $\bullet$ dry run $\bullet$ vault
+\end{keyterms}
+
+\begin{examnote}[The verb is \emph{use}]
+Topic~\tp{5.5} is \emph{use configuration management mechanisms such as Ansible
+to execute commands}. It is the only topic in domain~5 that is not
+\emph{describe}, \emph{select} or \emph{interpret} --- so you are expected to be
+able to read a playbook and say what it will do to which devices.
+
+``Such as Ansible'' leaves the door open to Puppet, Chef and SaltStack, but every
+published Cisco example uses Ansible, and Ansible is the one whose agentless
+model actually suits network hardware. Learn Ansible; know the other names and
+the one-line difference.
+\end{examnote}
+
+\section{The problem}
+
+Forty access switches need one new VLAN and one new ACL line. Done by hand that
+is forty SSH sessions, forty opportunities to typo, and no record of which
+device got which version. Done a second time next month, it is forty more.
+
+\begin{definitionbox}[Configuration management]
+Describing the state a set of machines should be in, and using a tool to make
+them match that description --- repeatably, and with a record of what was done.
+\end{definitionbox}
+
+\subsection{Agentless, and why that decides it}
+
+\begin{longtable}{@{}L{3.3cm}L{5.6cm}L{6.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Ansible} & \textbf{Puppet, Chef, SaltStack} \\
+\midrule
+\endhead
+Model & \textbf{Agentless}. Connects over SSH and issues commands &
+Agent-based. Software runs permanently on each managed machine \\
+\rowcolor{lightbg}
+On the device & Nothing installed. Nothing to upgrade &
+An agent, which must be installed, updated and monitored \\
+Works on a switch? & \textbf{Yes} --- a switch already speaks SSH &
+Not really. You cannot install an agent on IOS \\
+\rowcolor{lightbg}
+Direction & Push, when you run it & Pull, on the agent's schedule \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[This is the whole reason Ansible dominates network automation]
+A server can run an agent. A Catalyst switch cannot --- it is an appliance, and
+you may not install arbitrary software on it. Any tool that requires an agent is
+therefore unavailable for the devices this exam is about.
+
+Ansible needs nothing on the device except the SSH access you already configured
+in \chref{aaa}. That is the answer to ``why Ansible for networks'', and it is a
+fair exam question.
+\end{alertbox}
+
+\begin{definitionbox}[Idempotent]
+An operation that produces the same result whether it is applied once or twenty
+times. Ansible tasks are written to describe a desired state, so a task that has
+already been satisfied reports \cmd{ok} and changes nothing.
+
+This is what makes it safe to run the same playbook every day. A script that
+blindly types commands is not idempotent; a playbook that says ``this line should
+be present'' is.
+\end{definitionbox}
+
+\section{The pieces}
+
+\ccnafigh{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    bx/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, align=center, font=\scriptsize\bfseries,
+               minimum height=1.0cm, minimum width=1.6cm},
+    a/.style={-{Stealth[length=2.4mm]}, line width=0.9pt, neutral!70}}
+
+  \node[bx=dom5, text width=2.7cm] (ctl) at (0,0)
+      {\faIcon{terminal}\\CONTROL NODE\\\tiny\mdseries your laptop};
+  \node[font=\tiny, text=neutral!85!black, align=left, anchor=north west]
+      at (-1.5,-1.05)
+      {\textbf{inventory} --- which devices\\
+       \textbf{playbook} --- what to do\\
+       \textbf{modules} --- how to do it};
+
+  \node[bx=dom2] (s1) at (6.4,1.35) {\faIcon{sitemap}\\SW1};
+  \node[bx=dom2] (s2) at (6.4,0.0)  {\faIcon{sitemap}\\SW2};
+  \node[bx=dom3] (r1) at (6.4,-1.35){\faIcon{route}\\R1};
+
+  \foreach \d in {s1,s2,r1} \draw[a] (ctl) -- (\d);
+  \node[font=\tiny, text=dom5!45!black, align=center] at (3.4,0.62)
+      {\textbf{SSH}\\nothing installed on the far end};
+
+  \node[font=\tiny, text=neutral!85!black, anchor=west] at (8.0,0)
+      {managed nodes};
+\end{tikzpicture}}%
+{Everything lives on the control node. The devices need only the SSH access they
+already have.}{ansible}
+
+\subsection{YAML, in ninety seconds}
+
+Playbooks are YAML, and almost every first failure is a YAML failure. Three rules
+carry you:
+
+\begin{tight}
+  \item \textbf{Indentation is structure, and it must be spaces.} A tab character
+        is a syntax error. Two spaces per level is the convention.
+  \item \textbf{A leading \cmd{-} makes a list item.} Items at the same
+        indentation belong to the same list.
+  \item \textbf{\cmd{key: value} makes a mapping.} The space after the colon is
+        required.
+\end{tight}
+
+\section{Inventory: which devices}
+
+\begin{playbook}{inventory.yml}
+all:
+  children:
+    access_switches:
+      hosts:
+        SW1: { ansible_host: 10.0.0.11 }
+        SW2: { ansible_host: 10.0.0.12 }
+        SW3: { ansible_host: 10.0.0.13 }
+    routers:
+      hosts:
+        R1: { ansible_host: 10.0.0.1 }
+  vars:
+    # network_cli is essential. Without it Ansible assumes the far end
+    # is a Linux host with a Python interpreter, and every task fails
+    # with an error that does not mention the real problem.
+    ansible_connection: ansible.netcommon.network_cli
+    ansible_network_os: cisco.ios.ios
+    ansible_user: netadmin
+\end{playbook}
+
+\begin{alertbox}[Never put the password in the inventory]
+Use \cmd{ansible-vault} to encrypt a variables file, and supply the key at run
+time:
+
+\begin{hostcmd}{Linux or macOS}{ansible-vault create group\_vars/all/vault.yml}
+New Vault password:
+Confirm New Vault password:
+\end{hostcmd}
+
+Then run with \cmd{--ask-vault-pass}, or use SSH keys and no password at all. A
+plain-text credential in a file that is about to be committed to version control
+is how credentials leak, and ``it is only the lab'' is how the habit forms.
+\end{alertbox}
+
+\section{Executing commands}
+
+\subsection{Ad-hoc, for one thing right now}
+
+\begin{hostcmd}{Linux or macOS}{ansible access\_switches -i inventory.yml -m cisco.ios.ios\_command -a "commands='show version'"}
+SW1 | SUCCESS => {
+    "changed": false,
+    "stdout_lines": [["Cisco IOS XE Software, Version 17.12.04", "..."]]
+}
+SW2 | SUCCESS => {
+    "changed": false,
+    "stdout_lines": [["Cisco IOS XE Software, Version 17.09.05", "..."]]
+}
+\end{hostcmd}
+
+Note \cmd{"changed": false}. A show command reads and does not alter, so nothing
+changed --- and Ansible says so explicitly. That field is the one to watch on
+every run.
+
+\subsection{A playbook, for something you will do again}
+
+\begin{playbook}{audit.yml --- collect and report}
+---
+- name: Audit access switches
+  hosts: access_switches
+  gather_facts: false
+
+  tasks:
+    - name: Collect version and inventory facts
+      cisco.ios.ios_facts:
+        gather_subset:
+          - hardware
+      register: device_facts
+
+    - name: Show what we found
+      debug:
+        msg: "{{ inventory_hostname }} runs {{ ansible_net_version }}"
+
+    - name: Run a show command and keep the output
+      cisco.ios.ios_command:
+        commands:
+          - show interfaces status
+      register: intf
+
+    - name: Write it to a file on the control node
+      copy:
+        content: "{{ intf.stdout[0] }}"
+        dest: "./reports/{{ inventory_hostname }}-interfaces.txt"
+      delegate_to: localhost
+\end{playbook}
+
+\begin{playbook}{vlan.yml --- make a change on every switch}
+---
+- name: Add the guest VLAN everywhere
+  hosts: access_switches
+  gather_facts: false
+
+  tasks:
+    - name: Create VLAN 40
+      cisco.ios.ios_config:
+        lines:
+          - name GUEST
+        parents: vlan 40
+
+    - name: Allow it on the uplink trunk
+      cisco.ios.ios_config:
+        lines:
+          - switchport trunk allowed vlan add 40
+        parents: interface GigabitEthernet1/0/48
+
+    # Without this the change lives in the running configuration only
+    # and is lost at the next reload. "modified" saves only when this
+    # run actually changed something.
+    - name: Save the configuration
+      cisco.ios.ios_config:
+        save_when: modified
+\end{playbook}
+
+\begin{alertbox}[\cmd{ios\_command} reads, \cmd{ios\_config} writes]
+This is the distinction the exam will test and the one beginners get wrong.
+
+\cmd{ios\_command} runs commands in EXEC mode and returns their output. It
+\textbf{cannot make a configuration change}, and it will refuse configuration
+commands outright rather than silently failing.
+
+\cmd{ios\_config} enters configuration mode and applies lines, using
+\cmd{parents} to say which sub-mode they belong in. It compares against the
+running configuration first, so it is idempotent.
+
+A playbook that reports success and changes nothing is very often
+\cmd{ios\_command} where \cmd{ios\_config} was meant.
+\end{alertbox}
+
+\subsection{Check before you commit}
+
+\begin{hostcmd}{Linux or macOS}{ansible-playbook -i inventory.yml vlan.yml --check --diff}
+TASK [Create VLAN 40] **********************************************
+changed: [SW1]
+changed: [SW2]
+ok: [SW3]
+
+PLAY RECAP *********************************************************
+SW1  : ok=2  changed=1  unreachable=0  failed=0
+SW2  : ok=2  changed=1  unreachable=0  failed=0
+SW3  : ok=3  changed=0  unreachable=0  failed=0
+\end{hostcmd}
+
+\begin{conceptbox}[Read the recap, every time]
+\cmd{--check} is a dry run: Ansible reports what it \emph{would} do and touches
+nothing. \cmd{--diff} shows the exact lines. Run this before every change to
+production, without exception.
+
+In that output, \cmd{SW3} reports \cmd{ok} rather than \cmd{changed} because it
+already has VLAN 40. That is idempotency visible in the recap, and it is also a
+useful audit: the difference between the two tells you which devices had drifted.
+
+\cmd{unreachable} is a different failure from \cmd{failed}: unreachable means
+Ansible could not log in at all, failed means it logged in and the task did not
+work.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Tabs in YAML.} A syntax error, and the message rarely says
+        ``tab''. Configure your editor to insert spaces.
+  \item \textbf{Missing \cmd{ansible\_connection: network\_cli}.} Ansible tries to
+        run Python on a switch and fails confusingly.
+  \item \textbf{\cmd{ios\_command} where \cmd{ios\_config} was meant.} Reports
+        success, changes nothing.
+  \item \textbf{No \cmd{save\_when}.} The change works until the device reloads.
+  \item \textbf{Wrong \cmd{parents}.} Lines are applied in global configuration
+        mode instead of under the interface, which either errors or does
+        something you did not intend.
+  \item \textbf{Skipping \cmd{--check}.} There is no undo across forty devices.
+  \item \textbf{Credentials in the inventory file.} Use vault or SSH keys.
+  \item \textbf{Running against \cmd{all} when you meant one group.} Check the
+        \cmd{hosts:} line before every run. It is the single most expensive typo
+        available to you.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[The playbook reports success on all forty switches. After a power cut, eleven have lost the change.]
+A new VLAN was added across the access layer with a playbook. Every device
+reported \cmd{changed}, spot checks confirmed the VLAN existed, and the change
+was signed off. Three weeks later a power event reboots part of the estate, and
+eleven switches come back without VLAN~40. The twenty-nine that did not lose
+power still have it.
+
+\begin{playbook}{vlan.yml --- as it was run}
+---
+- name: Add the guest VLAN everywhere
+  hosts: access_switches
+  gather_facts: false
+
+  tasks:
+    - name: Create VLAN 40
+      cisco.ios.ios_config:
+        lines:
+          - name GUEST
+        parents: vlan 40
+\end{playbook}
+
+\textbf{Diagnosis.} There is no \cmd{save\_when} task. \cmd{ios\_config} writes to
+the \emph{running} configuration, exactly as typing the commands would --- and
+like typing them, it does not save. Every switch was correctly configured and
+none of them wrote that configuration to \cmd{startup-config}.
+
+The evidence pattern confirms it precisely: the split is not between devices that
+the playbook succeeded on and devices it failed on. It is between devices that
+\textbf{rebooted} and devices that did not. Twenty-nine switches still have the
+VLAN because they have been up the whole time and are still running the
+configuration Ansible applied. The eleven that power-cycled reloaded
+\cmd{startup-config}, which never contained it.
+
+Any fault that correlates with reboots rather than with the change itself points
+at the running-versus-startup distinction.
+
+\textbf{Fix.} Add the save task and re-run.
+
+\begin{playbook}{vlan.yml --- corrected}
+    - name: Save the configuration
+      cisco.ios.ios_config:
+        save_when: modified
+\end{playbook}
+
+\cmd{save\_when: modified} writes only when the run actually changed something,
+so re-running against the twenty-nine devices that are already correct costs
+nothing. The eleven get the VLAN and a save.
+
+\textbf{The verification lesson.} The spot check confirmed the VLAN existed ---
+in the running configuration. It should have compared running against startup:
+
+\begin{verify}{SW1}{show archive config differences nvram:startup-config system:running-config}
+!Contextual Config Diffs:
++vlan 40
++ name GUEST
+\end{verify}
+
+Any output at all from that command means unsaved changes are present. Making it
+the last step of every change --- by hand or as a final Ansible task --- closes
+this class of fault permanently.
+\end{breakfix}
+
+\begin{lab}{Automating a change you would otherwise do forty times}{CML or GNS3, with a Linux control node}
+\textbf{Platform note.} Ansible needs real SSH and a real Python environment on
+the control node. Packet Tracer cannot do this. Use CML or GNS3 with three or
+more IOS devices and a Linux VM, or install Ansible on your own machine and point
+it at the lab.
+
+\begin{tasks}
+  \item Install Ansible and the \cmd{cisco.ios} collection on the control node.
+        Record the versions of both.
+  \item Configure SSH and a local user on three devices as in \chref{aaa}.
+        Confirm you can log in by hand before involving Ansible at all --- if
+        this does not work, nothing after it will.
+  \item Write \cmd{inventory.yml} with two groups. Verify with
+        \cmd{ansible-inventory --list}.
+  \item Run an ad-hoc \cmd{ios\_command} for \cmd{show version} against one
+        group. Then deliberately remove \cmd{ansible\_connection} and run it
+        again. Record the error and explain why it does not mention the real
+        cause.
+  \item Store the password with \cmd{ansible-vault} and run using
+        \cmd{--ask-vault-pass}. Confirm the file is unreadable without the key.
+  \item Write \cmd{audit.yml} to gather facts and write a per-device report file
+        on the control node. Confirm every task reports \cmd{changed: false} and
+        explain why.
+  \item Write \cmd{vlan.yml} to add a VLAN and allow it on a trunk. Run with
+        \cmd{--check --diff} first. Record the diff, then run for real.
+  \item Run it a second time with no changes. Confirm every device reports
+        \cmd{ok} rather than \cmd{changed}. This is idempotency; write down what
+        you would conclude if one device reported \cmd{changed} on the second
+        run.
+  \item \textbf{Break 1.} Reproduce the Break \& Fix. Omit \cmd{save\_when},
+        apply a change, reload a device, and confirm the loss. Then add the save
+        task and repeat.
+  \item \textbf{Break 2.} Replace \cmd{ios\_config} with \cmd{ios\_command} for
+        the VLAN task. Record exactly what Ansible reports and what the device
+        shows.
+  \item \textbf{Break 3.} Introduce a tab character into the playbook. Record the
+        error message and how long it takes you to find it.
+  \item \textbf{Extension.} Add a final task that runs the
+        \cmd{show archive config differences} command from this chapter and fails
+        the play if it returns anything. You now cannot leave a change unsaved.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item What does agentless mean, and why does it decide the choice of tool for
+        network devices?
+  \item What is idempotency, and where do you see it in a play recap?
+  \item State the difference between \cmd{ios\_command} and \cmd{ios\_config}.
+  \item What does \cmd{save\_when: modified} do, and what fails without it?
+  \item What is the difference between \cmd{unreachable} and \cmd{failed} in the
+        recap?
+  \item What do \cmd{--check} and \cmd{--diff} do, and when would you omit them?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Ansible is \textbf{agentless}: it connects over SSH and installs nothing.
+        That is why it works on switches, where Puppet and Chef cannot.
+  \item Tasks are \textbf{idempotent} --- they describe desired state, so running
+        twice changes nothing the second time.
+  \item Playbooks are YAML: spaces not tabs, \cmd{-} for list items,
+        \cmd{key: value} with a space after the colon.
+  \item The inventory names devices and groups, and must set
+        \cmd{ansible\_connection: network\_cli} and \cmd{ansible\_network\_os}.
+  \item \cmd{ios\_command} reads; \cmd{ios\_config} writes, with \cmd{parents} to
+        select the sub-mode.
+  \item \cmd{save\_when: modified} writes to startup-config. Without it the
+        change survives only until the next reload.
+  \item \cmd{--check --diff} is a dry run. Use it before every production change.
+  \item In the recap, \cmd{changed} means it acted, \cmd{ok} means it was already
+        correct, \cmd{unreachable} means it never logged in.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Why is Ansible, rather than Puppet, used for Cisco
+        switches?
+        \begin{tight}
+          \item[(a)] It is faster \quad (b)~It is agentless
+          \item[(c)] It uses YAML \quad (d)~It supports idempotency
+        \end{tight}
+  \item \textbf{(MCQ)} Which module applies configuration to an IOS device?
+        \begin{tight}
+          \item[(a)] \cmd{cisco.ios.ios\_command}
+          \item[(b)] \cmd{cisco.ios.ios\_facts}
+          \item[(c)] \cmd{cisco.ios.ios\_config}
+          \item[(d)] \cmd{debug}
+        \end{tight}
+  \item \textbf{(Short)} A playbook runs cleanly and reports \cmd{changed} on
+        every device, but a colleague finds the devices unmodified after a
+        maintenance reboot. Give the cause and the fix.
+  \item \textbf{(Short)} Explain idempotency using the \cmd{ok} and \cmd{changed}
+        counts in a play recap, and say what a device reporting \cmd{changed} on
+        every single run would tell you.
+  \item \textbf{(Applied)} Write a playbook that adds an ACL line to every router
+        in a group, saves the configuration, and would be safe to run daily.
+        State which single line makes it safe to re-run.
+  \item \textbf{(Applied)} You are handed a playbook whose \cmd{hosts:} line reads
+        \cmd{all} and which contains an \cmd{ios\_config} task with no
+        \cmd{--check} in the runbook. Identify every risk and rewrite the runbook
+        steps you would insist on before it is executed.
+\end{reviewq}

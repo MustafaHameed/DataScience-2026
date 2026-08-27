@@ -36,6 +36,103 @@ computing a subnet boundary is a second not spent reasoning, so the arithmetic
 has to be automatic. Learn the method in §\ref{sec:magic} until it is boring.
 \end{examnote}
 
+\section{Counting in binary, once}
+
+Everything in this chapter is a consequence of one fact: an IPv4 address is
+\textbf{32 bits}, and we write it as four decimal numbers only for our own
+convenience. The shortcut in Section~\ref{sec:magic} lets you subnet without ever
+writing a bit down --- but it will be a magic trick you can forget rather than a
+method you can rebuild unless you look at the bits properly once. This is that
+once.
+
+\begin{definitionbox}[Bits, bytes and octets]
+A \term{bit} is a single 0 or 1. Eight bits make a \term{byte}, which in
+networking is almost always called an \term{octet} --- the words mean the same
+thing here.
+
+Each position in an octet is worth twice the one to its right:
+\end{definitionbox}
+
+% Nine columns: the budget is about 12.8 cm, not the 15.78 of two.
+\begin{longtable}{@{}L{2.9cm}L{1.2cm}L{1.2cm}L{1.2cm}L{1.2cm}L{1.2cm}L{1.2cm}L{1.2cm}L{1.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Position value} &
+\textbf{128} & \textbf{64} & \textbf{32} & \textbf{16} &
+\textbf{8} & \textbf{4} & \textbf{2} & \textbf{1} \\
+\midrule
+\endhead
+\cmd{192} is & \cmd{1} & \cmd{1} & \cmd{0} & \cmd{0} & \cmd{0} & \cmd{0} & \cmd{0} & \cmd{0} \\
+\rowcolor{lightbg}
+\cmd{255} is & \cmd{1} & \cmd{1} & \cmd{1} & \cmd{1} & \cmd{1} & \cmd{1} & \cmd{1} & \cmd{1} \\
+\cmd{77} is & \cmd{0} & \cmd{1} & \cmd{0} & \cmd{0} & \cmd{1} & \cmd{1} & \cmd{0} & \cmd{1} \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Both directions, in one line each]
+\textbf{Binary to decimal:} add the position values wherever there is a 1.
+$64+8+4+1 = 77$.
+
+\textbf{Decimal to binary:} walk left to right, and at each position ask ``does
+this fit in what is left?''. For 77: 128 no (0), 64 yes (1, leaving 13), 32 no
+(0), 16 no (0), 8 yes (1, leaving 5), 4 yes (1, leaving 1), 2 no (0), 1 yes (1,
+leaving 0). That gives \cmd{01001101}.
+
+Two facts fall straight out and are worth holding on to. \textbf{255 is all eight
+bits set} --- which is why it is the largest value an octet can hold, and why a
+mask octet of 255 means ``all of this octet is network''. And \textbf{0 is all
+eight clear}, meaning ``none of it is''.
+\end{conceptbox}
+
+\begin{worked}[Where the block size comes from]
+Take \cmd{192.168.10.77} with mask \cmd{255.255.255.192}, and write only the
+last octet of each in bits:
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+address \cmd{77} & \cmd{01\,001101} \\
+mask \cmd{192}   & \cmd{11\,000000} \\
+\end{tabular}
+\end{center}
+
+The mask has \textbf{two} 1 bits in this octet, so two bits of it are network and
+the remaining \textbf{six} are host. Set those six host bits to zero and you have
+the network address; set them all to one and you have the broadcast address:
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+network   & \cmd{01\,000000} & $= 64$ \\
+broadcast & \cmd{01\,111111} & $= 127$ \\
+\end{tabular}
+\end{center}
+
+So the subnet is \cmd{192.168.10.64} to \cmd{192.168.10.127} --- and it is
+\textbf{64 addresses} wide, because six free host bits give $2^6 = 64$
+combinations.
+
+Now notice: $256 - 192 = 64$ as well. That is not a coincidence and it is not a
+trick. Subtracting the mask value from 256 is simply a fast way of asking ``how
+many combinations do the remaining host bits have?'' \textbf{That is the magic
+number}, and Section~\ref{sec:magic} does the whole job with it.
+\end{worked}
+
+\begin{conceptbox}[Powers of two, which you should know on sight]
+Host bits decide subnet size, so these eleven numbers cover almost every question
+you will be asked.
+
+\medskip
+\begin{tabular}{@{}lllllllllll@{}}
+$2^1$ & $2^2$ & $2^3$ & $2^4$ & $2^5$ & $2^6$ & $2^7$ & $2^8$ & $2^9$ & $2^{10}$ & $2^{11}$ \\
+2 & 4 & 8 & 16 & 32 & 64 & 128 & 256 & 512 & 1024 & 2048 \\
+\end{tabular}
+
+\medskip
+\textbf{Usable} hosts is always two fewer than the total, because the all-zeros
+address names the network itself and the all-ones address is the broadcast.
+Neither can be given to a host. So six host bits give 64 addresses and
+\textbf{62} usable ones.
+\end{conceptbox}
+
 \section{The address and the mask}
 
 An IPv4 address is 32 bits, written as four decimal bytes. It carries two pieces
@@ -51,6 +148,40 @@ Two addresses are on the same subnet if and only if their network parts are
 identical. That single sentence is the source of most addressing faults: a host
 with the wrong mask computes a different network part, decides its neighbour is
 remote, and sends the traffic to a gateway that may not want it.
+\end{definitionbox}
+
+\begin{definitionbox}[Default gateway]
+The address a host sends traffic to when the destination is \textbf{not} on its
+own subnet. Almost always a router or a layer 3 switch interface on that subnet.
+
+Every host makes exactly one decision for every packet it sends, and it makes it
+with the mask:
+
+\begin{tight}
+  \item \textbf{Same network part as mine?} Then the destination is local. ARP for
+        it directly and send the frame straight there. The gateway is not
+        involved at all.
+  \item \textbf{Different?} Then it is remote. ARP for the \emph{gateway},
+        and hand the frame to it --- with the destination's IP address still
+        inside, but the gateway's MAC address on the outside.
+\end{tight}
+
+Three consequences that account for a great many faults, and that
+\chref{clienttshoot} will make you test for directly:
+
+\begin{tight}
+  \item \textbf{A host with no gateway can reach its own subnet and nothing
+        else.} Everything local works, so the user reports ``the internet is
+        down'' rather than ``my machine is misconfigured''.
+  \item \textbf{The gateway must be inside the host's own subnet.} A host will
+        not ARP for something it believes is remote, so a gateway outside the
+        subnet is unreachable by definition --- which is the fault in this
+        chapter's Break \& Fix.
+  \item \textbf{Get the mask wrong and the host makes the local-or-remote
+        decision wrongly}, for some destinations and not others. That is why a
+        wrong mask presents as ``some things work'', which is far harder to read
+        than ``nothing works''.
+\end{tight}
 \end{definitionbox}
 
 \begin{longtable}{@{}C{1.6cm}L{3.6cm}C{2.0cm}C{2.4cm}L{4.6cm}@{}}
@@ -95,7 +226,9 @@ see \chref{dhcp}.
 
 \section{The method: block size, or ``magic number''}\label{sec:magic}
 
-You will not have time to write out binary. This method needs no binary at all.
+You have now seen where this comes from, so it is a shortcut rather than a spell.
+In the exam you will not have time to write out binary --- and after this section
+you will not need to.
 
 \begin{conceptbox}[Four steps, every time]
 \begin{tightnum}

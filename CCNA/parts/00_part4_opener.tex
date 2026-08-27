@@ -2,4 +2,76 @@
 % do not inherit a misleading chapter number.
 \structuralfigures{P4.}
 
-% TODO: opener content.
+\vspace*{0.4cm}
+Parts~I to~III built a network that forwards packets. Nobody uses a network like
+that. Users expect an address to appear without asking for one, a name to resolve
+to that address, a private network to reach the internet through one public
+address, and somebody to have decided which of them is allowed where.
+
+That is this part. It is the largest single block of the book because it carries
+two blueprint domains at once: all seven topics of domain~4, plus topic~\tp{1.7}
+from domain~1, which sits here rather than in Part~I because troubleshooting DHCP
+is impossible before you know what a relay is doing.
+
+\ccnafigh{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    stg/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+                line width=1pt, text width=3.1cm, align=center,
+                minimum height=1.5cm, font=\scriptsize\bfseries},
+    band/.style={font=\scriptsize\bfseries, text=#1!45!black, inner sep=1pt},
+    fl/.style={-{Stealth[length=2.4mm]}, line width=0.9pt, neutral!70}}
+
+  % Band 1 -- services. Boxes start at x=2.2 to leave the rotated band
+  % label clear of the first box's left edge, which sits 1.7cm out.
+  \node[stg=dom1] (dhcp) at (2.2,0)  {\faIcon{address-card}\\[2pt]20. DHCPv4\\
+      \footnotesize\mdseries an address appears};
+  \node[stg=dom4] (dns)  at (6.2,0)  {\faIcon{book}\\[2pt]21. DNS records\\
+      \footnotesize\mdseries a name resolves};
+  \node[stg=dom4] (nat)  at (10.2,0) {\faIcon{exchange-alt}\\[2pt]22. NAT and PAT\\
+      \footnotesize\mdseries to the internet};
+
+  % Band 2 -- security
+  \node[stg=dom4] (aaa)  at (2.2,-2.6)  {\faIcon{user-lock}\\[2pt]23. AAA, SFTP\\
+      \footnotesize\mdseries who may log in};
+  \node[stg=dom4] (acl)  at (6.2,-2.6)  {\faIcon{filter}\\[2pt]24. ACLs\\
+      \footnotesize\mdseries what may pass};
+  \node[stg=dom4] (l2s)  at (10.2,-2.6) {\faIcon{shield-alt}\\[2pt]25. Layer 2 security\\
+      \footnotesize\mdseries the access port};
+  \node[stg=dom4] (vpn)  at (14.2,-2.6) {\faIcon{lock}\\[2pt]26. IPsec VPNs\\
+      \footnotesize\mdseries across the internet};
+
+  \draw[fl] (dhcp) -- (dns);
+  \draw[fl] (dns)  -- (nat);
+  \draw[fl] (aaa)  -- (acl);
+  \draw[fl] (acl)  -- (l2s);
+  \draw[fl] (l2s)  -- (vpn);
+
+  \node[band=dom1, rotate=90] at (0.2,0)    {SERVICES};
+  \node[band=dom4, rotate=90] at (0.2,-2.6) {SECURITY};
+\end{tikzpicture}}%
+{Part~IV. Three chapters make the network usable; four decide who is allowed to
+use it. Chapter~20 belongs to domain~1 and the rest to domain~4.}{p4map}
+
+\begin{examnote}[Six verbs, and only one of them is \emph{describe}]
+Topic~\tp{1.7} says \emph{troubleshoot}. Topics \tp{4.1}, \tp{4.3}, \tp{4.6} and
+\tp{4.7} say \emph{configure}. Topic~\tp{4.2} says \emph{manage} and \tp{4.4} says
+\emph{diagnose}. Only \tp{4.5}, the VPN topic, says \emph{describe} --- which is
+why Chapter~26 is the shortest chapter in the part and has no lab.
+
+Read that distribution as an instruction. Four of these seven chapters will be
+examined by putting a configuration in front of you and asking what it does or
+what is wrong with it. Reading an ACL correctly is worth more marks here than
+being able to recite what a wildcard mask is.
+\end{examnote}
+
+\begin{conceptbox}[Two platforms from here on]
+Parts~I--III were written for Packet Tracer, which models switching and routing
+well enough. From this part onward the labs move to \term{CML} or \term{GNS3}
+where the platform matters: topic~\tp{4.3} names \textbf{IOS XE} explicitly, and
+SFTP, SCP and AAA against a real RADIUS server need a control plane that Packet
+Tracer only pretends to have.
+
+Every lab header names its platform. Where a lab can still be done usefully in
+Packet Tracer with a caveat, the caveat is stated rather than hidden.
+\end{conceptbox}

@@ -27,6 +27,74 @@ $\bullet$ learning $\bullet$ flooding $\bullet$ filtering $\bullet$ ageing
 $\bullet$ unknown unicast $\bullet$ MTU $\bullet$ FCS
 \end{keyterms}
 
+\section{Reading hexadecimal first}
+
+Everything in this chapter --- and every MAC address, every IPv6 address and
+every frame type for the rest of the book --- is written in \term{hexadecimal}.
+It is worth two minutes now, because nothing later makes sense without it.
+
+\begin{definitionbox}[Hexadecimal, and why it exists]
+Ordinary decimal counts in tens using ten symbols, 0 to 9. \term{Hex} counts in
+sixteens using sixteen symbols: 0 to 9, then \cmd{a b c d e f} for ten to
+fifteen.
+
+It exists because \textbf{one hex digit is exactly four bits}, so two hex digits
+are exactly one byte. Writing a 48-bit MAC address in decimal would take
+fifteen digits with no relationship to the underlying bits; in hex it takes
+twelve, and each one maps to a nibble you can reason about.
+\end{definitionbox}
+
+% Nine columns: the budget is about 12.8 cm, not the 15.78 of two.
+\begin{longtable}{@{}L{1.2cm}L{1.2cm}L{1.6cm}L{1.2cm}L{1.2cm}L{1.6cm}L{1.2cm}L{1.2cm}L{1.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Hex} & \textbf{Dec} & \textbf{Binary} &
+\textbf{Hex} & \textbf{Dec} & \textbf{Binary} &
+\textbf{Hex} & \textbf{Dec} & \textbf{Binary} \\
+\midrule
+\endhead
+\cmd{0} & 0 & \cmd{0000} & \cmd{6} & 6 & \cmd{0110} & \cmd{c} & 12 & \cmd{1100} \\
+\rowcolor{lightbg}
+\cmd{1} & 1 & \cmd{0001} & \cmd{7} & 7 & \cmd{0111} & \cmd{d} & 13 & \cmd{1101} \\
+\cmd{2} & 2 & \cmd{0010} & \cmd{8} & 8 & \cmd{1000} & \cmd{e} & 14 & \cmd{1110} \\
+\rowcolor{lightbg}
+\cmd{3} & 3 & \cmd{0011} & \cmd{9} & 9 & \cmd{1001} & \cmd{f} & 15 & \cmd{1111} \\
+\cmd{4} & 4 & \cmd{0100} & \cmd{a} & 10 & \cmd{1010} & & & \\
+\rowcolor{lightbg}
+\cmd{5} & 5 & \cmd{0101} & \cmd{b} & 11 & \cmd{1011} & & & \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[The three things you actually have to do with it]
+\begin{tight}
+  \item \textbf{Recognise it.} A leading \cmd{0x} means ``what follows is hex'' ---
+        \cmd{0x0800} is the number 2048, not eight hundred. Cisco also writes hex
+        with no prefix at all, as in \cmd{00d0.58a1.0201}.
+  \item \textbf{Expand one digit to four bits}, using the table above. This is
+        all that EUI-64 (\chref{ipv6}) and the MAC address bits below require.
+  \item \textbf{Know that \cmd{f} is all ones.} So \cmd{ffff.ffff.ffff} is
+        forty-eight 1 bits --- every bit set --- which is exactly why that is the
+        broadcast address.
+\end{tight}
+
+You will never be asked to convert a long hex number to decimal in your head.
+You will regularly be asked what one digit means in bits.
+\end{conceptbox}
+
+\begin{worked}[What is the first byte of \cmd{00d0.58a1.0201} in bits?]
+The first byte is the first \emph{two} hex digits, \cmd{00}.
+
+From the table, \cmd{0} is \cmd{0000}. So \cmd{00} is
+\cmd{0000\,0000} --- eight zero bits.
+
+That matters immediately: the conceptbox after the frame explains that the
+low-order bit of the first byte says unicast or multicast, and the next bit up
+says whether the address was assigned by a manufacturer. Both are zero here, so
+this is a unicast address burned in by its vendor. In \chref{clienttshoot} you
+will meet an address where the second bit is \emph{one}, and that single bit is
+the whole diagnosis.
+\end{worked}
+
 \section{The frame}
 
 \begin{definitionbox}[The Ethernet frame, field by field]
@@ -86,6 +154,50 @@ For every frame that arrives on a port:
 A switch never modifies the addresses in a frame it forwards, and it never
 consults an IP address. Both of those are the router's job.
 \end{conceptbox}
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.25cm, minimum height=0.9cm,
+               align=center, font=\tiny\bfseries},
+    w/.style={line width=0.8pt, neutral!60},
+    fl/.style={-{Stealth[length=2.2mm]}, line width=1.1pt},
+    hdr/.style={font=\scriptsize\bfseries, text=neutral!45!black}}
+
+  %================ panel 1: unknown destination -> flood
+  \node[hdr] at (3.0,2.9) {1. Destination unknown $\rightarrow$ \textcolor{accent!80!black}{flood}};
+  \node[dv=dom2, minimum width=4.6cm] (s1) at (3.0,1.35) {\faIcon{sitemap}\\SW1};
+  \foreach \x/\n in {1.1/A, 2.35/B, 3.65/C, 4.9/D}
+    \node[dv=neutral] at (\x,-0.35) {\faIcon{desktop}\\PC-\n};
+  \draw[fl, dom2!80] (1.1,0.1) -- (1.1,0.9);
+  \foreach \x in {2.35, 3.65, 4.9} \draw[fl, accent!75] (\x,0.9) -- (\x,0.1);
+  \node[font=\tiny, text=dom2!45!black, anchor=east] at (0.85,0.5) {in};
+  \node[font=\tiny, text=neutral!85!black, align=center] at (3.0,-1.3)
+      {the frame goes everywhere except\\back out of the port it arrived on};
+
+  %================ panel 2: learned -> forward
+  \node[hdr] at (11.0,2.9) {2. Now learned $\rightarrow$ \textcolor{dom2!70!black}{forward}};
+  \node[dv=dom2, minimum width=4.6cm] (s2) at (11.0,1.35) {\faIcon{sitemap}\\SW1};
+  \foreach \x/\n in {9.1/A, 10.35/B, 11.65/C, 12.9/D}
+    \node[dv=neutral] at (\x,-0.35) {\faIcon{desktop}\\PC-\n};
+  \draw[fl, dom2!80] (12.9,0.1) -- (12.9,0.9);
+  \draw[fl, dom2!80] (9.1,0.9) -- (9.1,0.1);
+  \node[font=\tiny, text=neutral!85!black, align=center] at (11.0,-1.3)
+      {PC-D replied, so the table now holds it.\\One port, not three};
+
+  %================ the table between them
+  \node[draw=neutral!55, fill=codebg, rounded corners=2pt, line width=0.7pt,
+        font=\tiny\ttfamily, align=left, inner sep=4pt] at (7.05,1.2)
+      {MAC address table\\[2pt]
+       \textcolor{neutral!70!black}{aaaa.aaaa.aaaa~~Gi0/1}\\
+       \textcolor{accent!70!black}{dddd.dddd.dddd~~Gi0/4}};
+  \node[font=\tiny, text=accent!70!black, align=center] at (7.05,0.05)
+      {learned from\\the reply};
+\end{tikzpicture}}%
+{The whole switching algorithm. Flooding is not a failure --- it is how the table
+gets built, and the second frame between the same two hosts is already
+efficient.}{switchflood}
 
 \begin{alertbox}[The consequence that matters: unknown unicast flooding]
 A switch floods a unicast frame when it does not know the destination. That is

@@ -1,4 +1,310 @@
 \chapter{Static Routing, IPv4 and IPv6}\label{ch:static}
 \bp{3.2}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Configure} the four kinds of static route the blueprint names:
+        default, network, host and floating.
+  \item \textbf{Choose} correctly between a next-hop address, an exit interface,
+        and both --- a choice that matters more than it looks.
+  \item \textbf{Configure} static routing for IPv6 alongside IPv4.
+  \item \textbf{Troubleshoot} a static route that is absent from the table, or
+        present and not working.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{routingtable} --- longest prefix match and administrative distance are
+assumed throughout. \chref{ipv6} for the v6 half.
+\end{prereq}
+
+\begin{keyterms}
+static route $\bullet$ default route $\bullet$ network route $\bullet$ host route
+$\bullet$ floating static $\bullet$ next hop $\bullet$ exit interface $\bullet$
+fully specified route $\bullet$ recursive lookup $\bullet$ gateway of last resort
+\end{keyterms}
+
+\begin{examnote}[The verb is \emph{troubleshoot}, and the sub-topics are a checklist]
+Topic \tp{3.2} is ``troubleshoot IPv4 and IPv6 static routing'' and then lists
+exactly four kinds: default route, network route, host route, floating static.
+Expect to be shown a table and a symptom rather than asked to recite syntax ---
+but you cannot diagnose what you cannot write, so learn the syntax first.
+\end{examnote}
+
+\section{The four kinds}
+
+\begin{longtable}{@{}L{2.8cm}L{4.4cm}L{7.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Kind} & \textbf{Prefix} & \textbf{What it is for} \\
+\midrule
+\endhead
+\textbf{Network} & A real subnet, e.g.\ \cmd{/24} &
+The ordinary case: reach that network via this neighbour \\
+\rowcolor{lightbg}
+\textbf{Default} & \cmd{0.0.0.0/0} &
+``Everything I do not otherwise know.'' Points at the internet or the core \\
+\textbf{Host} & \cmd{/32} (or \cmd{/128}) &
+One specific address. Used to steer a single server down a particular path \\
+\rowcolor{lightbg}
+\textbf{Floating} & Any of the above, with a raised distance &
+A backup that stays out of the table until the preferred route disappears \\
+\bottomrule
+\end{longtable}
+
+\begin{config}{all four, on IPv4}
+! Network route -- reach 10.9.9.0/24 through the neighbour at 10.255.0.2.
+ip route 10.9.9.0 255.255.255.0 10.255.0.2
+!
+! Default route -- the gateway of last resort.
+ip route 0.0.0.0 0.0.0.0 203.0.113.1
+!
+! Host route -- this one server goes a different way.
+ip route 10.9.9.50 255.255.255.255 10.255.1.2
+!
+! Floating static -- distance 200 keeps it out of the table while
+! OSPF (distance 110) has a route. It appears only if OSPF loses one.
+ip route 10.1.0.0 255.255.0.0 10.255.2.2 200
+\end{config}
+
+\begin{conceptbox}[Why the host route wins]
+All four routes above can match \cmd{10.9.9.50}. The \cmd{/32} host route is the
+longest prefix, so it is used --- ahead of the \cmd{/24}, ahead of the default.
+Longest prefix match decides before distance is even considered
+(\chref{routingtable}).
+\end{conceptbox}
+
+\section{Next hop, exit interface, or both}
+
+This is the choice that produces the most subtle static-routing faults.
+
+\begin{longtable}{@{}L{4.4cm}L{5.0cm}L{5.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Form} & \textbf{Example} & \textbf{Behaviour} \\
+\midrule
+\endhead
+\textbf{Next hop only} & \cmd{ip route 10.9.9.0 255.255.255.0 10.255.0.2} &
+The router must look up how to reach \cmd{10.255.0.2} --- a \term{recursive
+lookup}. Correct on any link \\
+\rowcolor{lightbg}
+\textbf{Exit interface only} & \cmd{ip route 10.9.9.0 255.255.255.0 Serial0/0/0} &
+No recursion. Fine on point-to-point links; \textbf{dangerous on Ethernet} \\
+\textbf{Fully specified} & \cmd{ip route 10.9.9.0 255.255.255.0 Gi0/1 10.255.0.2} &
+Both. No recursion and no ambiguity. The safest form on Ethernet \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Exit-interface-only routes on Ethernet are a trap]
+Ethernet is multi-access: many devices share the segment. A route that names only
+an exit interface tells the router ``send it out here'' without saying to whom, so
+the router must ARP for \emph{every destination address} it forwards, hoping
+something answers. On a link where proxy ARP is enabled it appears to work; where
+it is not, it silently fails; and either way the ARP table fills with entries that
+should not exist.
+
+On a serial point-to-point link there is only one possible recipient, so the form
+is harmless. On Ethernet, always give the next hop --- alone or fully specified.
+\end{alertbox}
+
+\begin{verify}{R1}{show ip route static}
+      10.0.0.0/8 is variably subnetted, 5 subnets, 3 masks
+S        10.1.0.0/16 [200/0] via 10.255.2.2
+S        10.9.9.0/24 [1/0] via 10.255.0.2
+S        10.9.9.50/32 [1/0] via 10.255.1.2
+S*    0.0.0.0/0 [1/0] via 203.0.113.1
+\end{verify}
+
+Note the floating static at \cmd{[200/0]} \emph{is} shown here --- meaning OSPF
+currently has no route for \cmd{10.1.0.0/16}, so the backup has taken over. When
+OSPF is healthy that line is absent from the table entirely.
+
+\section{Static routing for IPv6}
+
+The syntax mirrors IPv4, with one wrinkle worth learning.
+
+\begin{config}{IPv6 static routes}
+ipv6 unicast-routing
+!
+! Network route via a global next-hop address.
+ipv6 route 2001:db8:acad:20::/64 2001:db8:acad:99::2
+!
+! Default route.
+ipv6 route ::/0 2001:db8:acad:99::2
+!
+! Host route.
+ipv6 route 2001:db8:acad:20::50/128 2001:db8:acad:99::2
+!
+! Floating static.
+ipv6 route 2001:db8:acad:30::/64 2001:db8:acad:98::2 200
+!
+! Via a LINK-LOCAL next hop -- the exit interface is mandatory,
+! because fe80:: addresses are only unique per link and the router
+! has no way to know which interface you mean.
+ipv6 route 2001:db8:acad:40::/64 GigabitEthernet0/1 fe80::2
+\end{config}
+
+\begin{conceptbox}[Why link-local next hops need the interface]
+A link-local address is valid on one link only, and the same \cmd{fe80::2} may
+legitimately exist on three different interfaces of the same router. Naming the
+interface removes the ambiguity. IOS rejects a link-local next hop without one.
+
+This matters because routing protocols, including OSPFv3, use link-local
+addresses as their next hop --- so link-local next hops are the normal case in
+IPv6, not an oddity.
+\end{conceptbox}
+
+\begin{verify}{R1}{show ipv6 route static}
+IPv6 Routing Table - default - 7 entries
+Codes: C - Connected, L - Local, S - Static, U - Per-user Static route
+S   ::/0 [1/0]
+     via 2001:DB8:ACAD:99::2
+S   2001:DB8:ACAD:20::/64 [1/0]
+     via 2001:DB8:ACAD:99::2
+S   2001:DB8:ACAD:40::/64 [1/0]
+     via FE80::2, GigabitEthernet0/1
+\end{verify}
+
+\section{Floating statics, properly}
+
+\begin{worked}[A backup path that only activates on failure]
+\cmd{R1} reaches \cmd{10.1.0.0/16} through OSPF over its primary link, and has a
+slow secondary link to the same destination.
+
+\begin{tightnum}
+  \item OSPF's route has distance 110.
+  \item Configure the backup with a distance \emph{above} 110:
+        \cmd{ip route 10.1.0.0 255.255.0.0 10.255.2.2 200}.
+  \item While OSPF is up, only the OSPF route is installed. \cmd{show ip route}
+        shows \cmd{O 10.1.0.0/16 [110/20]} and no static entry at all.
+  \item The primary link fails. OSPF withdraws its route. The static route, now
+        the only candidate, is installed as \cmd{S 10.1.0.0/16 [200/0]}.
+  \item The primary returns. OSPF's route at 110 beats 200 and displaces the
+        static again.
+\end{tightnum}
+
+The number 200 is not magic --- it just has to exceed the distance of whatever it
+is backing up. Back up a \emph{static} route (distance 1) and any value from 2
+upwards will do.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{A floating static with too low a distance.} Set it below the
+        dynamic protocol's and it takes over permanently, which is the opposite
+        of a backup.
+  \item \textbf{Exit-interface-only routes on Ethernet.} See the warning above.
+  \item \textbf{Forgetting the reverse route.} A static route is one-directional.
+        Both ends need one, and forgetting this is the commonest static-routing
+        fault of all.
+  \item \textbf{A next hop that is not directly reachable.} The route will not be
+        installed at all; the router silently discards it. \cmd{show ip route}
+        simply has no entry, which looks like you never typed it.
+  \item \textbf{Omitting the interface on an IPv6 link-local next hop.} Rejected
+        outright.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[The static route was typed and it is not in the table.]
+An engineer configures \cmd{ip route 10.9.9.0 255.255.255.0 10.255.0.2} and
+\cmd{show ip route static} shows nothing. No error was displayed when the command
+was entered.
+
+\begin{verify}{R1}{show ip route 10.255.0.2}
+% Network not in table
+\end{verify}
+
+\textbf{Diagnosis.} A static route is only installed if the router can resolve its
+next hop. \cmd{10.255.0.2} is not reachable --- there is no connected subnet
+covering it --- so the route is accepted into the configuration and never enters
+the routing table. This is why the command produced no error: the syntax was
+perfect and the topology was not.
+
+Check the interface that should reach it:
+
+\begin{verify}{R1}{show ip interface brief | include Gigabit}
+GigabitEthernet0/1     10.255.0.1      YES manual administratively down down
+\end{verify}
+
+\textbf{Fix.} The interface is shut. \cmd{no shutdown} on \cmd{Gi0/1}, and the
+connected route for \cmd{10.255.0.0/30} appears, the next hop resolves, and the
+static route installs itself immediately. Confirm with \cmd{show ip route static}
+--- and remember the general rule: \textbf{a static route missing from the table
+is nearly always an unreachable next hop}, not a typing error.
+\end{breakfix}
+
+\begin{lab}{Four routes, one failure}{Packet Tracer}
+\textbf{Topology.} Three routers --- \cmd{R1}, \cmd{R2}, \cmd{R3} --- with
+\cmd{R1} connected to \cmd{R2} by a fast link and to \cmd{R3} by a slow one, and
+\cmd{R2} and \cmd{R3} both connected to a LAN at the far side. A LAN on \cmd{R1}.
+
+\begin{tasks}
+  \item Address everything. Confirm connected routes on all three and that
+        neighbours ping.
+  \item On \cmd{R1}, add a network route to the far LAN via \cmd{R2}. Test from
+        the \cmd{R1} LAN --- it will fail. Diagnose why, then add the reverse
+        route and re-test.
+  \item Add a default route on \cmd{R2} and \cmd{R3} pointing back at \cmd{R1}.
+        Note the \cmd{S*} and the gateway of last resort line.
+  \item Add a host route on \cmd{R1} for one server in the far LAN, via
+        \cmd{R3}. Prove with \cmd{show ip route <address>} that it is preferred
+        over the network route.
+  \item Add a floating static via \cmd{R3} for the far LAN with distance 5.
+        Confirm it is \emph{not} in the table.
+  \item Shut \cmd{R1}'s link to \cmd{R2}. Confirm the floating static appears and
+        traffic still flows. Restore the link and watch it withdraw.
+  \item \textbf{Extension.} Repeat steps 2 and 5 for IPv6, including one route via
+        a link-local next hop.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item You configure a static route and it never appears in the table, with no
+        error message. What is the most likely cause and which command confirms
+        it?
+  \item A floating static backing up an OSPF route is configured with distance
+        100. What will happen, and why is it wrong?
+  \item Why must an IPv6 static route using a link-local next hop also name an
+        exit interface?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Four kinds: network, default (\cmd{0.0.0.0/0}), host (\cmd{/32}) and
+        floating. The host route wins on longest prefix match.
+  \item Give a next hop on Ethernet --- alone or fully specified. Exit-interface
+        only belongs on point-to-point links.
+  \item IPv6 mirrors IPv4, but a link-local next hop \emph{must} name the exit
+        interface.
+  \item A floating static needs a distance above whatever it backs up: over 110
+        for OSPF, over 1 for another static.
+  \item A static route absent from the table almost always means an unresolvable
+        next hop. Routes are one-way; configure both ends.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which command creates a default route via
+        \cmd{203.0.113.1}?
+        \begin{tight}
+          \item[(a)] \cmd{ip route 0.0.0.0 255.255.255.255 203.0.113.1}
+          \item[(b)] \cmd{ip route 0.0.0.0 0.0.0.0 203.0.113.1}
+          \item[(c)] \cmd{ip default-gateway 203.0.113.1}
+          \item[(d)] \cmd{ip route default 203.0.113.1}
+        \end{tight}
+  \item \textbf{(MCQ)} A floating static backs up an OSPF route. Which distance
+        is suitable? (a)~0 (b)~1 (c)~100 (d)~200
+  \item \textbf{(Short)} Explain why an exit-interface-only static route is
+        acceptable on a serial link but risky on Ethernet.
+  \item \textbf{(Short)} A host route and a network route both match a
+        destination. Which is used, and does administrative distance play any
+        part?
+  \item \textbf{(Applied)} \cmd{R1} must reach \cmd{192.168.80.0/24} via
+        \cmd{R2} normally and via \cmd{R3} if that path fails, and must send
+        everything else to the internet via \cmd{203.0.113.1}. Write the complete
+        configuration and state which \cmd{show} output would prove the backup is
+        correctly dormant.
+\end{reviewq}

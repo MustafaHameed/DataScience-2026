@@ -1,3 +1,306 @@
-\chapter{The show Command Cookbook}\label{app:show}
+\chapter{The \textnormal{\texttt{show}} Command Cookbook}\label{app:show}
 
-% TODO: appendix content.
+Eight of the twenty-nine blueprint topics begin \emph{Troubleshoot} or
+\emph{Diagnose}, and topic~\tp{2.4} names \cmd{show} commands explicitly. This
+appendix is organised by \textbf{the question you are asking}, because that is
+what you have when a fault starts --- not by command name, which is what you
+have afterwards.
+
+Each entry gives the question, the command, and \textbf{the specific field to
+read}. Running a command and skimming its output is not diagnosis; knowing which
+line answers your question is.
+
+\begin{conceptbox}[Four modifiers that make all of these faster]
+\begin{tight}
+  \item \cmd{| include <text>} --- only lines containing it.
+  \item \cmd{| exclude <text>} --- everything except those lines.
+  \item \cmd{| begin <text>} --- start output at the first match, and continue.
+  \item \cmd{| section <text>} --- the whole configuration block matching it.
+\end{tight}
+
+\cmd{show running-config | section interface GigabitEthernet1/0/5} is the fastest
+way to see one port's configuration, and \cmd{show interfaces status | exclude
+connected} shows only the ports that are not working --- which on a 48-port
+switch is the difference between reading four lines and reading forty-eight.
+\end{conceptbox}
+
+\section{Is the interface healthy? \textnormal{(\chref{physical})}}
+
+\begin{longtable}{@{}L{4.4cm}L{5.6cm}L{5.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Question} & \textbf{Command} & \textbf{Read this} \\
+\midrule
+\endhead
+Which ports are up, and with what address? &
+\cmd{show ip interface brief} &
+\cmd{Status} and \cmd{Protocol}. \cmd{Method} says \cmd{DHCP} or \cmd{manual} \\
+\rowcolor{lightbg}
+Which ports are \emph{not} working? &
+\cmd{show interfaces status | exclude connected} &
+\cmd{notconnect}, \cmd{err-disabled}, \cmd{disabled} \\
+Is the physical link clean? &
+\cmd{show interfaces <int>} &
+\cmd{input errors}, \cmd{CRC}, \cmd{late collision}, \cmd{runts}. CRC with no
+collisions suggests cable or duplex \\
+\rowcolor{lightbg}
+Is duplex mismatched? &
+\cmd{show interfaces <int> | include duplex} &
+Half duplex on a switch-to-switch link is almost always wrong \\
+Why is the port err-disabled? &
+\cmd{show interfaces status err-disabled} &
+The \cmd{Reason} column names the feature that did it \\
+\rowcolor{lightbg}
+Is the optic within spec? &
+\cmd{show interfaces transceiver} &
+Rx power against the stated range \\
+\bottomrule
+\end{longtable}
+
+\section{Is layer 2 right? \textnormal{(\chref{vlans}--\chref{stp})}}
+
+\begin{longtable}{@{}L{4.4cm}L{5.6cm}L{5.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Question} & \textbf{Command} & \textbf{Read this} \\
+\midrule
+\endhead
+Which VLAN is this port in? &
+\cmd{show vlan brief} &
+The port should be listed against the VLAN you expect \\
+\rowcolor{lightbg}
+Does the VLAN exist at all? &
+\cmd{show vlan brief} &
+A missing VLAN is a common cause of a dead access port \\
+Is the trunk carrying what I think? &
+\cmd{show interfaces trunk} &
+\textbf{\cmd{Vlans allowed and active}} --- not the configured list. This is the
+field that matters \\
+\rowcolor{lightbg}
+Do the native VLANs match? &
+\cmd{show interfaces trunk} &
+\cmd{Native vlan}, on both ends. A mismatch is logged by CDP \\
+Is the EtherChannel up? &
+\cmd{show etherchannel summary} &
+\cmd{(P)} in the bundle, \cmd{(I)} independent, \cmd{(s)} suspended \\
+\rowcolor{lightbg}
+Who is the root bridge? &
+\cmd{show spanning-tree vlan <id>} &
+\cmd{This bridge is the root}, or the root's ID and the port cost to it \\
+Which ports are blocking? &
+\cmd{show spanning-tree vlan <id> | include BLK} &
+Any unexpected blocking port \\
+\rowcolor{lightbg}
+Is there a loop? &
+\cmd{show logging | include MACFLAP} &
+A MAC flapping between two ports \\
+Where is this MAC? &
+\cmd{show mac address-table address <mac>} &
+The port it was last seen on \\
+\bottomrule
+\end{longtable}
+
+\section{What is attached? \textnormal{(\chref{discovery})}}
+
+\begin{longtable}{@{}L{4.4cm}L{5.6cm}L{5.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Question} & \textbf{Command} & \textbf{Read this} \\
+\midrule
+\endhead
+What Cisco device is on this port? &
+\cmd{show cdp neighbors} &
+Local port, remote device, remote port \\
+\rowcolor{lightbg}
+What is its address and version? &
+\cmd{show cdp neighbors detail} &
+Management address, platform, IOS version \\
+What non-Cisco device is attached? &
+\cmd{show lldp neighbors} &
+LLDP must be enabled first --- it is off by default \\
+\bottomrule
+\end{longtable}
+
+\section{Where does traffic go? \textnormal{(\chref{routingtable}--\chref{fhrp})}}
+
+\begin{longtable}{@{}L{4.4cm}L{5.6cm}L{5.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Question} & \textbf{Command} & \textbf{Read this} \\
+\midrule
+\endhead
+How will this packet be routed? &
+\cmd{show ip route <destination>} &
+The single entry that would be used --- longest prefix match already applied \\
+\rowcolor{lightbg}
+What does the table hold? &
+\cmd{show ip route} &
+Codes, then \cmd{[AD/metric]} on each entry \\
+Is there a default route? &
+\cmd{show ip route | include 0.0.0.0} &
+\cmd{Gateway of last resort} \\
+\rowcolor{lightbg}
+Are OSPF neighbours up? &
+\cmd{show ip ospf neighbor} &
+\cmd{FULL} is healthy. \cmd{EXSTART} means \textbf{MTU mismatch} \\
+Why will they not form? &
+\cmd{show ip ospf interface <int>} &
+Area, hello and dead timers, network type --- all must match \\
+\rowcolor{lightbg}
+Which OSPF interfaces are running? &
+\cmd{show ip ospf interface brief} &
+Cost, state, neighbour count \\
+Is IPv6 routing working? &
+\cmd{show ipv6 route ospf} &
+Next hops are \cmd{fe80::} link-local, and that is correct \\
+\rowcolor{lightbg}
+Which router is the active gateway? &
+\cmd{show standby brief} &
+\cmd{Active}, \cmd{Standby}, priority, \cmd{P} for preempt \\
+Same for VRRP? &
+\cmd{show vrrp brief} &
+\cmd{Master} or \cmd{Backup} \\
+\bottomrule
+\end{longtable}
+
+\section{Are the services working? \textnormal{(\chref{dhcp}, \chref{nat}, \chref{acl})}}
+
+\begin{longtable}{@{}L{4.4cm}L{5.6cm}L{5.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Question} & \textbf{Command} & \textbf{Read this} \\
+\midrule
+\endhead
+Did anyone get a lease? &
+\cmd{show ip dhcp binding} &
+Address, MAC, expiry \\
+\rowcolor{lightbg}
+Is the pool exhausted? &
+\cmd{show ip dhcp pool} &
+\cmd{Leased} against \cmd{Total addresses} \\
+Is something using a pool address statically? &
+\cmd{show ip dhcp conflict} &
+Conflicts stay out of the pool until cleared \\
+\rowcolor{lightbg}
+Is NAT translating? &
+\cmd{show ip nat translations} &
+\cmd{Pro} column: \cmd{tcp} means PAT; \cmd{---} means static or dynamic \\
+Is NAT even being attempted? &
+\cmd{show ip nat statistics} &
+\textbf{\cmd{Inside interfaces} and \cmd{Outside interfaces}}. Empty means the
+markers are missing. \cmd{Hits: 0, Misses: 0} means no packet was considered \\
+\rowcolor{lightbg}
+Is the ACL dropping things? &
+\cmd{show access-lists} &
+The match counters. Zero on the last line means everything is being dropped;
+zero in the middle means a shadowed rule \\
+Is the ACL even applied? &
+\cmd{show ip interface <int> | include access list} &
+Inbound and outbound, named separately \\
+\bottomrule
+\end{longtable}
+
+\section{What is the security state? \textnormal{(\chref{l2security})}}
+
+\begin{longtable}{@{}L{4.4cm}L{5.6cm}L{5.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Question} & \textbf{Command} & \textbf{Read this} \\
+\midrule
+\endhead
+Is port security refusing something? &
+\cmd{show port-security interface <int>} &
+\cmd{Security Violation Count} on a \cmd{Secure-up} port usually means the
+maximum is too low \\
+\rowcolor{lightbg}
+Which ports have violations? &
+\cmd{show port-security} &
+Violation counts across the switch \\
+Is snooping building bindings? &
+\cmd{show ip dhcp snooping binding} &
+Empty for a device means it is statically addressed --- which breaks DAI \\
+\rowcolor{lightbg}
+Is DAI dropping ARP? &
+\cmd{show ip arp inspection statistics vlan <id>} &
+\cmd{DHCP Drops} means no binding; \cmd{ACL Drops} means an ARP ACL denied it \\
+Is a port suppressing a storm? &
+\cmd{show storm-control broadcast} &
+\cmd{Blocking} means it is suppressing now \\
+\bottomrule
+\end{longtable}
+
+\section{What happened? \textnormal{(\chref{management})}}
+
+\begin{longtable}{@{}L{4.4cm}L{5.6cm}L{5.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Question} & \textbf{Command} & \textbf{Read this} \\
+\midrule
+\endhead
+\textbf{Why does the log show nothing?} &
+\cmd{show logging | include level} &
+\textbf{Run this before believing an empty log.} A threshold of \cmd{errors}
+discards severity 4 to 7, which is most of what explains a fault \\
+\rowcolor{lightbg}
+What happened recently? &
+\cmd{show logging} &
+Newest at the bottom \\
+Did somebody change something? &
+\cmd{show logging | include CONFIG} &
+\cmd{\%SYS-5-CONFIG\_I} --- somebody saved a change \\
+\rowcolor{lightbg}
+\textbf{Are there unsaved changes?} &
+\cmd{show archive config differences} \newline
+\cmd{~~nvram:startup-config} \newline
+\cmd{~~system:running-config} &
+\textbf{Any output at all means unsaved changes.} Make this the last step of
+every change \\
+How long has it been up? &
+\cmd{show version} &
+\cmd{uptime}, and the reason for the last reload \\
+\rowcolor{lightbg}
+Is the SNMP server reachable? &
+\cmd{show aaa servers} \newline \cmd{show snmp} &
+State and duration \\
+\bottomrule
+\end{longtable}
+
+\section{The ten to know cold}
+
+If you learn nothing else in this appendix, learn these. Between them they
+answer the first question in almost every fault in this book.
+
+\begin{longtable}{@{}L{7.4cm}L{7.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Command} & \textbf{Answers} \\
+\midrule
+\endhead
+\cmd{show ip interface brief} & Is it up, and what address does it have? \\
+\rowcolor{lightbg}
+\cmd{show interfaces status} & What is plugged in, and what is broken? \\
+\cmd{show vlan brief} & Is this port in the VLAN I think? \\
+\rowcolor{lightbg}
+\cmd{show interfaces trunk} & Is the trunk carrying the VLAN? \\
+\cmd{show ip route <destination>} & Where would this packet actually go? \\
+\rowcolor{lightbg}
+\cmd{show ip ospf neighbor} & Is the routing protocol healthy? \\
+\cmd{show cdp neighbors} & What is on the other end of this cable? \\
+\rowcolor{lightbg}
+\cmd{show logging} & What happened, and when? \\
+\cmd{show running-config | section <thing>} & What is this one thing configured
+as? \\
+\rowcolor{lightbg}
+\cmd{show access-lists} & Is a filter responsible? \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The habit that makes all of this work]
+Run these on a \emph{working} network first, and read the output until it is
+familiar. You cannot recognise abnormal output if you have never looked at normal
+output, and the exam will show you a \cmd{show} dump and expect you to spot the
+one wrong field in it.
+
+Every lab in this volume asks you to record normal output before breaking
+anything. That instruction is what this appendix is for.
+\end{alertbox}

@@ -1,4 +1,560 @@
 \chapter{Management Approaches, SNMP and Syslog}\label{ch:management}
 \bp{5.3,5.4,5.6}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} the five network management approaches the blueprint
+        names, and tell controller-based from automation-based.
+  \item \textbf{Describe} how SNMP works, what its three versions differ on, and
+        when to use a trap rather than an inform.
+  \item \textbf{Interpret} any IOS syslog message: facility, severity, mnemonic
+        and description.
+  \item \textbf{Recite} the eight severity levels and explain what a logging
+        threshold hides.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{aaa} for secure management access and for why credentials in clear are
+unacceptable. \chref{transport} for UDP. \chref{tshootl2} --- you have already
+read syslog output there; this chapter makes it systematic.
+\end{prereq}
+
+\begin{keyterms}
+device-based $\bullet$ controller-based $\bullet$ cloud-based $\bullet$
+automation-based $\bullet$ infrastructure as code $\bullet$ SNMP manager
+$\bullet$ agent $\bullet$ MIB $\bullet$ OID $\bullet$ community string $\bullet$
+trap $\bullet$ inform $\bullet$ facility $\bullet$ severity $\bullet$ mnemonic
+\end{keyterms}
+
+\begin{examnote}[Three topics, three different verbs]
+\tp{5.3} \emph{describe network management approaches (device-based,
+cloud-based, controller-based, automation-based, and infrastructure as code)} ---
+five named approaches, so expect a matching or scenario question.
+
+\tp{5.4} \emph{describe the function of SNMP in network operations} --- function,
+not configuration. What it does and how, not how to type it.
+
+\tp{5.6} \emph{interpret syslog message content, severity levels, and facilities}
+--- \textbf{interpret}. You will be shown a log line and asked what it means.
+Section~\ref{sec:syslog-read} is built for exactly that and is the highest-value part of this
+chapter.
+\end{examnote}
+
+\section{Five ways to manage a network}
+
+\begin{longtable}{@{}L{3.1cm}L{5.7cm}L{6.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Approach} & \textbf{How it works} & \textbf{Trade-off} \\
+\midrule
+\endhead
+\textbf{Device-based} &
+You connect to each device individually by console or SSH and configure it &
+Complete control and no dependencies. Does not scale, and every device is a
+separate opportunity to make a different mistake \\
+\rowcolor{lightbg}
+\textbf{Controller-based} &
+A controller holds the intended state and programs the devices to match
+(Catalyst Center, SD-WAN, SD-Access) &
+Consistency and central policy. The controller becomes critical
+infrastructure, and you manage the network its way \\
+\textbf{Cloud-based} &
+The management plane is a service the vendor runs; devices call home to it
+(Meraki) &
+Nothing to host, upgrade or back up. You depend on the vendor's availability
+and on internet reachability from every site \\
+\rowcolor{lightbg}
+\textbf{Automation-based} &
+Scripts and tools drive the devices' existing interfaces --- Ansible, Python
+(\chref{ansible}) &
+Repeatable, and adds no new control plane. The devices are unchanged, so it
+works with what you already own \\
+\textbf{Infrastructure as code} &
+The desired configuration lives in version-controlled files and is applied by a
+pipeline &
+Reviewable, testable, revertible; the repository is the source of truth.
+Requires discipline and tooling a small team may not have \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Controller-based against automation-based: the distinction that gets tested]
+They sound similar and are structurally different.
+
+\textbf{Controller-based} inserts a \emph{new system} between you and the
+network. The controller holds the intended state, and it is in the path
+permanently. Take it away and you lose central management.
+
+\textbf{Automation-based} adds \emph{tooling} outside the network. Ansible logs
+in over SSH and types commands faster and more consistently than you can. Take it
+away and every device still works exactly as before, because nothing about them
+changed.
+
+One-line test: \textbf{does the network still have a management system when the
+tool is switched off?} Controller, yes --- and you have lost it. Automation, no
+--- and you have lost nothing but convenience.
+
+Infrastructure as code is a step beyond automation: not just \emph{running} the
+change, but keeping the intended state in a repository that is reviewed, tested
+and versioned.
+\end{alertbox}
+
+\section{SNMP}
+
+\begin{definitionbox}[SNMP]
+The Simple Network Management Protocol. A \term{manager} polls \term{agents}
+running on network devices for values held in a \term{MIB} --- a tree of
+variables, each identified by a numeric \term{OID}. Agents listen on UDP~161;
+the manager receives unsolicited notifications on UDP~162.
+\end{definitionbox}
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.7cm, minimum height=1.1cm,
+               align=center, font=\scriptsize\bfseries},
+    a/.style={-{Stealth[length=2.4mm]}, line width=1pt}}
+
+  \node[dv=dom5] (nms) at (0,0) {\faIcon{desktop}\\NMS\\\tiny\mdseries manager};
+  \node[dv=dom2] (sw)  at (7.6,1.2) {\faIcon{sitemap}\\SW1\\\tiny\mdseries agent};
+  \node[dv=dom3] (r)   at (7.6,-1.2) {\faIcon{route}\\R1\\\tiny\mdseries agent};
+
+  \draw[a, dom1!75] (nms) -- node[font=\tiny, above, midway, sloped,
+        text=dom1!45!black] {Get / GetNext / GetBulk $\rightarrow$ UDP 161} (sw);
+  \draw[a, dom4!75] (r) -- node[font=\tiny, below, midway, sloped,
+        text=dom4!45!black] {Trap / Inform $\rightarrow$ UDP 162} (nms);
+
+  \node[font=\tiny, text=neutral!85!black, align=center] at (3.8,0.15)
+      {\textbf{polling} --- the manager asks, on a schedule\\[2pt]
+       \textbf{notification} --- the agent speaks when something happens};
+\end{tikzpicture}}%
+{SNMP works in both directions: the manager polls on port 161, and agents report
+events unprompted to port 162.}{snmp}
+
+\subsection{The operations}
+
+\begin{tight}
+  \item \textbf{Get} --- fetch one value. \textbf{GetNext} --- fetch the next one
+        in the tree, which is how a manager walks a whole table.
+  \item \textbf{GetBulk} --- fetch many at once. Added in v2c, and the reason
+        polling a large switch is not painfully slow.
+  \item \textbf{Set} --- \emph{write} a value, changing the device's
+        configuration or state. Powerful, and the reason read-write access needs
+        treating as an administrative credential.
+  \item \textbf{Trap} --- the agent notifies the manager of an event. Fire and
+        forget: sent once, over UDP, never acknowledged.
+  \item \textbf{Inform} --- the same, but \emph{acknowledged} and retransmitted
+        until it is. Added in v2c.
+\end{tight}
+
+\begin{conceptbox}[Trap or inform]
+A trap that is lost is lost silently, and the event it described never reaches
+anyone. An inform costs a round trip and some agent memory, and survives a
+dropped packet.
+
+Use informs for anything you would be sorry to miss --- a device losing power
+redundancy, a security event. Use traps for high-volume, low-consequence
+notifications where losing one does not matter. This is a fair exam question and
+a real design decision.
+\end{conceptbox}
+
+\subsection{The three versions}
+
+\begin{longtable}{@{}L{2.0cm}L{4.6cm}L{4.0cm}L{4.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Version} & \textbf{Authentication} & \textbf{Encryption} & \textbf{Verdict} \\
+\midrule
+\endhead
+v1 & Community string, sent in clear &
+None & Obsolete. No GetBulk, no informs \\
+\rowcolor{lightbg}
+v2c & Community string, sent in clear &
+\textbf{None} & Still widely deployed. Adds GetBulk and informs. The community
+string is a password on the wire in plain text \\
+v3 & Username with HMAC-SHA authentication &
+\textbf{AES} & The only version to use. Three levels: noAuthNoPriv, authNoPriv,
+authPriv \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[``v2c is secure because the community string is not \cmd{public}'']
+It is not. The community string travels in clear text in every single polling
+packet, hundreds of times an hour, and anyone who can capture one packet has it.
+Renaming it from \cmd{public} to something obscure changes nothing.
+
+And a read-write community string is equivalent to an enable password: an
+attacker holding one can reconfigure the device, and on many platforms can pull
+the entire running configuration. If SNMP must be v2c for a legacy tool, make it
+read-only, restrict it with an ACL to the management station's address, and plan
+its removal.
+\end{alertbox}
+
+\begin{config}{SNMPv3, read-only, for a monitoring station}
+snmp-server view OPSVIEW iso included
+snmp-server group OPSGROUP v3 priv read OPSVIEW
+!
+! auth protects integrity and identity; priv adds encryption.
+! "priv" implies "auth" -- you cannot encrypt without authenticating.
+snmp-server user nms OPSGROUP v3 auth sha AuthPassPhrase priv aes 128 PrivPassPhrase
+!
+snmp-server host 10.0.0.45 version 3 priv nms
+snmp-server enable traps
+!
+! These two are free and save an hour when somebody has to find the
+! device in a building.
+snmp-server location Campus Block C, Rack 4, RU 22
+snmp-server contact netops@example.edu
+\end{config}
+
+\begin{conceptbox}[What SNMP is actually used for]
+Three jobs, and the exam's phrase ``in network operations'' points at them.
+
+\begin{tight}
+  \item \textbf{Performance monitoring} --- polling interface counters every few
+        minutes to produce the traffic graphs everybody recognises.
+  \item \textbf{Fault notification} --- traps and informs for events that cannot
+        wait for the next poll.
+  \item \textbf{Inventory} --- serial numbers, models, software versions and
+        uptime collected across the estate.
+\end{tight}
+
+What it is \emph{not} good at is configuration. \cmd{Set} exists, but nobody
+manages configuration by SNMP; that is what Chapters 31 and the automation
+approaches are for.
+\end{conceptbox}
+
+\section{Syslog, and how to read a message}\label{sec:syslog-read}
+
+Syslog is where a device tells you what it did. Reading it fluently is the single
+most transferable skill in this chapter.
+
+\subsection{Anatomy of an IOS message}
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  % Each part of the message is its own node, chained left to right, so
+  % the braces below can attach to real anchors instead of to guessed
+  % character positions.
+  \tikzset{
+    seg/.style={font=\ttfamily\small, inner xsep=0pt, inner ysep=2pt,
+                anchor=base west},
+    br/.style={decorate, decoration={brace, amplitude=3pt, mirror},
+               line width=0.7pt, #1},
+    cap/.style={font=\tiny\bfseries, text=#1!45!black, align=center,
+                anchor=north}}
+
+  \node[seg]                        (ts)  at (0,0)             {Aug 27 09:14:22.331:~};
+  \node[seg, text=dom1!45!black]    (fac) at (ts.base east)    {\%LINEPROTO};
+  \node[seg]                        (d1)  at (fac.base east)   {-};
+  \node[seg, text=accent!70!black]  (sev) at (d1.base east)    {5};
+  \node[seg]                        (d2)  at (sev.base east)   {-};
+  \node[seg, text=dom3!45!black]    (mne) at (d2.base east)    {UPDOWN};
+  \node[seg]                        (cl)  at (mne.base east)   {:};
+
+  \node[seg, text=dom2!45!black, anchor=north west] (desc)
+      at ([yshift=-0.30cm]ts.south west)
+      {Line protocol on Interface GigabitEthernet0/1, changed state to down};
+
+  \draw[br=neutral!70] ([yshift=-2pt]ts.south west) -- ([yshift=-2pt]ts.south east);
+  \node[cap=neutral] at ([yshift=-6pt]ts.south) {timestamp};
+
+  \draw[br=dom1!80] ([yshift=-2pt]fac.south west) -- ([yshift=-2pt]fac.south east);
+  \node[cap=dom1] at ([yshift=-6pt]fac.south) {facility};
+
+  \draw[br=dom3!80] ([yshift=-2pt]mne.south west) -- ([yshift=-2pt]mne.south east);
+  \node[cap=dom3] at ([yshift=-6pt]mne.south) {mnemonic};
+
+  % Severity is one character wide, so it gets a leader upward instead
+  % of a brace it would dwarf.
+  \draw[accent!80, line width=0.7pt] (sev.north) -- ++(0,0.34)
+      node[font=\tiny\bfseries, text=accent!70!black, anchor=south] {severity};
+
+  \draw[br=dom2!80] ([yshift=-2pt]desc.south west) -- ([yshift=-2pt]desc.south east);
+  \node[cap=dom2] at ([yshift=-6pt]desc.south) {description --- the part in English};
+\end{tikzpicture}}%
+{Every IOS syslog message has the same four parts after the timestamp. The
+severity is the single digit between the two hyphens.}{syslogfmt}
+
+\begin{alertbox}[The severity is the digit in the middle, and it is not the number of anything else]
+In \cmd{\%LINEPROTO-5-UPDOWN} the \cmd{5} is the severity level. In
+\cmd{\%LINK-3-UPDOWN} the \cmd{3} is the severity level.
+
+Those two messages describe the same interface going down and carry different
+severities because they concern different layers. Seeing both together is normal
+and tells you the physical link dropped, which took the line protocol with it. A
+\cmd{\%LINEPROTO-5-UPDOWN} \emph{without} a matching \cmd{\%LINK-3-UPDOWN} means
+layer 1 stayed up and something above it failed --- keepalives, an encapsulation
+mismatch, or a shutdown of a subinterface.
+\end{alertbox}
+
+\subsection{The eight severity levels}
+
+\begin{longtable}{@{}L{1.3cm}L{2.9cm}L{5.3cm}L{5.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Level} & \textbf{Name} & \textbf{Meaning} & \textbf{Typical IOS message} \\
+\midrule
+\endhead
+\rowcolor{accent!12}
+\textbf{0} & Emergency & System unusable & Imminent thermal shutdown \\
+\rowcolor{accent!8}
+\textbf{1} & Alert & Immediate action required & Redundant power supply failed \\
+\rowcolor{accent!5}
+\textbf{2} & Critical & Critical condition &
+\cmd{\%SPANTREE-2-ROOTGUARD\_BLOCK} \\
+\textbf{3} & Error & Error condition &
+\cmd{\%LINK-3-UPDOWN} --- interface down \\
+\rowcolor{lightbg}
+\textbf{4} & Warning & Warning condition &
+\cmd{\%PM-4-ERR\_DISABLE} --- port err-disabled \\
+\textbf{5} & Notification & Normal but significant &
+\cmd{\%SYS-5-CONFIG\_I} --- somebody saved a change \\
+\rowcolor{lightbg}
+\textbf{6} & Informational & Informational message &
+\cmd{\%SEC-6-IPACCESSLOGP} --- an ACL matched \\
+\textbf{7} & Debugging & Debug output &
+Anything from a \cmd{debug} command \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Remembering the order]
+\textbf{E}very \textbf{A}wesome \textbf{C}isco \textbf{E}ngineer \textbf{W}ill
+\textbf{N}eed \textbf{I}ce-cream \textbf{D}aily --- Emergency, Alert, Critical,
+Error, Warning, Notification, Informational, Debugging.
+
+Two facts that follow and are examined: \textbf{0 is the most severe and 7 the
+least}, which is the opposite of most people's instinct. And configuring a
+logging destination at level \emph{n} sends everything from 0 \emph{through}
+\emph{n} --- so \cmd{logging console warnings} (level 4) also delivers levels 0
+to 3, and silently discards 5, 6 and 7.
+\end{conceptbox}
+
+\subsection{Configuring logging}
+
+\begin{config}{a sensible logging setup}
+! Without this every message is stamped only with uptime, which is
+! useless for correlating across devices. Do this first, everywhere.
+service timestamps log datetime msec localtime show-timezone
+service timestamps debug datetime msec localtime show-timezone
+!
+! Keep a generous local buffer at informational, so the evidence is
+! on the device even if the syslog server was unreachable.
+logging buffered 65536 informational
+!
+! Console logging on a busy device makes the CLI unusable. Turn it
+! down; the buffer and the server still have everything.
+logging console warnings
+logging monitor informational
+!
+! The central server. "trap" here means the syslog severity
+! threshold, NOT an SNMP trap -- an unfortunate collision of terms.
+logging host 10.0.0.45
+logging trap notifications
+logging source-interface Loopback0
+!
+line con 0
+ logging synchronous
+line vty 0 15
+ logging synchronous
+\end{config}
+
+\begin{alertbox}[\cmd{logging trap} has nothing to do with SNMP traps]
+It sets the \emph{severity threshold for messages sent to a syslog server}.
+\cmd{logging trap notifications} means ``send levels 0 to 5 to the host''. The
+word is a historical accident and it confuses people every year.
+
+\cmd{logging synchronous} is unrelated to both: it stops a log message printed
+mid-command from scrambling what you were typing. It changes nothing about what
+is logged and it will save your temper.
+\end{alertbox}
+
+\begin{verify}{SW1}{show logging | include Console|Buffer|Trap}
+    Console logging: level warnings, 2201 messages logged
+    Monitor logging: level informational, 0 messages logged
+    Buffer logging:  level informational, 88214 messages logged
+    Trap logging: level notifications, 41022 message lines logged
+\end{verify}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Reading severity backwards.} 0 is worst, 7 is least important.
+  \item \textbf{Setting a threshold too high and concluding nothing is wrong.}
+        The message may exist and be filtered. Check the levels before trusting
+        an empty log.
+  \item \textbf{No \cmd{service timestamps}.} Messages stamped with uptime cannot
+        be correlated across devices or with a user's report.
+  \item \textbf{Confusing \cmd{logging trap} with SNMP traps.}
+  \item \textbf{Leaving console logging at debugging on a production device.} The
+        CLI becomes unusable exactly when you need it.
+  \item \textbf{SNMP v2c with a read-write community string.} That is an enable
+        password sent in clear thousands of times a day.
+  \item \textbf{No \cmd{logging source-interface}.} Messages arrive from whichever
+        interface routing chose, and the server cannot reliably attribute them.
+  \item \textbf{Relying on traps for events that matter.} Use informs.
+  \item \textbf{Calling Ansible ``controller-based''.} It adds no control plane.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[Ports keep going down overnight. The log ``shows nothing''.]
+An access switch drops several user ports most nights. By morning they are back.
+The site's monitoring shows the interfaces bouncing, but the network team reports
+that the device's own log contains no explanation.
+
+\begin{verify}{SW1}{show logging | include level}
+    Console logging: level errors, 14 messages logged
+    Monitor logging: level errors, 0 messages logged
+    Buffer logging:  level errors, 14 messages logged
+    Trap logging: level errors, 14 message lines logged
+\end{verify}
+
+\textbf{Diagnosis.} Every destination is set to \cmd{errors}, which is severity~3.
+That delivers levels 0 to 3 and \textbf{discards 4, 5, 6 and 7}.
+
+Look at what lives in the discarded range:
+
+\begin{tight}
+  \item \cmd{\%PM-4-ERR\_DISABLE} --- severity 4. The port being disabled.
+  \item \cmd{\%LINEPROTO-5-UPDOWN} --- severity 5. The line protocol dropping.
+  \item \cmd{\%SYS-5-CONFIG\_I} --- severity 5. Somebody making a change.
+\end{tight}
+
+Almost everything that explains why a port went down is severity 4 or 5, and none
+of it is being recorded anywhere --- not the buffer, not the console, not the
+server.
+
+The log does not ``show nothing''. The log was told not to look.
+
+The 14 messages that did survive are the severity-3 \cmd{\%LINK-3-UPDOWN} events
+--- the interfaces going down. So the team can see the effect and has filtered out
+every possible cause, which is precisely the worst configuration to have.
+
+\textbf{Fix.}
+
+\begin{config}{recording enough to diagnose}
+service timestamps log datetime msec localtime show-timezone
+logging buffered 65536 informational
+logging trap notifications
+logging console warnings
+\end{config}
+
+Then wait for the next occurrence rather than guessing. With level~5 reaching the
+buffer and the server, the sequence around each drop becomes visible --- and in
+this case it showed \cmd{\%PM-4-ERR\_DISABLE} for \cmd{psecure-violation}
+following a cleaner's floor polisher being plugged into a wall port each night.
+
+\textbf{The lesson.} \textbf{An empty log is a claim about the logging
+configuration, not about the network.} Before concluding that nothing happened,
+run \cmd{show logging} and read the levels. This is the most useful habit in the
+whole chapter.
+\end{breakfix}
+
+\begin{lab}{Making a device tell you what it is doing}{Packet Tracer for syslog; CML for SNMPv3}
+\textbf{Platform note.} Packet Tracer has a syslog server and will carry tasks
+1--6. SNMPv3 needs a real image and a real NMS, so tasks 7--9 want CML or GNS3
+with an SNMP tool on a Linux host.
+
+\begin{tasks}
+  \item On a switch with default logging, run \cmd{show logging} and record every
+        threshold before changing anything.
+  \item Enable \cmd{service timestamps} with date, time and milliseconds. Shut an
+        interface and compare the message with one logged before the change.
+  \item Shut and unshut an interface and capture both messages. Identify the
+        facility, severity and mnemonic in each, and explain why the two
+        severities differ.
+  \item Set \cmd{logging buffered errors}. Repeat the shut and unshut. Record
+        which of the two messages survives and explain why --- this is the Break
+        \& Fix in miniature.
+  \item Restore \cmd{logging buffered informational}, save a configuration
+        change, and find the \cmd{\%SYS-5-CONFIG\_I} message. Note that it records
+        \emph{that} a change was made, not what it was.
+  \item Point \cmd{logging host} at a syslog server, set \cmd{logging trap
+        notifications}, and confirm messages arrive. Then set it to
+        \cmd{emergencies} and confirm they stop.
+  \item \textbf{SNMP.} Configure SNMPv3 with authPriv and poll the device's
+        interface table from a Linux host. Record the OID you used.
+  \item Capture the polling traffic. Confirm you cannot read it. Then reconfigure
+        for v2c, capture again, and \textbf{find the community string in the
+        packet}. Write down what you saw.
+  \item Configure a trap receiver, generate an event, and confirm receipt. Change
+        the trap to an inform and observe the acknowledgement.
+  \item \textbf{Extension.} Write the logging and SNMP standard your site should
+        apply to every device, with a one-line justification per command, and the
+        one thing you would check first when someone says the log is empty.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Name the five management approaches and give the one-line test that
+        separates controller-based from automation-based.
+  \item In \cmd{\%PM-4-ERR\_DISABLE}, identify the facility, the severity and the
+        mnemonic, and say what the severity means.
+  \item Which severity levels does \cmd{logging buffered warnings} record, and
+        which does it discard?
+  \item State the difference between an SNMP trap and an inform, and when you
+        would choose each.
+  \item Why is SNMP v2c unsuitable regardless of how obscure the community string
+        is?
+  \item What does \cmd{logging trap} configure, and what does it not?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Five approaches: device-based (per box), controller-based (a controller
+        holds intent), cloud-based (vendor-hosted management plane),
+        automation-based (tooling drives existing interfaces), infrastructure as
+        code (state in a reviewed repository).
+  \item Controller-based adds a system to the network; automation-based does not.
+        That is the distinction to be able to state.
+  \item SNMP: manager polls agents on UDP~161 with Get, GetNext, GetBulk and Set;
+        agents send traps and informs to UDP~162. Informs are acknowledged, traps
+        are not.
+  \item v1 and v2c send community strings in clear. Only v3 authenticates and
+        encrypts. Use authPriv.
+  \item An IOS syslog message is
+        \cmd{\%FACILITY-SEVERITY-MNEMONIC: description}. The severity is the
+        digit between the hyphens.
+  \item Levels 0 to 7, emergency to debugging. \textbf{0 is worst.} A threshold
+        of \emph{n} records 0 through \emph{n} and discards the rest.
+  \item \cmd{service timestamps} first, always. \cmd{logging trap} is a syslog
+        severity, not SNMP.
+  \item An empty log describes the logging configuration, not the network.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} In \cmd{\%LINEPROTO-5-UPDOWN}, what does the \cmd{5}
+        indicate?
+        \begin{tight}
+          \item[(a)] The interface number
+          \item[(b)] The severity level, notification
+          \item[(c)] The number of times the event occurred
+          \item[(d)] The facility code
+        \end{tight}
+  \item \textbf{(MCQ)} Which severity level is the most severe?
+        \begin{tight}
+          \item[(a)] 7, debugging \quad (b)~0, emergency
+          \quad (c)~1, alert \quad (d)~4, warning
+        \end{tight}
+  \item \textbf{(MCQ)} Which SNMP notification is acknowledged by the receiver?
+        \begin{tight}
+          \item[(a)] Trap \quad (b)~Inform \quad (c)~GetBulk \quad (d)~Set
+        \end{tight}
+  \item \textbf{(Short)} Explain the difference between controller-based and
+        automation-based management, and give one example of each.
+  \item \textbf{(Short)} A colleague reports that a switch's log contains no
+        record of an outage that monitoring clearly shows. Give the first command
+        you would run and the two things it might reveal.
+  \item \textbf{(Applied)} Interpret this line fully, naming every component and
+        explaining what happened and what you would do next:
+        \cmd{Aug 27 02:41:09.882: \%PM-4-ERR\_DISABLE: psecure-violation error
+        detected on Gi1/0/14, putting Gi1/0/14 in err-disable state}
+  \item \textbf{(Applied)} Write the logging configuration for a production access
+        switch that keeps full evidence locally, sends notifications and above to
+        a central server, and does not make the console unusable. Justify each
+        threshold you choose.
+\end{reviewq}

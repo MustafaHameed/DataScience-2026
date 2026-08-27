@@ -1,4 +1,380 @@
 \chapter{OSPFv2, Single Area}\label{ch:ospfv2}
 \bp{3.3}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} how OSPF forms adjacencies and why they sometimes do not.
+  \item \textbf{Configure} single-area OSPFv2 with an explicit router ID, on both
+        broadcast and point-to-point links.
+  \item \textbf{Predict} and \textbf{influence} DR and BDR election.
+  \item \textbf{Troubleshoot} the five mismatches that prevent an adjacency, using
+        \cmd{show ip ospf neighbor} and \cmd{show ip ospf interface}.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{routingtable} for administrative distance and metrics; \chref{static} for
+the contrast with a route you configure by hand.
+\end{prereq}
+
+\begin{keyterms}
+OSPF $\bullet$ link-state $\bullet$ adjacency $\bullet$ neighbour $\bullet$
+hello $\bullet$ router ID $\bullet$ area 0 $\bullet$ DR $\bullet$ BDR $\bullet$
+DROTHER $\bullet$ cost $\bullet$ reference bandwidth $\bullet$ wildcard mask
+$\bullet$ passive interface $\bullet$ FULL state $\bullet$ 2-WAY state
+\end{keyterms}
+
+\begin{examnote}[What the blueprint asks for, precisely]
+Topic \tp{3.3} is ``configure single area OSPFv2 for IPv4 and OSPFv3 for IPv6''
+with four sub-points: neighbour adjacencies \emph{excluding authentication},
+point-to-point, broadcast with DR/BDR selection, and router ID. Multi-area OSPF,
+authentication, virtual links and route summarisation are all out of scope. Learn
+these four properly rather than the whole protocol thinly.
+\end{examnote}
+
+\section{What OSPF does that a static route cannot}
+
+\begin{conceptbox}[Link state, in three sentences]
+Every OSPF router floods a description of its own links to every other router in
+the area. Each router therefore ends up with an identical map of the whole area,
+which it stores in a \term{link-state database}. Each then runs the shortest-path
+algorithm against that map to work out its own best route to everywhere.
+
+Because every router has the whole map, a failure anywhere is known everywhere
+within seconds, and every router recalculates independently and consistently.
+That is the property a static route can never have.
+\end{conceptbox}
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.45cm, minimum height=1.0cm,
+               align=center, font=\tiny\bfseries},
+    w/.style={line width=1pt, neutral!65},
+    db/.style={draw=dom3!60, fill=dom3!6, rounded corners=2pt, line width=0.7pt,
+               font=\tiny, align=center, inner sep=3pt, text=dom3!45!black}}
+
+  \node[dv=dom3] (r1) at (0,0)   {\faIcon{route}\\R1};
+  \node[dv=dom3] (r2) at (5.2,0) {\faIcon{route}\\R2};
+  \node[dv=dom3] (r3) at (10.4,0){\faIcon{route}\\R3};
+  \draw[w] (r1) -- (r2);  \draw[w] (r2) -- (r3);
+
+  \node[font=\tiny\bfseries, text=dom2!45!black] at (2.6,0.34) {FULL};
+  \node[font=\tiny\bfseries, text=dom2!45!black] at (7.8,0.34) {FULL};
+  \foreach \x in {2.6, 7.8}
+    \draw[{Stealth[length=1.8mm]}-{Stealth[length=1.8mm]}, dom2!70,
+          line width=0.8pt] (\x-0.75,-0.30) -- (\x+0.75,-0.30);
+  \node[font=\tiny, text=neutral!85!black] at (2.6,-0.62) {hellos};
+  \node[font=\tiny, text=neutral!85!black] at (7.8,-0.62) {hellos};
+
+  \foreach \x in {0, 5.2, 10.4}
+    \node[db] at (\x,-1.75) {link-state database\\\textbf{identical on all three}};
+
+  \foreach \x in {0, 5.2, 10.4}
+    \draw[dom3!45, line width=0.7pt, dash pattern=on 2pt off 2pt]
+      (\x,-0.55) -- (\x,-1.3);
+
+  \node[font=\tiny, text=neutral!85!black, align=center] at (5.2,-2.75)
+      {Each router floods a description of \emph{its own} links.
+       Every router therefore holds the same map ---\\
+       and then computes its \emph{own} best path across it. Nobody is told what
+       their routes are.};
+\end{tikzpicture}}%
+{Link state in one picture. The database is shared and identical; the routing
+table each router builds from it is its own.}{ospflsdb}
+
+\section{Adjacencies, and the five things that must match}
+
+Two routers become neighbours by exchanging hello packets on a shared link. The
+hello carries several parameters, and \textbf{if any of them disagree, no
+adjacency forms} --- silently.
+
+\begin{longtable}{@{}L{4.0cm}L{11.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Must match} & \textbf{What goes wrong if it does not} \\
+\midrule
+\endhead
+\textbf{Area ID} & Different areas on the same link: no adjacency. In single-area
+OSPF everything is area 0 \\
+\rowcolor{lightbg}
+\textbf{Hello and dead intervals} & Defaults are 10~s and 40~s on broadcast
+links. Change one end only and the adjacency never forms \\
+\textbf{Subnet and mask} & The two interfaces must be in the same subnet. A mask
+typo is a common cause \\
+\rowcolor{lightbg}
+\textbf{Network type} & Broadcast on one end and point-to-point on the other
+prevents adjacency or leaves it stuck \\
+\textbf{Authentication} & Out of scope for this exam, but real: mismatched keys
+prevent adjacency \\
+\bottomrule
+\end{longtable}
+
+Two further conditions are worth adding because they cause the same symptom: the
+\textbf{router IDs must be unique}, and the interface must not be
+\cmd{passive}.
+
+\begin{definitionbox}[Router ID, and how it is chosen]
+The \term{router ID} is a 32-bit value written like an IP address that uniquely
+identifies the router in OSPF. It is selected in this order:
+\begin{tightnum}
+  \item The value configured with \cmd{router-id} --- always use this.
+  \item Otherwise, the highest IP address on any \emph{loopback} interface.
+  \item Otherwise, the highest IP address on any active physical interface.
+\end{tightnum}
+Left to itself the ID can change when an interface goes down, which forces the
+adjacency to rebuild. Configure it explicitly and the problem disappears.
+\end{definitionbox}
+
+\section{Configuring single-area OSPFv2}
+
+\begin{config}{OSPF on R1, area 0}
+! A loopback gives a stable ID and a pingable address that never
+! goes down with a physical interface.
+interface Loopback0
+ ip address 1.1.1.1 255.255.255.255
+!
+router ospf 10
+ ! The process number is LOCAL. R2 may use a different one and
+ ! the two will still peer -- unlike EIGRP or BGP.
+ router-id 1.1.1.1
+ !
+ ! The network statement uses a WILDCARD mask -- the inverse of a
+ ! subnet mask. It means "enable OSPF on any interface whose
+ ! address falls in this range, and advertise that subnet".
+ network 10.255.0.0 0.0.0.3 area 0
+ network 192.168.10.0 0.0.0.255 area 0
+ !
+ ! Do not send hellos out of a LAN with no other routers on it.
+ ! It saves bandwidth and removes an attack surface, while the
+ ! subnet is still advertised.
+ passive-interface Vlan10
+ !
+ ! Make cost reflect modern link speeds -- see the note below.
+ auto-cost reference-bandwidth 10000
+\end{config}
+
+\begin{conceptbox}[Wildcard masks, quickly]
+A wildcard mask is the subnet mask with every bit inverted: \cmd{0} means ``this
+bit must match'', \cmd{255} means ``do not care''.
+
+\begin{tight}
+  \item \cmd{/24} $\rightarrow$ mask \cmd{255.255.255.0} $\rightarrow$ wildcard
+        \cmd{0.0.0.255}
+  \item \cmd{/30} $\rightarrow$ mask \cmd{255.255.255.252} $\rightarrow$ wildcard
+        \cmd{0.0.0.3}
+  \item A single interface $\rightarrow$ wildcard \cmd{0.0.0.0}
+\end{tight}
+The arithmetic is $255$ minus each octet of the subnet mask. Wildcards return in
+\chref{acl}.
+\end{conceptbox}
+
+\begin{alertbox}[Reference bandwidth: change it everywhere or nowhere]
+OSPF cost is $\text{reference bandwidth} \div \text{interface bandwidth}$, and
+the default reference is 100~Mbps. That means a 1~Gbps link and a 10~Gbps link
+both come out at cost 1 --- OSPF cannot tell them apart, and will happily choose
+the slower one.
+
+Raising the reference to 10000 (10~Gbps) restores the distinction. But cost is
+compared across the area, so \textbf{every router must use the same reference
+bandwidth} or the path calculations disagree and traffic takes strange routes.
+Change it on all of them, or on none.
+\end{alertbox}
+
+\section{DR and BDR on broadcast links}
+
+\begin{conceptbox}[Why a designated router exists]
+On a broadcast segment with $n$ routers, full adjacencies between every pair
+would be $n(n-1)/2$ relationships --- ten routers would need forty-five. Instead
+one router is elected \term{DR} and one \term{BDR}, and everyone else becomes a
+\term{DROTHER} adjacent only to those two. Flooding goes through the DR.
+
+The election: \textbf{highest OSPF interface priority} wins; if priorities tie,
+\textbf{highest router ID} wins. Default priority is 1. Priority \cmd{0} means
+``never be DR''.
+
+Two things surprise people. The election is \textbf{per segment}, not per router
+--- a router can be DR on one link and DROTHER on another. And it is
+\textbf{non-preemptive}: a new router with a better priority does not take over
+until the current DR fails. To force it, clear the process or bounce the
+interface.
+\end{conceptbox}
+
+\begin{config}{influencing the election, and avoiding it}
+! Make this router the DR on the segment.
+interface GigabitEthernet0/0
+ ip ospf priority 255
+!
+! Never allow this one to be DR or BDR.
+interface GigabitEthernet0/1
+ ip ospf priority 0
+!
+! On a link with exactly two routers, skip the election entirely.
+! Point-to-point forms an adjacency faster and elects nobody.
+interface GigabitEthernet0/2
+ ip ospf network point-to-point
+\end{config}
+
+\section{Verifying}
+
+\begin{verify}{R1}{show ip ospf neighbor}
+Neighbor ID     Pri   State           Dead Time   Address         Interface
+2.2.2.2           1   FULL/DR         00:00:33    10.255.0.2      GigabitEthernet0/1
+3.3.3.3           1   FULL/BDR        00:00:31    10.255.0.3      GigabitEthernet0/1
+4.4.4.4           0   FULL/  -        00:00:38    10.255.1.2      GigabitEthernet0/2
+\end{verify}
+
+\begin{longtable}{@{}L{3.4cm}L{11.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{State} & \textbf{Meaning} \\
+\midrule
+\endhead
+\cmd{FULL} & Databases synchronised. This is the healthy state \\
+\rowcolor{lightbg}
+\cmd{2-WAY} & Normal \emph{between two DROTHERs} on a broadcast segment --- they
+see each other but do not need full adjacency. Not a fault \\
+\cmd{EXSTART}, \cmd{EXCHANGE} & Mid-negotiation. Stuck here usually means an MTU
+mismatch \\
+\rowcolor{lightbg}
+\cmd{INIT} & Hellos received but this router is not listed in them --- often
+one-way communication or an access list \\
+\cmd{FULL/ -} & Full, on a point-to-point link where there is no DR \\
+\bottomrule
+\end{longtable}
+
+\begin{verify}{R1}{show ip ospf interface GigabitEthernet0/1}
+GigabitEthernet0/1 is up, line protocol is up
+  Internet Address 10.255.0.1/30, Area 0, Attached via Network Statement
+  Process ID 10, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 10
+  Designated Router (ID) 2.2.2.2, Interface address 10.255.0.2
+  Backup Designated router (ID) 3.3.3.3, Interface address 10.255.0.3
+  Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+  Neighbor Count is 2, Adjacent neighbor count is 2
+\end{verify}
+
+This one output carries four of the five things that must match: area, network
+type, hello and dead intervals, and the subnet. When an adjacency will not form,
+run it on \emph{both} routers and compare line by line.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Assuming the process number must match.} It is locally
+        significant. \cmd{router ospf 10} peers happily with \cmd{router ospf 65}.
+  \item \textbf{Using a subnet mask in the network statement.} It takes a
+        wildcard. \cmd{network 10.255.0.0 255.255.255.252} does not do what you
+        expect.
+  \item \textbf{Leaving the router ID to chance.} It changes when interfaces
+        change, and every adjacency rebuilds.
+  \item \textbf{Panicking at \cmd{2-WAY}.} Between two DROTHERs it is correct.
+  \item \textbf{Changing reference bandwidth on one router.} See the warning
+        above.
+  \item \textbf{Forgetting \cmd{passive-interface} on user VLANs.} Hellos on a
+        LAN full of PCs are wasted and expose the protocol.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[Adjacency stuck in EXSTART.]
+Two routers see each other but never reach FULL:
+
+\begin{verify}{R1}{show ip ospf neighbor}
+Neighbor ID     Pri   State           Dead Time   Address         Interface
+2.2.2.2           1   EXSTART/DR      00:00:35    10.255.0.2      GigabitEthernet0/1
+\end{verify}
+
+Hellos are being exchanged --- so area, timers, subnet and network type all match,
+or the neighbour would not be listed at all. The failure is later, during database
+exchange.
+
+\begin{verify}{R1}{show ip ospf interface GigabitEthernet0/1 | include MTU|Internet}
+  Internet Address 10.255.0.1/30, Area 0, Attached via Network Statement
+  MTU is 1500 bytes
+\end{verify}
+
+\begin{verify}{R2}{show ip ospf interface GigabitEthernet0/1 | include MTU|Internet}
+  Internet Address 10.255.0.2/30, Area 0, Attached via Network Statement
+  MTU is 1400 bytes
+\end{verify}
+
+\textbf{Diagnosis.} An MTU mismatch. OSPF checks MTU during database description
+exchange and refuses to proceed if the two ends disagree --- which is exactly why
+the adjacency reaches EXSTART and stops there. Being stuck in EXSTART or EXCHANGE
+is close to diagnostic of this.
+
+\textbf{Fix.} Make the MTUs match: \cmd{ip mtu 1500} on \cmd{R2}'s interface, or
+1400 on \cmd{R1}'s if the smaller value was deliberate. The adjacency will move to
+FULL within a dead interval. Do not use \cmd{ip ospf mtu-ignore} except as a
+temporary measure --- it suppresses the symptom and leaves a real MTU mismatch to
+fragment traffic later.
+\end{breakfix}
+
+\begin{lab}{Three routers, one area}{Packet Tracer}
+\textbf{Topology.} \cmd{R1}, \cmd{R2}, \cmd{R3} on a shared Ethernet segment;
+each with a LAN; \cmd{R1} also point-to-point to \cmd{R3}.
+
+\begin{tasks}
+  \item Configure loopbacks and explicit router IDs \cmd{1.1.1.1}, \cmd{2.2.2.2},
+        \cmd{3.3.3.3}. Enable OSPF area 0 on all links and LANs, with LANs
+        passive.
+  \item Confirm every neighbour reaches FULL. Record which router became DR and
+        which BDR, and explain the election from the router IDs.
+  \item Set \cmd{ip ospf priority 255} on \cmd{R3}'s segment interface. Note
+        that nothing changes, then bounce the interfaces and note that it does.
+        Explain why.
+  \item On the \cmd{R1}--\cmd{R3} link, set \cmd{ip ospf network point-to-point}
+        at both ends. Confirm the state becomes \cmd{FULL/ -} with no DR.
+  \item Change the hello interval on \cmd{R1} only. Watch the adjacency drop, and
+        find the mismatch with \cmd{show ip ospf interface}.
+  \item Set \cmd{ip mtu 1400} on one end and reproduce the EXSTART fault above.
+  \item \textbf{Extension.} Raise the reference bandwidth on one router only and
+        observe the asymmetric routing that results.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Two routers on a broadcast segment show \cmd{2-WAY} and never go FULL.
+        Under what circumstance is this correct rather than a fault?
+  \item Which wildcard mask enables OSPF on \cmd{172.16.8.0/22}?
+  \item A router's OSPF adjacencies all rebuild every time one interface flaps.
+        What is the cause, and what is the one-line fix?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item OSPF floods a description of every link, so all routers in the area share
+        one map and converge consistently.
+  \item Area, hello and dead timers, subnet and mask, and network type must all
+        match, or no adjacency forms. Router IDs must be unique.
+  \item Configure the router ID explicitly; otherwise it moves and adjacencies
+        rebuild.
+  \item Network statements take wildcard masks. The process number is local.
+  \item DR and BDR are elected per segment by priority then router ID, and the
+        election is non-preemptive. \cmd{ip ospf network point-to-point} avoids
+        it entirely on two-router links.
+  \item \cmd{FULL} is healthy; \cmd{2-WAY} between DROTHERs is healthy; stuck in
+        \cmd{EXSTART} means MTU.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which is chosen as router ID if no \cmd{router-id} is
+        configured and a loopback exists?
+        (a)~lowest physical interface address (b)~highest loopback address
+        (c)~highest physical address (d)~the process number
+  \item \textbf{(MCQ)} Two routers are stuck in EXSTART. The most likely cause is
+        (a)~area mismatch (b)~MTU mismatch (c)~timer mismatch (d)~duplicate router
+        ID
+  \item \textbf{(Short)} Explain why the OSPF process number does not need to
+        match between neighbours, and name a protocol where the equivalent number
+        does.
+  \item \textbf{(Short)} Give the reason for setting \cmd{ip ospf priority 0} on
+        an interface, and name a situation where you would.
+  \item \textbf{(Applied)} Write a complete single-area OSPFv2 configuration for a
+        router with a loopback, one point-to-point link to a neighbour and two
+        user VLANs, and list the two \cmd{show} commands you would use to prove it
+        is correct.
+\end{reviewq}

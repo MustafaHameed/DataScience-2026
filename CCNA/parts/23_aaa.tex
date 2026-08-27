@@ -1,4 +1,475 @@
 \chapter{Device Access, AAA and Secure File Transfer}\label{ch:aaa}
 \bp{4.1,4.2}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Configure} local usernames, enable secrets and SSH-only access to
+        the console and VTY lines.
+  \item \textbf{Configure} a router or switch as an AAA client against TACACS+ and
+        against RADIUS, with a local fallback that cannot lock you out.
+  \item \textbf{Compare} TACACS+ and RADIUS and choose correctly between them.
+  \item \textbf{Manage} configuration and image files over SCP and SFTP, and say
+        why v2.0 replaced TFTP with them.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{cli} for line configuration and privilege levels. \chref{dns} for
+\cmd{ip domain name}, which SSH key generation requires. \chref{transport} for
+the difference between TCP and UDP, which is one of the real distinctions between
+TACACS+ and RADIUS.
+\end{prereq}
+
+\begin{keyterms}
+AAA $\bullet$ authentication $\bullet$ authorization $\bullet$ accounting
+$\bullet$ TACACS+ $\bullet$ RADIUS $\bullet$ method list $\bullet$ fallback
+$\bullet$ \cmd{enable secret} $\bullet$ SCP $\bullet$ SFTP $\bullet$ privilege
+level
+\end{keyterms}
+
+\begin{examnote}[Two topics, one chapter, and a v2.0 change worth noticing]
+Topic~\tp{4.1} is \emph{configure network devices with local usernames and as an
+AAA client (TACACS+ and RADIUS) for management}. Topic~\tp{4.2} is \emph{manage
+device configuration and software files using secure file transfer operations
+with SFTP/SCP}.
+
+They sit together because they are the same job: getting onto a device safely,
+and moving files onto it safely. And \tp{4.2} is a genuine v2.0 change --- v1.1
+examined TFTP. TFTP is UDP, has no authentication of any kind, and sends
+everything in clear text. It has been removed from the blueprint and replaced by
+two protocols that fix all three problems. If a practice question offers TFTP as
+the secure answer, the question predates your exam.
+\end{examnote}
+
+\section{Local access done properly}
+
+Before any server is involved, get the device itself right. Everything in this
+section should be on every device you build, including the ones that later use
+AAA --- because AAA servers fail, and this is what you fall back to.
+
+\begin{config}{baseline secure access}
+hostname CAMPUS-SW1
+!
+! A domain name is required before RSA keys can be generated: the key
+! is named host.domain.
+ip domain name campus.example.edu
+!
+! scrypt is type 9. Use it where the platform offers it. Never use
+! "username ... password", which stores type 0 or type 7.
+username netadmin privilege 15 algorithm-type scrypt secret S0me-Long-Passphrase
+username helpdesk privilege 1  algorithm-type scrypt secret An0ther-Passphrase
+!
+enable algorithm-type scrypt secret Enable-Passphrase-Here
+!
+! 2048 is the practical minimum; below 768 the device will refuse to
+! run SSH version 2 at all.
+crypto key generate rsa modulus 2048
+ip ssh version 2
+ip ssh time-out 60
+ip ssh authentication-retries 3
+!
+line console 0
+ login local
+ exec-timeout 10 0
+ logging synchronous
+!
+line vty 0 15
+ login local
+ transport input ssh
+ exec-timeout 10 0
+\end{config}
+
+\begin{alertbox}[\cmd{transport input ssh} is the line that matters]
+Generating keys and enabling SSH does not disable Telnet. Until you say
+\cmd{transport input ssh}, the device still accepts plain-text logins on port~23,
+and an auditor will find it. The default on many platforms is
+\cmd{transport input all}.
+
+The reverse mistake is worse: typing \cmd{transport input ssh} \emph{before} the
+keys exist locks you out of a remote device completely. Generate keys first,
+prove SSH works from a second window, then restrict the transport.
+\end{alertbox}
+
+\begin{conceptbox}[Password types, and why \cmd{service password-encryption} is not enough]
+\begin{tight}
+  \item \textbf{Type 0} --- plain text. Visible in the configuration.
+  \item \textbf{Type 7} --- Cisco's reversible obfuscation, applied by
+        \cmd{service password-encryption}. It is trivially reversed by tools that
+        have existed for decades. It stops shoulder-surfing and nothing else.
+  \item \textbf{Type 5} --- salted MD5. A real hash, but MD5 is old.
+  \item \textbf{Type 8 (PBKDF2) and type 9 (scrypt)} --- current. Use
+        \cmd{algorithm-type sha256} or \cmd{algorithm-type scrypt}.
+\end{tight}
+
+So \cmd{service password-encryption} is still worth enabling --- it covers things
+that can only be type 7, such as line passwords and TACACS+ keys --- but it is
+not a substitute for storing user passwords as type 8 or 9.
+
+\cmd{enable secret} is hashed; \cmd{enable password} is not. If both exist, the
+secret wins and the password is dead configuration that leaks a credential.
+Delete it.
+\end{conceptbox}
+
+\section{AAA: three separate questions}
+
+\begin{definitionbox}[AAA]
+\term{Authentication} --- who are you? \term{Authorization} --- what are you
+allowed to do? \term{Accounting} --- what did you actually do? Three distinct
+questions, answered by method lists that a device consults in order.
+\end{definitionbox}
+
+\subsection{Method lists}
+
+A method list is an ordered list of ways to answer one of those questions. The
+device tries them left to right and moves on only when a method is
+\emph{unreachable}, not when it returns a refusal.
+
+\begin{alertbox}[The distinction that saves you and the one that locks you out]
+If the TACACS+ server answers ``no, wrong password'', that is an answer. The
+device stops there and rejects you --- it does not fall through to the local
+database. Fallback happens only when the server does not respond at all.
+
+This is correct behaviour and it surprises people. A fallback method is
+protection against a \emph{dead server}, not against a forgotten password.
+\end{alertbox}
+
+\begin{config}{AAA against TACACS+, with a local fallback}
+aaa new-model
+!
+! The server. This is the IOS 15 / IOS XE syntax; older configurations
+! used a single "tacacs-server host" line.
+tacacs server TAC1
+ address ipv4 10.0.0.20
+ key SharedSecretHere
+!
+tacacs server TAC2
+ address ipv4 10.0.0.21
+ key SharedSecretHere
+!
+aaa group server tacacs+ TACGROUP
+ server name TAC1
+ server name TAC2
+!
+! Authentication: try the group, then the local database if no server
+! answers. The trailing "local" is not optional in any network you
+! intend to keep working.
+aaa authentication login default group TACGROUP local
+aaa authentication enable default group TACGROUP enable
+!
+! Authorization: what privilege level does this user get on login?
+aaa authorization exec default group TACGROUP local if-authenticated
+!
+! Accounting: a record of every session and every command at level 15.
+aaa accounting exec default start-stop group TACGROUP
+aaa accounting commands 15 default start-stop group TACGROUP
+!
+! Source the packets from a stable address so the server's client
+! entry always matches, whichever interface the traffic leaves by.
+ip tacacs source-interface Loopback0
+\end{config}
+
+\begin{config}{the same device as a RADIUS client}
+radius server RAD1
+ address ipv4 10.0.0.30 auth-port 1812 acct-port 1813
+ key AnotherSharedSecret
+!
+aaa group server radius RADGROUP
+ server name RAD1
+!
+aaa authentication login default group RADGROUP local
+aaa authorization exec default group RADGROUP local
+ip radius source-interface Loopback0
+\end{config}
+
+\begin{verify}{CAMPUS-SW1}{show aaa servers | include host|state}
+RADIUS: id 1, priority 1, host 10.0.0.30, auth-port 1812, acct-port 1813
+     State: current UP, duration 43112s, previous duration 0s
+\end{verify}
+
+\section{TACACS+ against RADIUS}
+
+Both are AAA protocols and they are not interchangeable. This table is
+examinable more or less as it stands.
+
+\begin{longtable}{@{}L{3.5cm}L{5.6cm}L{5.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{TACACS+} & \textbf{RADIUS} \\
+\midrule
+\endhead
+Transport and port & TCP 49 & UDP 1812 authentication, 1813 accounting \\
+\rowcolor{lightbg}
+What is encrypted & The entire packet body & The password field only.
+Everything else, usernames included, is in clear \\
+AAA separation & Fully separate. Authorization can be asked per command &
+Authentication and authorization are combined in one exchange \\
+\rowcolor{lightbg}
+Origin & Cisco-developed, later published & IETF standard, universally
+implemented \\
+Normal use & \textbf{Device administration} --- controlling who may log in to
+routers and switches and what they may type &
+\textbf{Network access} --- 802.1X, wireless clients, VPN users \\
+\rowcolor{lightbg}
+Per-command control & Yes, and this is its main advantage &
+No, beyond a privilege level granted at login \\
+\bottomrule
+\end{longtable}
+
+\begin{examnote}[The one-sentence version]
+\textbf{TACACS+ manages administrators; RADIUS manages users.} If a question is
+about who may configure a switch, the answer is TACACS+. If it is about a laptop
+authenticating onto a wireless network, the answer is RADIUS.
+
+Two supporting facts worth memorising because they are asked directly: TACACS+ is
+TCP~49 and encrypts the whole payload; RADIUS is UDP and encrypts only the
+password.
+\end{examnote}
+
+\section{Moving files securely}
+
+\subsection{Why not TFTP}
+
+TFTP has no user authentication, no encryption, and runs over UDP with no
+integrity protection beyond a checksum. Anyone who can reach the server can read
+any file whose name they can guess, and a configuration file in flight is
+readable by anyone on the path --- including the shared secrets in it. That is
+the case for its removal from the blueprint.
+
+\subsection{SCP --- the device as a server}
+
+SCP runs over SSH, so it inherits SSH's authentication and encryption. The device
+can act as an SCP \emph{server}, letting you pull and push files from a
+workstation.
+
+\begin{config}{enabling the SCP server}
+! SCP will not start without all three of these. The authorization
+! line in particular is easy to miss, and its absence produces a
+! connection that authenticates and then refuses every transfer.
+aaa new-model
+aaa authentication login default local
+aaa authorization exec default local
+!
+ip scp server enable
+\end{config}
+
+With that in place, from a workstation:
+
+\begin{hostcmd}{Linux or macOS}{scp netadmin@10.0.0.1:running-config ./sw1-backup.cfg}
+netadmin@10.0.0.1's password:
+running-config                       100%  8241     1.2MB/s   00:00
+\end{hostcmd}
+
+\subsection{SFTP --- the device as a client}
+
+IOS is an SFTP \emph{client} but not an SFTP server. So the direction of travel
+is the device fetching from, or sending to, a server you run.
+
+\begin{verify}{CAMPUS-SW1}{copy sftp: flash:}
+Address or name of remote host []? 10.0.0.40
+Source username [netadmin]? images
+Source filename []? cat9k_iosxe.17.12.04.SPA.bin
+Destination filename [cat9k_iosxe.17.12.04.SPA.bin]?
+Accessing sftp://images@10.0.0.40/cat9k_iosxe.17.12.04.SPA.bin...
+Loading file ! [OK - 1103237120 bytes]
+1103237120 bytes copied in 412.338 secs (2675281 bytes/sec)
+\end{verify}
+
+\begin{config}{backing the configuration up on a schedule}
+! One-off, non-interactive form. The password appears on the command
+! line, so prefer key-based SCP where the platform supports it.
+! do copy running-config scp://netadmin@10.0.0.40/CAMPUS-SW1.cfg
+!
+! Automatic archive: a copy every time someone saves, kept off-box.
+archive
+ path scp://netadmin@10.0.0.40/archive/$h-
+ write-memory
+ maximum 14
+\end{config}
+
+\begin{conceptbox}[Verify the image before you reload onto it]
+A transfer that reports \cmd{[OK]} has moved the bytes it was given. It has not
+told you the file is the image Cisco shipped. Before reloading:
+
+\begin{tight}
+  \item \cmd{verify /md5 flash:cat9k\_iosxe.17.12.04.SPA.bin} and compare against
+        the hash published with the download.
+  \item \cmd{show flash:} to confirm the size matches.
+  \item Confirm free space \emph{before} the copy, not after --- a partial copy
+        that filled flash can leave a device unable to boot.
+\end{tight}
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{\cmd{aaa authentication login default group TACGROUP} with no
+        \cmd{local}.} When the server is unreachable, nobody can log in --- not
+        even at the console. This is the classic lock-out.
+  \item \textbf{Testing AAA by closing your session.} Always open a second
+        session and prove it works before closing the first.
+  \item \textbf{Mismatched shared key.} Authentication fails with no useful
+        message on the client. Check the server's logs, not the switch's.
+  \item \textbf{No \cmd{ip tacacs source-interface}.} Packets leave by whichever
+        interface routing picks, the server does not recognise the source, and
+        the failure is intermittent by design.
+  \item \textbf{\cmd{transport input ssh} before the keys exist.} Instant remote
+        lock-out.
+  \item \textbf{Enabling SCP without \cmd{aaa authorization exec}.} Logs in,
+        transfers nothing.
+  \item \textbf{Believing \cmd{service password-encryption} protects anything.}
+        Type 7 is reversible.
+  \item \textbf{Reaching for TFTP out of habit.} It is off the blueprint and it
+        was off the good-practice list long before that.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[Nobody can log in to any switch. The AAA server is up and other services work.]
+A campus of forty switches, all authenticating to TACACS+. Overnight, logins
+begin failing everywhere. The TACACS+ server is running, responds to ping from a
+workstation, and is authenticating VPN users normally. Console access fails as
+well as SSH.
+
+\begin{verify}{CAMPUS-SW1}{show run | include aaa authentication}
+aaa authentication login default group TACGROUP local
+aaa authentication enable default group TACGROUP enable
+\end{verify}
+
+\begin{verify}{CAMPUS-SW1}{show aaa servers | include host|state}
+TACACS+: id 1, priority 1, host 10.0.0.20, auth-port 49
+     State: current UP, duration 61204s
+\end{verify}
+
+\textbf{Diagnosis.} The configuration has a correct fallback and the server is
+reachable and marked \cmd{UP}. That combination rules out both of the usual
+suspects at once --- and it is the clue.
+
+Because the server is reachable, the device sends the request and gets an
+\emph{answer}. The answer is a rejection. Fallback to \cmd{local} never fires,
+because fallback happens on silence, not on refusal. The fault is therefore on
+the server: overnight, the group that grants network-device administration was
+changed, and the server is now correctly refusing everyone.
+
+The tell is that console access fails too. A network-side or transport-side fault
+would leave the console working, because the console does not depend on the
+network. A fault that follows you to the console is in the authentication
+decision itself.
+
+\textbf{Immediate recovery.} You need an account the switch can validate without
+the server. If a local account exists, use it --- but the method list consults
+TACACS+ first and TACACS+ is answering, so it will not be reached. Break the
+server's reachability from the switch deliberately, or use the password-recovery
+procedure on one switch, restore local access, and work from there.
+
+\textbf{The lasting fix} is on the server, not the switches. Restore the
+administration group.
+
+\textbf{And the lesson to write down.} A local fallback protects you from an
+unreachable server. It does not protect you from a reachable server that says no.
+Sites that care about this keep a break-glass local account and test it on a
+schedule --- and keep at least one device out of AAA entirely, reachable
+out-of-band, as the way back in.
+\end{breakfix}
+
+\begin{lab}{Secure access, AAA, and a backup you can restore}{CML or GNS3, with a TACACS+ or RADIUS server}
+\textbf{Platform note.} Packet Tracer models a simplified AAA server and will
+carry tasks 1--4. Tasks 5--8 need a real server (\cmd{tac\_plus} or FreeRADIUS)
+and a real SSH stack, so use CML or GNS3.
+
+\textbf{Topology.} Two switches and a router, a management VLAN, a Linux host
+running the AAA server and an SFTP server, and your own workstation.
+
+\begin{tasks}
+  \item Build baseline access on all three devices: hostname, domain name, two
+        local users at different privilege levels, enable secret, RSA keys, SSH
+        version 2, \cmd{transport input ssh}. Verify by SSH and confirm Telnet is
+        refused.
+  \item Prove the password types. Run \cmd{show run | include username} and
+        identify the type number on each. Add one user with
+        \cmd{password} instead of \cmd{secret} and compare, then remove it.
+  \item Configure AAA against the server with a local fallback. \textbf{Open a
+        second SSH session before you test}, and keep it open throughout.
+  \item Verify with \cmd{show aaa servers} and by logging in as a server-defined
+        user. Confirm the privilege level you land in.
+  \item \textbf{Break 1.} Stop the AAA server. Log in again and confirm the local
+        fallback works. Record how long the device waits before falling back.
+  \item \textbf{Break 2.} Restart the server and disable your test account on it.
+        Attempt to log in. Explain why the local fallback does \emph{not} rescue
+        you, and relate this to the Break \& Fix above.
+  \item \textbf{Break 3.} Remove \cmd{local} from the method list, stop the
+        server, and log out of every session. Recover the device. Write down how
+        long it took and what you would have done differently.
+  \item Enable the SCP server and copy the running configuration to your
+        workstation. Then omit \cmd{aaa authorization exec} and observe the
+        different failure.
+  \item Configure \cmd{archive} to write to SFTP on every \cmd{write memory}.
+        Make a change, save, and confirm the archived file appears.
+  \item \textbf{Extension.} Copy an image by SFTP, verify its MD5 against the
+        published hash, and deliberately truncate a copy to see what
+        \cmd{verify} reports.
+\end{tasks}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item In \cmd{aaa authentication login default group TACGROUP local}, when is
+        \cmd{local} used and when is it not?
+  \item Give the transport, port and encryption scope of TACACS+ and of RADIUS,
+        and say which you would choose for controlling switch administrators.
+  \item Why must \cmd{ip domain name} be set before generating RSA keys?
+  \item What three commands does the IOS SCP server require, and what is the
+        symptom when the authorization line is missing?
+  \item Why did v2.0 replace TFTP with SFTP and SCP? Give three reasons.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Baseline first: hostname, domain name, local users with
+        \cmd{algorithm-type scrypt secret}, \cmd{enable secret}, RSA keys,
+        \cmd{ip ssh version 2}, \cmd{login local}, \cmd{transport input ssh}.
+  \item Type 7 is obfuscation, not encryption. Type 8 and 9 are the current
+        choices. \cmd{enable password} should not exist.
+  \item AAA answers three separate questions through ordered method lists. A
+        method is skipped only when it does not respond --- a rejection ends the
+        list.
+  \item Always end an authentication method list with \cmd{local}, and always
+        test from a second session.
+  \item TACACS+: TCP 49, whole packet encrypted, full AAA separation, per-command
+        authorization, device administration. RADIUS: UDP 1812/1813, password
+        only encrypted, combined authentication and authorization, network
+        access.
+  \item SCP puts file transfer inside SSH; IOS can be an SCP server and an SFTP
+        client. Both replace TFTP, which authenticates nobody and encrypts
+        nothing.
+  \item Verify an image's hash before reloading onto it.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which protocol encrypts the entire packet body and uses
+        TCP port 49?
+        \begin{tight}
+          \item[(a)] RADIUS \quad (b)~TACACS+ \quad (c)~SNMPv3 \quad (d)~SCP
+        \end{tight}
+  \item \textbf{(MCQ)} A device is configured
+        \cmd{aaa authentication login default group SRV local}. The server is
+        reachable and rejects the credentials supplied. What happens?
+        \begin{tight}
+          \item[(a)] The local database is consulted and the user may still log in
+          \item[(b)] The login is refused; the local database is not consulted
+          \item[(c)] The device retries the server three times, then falls back
+          \item[(d)] The user is granted privilege level 1
+        \end{tight}
+  \item \textbf{(Short)} Explain the difference between \cmd{enable password} and
+        \cmd{enable secret}, and say what to do if a configuration contains both.
+  \item \textbf{(Short)} Give three concrete reasons SFTP or SCP should be used in
+        place of TFTP for moving a configuration file.
+  \item \textbf{(Applied)} Write the configuration that makes a switch an AAA
+        client of two TACACS+ servers with a local fallback, sourcing its packets
+        from \cmd{Loopback0}, and accounting for every level-15 command. Then
+        state the two verification steps you would take before ending your
+        session.
+  \item \textbf{(Applied)} A colleague has enabled the SCP server. Logins
+        succeed, transfers fail immediately. Give the missing command and explain
+        why authentication alone is not sufficient.
+\end{reviewq}

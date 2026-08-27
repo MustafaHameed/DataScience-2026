@@ -1,4 +1,431 @@
 \chapter{IPsec VPNs}\label{ch:vpn}
 \bp{4.5}
 
-% TODO: written content goes here.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} site-to-site from remote-access VPNs and say which
+        suits a given requirement.
+  \item \textbf{Name} the protocols in the IPsec suite --- IKE, ESP and AH ---
+        and state what each contributes.
+  \item \textbf{Compare} tunnel mode and transport mode, and say which is used
+        where.
+  \item \textbf{Explain} why AH is effectively unusable through NAT, and what is
+        used instead.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{transport} for ports and protocol numbers. \chref{nat} --- the interaction
+between IPsec and NAT is most of what makes this topic interesting.
+\chref{aaa} for the idea of authentication as distinct from encryption.
+\end{prereq}
+
+\begin{keyterms}
+IPsec $\bullet$ IKE $\bullet$ ISAKMP $\bullet$ ESP $\bullet$ AH $\bullet$ tunnel
+mode $\bullet$ transport mode $\bullet$ security association $\bullet$ NAT-T
+$\bullet$ site-to-site $\bullet$ remote access $\bullet$ GRE over IPsec
+\end{keyterms}
+
+\begin{examnote}[The only \emph{describe} topic in this part]
+Topic~\tp{4.5} is \emph{describe IPsec remote access and site-to-site VPNs
+(protocols and transport modes)}. There is no configuration verb, and no crypto
+map or IKEv2 proposal syntax is required of you.
+
+That is why this chapter is short and has no lab: writing one would teach you
+something the exam does not ask for, at the cost of time you need elsewhere in
+this part. What it \emph{does} ask for is in the parenthesis --- \textbf{the
+protocols and the transport modes} --- so those two lists are what this chapter
+drills.
+
+If you go on to CCNP Security, this chapter is the vocabulary you will build on.
+For now, know the names, the jobs and the trade-offs.
+\end{examnote}
+
+\section{The problem}
+
+Two campus sites need to exchange traffic and the only path between them is the
+internet, which is shared with everyone and trusted by nobody. Anything sent in
+clear can be read; anything read can be altered; anything altered can be replayed.
+
+A \term{virtual private network} makes that shared path behave like a private
+one. \term{IPsec} is the standard suite of protocols that does it at the network
+layer --- which is the useful part, because it means applications need no
+changes and know nothing about it.
+
+\begin{definitionbox}[The four services IPsec provides]
+\begin{tight}
+  \item \textbf{Confidentiality} --- encryption, so the payload cannot be read.
+        Normally AES.
+  \item \textbf{Integrity} --- a keyed hash, so alteration is detectable.
+        Normally SHA-2.
+  \item \textbf{Authentication} --- proof that the peer is who it claims to be.
+        A pre-shared key or a digital certificate.
+  \item \textbf{Anti-replay} --- sequence numbers, so a captured packet cannot be
+        re-sent later to useful effect.
+\end{tight}
+Underpinning all four is \textbf{key management}: Diffie--Hellman, which lets two
+peers agree a shared secret over a channel an eavesdropper is watching.
+\end{definitionbox}
+
+\section{Two deployment models}
+
+\begin{longtable}{@{}L{3.0cm}L{5.9cm}L{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Site-to-site} & \textbf{Remote access} \\
+\midrule
+\endhead
+Endpoints & Two gateways --- routers or firewalls &
+One client device and a gateway \\
+\rowcolor{lightbg}
+Who knows & Nobody. Hosts send ordinary packets; the gateways do the work &
+The user, who starts a client and authenticates \\
+Lifetime & Permanent. Brought up and left up &
+On demand, per session \\
+\rowcolor{lightbg}
+Typical use & Branch office to head office; campus to data centre &
+Staff working from home or travelling \\
+Client software & None &
+Required --- Cisco Secure Client, or a browser for a clientless TLS VPN \\
+\rowcolor{lightbg}
+Authenticates & The \emph{gateway}, by pre-shared key or certificate &
+The \emph{user}, usually against RADIUS (\chref{aaa}) \\
+\bottomrule
+\end{longtable}
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.4cm, minimum height=1.0cm,
+               align=center, font=\scriptsize\bfseries},
+    w/.style={line width=0.9pt, neutral!75},
+    tun/.style={line width=2.6pt, dom4!30}}
+
+  % site to site
+  \node[font=\scriptsize\bfseries, text=neutral!45!black, anchor=west]
+        at (-0.8,1.5) {Site-to-site};
+  \node[dv=neutral] (h1) at (0,0)    {\faIcon{desktop}\\Host};
+  \node[dv=dom3]    (g1) at (2.3,0)  {\faIcon{route}\\R1};
+  \node[dv=neutral] (c1) at (5.0,0)  {\faIcon{cloud}\\Internet};
+  \node[dv=dom3]    (g2) at (7.7,0)  {\faIcon{route}\\R2};
+  \node[dv=neutral] (h2) at (10.0,0) {\faIcon{desktop}\\Host};
+  \draw[tun] (g1) -- (g2);
+  \draw[w] (h1) -- (g1); \draw[w] (g1) -- (c1);
+  \draw[w] (c1) -- (g2); \draw[w] (g2) -- (h2);
+  \node[font=\tiny, text=dom4!45!black] at (5.0,0.62) {IPsec tunnel};
+  \node[font=\tiny, text=neutral!85!black] at (1.15,-0.75) {clear};
+  \node[font=\tiny, text=neutral!85!black] at (8.85,-0.75) {clear};
+
+  % remote access
+  \node[font=\scriptsize\bfseries, text=neutral!45!black, anchor=west]
+        at (-0.8,-1.6) {Remote access};
+  \node[dv=neutral] (l1) at (0,-3.1)   {\faIcon{laptop}\\Client};
+  \node[dv=neutral] (c2) at (3.5,-3.1) {\faIcon{cloud}\\Internet};
+  \node[dv=dom4]    (fw) at (7.0,-3.1) {\faIcon{shield-alt}\\Gateway};
+  \node[dv=dom1]    (s2) at (9.8,-3.1) {\faIcon{server}\\Servers};
+  \draw[tun] (l1) -- (fw);
+  \draw[w] (l1) -- (c2); \draw[w] (c2) -- (fw); \draw[w] (fw) -- (s2);
+  \node[font=\tiny, text=dom4!45!black] at (3.5,-2.48) {IPsec tunnel};
+  \node[font=\tiny, text=neutral!85!black] at (8.4,-3.85) {clear};
+\end{tikzpicture}}%
+{Where the tunnel starts decides the model. Site-to-site protects gateway to
+gateway; remote access protects all the way to the user's device.}{vpnmodels}
+
+\begin{conceptbox}[Traffic is only protected inside the tunnel]
+In the site-to-site diagram, traffic between the host and its own gateway is in
+clear. IPsec protects the internet crossing, not the LAN at either end. That is
+usually the right trade --- but it means a VPN is not an answer to a threat
+already inside the building.
+\end{conceptbox}
+
+\section{The protocols}
+
+Three names, and the exam expects you to know which does what.
+
+\begin{longtable}{@{}L{2.4cm}L{2.7cm}L{4.5cm}L{5.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Protocol} & \textbf{Identifier} & \textbf{Provides} & \textbf{Notes} \\
+\midrule
+\endhead
+IKE & UDP 500, and UDP 4500 with NAT-T &
+Peer authentication, key exchange, negotiation of everything else &
+The control plane. Nothing is encrypted until IKE has finished \\
+\rowcolor{lightbg}
+ESP & IP protocol 50 &
+Confidentiality, integrity, authentication, anti-replay &
+\textbf{What is actually used.} The only one of the three that encrypts \\
+AH & IP protocol 51 &
+Integrity, authentication, anti-replay --- \textbf{no encryption} &
+Effectively obsolete. Breaks through NAT; see below \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Two facts that are asked directly]
+\textbf{ESP encrypts; AH does not.} If a question asks which protocol provides
+confidentiality, the answer is ESP, every time.
+
+\textbf{ESP and AH are not TCP or UDP.} They are IP protocols in their own right,
+numbered 50 and 51, sitting at the same layer as TCP~(6) and UDP~(17). This is
+why a firewall rule that permits ``UDP 500'' alone will let the tunnel negotiate
+and then carry no data --- a memorable and very common real fault.
+\end{alertbox}
+
+\subsection{IKE, in two phases}
+
+\begin{tight}
+  \item \textbf{Phase 1} builds a secure, authenticated channel between the two
+        peers --- the ISAKMP or IKE security association. The peers prove their
+        identity (pre-shared key or certificate) and run Diffie--Hellman.
+  \item \textbf{Phase 2} uses that channel to negotiate the security
+        associations that will actually protect user traffic, including which
+        traffic is to be protected at all.
+\end{tight}
+
+IKEv2, the current version, does the same work in fewer exchanges, and adds
+built-in NAT traversal and liveness checking. New deployments use it.
+
+\begin{definitionbox}[Security association]
+A one-directional agreement covering the algorithms, keys and lifetimes for one
+flow. Because it is one-directional, a working tunnel has \emph{two} --- one in
+each direction. Asymmetric failures, where traffic passes one way only, are
+usually a phase 2 mismatch.
+\end{definitionbox}
+
+\section{Transport mode and tunnel mode}
+
+This is the second half of the topic's parenthesis, and the distinction is
+entirely about \textbf{what gets encrypted and what IP header the packet
+travels under}.
+
+\ccnafig{%
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    f/.style={draw=#1, fill=#1!10, text=#1!40!black, minimum height=0.8cm,
+              align=center, font=\tiny\bfseries, line width=0.7pt},
+    lbl/.style={font=\scriptsize\bfseries, text=neutral!45!black, anchor=west}}
+
+  \node[lbl] at (-0.2,1.55) {Original packet};
+  \node[f=neutral, minimum width=2.6cm] (a1) at (1.1,0.9) {IP header};
+  \node[f=neutral, minimum width=5.4cm] (a2) at (5.1,0.9) {TCP/UDP + data};
+
+  \node[lbl] at (-0.2,-0.05) {Transport mode};
+  \node[f=neutral, minimum width=2.6cm] (b1) at (1.1,-0.7)  {original\\IP header};
+  \node[f=dom4,    minimum width=1.5cm] (b2) at (3.15,-0.7) {ESP\\header};
+  \node[f=dom4, fill=dom4!28, minimum width=3.9cm] (b3) at (6.05,-0.7) {encrypted:\\TCP/UDP + data};
+  \draw[dom4!70, line width=0.7pt, {Bar[]}-{Bar[]}] (4.1,-1.35) -- (8.0,-1.35);
+  \node[font=\tiny, text=dom4!45!black] at (6.05,-1.62) {encrypted};
+
+  \node[lbl] at (-0.2,-2.35) {Tunnel mode};
+  \node[f=dom1,    minimum width=2.6cm] (c1) at (1.1,-3.0)  {\textbf{new}\\IP header};
+  \node[f=dom4,    minimum width=1.5cm] (c2) at (3.15,-3.0) {ESP\\header};
+  \node[f=dom4, fill=dom4!28, minimum width=5.9cm] (c3) at (7.05,-3.0) {encrypted:\\original IP header + TCP/UDP + data};
+  \draw[dom4!70, line width=0.7pt, {Bar[]}-{Bar[]}] (4.1,-3.65) -- (10.0,-3.65);
+  \node[font=\tiny, text=dom4!45!black] at (7.05,-3.92) {encrypted, original addresses hidden};
+\end{tikzpicture}}%
+{Transport mode keeps the original IP header. Tunnel mode encrypts it and adds a
+new one, which is what lets private addresses cross a public network.}{ipsecmodes}
+
+\begin{longtable}{@{}L{3.0cm}L{5.9cm}L{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Transport mode} & \textbf{Tunnel mode} \\
+\midrule
+\endhead
+Encrypts & The payload only & The \textbf{entire original packet} \\
+\rowcolor{lightbg}
+IP header & The original one is kept and is visible &
+A new header is added; the original is hidden \\
+Overhead & Lower & Higher --- an extra IP header \\
+\rowcolor{lightbg}
+Endpoints & The two hosts that are communicating &
+Two gateways, which are not the communicating hosts \\
+Used for & Host-to-host on a trusted path; protecting a GRE tunnel that already
+carries the addressing &
+\textbf{Site-to-site and remote-access VPNs} --- the normal case \\
+\rowcolor{lightbg}
+Private addressing & Cannot hide it & Can carry it across the public internet \\
+\bottomrule
+\end{longtable}
+
+\begin{examnote}[If the question does not say otherwise, it is tunnel mode]
+Tunnel mode is the default for the VPNs this topic names. The single sentence to
+remember: \textbf{tunnel mode encrypts the original IP header and adds a new one;
+transport mode does not.} Every other difference in the table follows from that.
+\end{examnote}
+
+\section{IPsec and NAT}
+
+\begin{alertbox}[Why AH is dead]
+AH authenticates the \emph{entire} packet, including the source and destination
+addresses in the IP header. NAT's whole job is to rewrite those addresses. So a
+NAT device on the path invalidates AH's integrity check by definition, and the
+far end discards the packet.
+
+There is no configuration that fixes this; the two mechanisms are logically
+incompatible. Since almost every internet path involves NAT somewhere, AH has
+been left behind, and ESP --- which does not protect the outer header --- is what
+everyone uses.
+\end{alertbox}
+
+ESP has a milder version of the same problem: PAT needs port numbers to
+multiplex, and ESP is not a port-based protocol. \term{NAT traversal} solves it by
+detecting NAT on the path during IKE and wrapping ESP inside UDP port~4500, which
+PAT can then handle normally. It is automatic in IKEv2.
+
+\begin{conceptbox}[GRE over IPsec, in one paragraph]
+IPsec tunnel mode carries unicast IP and nothing else --- no multicast, and
+therefore no routing protocols. A site-to-site VPN that needs OSPF between the
+sites wraps the traffic in a GRE tunnel first, which \emph{can} carry multicast,
+and then protects the GRE with IPsec.
+
+You will meet the phrase ``GRE over IPsec''. For this exam, know why it exists:
+GRE brings the ability to run a routing protocol, IPsec brings the security, and
+neither does both.
+\end{conceptbox}
+
+\section{When things do not work}
+
+Not examined as a configuration task, but these four explain most real failures
+and make the mechanics concrete.
+
+\begin{tight}
+  \item \textbf{Phase 1 never completes.} Mismatched pre-shared key, mismatched
+        IKE proposal, or UDP~500 blocked. Nothing at all passes.
+  \item \textbf{Phase 1 completes, phase 2 does not.} Mismatched transform set,
+        or the two ends disagree about which traffic should be protected. The
+        peers can talk; user traffic cannot.
+  \item \textbf{Tunnel establishes, large packets fail.} The extra headers push
+        packets past the path MTU. Small pings and SSH work, file transfers and
+        web pages hang. A classic, and a good reminder that ``it pings'' is not
+        ``it works''.
+  \item \textbf{Everything negotiates and no data flows.} A firewall permitting
+        UDP~500 but not IP protocol~50.
+\end{tight}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Saying AH encrypts.} It does not. Only ESP does.
+  \item \textbf{Calling ESP and AH ``TCP'' or ``UDP''.} They are IP protocols 50
+        and 51.
+  \item \textbf{Mixing up the modes.} Tunnel mode adds a new IP header; transport
+        mode keeps the original.
+  \item \textbf{Assuming a VPN protects the whole path.} It protects the tunnel.
+  \item \textbf{Expecting a routing protocol to run over plain IPsec.} It cannot
+        --- multicast needs GRE.
+  \item \textbf{Treating a successful ping as a working tunnel.} Test with
+        something large enough to expose an MTU problem.
+\end{tight}
+\end{pitfall}
+
+\begin{breakfix}[The tunnel is up and shows both peers established. No user traffic crosses it.]
+A site-to-site VPN between \cmd{R1} and \cmd{R2}. Both routers report an
+established IKE session with the other. Users at either site cannot reach the
+other site at all.
+
+\begin{verify}{R1}{show crypto isakmp sa}
+IPv4 Crypto ISAKMP SA
+dst             src             state          conn-id status
+198.51.100.9    203.0.113.2     QM_IDLE           1004 ACTIVE
+\end{verify}
+
+\begin{verify}{R1}{show crypto ipsec sa | include pkts|local ident|remote ident}
+   local  ident (addr/mask/prot/port): (192.168.10.0/255.255.255.0/0/0)
+   remote ident (addr/mask/prot/port): (192.168.20.0/255.255.255.0/0/0)
+    #pkts encaps: 0, #pkts encrypt: 0, #pkts digest: 0
+    #pkts decaps: 0, #pkts decrypt: 0, #pkts verify: 0
+\end{verify}
+
+\textbf{Diagnosis.} Read the two outputs as a pair, because together they locate
+the fault precisely.
+
+\cmd{QM\_IDLE} and \cmd{ACTIVE} mean \textbf{phase 1 succeeded}: the peers found
+each other, agreed on IKE parameters and authenticated. So the pre-shared key is
+right, UDP~500 is reaching both ends, and the peer addresses are correct. All of
+that is now ruled out.
+
+But every counter is zero --- in \emph{both} directions. Nothing has been
+encrypted and nothing decrypted. Traffic is not being selected for the tunnel, or
+is being selected and then dropped before it is sent.
+
+The identities are the place to look. \cmd{R1} intends to protect
+\cmd{192.168.10.0/24} to \cmd{192.168.20.0/24}. If \cmd{R2}'s definition is not
+the exact mirror --- a different mask, a wider or narrower range --- phase 2
+cannot agree on what the tunnel is for, and no traffic qualifies.
+
+\textbf{The class of fault, which is the point here.} Phase 1 up with phase 2
+idle is always a \emph{policy} disagreement rather than a connectivity or
+credential one: the crypto ACL, the transform set, or the mode. Knowing which
+half of IKE succeeded halves the search before you have looked at anything.
+
+\textbf{The other candidate}, if the identities do match, is a firewall permitting
+UDP~500 --- which is why phase 1 worked --- while dropping IP protocol~50.
+Symptoms are identical; the discriminator is whether \cmd{\#pkts encaps} is zero
+(traffic never selected) or climbing while \cmd{\#pkts decaps} stays at zero
+(sent, never arriving).
+\end{breakfix}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Which IPsec protocol provides confidentiality, and what is its IP
+        protocol number?
+  \item State the difference between tunnel mode and transport mode in one
+        sentence, and say which a site-to-site VPN uses.
+  \item Why can AH not survive a NAT device on the path?
+  \item What does phase 1 of IKE accomplish, and what does phase 2 accomplish?
+  \item Why is GRE needed if a site-to-site VPN must carry OSPF?
+  \item A tunnel is established and small pings succeed while file transfers
+        hang. What is the likely cause?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item IPsec provides confidentiality, integrity, authentication and
+        anti-replay, with Diffie--Hellman for key agreement.
+  \item Site-to-site joins two gateways and is invisible to hosts; remote access
+        runs from a user's device to a gateway and authenticates the user.
+  \item IKE (UDP 500, or 4500 with NAT-T) negotiates. ESP (IP protocol 50)
+        protects data and \textbf{encrypts}. AH (IP protocol 51) authenticates
+        but does \textbf{not} encrypt.
+  \item Phase 1 builds the secure channel between peers; phase 2 builds the
+        security associations that protect user traffic. SAs are
+        one-directional, so a working tunnel has two.
+  \item Tunnel mode encrypts the whole original packet and adds a new IP header
+        --- the normal case. Transport mode keeps the original header.
+  \item AH is incompatible with NAT because it authenticates the header NAT
+        rewrites. ESP with NAT-T (UDP 4500) is the working combination.
+  \item Plain IPsec carries no multicast, so a VPN needing a routing protocol
+        uses GRE over IPsec.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which protocol provides encryption for IPsec?
+        \begin{tight}
+          \item[(a)] AH \quad (b)~ESP \quad (c)~IKE \quad (d)~GRE
+        \end{tight}
+  \item \textbf{(MCQ)} In tunnel mode, what is encrypted?
+        \begin{tight}
+          \item[(a)] The payload only, with the original IP header retained
+          \item[(b)] The entire original packet, including its IP header
+          \item[(c)] The IP header only
+          \item[(d)] Nothing --- tunnel mode provides integrity only
+        \end{tight}
+  \item \textbf{(Short)} Explain why AH cannot be used across a NAT device, and
+        name the mechanism that lets ESP work in the same situation.
+  \item \textbf{(Short)} A firewall administrator permits UDP 500 between two VPN
+        gateways and reports that the tunnel ``comes up but does not work''.
+        Explain what is missing and why the tunnel appears healthy.
+  \item \textbf{(Applied)} A university needs branch campuses permanently
+        connected to the data centre, with OSPF running between them, and
+        separately needs staff to work from home. Recommend a VPN model for each
+        requirement, name the protocols involved, and justify the use of GRE in
+        one case and not the other.
+  \item \textbf{(Applied)} Given \cmd{show crypto isakmp sa} reporting
+        \cmd{QM\_IDLE} and \cmd{show crypto ipsec sa} reporting zero packets
+        encapsulated, state which phase succeeded, what that rules out, and the
+        two most likely causes.
+\end{reviewq}
