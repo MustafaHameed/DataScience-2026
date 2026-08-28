@@ -1,0 +1,106 @@
+\documentclass[border=3pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{fontawesome5}
+\usepackage{ragged2e}
+\usetikzlibrary{shapes,shapes.geometric,shapes.misc,arrows.meta,positioning,
+                calc,fit,backgrounds,decorations.pathreplacing,
+                decorations.markings,patterns,chains}
+\usetikzlibrary{decorations.pathreplacing,decorations.markings}
+\definecolor{primary}{HTML}{1A5276}
+\definecolor{secondary}{HTML}{2E86C1}
+\definecolor{accent}{HTML}{E74C3C}
+\definecolor{lightbg}{HTML}{EBF5FB}
+\definecolor{defbg}{HTML}{FDF2E9}
+\definecolor{greenhl}{HTML}{27AE60}
+\definecolor{purplehl}{HTML}{8E44AD}
+\definecolor{goldhl}{HTML}{B7950B}
+\definecolor{tealhl}{HTML}{117A65}
+\definecolor{codebg}{HTML}{F4F6F7}
+\definecolor{neutral}{HTML}{707B7C}
+\definecolor{dom1}{HTML}{1F618D}
+\definecolor{dom2}{HTML}{117864}
+\definecolor{dom3}{HTML}{6C3483}
+\definecolor{dom4}{HTML}{922B21}
+\definecolor{dom5}{HTML}{B7950B}
+% --- carried over from ccna.sty so figures match the book exactly
+\tikzset{
+  dev/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+              line width=0.9pt, minimum width=1.45cm, minimum height=1.05cm,
+              align=center, font=\scriptsize\bfseries, inner sep=2pt},
+  wirestyle/.style={line width=0.9pt, neutral!75},
+  xconn/.style={line width=0.9pt, neutral!75, dash pattern=on 2.5pt off 2pt},
+}
+
+\newcommand{\Rtr}[3]{\node[dev=dom3] (#1) at #2 {\faIcon{route}\\#3};}
+\newcommand{\Sw}[3]{\node[dev=dom2] (#1) at #2 {\faIcon{sitemap}\\#3};}
+\newcommand{\Msw}[3]{\node[dev=dom3] (#1) at #2 {\faIcon{layer-group}\\#3};}
+\newcommand{\Host}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{desktop}\\#3};}
+\newcommand{\Lap}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{laptop}\\#3};}
+\newcommand{\Srv}[3]{\node[dev=dom1] (#1) at #2 {\faIcon{server}\\#3};}
+\newcommand{\Ap}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{wifi}\\#3};}
+\newcommand{\Wlc}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{broadcast-tower}\\#3};}
+\newcommand{\Fw}[3]{\node[dev=dom4] (#1) at #2 {\faIcon{shield-alt}\\#3};}
+\newcommand{\Cld}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{cloud}\\#3};}
+\newcommand{\Phone}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{phone-alt}\\#3};}
+\newcommand{\Prn}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{print}\\#3};}
+
+% A link. The optional argument takes tikz options (e.g. xconn for a
+% trunk drawn dashed); the fourth argument labels the link.
+\newcommand{\wire}[4][wirestyle]{%
+  \draw[#1] (#2) -- node[font=\tiny, text=neutral!85!black, fill=white,
+                          inner sep=1.2pt, midway] {#4} (#3);}
+\newcommand{\plainwire}[3][wirestyle]{\draw[#1] (#2) -- (#3);}
+
+
+\newenvironment{topology}[1][]
+  {\begin{center}\begin{tikzpicture}[font=\scriptsize,#1]}
+  {\end{tikzpicture}\end{center}}
+
+
+\newcommand{\cmd}[1]{\texttt{\small #1}}
+\newcommand{\term}[1]{\textbf{\textcolor{primary}{#1}}}
+\newcommand{\chref}[1]{Chapter~\ref{ch:#1}}
+\newcommand{\ccnafitw}[1]{#1}
+\providecommand{\thefigure}{}
+% --- progressive builds
+\newcount\buildlevel \buildlevel=99
+% \stepvis{n}{..} appears from level n onward; \steponly{n}{..} at
+% level n alone, which is how a caption is swapped rather than
+% accumulated as the build advances.
+\newcommand{\stepvis}[2]{\ifnum#1>\buildlevel\relax\else#2\fi}
+\newcommand{\steponly}[2]{\ifnum#1=\buildlevel #2\fi}
+\begin{document}
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    lay/.style={draw=#1, fill=#1!10, text=#1!40!black, minimum height=0.62cm,
+                align=center, font=\tiny\bfseries, line width=0.7pt},
+    ttl/.style={font=\scriptsize\bfseries, text=neutral!45!black}}
+
+  % Type 1
+  \node[ttl] at (3.3,3.35) {Type 1 --- bare metal};
+  \node[lay=neutral, minimum width=6.6cm] at (3.3,0.0) {Physical hardware};
+  \node[lay=dom3,    minimum width=6.6cm] at (3.3,0.75) {Hypervisor (ESXi, Hyper-V, KVM, Xen)};
+  \foreach \x/\n in {1.25/VM, 3.3/VM, 5.35/VM} {
+    \node[lay=dom1, minimum width=1.9cm] at (\x,1.6) {Guest OS};
+    \node[lay=dom1, fill=dom1!22, minimum width=1.9cm] at (\x,2.3) {App};
+  }
+  \node[font=\tiny, text=neutral!85!black, align=center] at (3.3,2.85)
+      {data centre, production};
+
+  % Type 2
+  \node[ttl] at (11.0,3.35) {Type 2 --- hosted};
+  \node[lay=neutral, minimum width=5.4cm] at (11.0,0.0)  {Physical hardware};
+  \node[lay=dom2,    minimum width=5.4cm] at (11.0,0.75) {Host OS (Windows, macOS, Linux)};
+  \node[lay=dom3,    minimum width=5.4cm] at (11.0,1.5)  {Hypervisor (Workstation, VirtualBox)};
+  \foreach \x in {9.7, 12.3} {
+    \node[lay=dom1, minimum width=2.2cm] at (\x,2.3) {Guest OS + App};
+  }
+  \node[font=\tiny, text=neutral!85!black, align=center] at (11.0,2.85)
+      {laptop, lab, your CML};
+\end{tikzpicture}
+\end{document}

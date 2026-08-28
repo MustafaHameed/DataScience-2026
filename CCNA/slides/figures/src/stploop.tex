@@ -1,0 +1,58 @@
+% Slide build of Figure 12.1 -- one triangle that evolves, not two side by side.
+%
+%   1  three switches, three cables: physically redundant, and fine
+%   2  one broadcast starts going round, and nothing stops it
+%   3  spanning tree blocks one port -- the cable is still there
+%
+% The cable that gets blocked stays drawn at every level, so Morph recolours
+% it rather than removing and re-adding it. That is the point the caption
+% makes: spanning tree does not remove redundancy, it holds it in reserve.
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=1.1pt, minimum width=1.8cm, minimum height=1.2cm,
+               align=center, font=\small\bfseries},
+    w/.style={line width=1.4pt, neutral!70},
+    % text width is not optional: without it the caption is one long line
+    % that runs past the pinned bounding box and is cropped.
+    capt/.style={font=\bfseries, anchor=north west, text width=9.4cm,
+                 align=left}}
+
+  \useasboundingbox (-1.0,-2.6) rectangle (9.6,3.0);
+
+  \node[dv=dom2] (a) at (4.0,2.0) {\faIcon{sitemap}\\SW1};
+  \node[dv=dom2] (b) at (1.9,-0.1) {\faIcon{sitemap}\\SW2};
+  \node[dv=dom2] (c) at (6.1,-0.1) {\faIcon{sitemap}\\SW3};
+
+  \draw[w] (a) -- (b);
+  \draw[w] (a) -- (c);
+  % the third cable: drawn at every level, recoloured at level 3 so Morph
+  % changes its colour rather than removing and re-adding the shape
+  \ifnum\buildlevel<3
+    \draw[w] (b) -- (c);
+  \else
+    \draw[w, accent!70, dash pattern=on 4pt off 3pt] (b) -- (c);
+  \fi
+
+  \steponly{1}{\node[capt, text=neutral!45!black] at (-0.6,-1.5)
+      {Three switches, three cables. The redundancy is deliberate.};}
+
+  \steponly{2}{%
+    % An arc, not a circle: TikZ draws no arrowhead on a closed path, so a
+    % \draw[->] ... circle renders a plain ring with no sense of direction.
+    \draw[-{Stealth[length=3.2mm]}, accent!85, line width=2.2pt]
+        (4.72,0.62) arc (0:308:0.72);
+    \node[capt, text=accent!75!black] at (-0.6,-1.5)
+        {One broadcast, and an Ethernet frame has no TTL --- it circulates
+         for ever.};}
+
+  \steponly{3}{%
+    \node[circle, draw=accent!85, fill=white, line width=1.4pt,
+          inner sep=2pt, font=\tiny\bfseries, text=accent!75!black]
+        at (4.0,-0.1) {BLK};
+    \node[font=\small\bfseries, text=dom2!45!black, anchor=west]
+        at (5.05,2.0) {ROOT};
+    \node[capt, text=dom2!50!black] at (-0.6,-1.5)
+        {One port blocks. The cable is still there, ready if another
+         link fails.};}
+\end{tikzpicture}

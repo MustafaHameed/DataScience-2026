@@ -1,0 +1,90 @@
+% Slide build of Figure 25.1 -- five defences, one at a time.
+%
+% Chapter 25 is the longest deck in the course, and this figure is what holds
+% it together: five features that look like five unrelated commands until you
+% see that all five hang off one untrusted port. Shown at once it is a wall of
+% five boxes; built, each box arrives as the answer to "and what stops THIS?".
+%
+% The question leads the answer by one beat. Level n poses attack n and shows
+% only the defences already named; level n+1 fills the slot. Putting both on
+% the same beat -- which is what the obvious \stepvis{n}/\steponly{n} pairing
+% does -- prints the answer beside the question and wastes it.
+%
+% Like the ladder, the shape is part of the lesson, so the five slots are drawn
+% faint from the start: the room can see there are five, and "what are the
+% other three?" is a better question to leave hanging than to spoil.
+\begin{tikzpicture}[font=\scriptsize]
+  \useasboundingbox (-1.1,-4.8) rectangle (14.4,1.3);
+
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.6cm, minimum height=1.0cm,
+               align=center, font=\tiny\bfseries},
+    ft/.style={rounded corners=3pt, draw=dom4!70, fill=dom4!7, line width=0.8pt,
+               text width=2.5cm, align=center, font=\tiny,
+               text=dom4!40!black, inner sep=4pt, minimum height=1.35cm},
+    slot/.style={rounded corners=3pt, draw=neutral!25, fill=neutral!3,
+                 line width=0.8pt, text width=2.5cm, align=center,
+                 font=\tiny, text=neutral!35, inner sep=4pt,
+                 minimum height=1.35cm},
+    w/.style={line width=0.9pt, neutral!65},
+    lk/.style={dom4!45, line width=0.7pt, dash pattern=on 2pt off 2pt},
+    stepcap/.style={font=\bfseries, anchor=north west, text width=15.0cm,
+                    align=left}}
+
+  \node[dv=neutral] (h)  at (0,0)   {\faIcon{laptop}\\attacker\\or user};
+  \node[dv=dom2, minimum width=2.0cm] (sw) at (5.0,0) {\faIcon{sitemap}\\SW1};
+  \node[dv=dom3] (up) at (10.0,0) {\faIcon{route}\\uplink};
+  \draw[w, line width=1.5pt] (h) -- (sw);
+  \draw[w] (sw) -- (up);
+  \node[font=\tiny\bfseries, text=accent!70!black] at (2.2,0.5)
+      {untrusted access port};
+  \node[font=\tiny\bfseries, text=dom2!45!black] at (7.5,0.5) {trusted uplink};
+
+  % Empty slots for the defences not yet named. The number of them is the
+  % point; their contents are the answer to a question worth asking first.
+  \foreach \n/\x in {2/-0.6, 3/2.4, 4/5.4, 5/8.4, 6/11.4}
+    {\stepdim{\n}{\node[slot, anchor=north west] at (\x,-1.5) {?};}}
+
+  \stepvis{2}{\node[ft, anchor=north west] at (-0.6,-1.5)
+      {\textbf{\faIcon{id-badge}~Port security}\\[2pt]stops many MACs, or the
+       wrong one};}
+  \stepvis{3}{\node[ft, anchor=north west] at (2.4,-1.5)
+      {\textbf{\faIcon{address-card}~DHCP snooping}\\[2pt]stops a rogue DHCP
+       server};}
+  \stepvis{4}{\node[ft, anchor=north west] at (5.4,-1.5)
+      {\textbf{\faIcon{exchange-alt}~Dynamic ARP inspection}\\[2pt]stops ARP
+       poisoning};}
+  \stepvis{5}{\node[ft, anchor=north west] at (8.4,-1.5)
+      {\textbf{\faIcon{water}~Storm control}\\[2pt]stops flooding the
+       segment};}
+  \stepvis{6}{\node[ft, anchor=north west] at (11.4,-1.5)
+      {\textbf{\faIcon{shield-alt}~RA guard}\\[2pt]stops a rogue IPv6
+       router};}
+
+  % The brace and the leader are structural, so they are present throughout:
+  % they say "all of these hang off that one port" before any of them is named.
+  \draw[lk, decorate, decoration={brace, amplitude=4pt, mirror}]
+      (-0.6,-1.35) -- (13.9,-1.35);
+  \draw[lk] (2.5,-0.35) -- (2.5,-1.25);
+
+  \steponly{1}{\node[stepcap, text=dom4!45!black] at (-1.0,-3.3)
+      {A host that sends thousands of source MACs fills the table and turns the
+       switch into a hub. What stops it?};}
+  \steponly{2}{\node[stepcap, text=dom4!45!black] at (-1.0,-3.3)
+      {A laptop answering DHCP faster than the real server becomes the default
+       gateway for the whole floor. What stops that?};}
+  \steponly{3}{\node[stepcap, text=dom4!45!black] at (-1.0,-3.3)
+      {A host that answers ARP for an address it does not own then reads
+       everyone's traffic. What stops that?};}
+  \steponly{4}{\node[stepcap, text=dom4!45!black] at (-1.0,-3.3)
+      {A loop, or one broken NIC, floods the segment until nothing else gets
+       through. What stops that?};}
+  \steponly{5}{\node[stepcap, text=dom4!45!black] at (-1.0,-3.3)
+      {IPv6 hosts pick their router from an advertisement that anyone on the
+       segment can send. And that one?};}
+  \steponly{6}{\node[stepcap, text=dom4!45!black] at (-1.0,-3.3)
+      {Five features, five abuses, one port. All five live on the \emph{access}
+       port, and all five exist because the device plugged into it is not under
+       your control.};}
+\end{tikzpicture}

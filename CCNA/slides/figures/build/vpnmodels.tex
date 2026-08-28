@@ -1,0 +1,113 @@
+\documentclass[border=3pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{fontawesome5}
+\usepackage{ragged2e}
+\usetikzlibrary{shapes,shapes.geometric,shapes.misc,arrows.meta,positioning,
+                calc,fit,backgrounds,decorations.pathreplacing,
+                decorations.markings,patterns,chains}
+\usetikzlibrary{decorations.pathreplacing,decorations.markings}
+\definecolor{primary}{HTML}{1A5276}
+\definecolor{secondary}{HTML}{2E86C1}
+\definecolor{accent}{HTML}{E74C3C}
+\definecolor{lightbg}{HTML}{EBF5FB}
+\definecolor{defbg}{HTML}{FDF2E9}
+\definecolor{greenhl}{HTML}{27AE60}
+\definecolor{purplehl}{HTML}{8E44AD}
+\definecolor{goldhl}{HTML}{B7950B}
+\definecolor{tealhl}{HTML}{117A65}
+\definecolor{codebg}{HTML}{F4F6F7}
+\definecolor{neutral}{HTML}{707B7C}
+\definecolor{dom1}{HTML}{1F618D}
+\definecolor{dom2}{HTML}{117864}
+\definecolor{dom3}{HTML}{6C3483}
+\definecolor{dom4}{HTML}{922B21}
+\definecolor{dom5}{HTML}{B7950B}
+% --- carried over from ccna.sty so figures match the book exactly
+\tikzset{
+  dev/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+              line width=0.9pt, minimum width=1.45cm, minimum height=1.05cm,
+              align=center, font=\scriptsize\bfseries, inner sep=2pt},
+  wirestyle/.style={line width=0.9pt, neutral!75},
+  xconn/.style={line width=0.9pt, neutral!75, dash pattern=on 2.5pt off 2pt},
+}
+
+\newcommand{\Rtr}[3]{\node[dev=dom3] (#1) at #2 {\faIcon{route}\\#3};}
+\newcommand{\Sw}[3]{\node[dev=dom2] (#1) at #2 {\faIcon{sitemap}\\#3};}
+\newcommand{\Msw}[3]{\node[dev=dom3] (#1) at #2 {\faIcon{layer-group}\\#3};}
+\newcommand{\Host}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{desktop}\\#3};}
+\newcommand{\Lap}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{laptop}\\#3};}
+\newcommand{\Srv}[3]{\node[dev=dom1] (#1) at #2 {\faIcon{server}\\#3};}
+\newcommand{\Ap}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{wifi}\\#3};}
+\newcommand{\Wlc}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{broadcast-tower}\\#3};}
+\newcommand{\Fw}[3]{\node[dev=dom4] (#1) at #2 {\faIcon{shield-alt}\\#3};}
+\newcommand{\Cld}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{cloud}\\#3};}
+\newcommand{\Phone}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{phone-alt}\\#3};}
+\newcommand{\Prn}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{print}\\#3};}
+
+% A link. The optional argument takes tikz options (e.g. xconn for a
+% trunk drawn dashed); the fourth argument labels the link.
+\newcommand{\wire}[4][wirestyle]{%
+  \draw[#1] (#2) -- node[font=\tiny, text=neutral!85!black, fill=white,
+                          inner sep=1.2pt, midway] {#4} (#3);}
+\newcommand{\plainwire}[3][wirestyle]{\draw[#1] (#2) -- (#3);}
+
+
+\newenvironment{topology}[1][]
+  {\begin{center}\begin{tikzpicture}[font=\scriptsize,#1]}
+  {\end{tikzpicture}\end{center}}
+
+
+\newcommand{\cmd}[1]{\texttt{\small #1}}
+\newcommand{\term}[1]{\textbf{\textcolor{primary}{#1}}}
+\newcommand{\chref}[1]{Chapter~\ref{ch:#1}}
+\newcommand{\ccnafitw}[1]{#1}
+\providecommand{\thefigure}{}
+% --- progressive builds
+\newcount\buildlevel \buildlevel=99
+% \stepvis{n}{..} appears from level n onward; \steponly{n}{..} at
+% level n alone, which is how a caption is swapped rather than
+% accumulated as the build advances.
+\newcommand{\stepvis}[2]{\ifnum#1>\buildlevel\relax\else#2\fi}
+\newcommand{\steponly}[2]{\ifnum#1=\buildlevel #2\fi}
+\begin{document}
+\begin{tikzpicture}[font=\scriptsize]
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.4cm, minimum height=1.0cm,
+               align=center, font=\scriptsize\bfseries},
+    w/.style={line width=0.9pt, neutral!75},
+    tun/.style={line width=2.6pt, dom4!30}}
+
+  % site to site
+  \node[font=\scriptsize\bfseries, text=neutral!45!black, anchor=west]
+        at (-0.8,1.5) {Site-to-site};
+  \node[dv=neutral] (h1) at (0,0)    {\faIcon{desktop}\\Host};
+  \node[dv=dom3]    (g1) at (2.3,0)  {\faIcon{route}\\R1};
+  \node[dv=neutral] (c1) at (5.0,0)  {\faIcon{cloud}\\Internet};
+  \node[dv=dom3]    (g2) at (7.7,0)  {\faIcon{route}\\R2};
+  \node[dv=neutral] (h2) at (10.0,0) {\faIcon{desktop}\\Host};
+  \draw[tun] (g1) -- (g2);
+  \draw[w] (h1) -- (g1); \draw[w] (g1) -- (c1);
+  \draw[w] (c1) -- (g2); \draw[w] (g2) -- (h2);
+  \node[font=\tiny, text=dom4!45!black] at (5.0,0.62) {IPsec tunnel};
+  \node[font=\tiny, text=neutral!85!black] at (1.15,-0.75) {clear};
+  \node[font=\tiny, text=neutral!85!black] at (8.85,-0.75) {clear};
+
+  % remote access
+  \node[font=\scriptsize\bfseries, text=neutral!45!black, anchor=west]
+        at (-0.8,-1.6) {Remote access};
+  \node[dv=neutral] (l1) at (0,-3.1)   {\faIcon{laptop}\\Client};
+  \node[dv=neutral] (c2) at (3.5,-3.1) {\faIcon{cloud}\\Internet};
+  \node[dv=dom4]    (fw) at (7.0,-3.1) {\faIcon{shield-alt}\\Gateway};
+  \node[dv=dom1]    (s2) at (9.8,-3.1) {\faIcon{server}\\Servers};
+  \draw[tun] (l1) -- (fw);
+  \draw[w] (l1) -- (c2); \draw[w] (c2) -- (fw); \draw[w] (fw) -- (s2);
+  \node[font=\tiny, text=dom4!45!black] at (3.5,-2.48) {IPsec tunnel};
+  \node[font=\tiny, text=neutral!85!black] at (8.4,-3.85) {clear};
+\end{tikzpicture}
+\end{document}

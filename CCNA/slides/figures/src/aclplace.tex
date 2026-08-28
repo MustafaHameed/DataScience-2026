@@ -1,0 +1,67 @@
+% Slide build of Figure 24.1 -- placement, wrong first.
+%
+% In print both placements are shown together and the caption says one is an
+% outage. On a slide the honest order is the order a student would actually
+% arrive at it: put the ACL near the source, because that is the obvious place
+% and it saves carrying doomed traffic; watch it take out everything; then move
+% it. Being shown the mistake being made is what makes the rule stick, and it
+% is the same reasoning behind the book's Break & Fix sections.
+%
+% The requirement stays on screen at every step, because the whole judgement
+% is "does this still meet the requirement" and the room should be able to
+% check that without being reminded of it.
+\begin{tikzpicture}[font=\scriptsize]
+  \useasboundingbox (-1.6,-4.6) rectangle (12.2,4.3);
+
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.35cm, minimum height=0.95cm,
+               align=center, font=\tiny\bfseries},
+    w/.style={line width=0.85pt, neutral!65},
+    hdr/.style={font=\scriptsize\bfseries, text=neutral!45!black},
+    stepcap/.style={font=\bfseries, anchor=north west, text width=13.4cm,
+                    align=left}}
+
+  \node[hdr, text width=13.5cm, align=center] at (5.3,3.5)
+      {VLAN 30 must not reach the finance server --- but must still reach
+       everything else};
+
+  \node[dv=neutral] (h)   at (0,0.7)    {\faIcon{desktop}\\VLAN 30};
+  \node[dv=dom3]    (r1)  at (3.0,0.7)  {\faIcon{route}\\R1};
+  \node[dv=dom3]    (r2)  at (7.0,0.7)  {\faIcon{route}\\R2};
+  \node[dv=dom1]    (fin) at (10.4,1.75){\faIcon{server}\\Finance};
+  \node[dv=dom1]    (oth) at (10.4,-0.4){\faIcon{server}\\Everything\\else};
+  \draw[w] (h) -- (r1);  \draw[w] (r1) -- (r2);
+  \draw[w] (r2) -- (fin);  \draw[w] (r2) -- (oth);
+
+  % 2 -- the obvious place, and the outage
+  \stepvis{2}{%
+    \draw[accent!85, line width=1.4pt] (4.7,1.25) -- (5.3,0.15);
+    \node[font=\tiny\bfseries, text=accent!75!black, align=center,
+          text width=3.1cm, anchor=north] at (5.0,-0.35)
+        {\faIcon{times-circle}~\textbf{standard} here\\blocks
+         \emph{everything}};}
+
+  % 3 -- move it
+  \stepvis{3}{%
+    \draw[dom2!80, line width=1.4pt] (8.5,2.0) -- (9.1,1.1);
+    \node[font=\tiny\bfseries, text=dom2!45!black, align=center,
+          text width=3.4cm, anchor=south] at (8.8,2.15)
+        {\faIcon{check-circle}~\textbf{standard} here\\blocks only this
+         server};}
+
+  \steponly{1}{\node[stepcap, text=neutral!45!black] at (-1.5,-1.6)
+      {Two servers, one path. Whatever we write has to separate them.};}
+  \steponly{2}{\node[stepcap, text=accent!75!black] at (-1.5,-1.6)
+      {Near the source looks right --- it stops doomed traffic early. But a
+       standard ACL matches only \emph{who sent it}, and here both servers
+       are behind the same next hop. Everything VLAN 30 sends is dropped.};}
+  \steponly{3}{\node[stepcap, text=dom2!45!black] at (-1.5,-1.6)
+      {Move it to the last hop and the two servers are finally on different
+       interfaces, so matching the source alone is enough.};}
+  \steponly{4}{\node[stepcap, text=dom3!45!black] at (-1.5,-1.6)
+      {Hence the rule: a \textbf{standard} ACL goes near the destination,
+       because that is the only place its one match is sufficient. An
+       \textbf{extended} ACL names the destination too, so it is safe at the
+       source --- and saves carrying doomed traffic across the network.};}
+\end{tikzpicture}

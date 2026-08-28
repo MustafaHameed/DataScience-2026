@@ -1,0 +1,159 @@
+\documentclass[border=3pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{fontawesome5}
+\usepackage{ragged2e}
+\usetikzlibrary{shapes,shapes.geometric,shapes.misc,arrows.meta,positioning,
+                calc,fit,backgrounds,decorations.pathreplacing,
+                decorations.markings,patterns,chains}
+\usetikzlibrary{decorations.pathreplacing,decorations.markings}
+\definecolor{primary}{HTML}{1A5276}
+\definecolor{secondary}{HTML}{2E86C1}
+\definecolor{accent}{HTML}{E74C3C}
+\definecolor{lightbg}{HTML}{EBF5FB}
+\definecolor{defbg}{HTML}{FDF2E9}
+\definecolor{greenhl}{HTML}{27AE60}
+\definecolor{purplehl}{HTML}{8E44AD}
+\definecolor{goldhl}{HTML}{B7950B}
+\definecolor{tealhl}{HTML}{117A65}
+\definecolor{codebg}{HTML}{F4F6F7}
+\definecolor{neutral}{HTML}{707B7C}
+\definecolor{dom1}{HTML}{1F618D}
+\definecolor{dom2}{HTML}{117864}
+\definecolor{dom3}{HTML}{6C3483}
+\definecolor{dom4}{HTML}{922B21}
+\definecolor{dom5}{HTML}{B7950B}
+% --- carried over from ccna.sty so figures match the book exactly
+\tikzset{
+  dev/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+              line width=0.9pt, minimum width=1.45cm, minimum height=1.05cm,
+              align=center, font=\scriptsize\bfseries, inner sep=2pt},
+  wirestyle/.style={line width=0.9pt, neutral!75},
+  xconn/.style={line width=0.9pt, neutral!75, dash pattern=on 2.5pt off 2pt},
+}
+
+\newcommand{\Rtr}[3]{\node[dev=dom3] (#1) at #2 {\faIcon{route}\\#3};}
+\newcommand{\Sw}[3]{\node[dev=dom2] (#1) at #2 {\faIcon{sitemap}\\#3};}
+\newcommand{\Msw}[3]{\node[dev=dom3] (#1) at #2 {\faIcon{layer-group}\\#3};}
+\newcommand{\Host}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{desktop}\\#3};}
+\newcommand{\Lap}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{laptop}\\#3};}
+\newcommand{\Srv}[3]{\node[dev=dom1] (#1) at #2 {\faIcon{server}\\#3};}
+\newcommand{\Ap}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{wifi}\\#3};}
+\newcommand{\Wlc}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{broadcast-tower}\\#3};}
+\newcommand{\Fw}[3]{\node[dev=dom4] (#1) at #2 {\faIcon{shield-alt}\\#3};}
+\newcommand{\Cld}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{cloud}\\#3};}
+\newcommand{\Phone}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{phone-alt}\\#3};}
+\newcommand{\Prn}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{print}\\#3};}
+
+% A link. The optional argument takes tikz options (e.g. xconn for a
+% trunk drawn dashed); the fourth argument labels the link.
+\newcommand{\wire}[4][wirestyle]{%
+  \draw[#1] (#2) -- node[font=\tiny, text=neutral!85!black, fill=white,
+                          inner sep=1.2pt, midway] {#4} (#3);}
+\newcommand{\plainwire}[3][wirestyle]{\draw[#1] (#2) -- (#3);}
+
+
+\newenvironment{topology}[1][]
+  {\begin{center}\begin{tikzpicture}[font=\scriptsize,#1]}
+  {\end{tikzpicture}\end{center}}
+
+
+\newcommand{\cmd}[1]{\texttt{\small #1}}
+\newcommand{\term}[1]{\textbf{\textcolor{primary}{#1}}}
+\newcommand{\chref}[1]{Chapter~\ref{ch:#1}}
+\newcommand{\ccnafitw}[1]{#1}
+\providecommand{\thefigure}{}
+% --- progressive builds
+\newcount\buildlevel \buildlevel=99
+% \stepvis{n}{..} appears from level n onward; \steponly{n}{..} at
+% level n alone, which is how a caption is swapped rather than
+% accumulated as the build advances. \stepdim{n}{..} is the
+% complement of \stepvis: it shows only BEFORE level n, so a
+% pair of them draws an element faint and then solid. That keeps
+% the canvas full from step 1, which matters for a figure whose
+% shape is itself the lesson -- a five-rung ladder revealed one
+% rung at a time leaves a void where the method should be.
+\newcommand{\stepvis}[2]{\ifnum#1>\buildlevel\relax\else#2\fi}
+\newcommand{\steponly}[2]{\ifnum#1=\buildlevel #2\fi}
+\newcommand{\stepdim}[2]{\ifnum#1>\buildlevel #2\fi}
+% Slide text does not hyphenate. A projected caption broken as
+% ``uni-cast'' costs the reader a beat that print can afford and a
+% lecture cannot, and the ragged edge it avoids is invisible at
+% four metres anyway.
+\hyphenpenalty=10000 \exhyphenpenalty=10000
+\begin{document}
+\buildlevel=2
+% Slide build of Figure 22.1 -- the four NAT names, one at a time.
+%
+% This is the figure in Part IV that most repays being built. Students do not
+% find NAT hard; they find "inside local / inside global / outside local /
+% outside global" hard, and they find it hard because all four arrive at once
+% and look like four addresses. They are two addresses under four names.
+%
+% So each step adds exactly one label and says which half of the name it just
+% fixed: inside/outside says whose host it is, local/global says who is
+% looking. By step 4 the room has been told the rule four times without the
+% lecturer repeating it once.
+\begin{tikzpicture}[font=\scriptsize]
+  \path (-2.0,-4.6) rectangle (12.6,2.0);
+
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.45cm, minimum height=1.05cm,
+               align=center, font=\scriptsize\bfseries},
+    tag/.style={font=\tiny, align=center},
+    stepcap/.style={font=\bfseries, anchor=north west, text width=14.2cm,
+                    align=left}}
+
+  \node[dv=neutral] (pc)  at (0,0)    {\faIcon{desktop}\\PC1};
+  \node[dv=dom3]    (r)   at (5.3,0)  {\faIcon{route}\\R1};
+  \node[dv=dom1]    (web) at (10.6,0) {\faIcon{server}\\Server};
+
+  \draw[line width=0.9pt, neutral!75] (pc) -- (r);
+  \draw[line width=0.9pt, neutral!75] (r) -- (web);
+
+  \draw[dom4!50, dash pattern=on 3pt off 2pt, line width=0.8pt]
+        (5.3,1.5) -- (5.3,-2.3);
+  \node[font=\tiny\bfseries, text=dom4!45!black] at (3.2,1.35) {INSIDE};
+  \node[font=\tiny\bfseries, text=dom4!45!black] at (7.4,1.35) {OUTSIDE};
+  \node[font=\tiny, text=neutral!85!black] at (2.4,0.55) {\cmd{ip nat inside}};
+  \node[font=\tiny, text=neutral!85!black] at (8.2,0.55) {\cmd{ip nat outside}};
+
+  \stepvis{1}{\node[tag, text=dom4!45!black] at (0,-1.15)
+      {\textbf{inside local}\\192.168.10.5};}
+  \stepvis{2}{\node[tag, text=dom4!45!black] at (3.4,-1.9)
+      {\textbf{inside global}\\203.0.113.2};}
+  \stepvis{3}{\node[tag, text=dom1!45!black] at (10.6,-1.15)
+      {\textbf{outside global}\\198.51.100.7};}
+  \stepvis{4}{\node[tag, text=dom1!45!black] at (7.2,-1.9)
+      {\textbf{outside local}\\198.51.100.7};}
+
+  % Step 4 is the moment to say out loud what the picture has been showing:
+  % the server's two names are the same address, because nothing translates
+  % it. That is why the fourth term feels pointless -- and it usually is.
+  \stepvis{4}{\draw[{Circle[length=1.4mm]}-{Circle[length=1.4mm]},
+                    dom1!55, line width=0.7pt,
+                    dash pattern=on 2pt off 2pt] (8.45,-1.9) -- (9.55,-1.25)
+      node[font=\tiny\itshape, text=dom1!45!black, midway, below=1pt,
+           sloped] {identical};}
+
+  \steponly{1}{\node[stepcap, text=dom4!45!black] at (-2.0,-3.2)
+      {\emph{Inside} = it is our host. \emph{Local} = the address as the
+       inside sees it. So: the real address on PC1.};}
+  \steponly{2}{\node[stepcap, text=dom4!45!black] at (-2.0,-3.2)
+      {Same host, other viewpoint. \emph{Global} = the address the outside
+       world sees --- what R1 translated it to.};}
+  \steponly{3}{\node[stepcap, text=dom1!45!black] at (-2.0,-3.2)
+      {Now the other host. \emph{Outside} = theirs; \emph{global} = as
+       their side sees it. The server's real address.};}
+  \steponly{4}{\node[stepcap, text=dom1!45!black] at (-2.0,-3.2)
+      {And the fourth is the same address again --- nothing translates the
+       server, so outside local and outside global match. Two hosts, four
+       names.};}
+\end{tikzpicture}
+
+\end{document}

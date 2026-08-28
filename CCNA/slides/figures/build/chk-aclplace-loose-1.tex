@@ -1,0 +1,158 @@
+\documentclass[border=3pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{fontawesome5}
+\usepackage{ragged2e}
+\usetikzlibrary{shapes,shapes.geometric,shapes.misc,arrows.meta,positioning,
+                calc,fit,backgrounds,decorations.pathreplacing,
+                decorations.markings,patterns,chains}
+\usetikzlibrary{decorations.pathreplacing,decorations.markings}
+\definecolor{primary}{HTML}{1A5276}
+\definecolor{secondary}{HTML}{2E86C1}
+\definecolor{accent}{HTML}{E74C3C}
+\definecolor{lightbg}{HTML}{EBF5FB}
+\definecolor{defbg}{HTML}{FDF2E9}
+\definecolor{greenhl}{HTML}{27AE60}
+\definecolor{purplehl}{HTML}{8E44AD}
+\definecolor{goldhl}{HTML}{B7950B}
+\definecolor{tealhl}{HTML}{117A65}
+\definecolor{codebg}{HTML}{F4F6F7}
+\definecolor{neutral}{HTML}{707B7C}
+\definecolor{dom1}{HTML}{1F618D}
+\definecolor{dom2}{HTML}{117864}
+\definecolor{dom3}{HTML}{6C3483}
+\definecolor{dom4}{HTML}{922B21}
+\definecolor{dom5}{HTML}{B7950B}
+% --- carried over from ccna.sty so figures match the book exactly
+\tikzset{
+  dev/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+              line width=0.9pt, minimum width=1.45cm, minimum height=1.05cm,
+              align=center, font=\scriptsize\bfseries, inner sep=2pt},
+  wirestyle/.style={line width=0.9pt, neutral!75},
+  xconn/.style={line width=0.9pt, neutral!75, dash pattern=on 2.5pt off 2pt},
+}
+
+\newcommand{\Rtr}[3]{\node[dev=dom3] (#1) at #2 {\faIcon{route}\\#3};}
+\newcommand{\Sw}[3]{\node[dev=dom2] (#1) at #2 {\faIcon{sitemap}\\#3};}
+\newcommand{\Msw}[3]{\node[dev=dom3] (#1) at #2 {\faIcon{layer-group}\\#3};}
+\newcommand{\Host}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{desktop}\\#3};}
+\newcommand{\Lap}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{laptop}\\#3};}
+\newcommand{\Srv}[3]{\node[dev=dom1] (#1) at #2 {\faIcon{server}\\#3};}
+\newcommand{\Ap}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{wifi}\\#3};}
+\newcommand{\Wlc}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{broadcast-tower}\\#3};}
+\newcommand{\Fw}[3]{\node[dev=dom4] (#1) at #2 {\faIcon{shield-alt}\\#3};}
+\newcommand{\Cld}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{cloud}\\#3};}
+\newcommand{\Phone}[3]{\node[dev=dom5] (#1) at #2 {\faIcon{phone-alt}\\#3};}
+\newcommand{\Prn}[3]{\node[dev=neutral] (#1) at #2 {\faIcon{print}\\#3};}
+
+% A link. The optional argument takes tikz options (e.g. xconn for a
+% trunk drawn dashed); the fourth argument labels the link.
+\newcommand{\wire}[4][wirestyle]{%
+  \draw[#1] (#2) -- node[font=\tiny, text=neutral!85!black, fill=white,
+                          inner sep=1.2pt, midway] {#4} (#3);}
+\newcommand{\plainwire}[3][wirestyle]{\draw[#1] (#2) -- (#3);}
+
+
+\newenvironment{topology}[1][]
+  {\begin{center}\begin{tikzpicture}[font=\scriptsize,#1]}
+  {\end{tikzpicture}\end{center}}
+
+
+\newcommand{\cmd}[1]{\texttt{\small #1}}
+\newcommand{\term}[1]{\textbf{\textcolor{primary}{#1}}}
+\newcommand{\chref}[1]{Chapter~\ref{ch:#1}}
+\newcommand{\ccnafitw}[1]{#1}
+\providecommand{\thefigure}{}
+% --- progressive builds
+\newcount\buildlevel \buildlevel=99
+% \stepvis{n}{..} appears from level n onward; \steponly{n}{..} at
+% level n alone, which is how a caption is swapped rather than
+% accumulated as the build advances. \stepdim{n}{..} is the
+% complement of \stepvis: it shows only BEFORE level n, so a
+% pair of them draws an element faint and then solid. That keeps
+% the canvas full from step 1, which matters for a figure whose
+% shape is itself the lesson -- a five-rung ladder revealed one
+% rung at a time leaves a void where the method should be.
+\newcommand{\stepvis}[2]{\ifnum#1>\buildlevel\relax\else#2\fi}
+\newcommand{\steponly}[2]{\ifnum#1=\buildlevel #2\fi}
+\newcommand{\stepdim}[2]{\ifnum#1>\buildlevel #2\fi}
+% Slide text does not hyphenate. A projected caption broken as
+% ``uni-cast'' costs the reader a beat that print can afford and a
+% lecture cannot, and the ragged edge it avoids is invisible at
+% four metres anyway.
+\hyphenpenalty=10000 \exhyphenpenalty=10000
+\begin{document}
+\buildlevel=1
+% Slide build of Figure 24.1 -- placement, wrong first.
+%
+% In print both placements are shown together and the caption says one is an
+% outage. On a slide the honest order is the order a student would actually
+% arrive at it: put the ACL near the source, because that is the obvious place
+% and it saves carrying doomed traffic; watch it take out everything; then move
+% it. Being shown the mistake being made is what makes the rule stick, and it
+% is the same reasoning behind the book's Break & Fix sections.
+%
+% The requirement stays on screen at every step, because the whole judgement
+% is "does this still meet the requirement" and the room should be able to
+% check that without being reminded of it.
+\begin{tikzpicture}[font=\scriptsize]
+  \path (-1.6,-4.6) rectangle (12.2,4.3);
+
+  \tikzset{
+    dv/.style={rounded corners=3pt, draw=#1, fill=#1!8, text=#1!45!black,
+               line width=0.9pt, minimum width=1.35cm, minimum height=0.95cm,
+               align=center, font=\tiny\bfseries},
+    w/.style={line width=0.85pt, neutral!65},
+    hdr/.style={font=\scriptsize\bfseries, text=neutral!45!black},
+    stepcap/.style={font=\bfseries, anchor=north west, text width=13.4cm,
+                    align=left}}
+
+  \node[hdr, text width=13.5cm, align=center] at (5.3,3.5)
+      {VLAN 30 must not reach the finance server --- but must still reach
+       everything else};
+
+  \node[dv=neutral] (h)   at (0,0.7)    {\faIcon{desktop}\\VLAN 30};
+  \node[dv=dom3]    (r1)  at (3.0,0.7)  {\faIcon{route}\\R1};
+  \node[dv=dom3]    (r2)  at (7.0,0.7)  {\faIcon{route}\\R2};
+  \node[dv=dom1]    (fin) at (10.4,1.75){\faIcon{server}\\Finance};
+  \node[dv=dom1]    (oth) at (10.4,-0.4){\faIcon{server}\\Everything\\else};
+  \draw[w] (h) -- (r1);  \draw[w] (r1) -- (r2);
+  \draw[w] (r2) -- (fin);  \draw[w] (r2) -- (oth);
+
+  % 2 -- the obvious place, and the outage
+  \stepvis{2}{%
+    \draw[accent!85, line width=1.4pt] (4.7,1.25) -- (5.3,0.15);
+    \node[font=\tiny\bfseries, text=accent!75!black, align=center,
+          text width=3.1cm, anchor=north] at (5.0,-0.35)
+        {\faIcon{times-circle}~\textbf{standard} here\\blocks
+         \emph{everything}};}
+
+  % 3 -- move it
+  \stepvis{3}{%
+    \draw[dom2!80, line width=1.4pt] (8.5,2.0) -- (9.1,1.1);
+    \node[font=\tiny\bfseries, text=dom2!45!black, align=center,
+          text width=3.4cm, anchor=south] at (8.8,2.15)
+        {\faIcon{check-circle}~\textbf{standard} here\\blocks only this
+         server};}
+
+  \steponly{1}{\node[stepcap, text=neutral!45!black] at (-1.5,-1.6)
+      {Two servers, one path. Whatever we write has to separate them.};}
+  \steponly{2}{\node[stepcap, text=accent!75!black] at (-1.5,-1.6)
+      {Near the source looks right --- it stops doomed traffic early. But a
+       standard ACL matches only \emph{who sent it}, and here both servers
+       are behind the same next hop. Everything VLAN 30 sends is dropped.};}
+  \steponly{3}{\node[stepcap, text=dom2!45!black] at (-1.5,-1.6)
+      {Move it to the last hop and the two servers are finally on different
+       interfaces, so matching the source alone is enough.};}
+  \steponly{4}{\node[stepcap, text=dom3!45!black] at (-1.5,-1.6)
+      {Hence the rule: a \textbf{standard} ACL goes near the destination,
+       because that is the only place its one match is sufficient. An
+       \textbf{extended} ACL names the destination too, so it is safe at the
+       source --- and saves carrying doomed traffic across the network.};}
+\end{tikzpicture}
+
+\end{document}

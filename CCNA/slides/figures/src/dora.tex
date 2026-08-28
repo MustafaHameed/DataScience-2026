@@ -1,0 +1,74 @@
+% Slide build of Figure 20.1 -- DORA, one message per step.
+%
+% The book prints all four messages at once, which is right on paper: a reader
+% wants the whole exchange in one glance and will re-read it. In a lecture the
+% four-message figure is a wall the room copies down instead of watching. Here
+% each message lands on its own beat, and the caption under it says what has
+% just changed -- so by step 4 the class has watched a handshake happen rather
+% than read a diagram of one.
+%
+% The colour carries the exam point: three arrows are dom4 (broadcast), the
+% ACK alone is dom1 (unicast). Nothing is dimmed and nothing moves, so Morph
+% simply fades each new arrow in over a fixed background.
+\begin{tikzpicture}[font=\scriptsize]
+  % Fixed canvas at every level, or Morph slides the lifelines sideways.
+  \useasboundingbox (-0.7,-6.6) rectangle (10.9,0.6);
+
+  \node[font=\scriptsize\bfseries, text=neutral!45!black] (cl) at (0,0)  {CLIENT};
+  \node[font=\scriptsize\bfseries, text=neutral!45!black] (sv) at (10,0) {SERVER};
+  \draw[neutral!50, line width=0.8pt] (0,-0.35) -- (0,-5.3);
+  \draw[neutral!50, line width=0.8pt] (10,-0.35) -- (10,-5.3);
+
+  \tikzset{
+    bc/.style={-{Stealth[length=2.4mm]}, line width=1.1pt, dom4!80},
+    uc/.style={-{Stealth[length=2.4mm]}, line width=1.1pt, dom1!80},
+    lb/.style={font=\scriptsize\bfseries, above=1pt, midway},
+    sb/.style={font=\tiny, text=neutral!85!black, below=1pt, midway},
+    % Dashed, not solid: three solid rules across the diagram read as table
+    % lines rather than as messages that have not happened yet.
+    ghost/.style={neutral!30, line width=0.9pt,
+                  dash pattern=on 1.5pt off 3.5pt},
+    % A pinned bounding box crops rather than grows, so a caption without an
+    % explicit width runs off the canvas and is silently cut in half.
+    stepcap/.style={font=\bfseries, anchor=north west, text width=11.3cm,
+                    align=left}}
+
+  % Faint placeholders for the messages still to come. Four lines say "four
+  % messages" from the first beat -- which the name DORA has already told the
+  % room anyway -- while the labels still arrive one at a time. Without them
+  % the canvas is three-quarters empty at step 1 and the class reads the void
+  % as the end of the diagram.
+  \stepdim{2}{\draw[ghost] (0,-2.1) -- (10,-2.1);}
+  \stepdim{3}{\draw[ghost] (0,-3.2) -- (10,-3.2);}
+  \stepdim{4}{\draw[ghost] (0,-4.3) -- (10,-4.3);}
+
+  \stepvis{1}{%
+    \draw[bc] (0,-1.0)  -- node[lb, text=dom4!45!black] {1. DHCPDISCOVER}
+                           node[sb] {broadcast, src 0.0.0.0, dst 255.255.255.255} (10,-1.0);}
+  \stepvis{2}{%
+    \draw[bc] (10,-2.1) -- node[lb, text=dom4!45!black] {2. DHCPOFFER}
+                           node[sb] {broadcast --- the client still has no address} (0,-2.1);}
+  \stepvis{3}{%
+    \draw[bc] (0,-3.2)  -- node[lb, text=dom4!45!black] {3. DHCPREQUEST}
+                           node[sb] {broadcast, so other servers withdraw their offers} (10,-3.2);}
+  \stepvis{4}{%
+    \draw[uc] (10,-4.3) -- node[lb, text=dom1!45!black] {4. DHCPACK}
+                           node[sb] {the lease is now a binding on the server} (0,-4.3);}
+
+  % The binding only exists after the ACK. Showing it at step 4 is the whole
+  % reason the sequence is worth animating: nothing is leased until then.
+  \stepvis{4}{%
+    \node[draw=dom1!60, fill=dom1!8, rounded corners=3pt, line width=0.8pt,
+          font=\tiny\ttfamily, align=left, inner sep=5pt, anchor=north east]
+        at (10.8,-4.75)
+        {\textcolor{dom1!45!black}{binding}\\ 192.168.10.51\\ 08:00:27:aa:bb:cc};}
+
+  \steponly{1}{\node[stepcap, text=dom4!45!black] at (-0.6,-5.6)
+      {A host with no address shouts into the broadcast domain. Who can hear it?};}
+  \steponly{2}{\node[stepcap, text=dom4!45!black] at (-0.6,-5.6)
+      {The offer is a broadcast too --- the client has nothing to unicast to yet};}
+  \steponly{3}{\node[stepcap, text=dom4!45!black] at (-0.6,-5.6)
+      {Broadcast again, on purpose: the servers not chosen hear it and release};}
+  \steponly{4}{\node[stepcap, text=dom1!45!black] at (-0.6,-5.6)
+      {Only now is there a lease. Three of the four were broadcasts.};}
+\end{tikzpicture}

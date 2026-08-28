@@ -1,0 +1,77 @@
+% Slide build of Figure 30.2 -- one syslog message, taken apart.
+%
+% The message is on screen from the first beat and never changes; only the
+% braces and their labels arrive. That is the point of the build: the room is
+% reading a real line off a real router, not a diagram of the format, and each
+% step names a piece of a line they can already see.
+%
+% Severity gets its own step because it is the exam answer and because it is
+% the piece students misread -- the digit between the hyphens is a level, not
+% a count, an interface number or a port.
+\begin{tikzpicture}[font=\scriptsize]
+  \useasboundingbox (-0.4,-3.6) rectangle (12.4,1.5);
+
+  \tikzset{
+    seg/.style={font=\ttfamily\small, inner xsep=0pt, inner ysep=2pt,
+                anchor=base west},
+    br/.style={decorate, decoration={brace, amplitude=3pt, mirror},
+               line width=0.7pt, #1},
+    segcap/.style={font=\tiny\bfseries, text=#1!45!black, align=center,
+                   anchor=north},
+    stepcap/.style={font=\bfseries, anchor=north west, text width=12.4cm,
+                    align=left}}
+
+  \node[seg]                        (ts)  at (0,0)             {Aug 27 09:14:22.331:~};
+  \node[seg, text=dom1!45!black]    (fac) at (ts.base east)    {\%LINEPROTO};
+  \node[seg]                        (d1)  at (fac.base east)   {-};
+  \node[seg, text=accent!70!black]  (sev) at (d1.base east)    {5};
+  \node[seg]                        (d2)  at (sev.base east)   {-};
+  \node[seg, text=dom3!45!black]    (mne) at (d2.base east)    {UPDOWN};
+  \node[seg]                        (cl)  at (mne.base east)   {:};
+
+  % Clear of the brace labels on the row above -- at -0.30cm they printed
+  % straight through this line. (The book had the same fault; both fixed.)
+  \node[seg, text=dom2!45!black, anchor=north west] (desc)
+      at ([yshift=-0.68cm]ts.south west)
+      {Line protocol on Interface GigabitEthernet0/1, changed state to down};
+
+  \stepvis{2}{%
+    \draw[br=neutral!70] ([yshift=-2pt]ts.south west) -- ([yshift=-2pt]ts.south east);
+    \node[segcap=neutral] at ([yshift=-6pt]ts.south) {timestamp};}
+
+  \stepvis{3}{%
+    \draw[br=dom1!80] ([yshift=-2pt]fac.south west) -- ([yshift=-2pt]fac.south east);
+    \node[segcap=dom1] at ([yshift=-6pt]fac.south) {facility};}
+
+  \stepvis{3}{%
+    \draw[br=dom3!80] ([yshift=-2pt]mne.south west) -- ([yshift=-2pt]mne.south east);
+    \node[segcap=dom3] at ([yshift=-6pt]mne.south) {mnemonic};}
+
+  % Severity is one character wide, so it gets a leader upward instead of a
+  % brace it would dwarf.
+  \stepvis{4}{%
+    \draw[accent!80, line width=0.7pt] (sev.north) -- ++(0,0.34)
+        node[font=\tiny\bfseries, text=accent!70!black, anchor=south]
+        {severity};}
+
+  \stepvis{5}{%
+    \draw[br=dom2!80] ([yshift=-2pt]desc.south west) -- ([yshift=-2pt]desc.south east);
+    \node[segcap=dom2] at ([yshift=-6pt]desc.south)
+        {description --- the part in English};}
+
+  \steponly{1}{\node[stepcap, text=neutral!45!black] at (-0.3,-2.1)
+      {One line off a real router. Everything a syslog message carries is
+       in it --- what is each piece?};}
+  \steponly{2}{\node[stepcap, text=neutral!45!black] at (-0.3,-2.1)
+      {The timestamp, and it is only trustworthy if NTP is.};}
+  \steponly{3}{\node[stepcap, text=dom1!45!black] at (-0.3,-2.1)
+      {Facility says which subsystem spoke; mnemonic says what happened.
+       Neither is the severity.};}
+  \steponly{4}{\node[stepcap, text=accent!75!black] at (-0.3,-2.1)
+      {The single digit between the two hyphens. That is the severity ---
+       not a count, not an interface number. This is the field the exam
+       asks about.};}
+  \steponly{5}{\node[stepcap, text=dom2!45!black] at (-0.3,-2.1)
+      {And the rest is English, which is the only part most people read
+       and the least useful part to filter on.};}
+\end{tikzpicture}
