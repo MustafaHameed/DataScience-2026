@@ -15,6 +15,7 @@ import argparse
 import os
 import re
 import sys
+from collections import Counter
 
 from ccnadeck import (ACCENT, DEFBG, Deck, GOLDHL, LIGHTBG, PRIMARY, _est_h,
                       _flat, CW, BODY_H)
@@ -45,11 +46,27 @@ STYLE = {
 }
 
 
+# Block kinds that put at least one slide on screen. Used to decide whether a
+# section is substantial enough to be worth a divider.
+SLIDEFUL = frozenset({
+    "definitionbox", "conceptbox", "alertbox", "examnote", "worked",
+    "pitfall", "config", "playbook", "verify", "hostcmd", "figure",
+    "breakfix", "lab",
+})
+
+
 def part_of(n: int) -> str:
     for a, b, name in PARTS:
         if a <= n <= b:
             return name
     return ""
+
+
+def part_index(n: int) -> int:
+    for i, (a, b, _) in enumerate(PARTS, 1):
+        if a <= n <= b:
+            return i
+    return 0
 
 
 def slug(stem: str) -> str:
@@ -229,11 +246,31 @@ def build_chapter(n: int, next_title: str = "") -> str:
     ch = parse_chapter(n)
     deck = Deck(n, ch.title, ch.topics)
     deck.title_slide(part_of(n))
+    deck.roadmap_slide(PARTS, part_index(n),
+                       note="Ten seconds. Students meeting a chapter in week "
+                            "ten cannot place it without being shown.")
 
     pending: list[Block] = []
     summary_items: list = []
+    section = ""
+
+    # A divider is a pause in the lecture, so it has to be worth pausing for.
+    # Sections that put one slide on screen get none: chapter 20's "DORA"
+    # heading sat alone in front of the DORA figure, announcing a section that
+    # was over before the next click.
+    weight = Counter(b.top for b in ch.blocks
+                     if b.top and b.kind in SLIDEFUL)
 
     for b in ch.blocks:
+        # End-of-chapter furniture inherits whatever heading it happens to sit
+        # under, so a divider reading "Conflicts" announced the Break & Fix,
+        # the lab and the checkpoints as if they belonged to it.
+        if b.kind in ("breakfix", "lab", "checkpoint", "chaptersummary"):
+            section = None
+        elif (b.top and b.top != section
+                and b.kind in SLIDEFUL and weight[b.top] > 1):
+            section = b.top
+            deck.section_slide(section)
         if b.kind == "prose":
             pending.append(b)
             continue
@@ -351,13 +388,19 @@ def build_chapter(n: int, next_title: str = "") -> str:
             reserve = _est_h(b.tail, CW, 17) + 0.25 if b.tail else 0.0
             chunks = split_bullets(b.items,
                                    budget=BODY_H - 1.15 - reserve) or [None]
+            # A split task list has to keep counting. Task 5 arriving on
+            # the second slide as "1. Extension" is not a cosmetic slip: the
+            # book's prose refers to these by number.
+            done = 1
             for i, part in enumerate(chunks):
                 deck.content_slide(
                     title if i == 0 else f"{title} (continued)",
                     paras=b.paras if i == 0 else None, bullets=part,
                     tail=b.tail if i == len(chunks) - 1 else None,
-                    numbered=True, kicker=f"LAB · {plat}".upper(),
+                    numbered=True, start=done,
+                    kicker=f"LAB · {plat}".upper(),
                     note=note if i == 0 else "")
+                done += len(part or [])
 
         elif b.kind == "checkpoint":
             answers = checkpoint_answers(n)

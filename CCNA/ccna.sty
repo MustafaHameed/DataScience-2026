@@ -650,9 +650,27 @@
 % A device prompt, for when one is quoted inline.
 \newcommand{\prompt}[1]{{\ttfamily\small\color{primary}#1}}
 
+% Review questions close a chapter, so a bad break here leaves a single
+% question alone on an otherwise blank page -- which happened at the end of
+% five chapters. LaTeX's default \@itempenalty is -51, which actively
+% *encourages* a page break between list items; a large positive value makes
+% breaking the list expensive, so TeX prefers to move the whole block to the
+% next page rather than widow the last question onto it.
+% Review questions close a chapter, so a bad break here strands a single
+% question on an otherwise blank page -- which is how five chapters ended.
+% Two measures, because one is not enough on its own:
+%
+%   \needspace  moves the heading and the list together when there is not
+%               most of a page left. Penalties inside the list cannot help
+%               once the heading has already been set on the full page.
+%   midpenalty  discourages a split when the block does start high enough,
+%               so a break falls between questions 2 and 3 rather than
+%               leaving the last one alone.
 \newenvironment{reviewq}
-  {\subsection*{\color{primary}\faIcon{pen-fancy}~Review Questions}
-   \begin{enumerate}[leftmargin=*, itemsep=3pt, label=\textbf{\arabic*.}]}
+  {\needspace{0.30\textheight}%
+   \subsection*{\color{primary}\faIcon{pen-fancy}~Review Questions}
+   \begin{enumerate}[leftmargin=*, itemsep=3pt, label=\textbf{\arabic*.},
+                     midpenalty=9999, endpenalty=9999]}
   {\end{enumerate}}
 \newenvironment{tight}
   {\begin{itemize}[leftmargin=1.3em, itemsep=2pt, topsep=2pt, parsep=0pt]}

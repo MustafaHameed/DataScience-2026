@@ -66,7 +66,8 @@ class Block:
     # are broken by..." belongs under the port roles, not above them.
     numbered: bool = False                      # items came from tightnum
     verbatim: str = ""                          # code, kept exactly as written
-    section: str = ""                           # section heading in force
+    section: str = ""                           # nearest heading, any level
+    top: str = ""                               # nearest \section only
     children: list["Block"] = field(default_factory=list)
     # Nested blocks, in order. A breakfix is a narrative that embeds the
     # `verify` output it is diagnosing and the `config` that fixes it; the
@@ -394,10 +395,11 @@ def _paras(body: str) -> list[list[Run]]:
 
 
 _FIG_RE = re.compile(r"\\ccnafigh?\{")
-_SEC_RE = re.compile(r"\\(?:sub)?section\{(.+?)\}")
+_SEC_RE = re.compile(r"\\(sub)?section\{(.+?)\}")
 
 
-def _gap_blocks(gap: str, section: str) -> tuple[list[Block], str]:
+def _gap_blocks(gap: str, section: str,
+                top: str = "") -> tuple[list[Block], str, str]:
     """Prose between environments, with any figure surfaced as its own block.
 
     Figures matter to the slides -- each becomes a slide, in the place the
@@ -408,23 +410,31 @@ def _gap_blocks(gap: str, section: str) -> tuple[list[Block], str]:
     that follows it, so Figure 12.1 -- which illustrates why a loop is fatal
     -- arrived on a slide titled "How the tree is chosen".
 
-    Returns (blocks, section in force at the end of the gap).
+    Both levels are kept. ``section`` is the nearest heading of any level,
+    which is what a figure or a box should be titled by; ``top`` is the
+    nearest ``\\section``, which is what a divider slide announces. Using the
+    nearest heading for dividers put one in front of chapter 20's two-slide
+    ``\\subsection{DORA}``.
+
+    Returns (blocks, section, top) as they stand at the end of the gap.
     """
     out: list[Block] = []
     pos = 0
 
     def flush(upto: int) -> None:
-        """Prose from pos to upto, updating the heading as we pass one."""
-        nonlocal section
+        """Prose from pos to upto, updating the headings as we pass them."""
+        nonlocal section, top
         chunk = gap[pos:upto]
         last = 0
         for sm in _SEC_RE.finditer(chunk):
             for p in _paras(chunk[last:sm.start()]):
-                out.append(Block("prose", paras=[p], section=section))
-            section = plain(to_runs(sm.group(1)))
+                out.append(Block("prose", paras=[p], section=section, top=top))
+            section = plain(to_runs(sm.group(2)))
+            if not sm.group(1):
+                top = section
             last = sm.end()
         for p in _paras(chunk[last:]):
-            out.append(Block("prose", paras=[p], section=section))
+            out.append(Block("prose", paras=[p], section=section, top=top))
 
     while True:
         m = _FIG_RE.search(gap, pos)
@@ -442,10 +452,10 @@ def _gap_blocks(gap: str, section: str) -> tuple[list[Block], str]:
         label, j = _find_group(gap, j) if j < len(gap) and gap[j] == "{" \
             else ("", j)
         out.append(Block("figure", title=plain(to_runs(caption)),
-                         args=[label.strip()], section=section))
+                         args=[label.strip()], section=section, top=top))
         pos = j
     flush(len(gap))
-    return out, section
+    return out, section, top
 
 
 def parse_chapter(number: int) -> Chapter:
@@ -465,7 +475,7 @@ def parse_chapter(number: int) -> Chapter:
     topics = [t.strip() for t in bp.group(1).split(",")] if bp else []
 
     blocks: list[Block] = []
-    section = ""
+    section = top = ""
     pos = 0
     while True:
         m = _ENV_RE.search(src, pos)
@@ -474,7 +484,8 @@ def parse_chapter(number: int) -> Chapter:
         kind = m.group(1)
 
         # prose since the previous environment -> notes material
-        gap_blocks, section = _gap_blocks(src[pos:m.start()], section)
+        gap_blocks, section, top = _gap_blocks(src[pos:m.start()], section,
+                                               top)
         blocks.extend(gap_blocks)
 
         # the environment's own arguments
@@ -505,7 +516,7 @@ def parse_chapter(number: int) -> Chapter:
             continue
         body = src[i:end]
 
-        blk = Block(kind, opt_title, args, section=section)
+        blk = Block(kind, opt_title, args, section=section, top=top)
         if kind in _VERBATIM:
             blk.verbatim = body.strip("\n")
         else:
@@ -515,7 +526,7 @@ def parse_chapter(number: int) -> Chapter:
         pos = end + len("\\end{" + kind + "}")
 
     # trailing prose
-    tail_blocks, section = _gap_blocks(src[pos:], section)
+    tail_blocks, section, top = _gap_blocks(src[pos:], section, top)
     blocks.extend(tail_blocks)
 
     return Chapter(number, label, title, topics, blocks, stem)

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 
+from PIL import Image
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
@@ -31,7 +32,10 @@ from pptx.oxml.ns import qn
 from pptx.util import Emu, Inches, Pt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ASSETS = os.path.join(HERE, "assets")
+# One asset directory for the volume and the decks, so the title page of
+# the book and the title slide of a deck cannot end up with different
+# versions of the same mark.
+ASSETS = os.path.join(os.path.dirname(HERE), "assets")
 
 # ---------------------------------------------------------------------------
 # Palette -- lifted verbatim from ccna.sty so slides and book match exactly
@@ -152,6 +156,25 @@ def _hang(p, marker: str, size: int) -> None:
     pPr.set("indent", str(-mar))
 
 
+def _ground(c: RGBColor) -> RGBColor:
+    """The hue darkened enough to carry white text on a full-bleed slide.
+
+    Four of the five domain colours sit near luminance 80. The fifth, the gold
+    of domain 5, is at 143, so a title slide in it left white type washed out
+    and swallowed the gold ribbon on the department shield, while the other
+    four were fine. Scaling to a common luminance fixes that one deck without
+    inventing a colour or special-casing it by name.
+
+    Nothing is ever lightened: a colour already dark enough comes back exactly
+    as the book defines it, so slides and volume still match.
+    """
+    lum = (c[0] * 299 + c[1] * 587 + c[2] * 114) / 1000
+    if lum <= 88:
+        return c
+    k = 88 / lum
+    return RGBColor(*(min(255, int(v * k)) for v in c))
+
+
 class Deck:
     """A single chapter's deck."""
 
@@ -171,6 +194,7 @@ class Deck:
         self.course = course
         self.hue = DOMAIN.get(topics[0].split(".")[0], PRIMARY) if topics \
             else PRIMARY
+        self.ground = _ground(self.hue)
         self._blank = self.prs.slide_layouts[6]
         self._step_group: str | None = None
         self._step_n = 0
@@ -326,25 +350,53 @@ class Deck:
                   size=10, color=MUTED, align=PP_ALIGN.RIGHT, name="footR")
 
     def _lockup(self, slide, x, y, w, dark=False) -> None:
-        """Institutional mark: logo files if present, typographic if not."""
+        """The institution in words. The marks themselves are _logos()."""
         col = WHITE if dark else PRIMARY
         sub = RGBColor(0xC8, 0xD6, 0xE5) if dark else MUTED
-        logos = [os.path.join(ASSETS, f)
-                 for f in ("iub-logo.png", "dit-logo.png")]
-        have = [p for p in logos if os.path.exists(p)]
-        if have:
-            lx = x
-            for p in have:
-                slide.shapes.add_picture(p, Inches(lx), Inches(y),
-                                         height=Inches(0.62))
-                lx += 1.15
-            return
         self.text(slide, x, y, w, 0.30,
                   "THE ISLAMIA UNIVERSITY OF BAHAWALPUR",
-                  size=12, color=col, bold=True, name="lockup1")
+                  size=12, color=col, bold=True, align=PP_ALIGN.RIGHT,
+                  name="lockup1")
         self.text(slide, x, y + 0.26, w, 0.28,
                   "Department of Information Technology",
-                  size=11, color=sub, name="lockup2")
+                  size=11, color=sub, align=PP_ALIGN.RIGHT, name="lockup2")
+
+    def _logos(self, slide, right: float, y: float, h: float = 0.86,
+               dark: bool = False, marks: int = 2) -> float:
+        """The two institutional marks, right-aligned, ending at *right*.
+
+        On a dark ground the university crest uses its reversed version: the
+        supplied artwork is a single navy, which disappears against every one
+        of the five domain colours. The department shield is multi-colour with
+        a white field of its own and reads correctly on either ground.
+
+        Returns the left edge of the row, or *right* if no artwork is present
+        -- the decks were built and reviewed for months without these files
+        and must keep working if they are removed.
+        """
+        names = ("iub-logo-white.png" if dark else "iub-logo.png",
+                 "dit-logo.png")[:marks]
+        gap = 0.30
+        found = []
+        for n in names:
+            p = os.path.join(ASSETS, n)
+            if os.path.exists(p):
+                found.append(p)
+        if not found:
+            return right
+        # Measure first so the row can be right-aligned in one pass.
+        widths = []
+        for p in found:
+            with Image.open(p) as im:
+                widths.append(h * im.size[0] / im.size[1])
+        total = sum(widths) + gap * (len(widths) - 1)
+        lx = right - total
+        for p, wd in zip(found, widths):
+            pic = slide.shapes.add_picture(p, Inches(lx), Inches(y),
+                                           height=Inches(h))
+            pic.name = "logo-" + os.path.basename(p)[:-4]
+            lx += wd + gap
+        return right - total
 
     def _chips(self, slide, x, y, topics, dark=False) -> None:
         """Blueprint topic tags, coloured by domain, as in the book."""
@@ -363,10 +415,11 @@ class Deck:
     # ---------------------------------------------------------------- slides
 
     def title_slide(self, part_name: str = "") -> None:
-        s = self._new(self.hue)
-        self.rect(s, 0, 0, W, H, fill=self.hue, name="bg")
+        s = self._new(self.ground)
+        self.rect(s, 0, 0, W, H, fill=self.ground, name="bg")
         self.rect(s, 0, H - 0.75, W, 0.75,
-                  fill=RGBColor(*[max(0, c - 22) for c in self.hue]), name="bgfoot")
+                  fill=RGBColor(*[max(0, c - 22) for c in self.ground]),
+                  name="bgfoot")
 
         self.text(s, ML, 1.28, CW, 0.34, self.course.upper(),
                   size=15, color=RGBColor(0xC8, 0xD6, 0xE5), bold=True,
@@ -392,25 +445,69 @@ class Deck:
                   color=RGBColor(0xB8, 0xC9, 0xDA), bold=True, name="authlab")
         self.text(s, ML, 5.90, CW * 0.6, 0.36, self.author,
                   size=18, color=WHITE, bold=True, name="author")
-        self._lockup(s, W - MR - 3.9, 5.66, 3.9, dark=True)
+        # One institutional block, not two weak ones: the marks sit directly
+        # above the words they belong to, the whole thing right-aligned to the
+        # margin. At the top of the slide they had to be small enough to clear
+        # a long chapter title, which left the DIT ribbon unreadable.
+        self._logos(s, W - MR, 4.86, h=1.16, dark=True)
+        self._lockup(s, W - MR - 4.8, 6.16, 4.8, dark=True)
         self._transition(s, "fade")
         self.notes(s, f"Chapter {self.chapter}: {self.title}. "
                       f"Blueprint topics: {', '.join(self.topics) or 'none'}.")
 
+    def roadmap_slide(self, parts, current: int, note: str = "") -> None:
+        """The six parts of the course, with the one we are in lit.
+
+        A student meeting chapter 24 in week ten has no way to tell where it
+        sits unless they are shown. Six bars, one lit, at the front of every
+        deck: cheap to render and the only navigation a lecture has.
+        """
+        s = self._new(WHITE)
+        self._chrome(s, "Where this chapter sits", "THE COURSE")
+        y = BODY_Y + 0.30
+        for i, (lo, hi, name) in enumerate(parts, 1):
+            live = i == current
+            h = 0.62
+            self.rect(s, ML, y, CW, h,
+                      fill=LIGHTBG if live else RGBColor(0xF7, 0xF9, 0xFA),
+                      line=None, name=f"part{i}bg")
+            self.rect(s, ML, y, 0.07, h,
+                      fill=self.hue if live else RGBColor(0xDD, 0xE3, 0xE7),
+                      name=f"part{i}rule")
+            label = name.split("—")[0].strip()
+            rest = name.split("—", 1)[1].strip() if "—" in name else ""
+            self.text(s, ML + 0.28, y + 0.16, 1.5, 0.30, label,
+                      size=14, bold=True,
+                      color=self.hue if live else MUTED, name=f"part{i}n")
+            self.text(s, ML + 1.65, y + 0.16, CW - 3.4, 0.30, rest,
+                      size=14, bold=live,
+                      color=NEARBLACK if live else MUTED, name=f"part{i}t")
+            self.text(s, ML + CW - 1.7, y + 0.16, 1.5, 0.30,
+                      f"chapters {lo}–{hi}", size=12,
+                      color=self.hue if live else MUTED,
+                      align=PP_ALIGN.RIGHT, name=f"part{i}c")
+            y += h + 0.10
+        self._footer(s)
+        self._transition(s, "fade")
+        self.notes(s, note)
+
     def section_slide(self, heading: str, note: str = "") -> None:
         s = self._new(WHITE)
-        self.rect(s, 0, 2.55, W, 2.0, fill=self.hue, name="band")
-        self.text(s, ML, 2.92, CW, 1.3, heading,
-                  size=fit_pt(heading, CW, 1.2, ideal=34, floor=22),
+        self.rect(s, 0, 2.55, W, 2.0, fill=self.ground, name="band")
+        # Leave the heading room for the crest at the right-hand end of the
+        # band rather than letting a long one run underneath it.
+        self.text(s, ML, 2.92, CW - 1.5, 1.3, heading,
+                  size=fit_pt(heading, CW - 1.6, 1.2, ideal=34, floor=22),
                   color=WHITE, bold=True, anchor=MSO_ANCHOR.MIDDLE,
                   name="secheading")
+        self._logos(s, W - MR, 2.92, h=1.26, dark=True, marks=1)
         self._footer(s)
         self._transition(s, "fade")
         self.notes(s, note)
 
     def content_slide(self, title, paras=None, bullets=None, kicker="",
                       note="", numbered=False, tint=None, icon_text="",
-                      tail=None):
+                      tail=None, start=1):
         s = self._new(WHITE)
         self._chrome(s, title, kicker)
         y = BODY_Y
@@ -449,13 +546,15 @@ class Deck:
                 break
             size -= 1
 
-        # Short content sits mid-body rather than jammed under the rule.
+        # A small nudge for short content, and no more. Optically centring it
+        # made the "(continued)" half of a split list start two inches lower
+        # than the first half, so clicking between them jumped the text.
         if tint is None:
             est = _est_h(list(paras or []) + list(bullets or []),
                          CW - 2 * inset, size)
             room = BODY_H - (y - BODY_Y)
             if est < room * 0.60:
-                y += (room - est) / 2.8
+                y += min(0.42, (room - est) / 2.8)
 
         if paras:
             self.text(s, ML + inset, y, CW - 2 * inset, BODY_H - (y - BODY_Y),
@@ -463,7 +562,8 @@ class Deck:
             y += 0.1 + _est_h(paras, CW - 2 * inset, size)
         if bullets:
             self._bullets(s, ML + inset, y, CW - 2 * inset,
-                          BODY_H - (y - BODY_Y), bullets, size, numbered)
+                          BODY_H - (y - BODY_Y), bullets, size, numbered,
+                          start=start)
             y += _est_h(bullets, CW - 2 * inset - 0.32, size) + \
                 0.13 * len(bullets)
         if tail:
@@ -487,7 +587,7 @@ class Deck:
         return s
 
     def _bullets(self, slide, x, y, w, h, bullets, size, numbered=False,
-                 name="bullets", upto=None):
+                 name="bullets", upto=None, start=1):
         """Bulleted list. *upto* dims items beyond it, for stepped builds."""
         box = slide.shapes.add_textbox(Inches(x), Inches(y),
                                        Inches(w), Inches(h))
@@ -499,7 +599,7 @@ class Deck:
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
             p.space_after = Pt(9)
             p.line_spacing = 1.02
-            marker = f"{i + 1}.  " if numbered else "•  "
+            marker = f"{i + start}.  " if numbered else "•  "
             _hang(p, marker, size)
             run = p.add_run()
             run.text = marker
@@ -678,9 +778,13 @@ class Deck:
                       align=PP_ALIGN.CENTER, name="prompt")
             y += 1.10
         elif not code and (paras or bullets):
+            # Nudged, not centred -- the same cap the code panel gets. Six
+            # beats of one diagnosis that each start at a different height
+            # make the click between them read as a jump.
             est = _est_h(list(paras or []) + list(bullets or []), CW, 19)
             if est < (region_bot - region_top) * 0.62:
-                y = region_top + max(0.0, (region_bot - region_top - est) / 2.6)
+                y = region_top + min(0.55, max(
+                    0.0, (region_bot - region_top - est) / 2.6))
 
         avail = 6.95 - y
         if code:
@@ -770,8 +874,8 @@ class Deck:
         return s
 
     def closing_slide(self, next_title: str = "", takeaways=None) -> None:
-        s = self._new(self.hue)
-        self.rect(s, 0, 0, W, H, fill=self.hue, name="bg")
+        s = self._new(self.ground)
+        self.rect(s, 0, 0, W, H, fill=self.ground, name="bg")
         self.text(s, ML, 1.15, CW, 0.9, "Where we got to",
                   size=34, color=WHITE, bold=True, name="cltitle")
         if takeaways:
@@ -794,15 +898,20 @@ class Deck:
                 r.font.color.rgb = RGBColor(0xC8, 0xD6, 0xE5)
                 self._runs_into(p, t, size, WHITE, False, None)
             box.name = "cltakeaways"
-        if next_title:
-            self.rect(s, ML, 5.80, CW, 0.90,
-                      fill=RGBColor(*[max(0, c - 22) for c in self.hue]),
-                      name="nextbg")
-            self.text(s, ML + 0.30, 5.96, CW - 0.6, 0.30, "NEXT",
-                      size=12, color=RGBColor(0xB8, 0xC9, 0xDA), bold=True,
-                      name="nextlab")
-            self.text(s, ML + 0.30, 6.24, CW - 0.6, 0.36, next_title,
-                      size=19, color=WHITE, bold=True, name="nexttitle")
+        # The last chapter has nothing to point forward to, and a closing
+        # slide that just stops is a poor end to a semester. The band says
+        # what has actually been finished rather than offering sentiment.
+        lab, line = ("NEXT", next_title) if next_title else (
+            "END OF THE COURSE",
+            "34 chapters  ·  all 29 blueprint topics  ·  32 labs")
+        self.rect(s, ML, 5.80, CW, 0.90,
+                  fill=RGBColor(*[max(0, c - 22) for c in self.ground]),
+                  name="nextbg")
+        self.text(s, ML + 0.30, 5.96, CW - 0.6, 0.30, lab,
+                  size=12, color=RGBColor(0xB8, 0xC9, 0xDA), bold=True,
+                  name="nextlab")
+        self.text(s, ML + 0.30, 6.24, CW - 0.6, 0.36, line,
+                  size=19, color=WHITE, bold=True, name="nexttitle")
         self._transition(s, "fade")
 
     # -- output ------------------------------------------------------------

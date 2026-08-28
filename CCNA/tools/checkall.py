@@ -24,6 +24,7 @@ GATES = [
     ("check_furniture.py",  "every chapter has its required blocks"),
     ("check_answers.py",    "every checkpoint question is answered"),
     ("check_sectionrefs.py", "literal section references resolve"),
+    ("check_pages.py",      "no page left almost empty"),
 ]
 
 

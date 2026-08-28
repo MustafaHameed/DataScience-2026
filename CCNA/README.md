@@ -4,8 +4,9 @@ One book containing the syllabus, the notes and the labs for a course taught to
 Cisco CCNA 200-301 **version 2.0** — written from zero, with no prior networking
 assumed, teaching protocol theory and device configuration together.
 
-**Current build:** 289 pages · zero LaTeX errors, zero undefined references, zero
-overfull boxes, zero underfull boxes, zero font warnings. 32 figures, all TikZ.
+**Current build:** 291 pages · zero LaTeX errors, zero undefined references, zero
+overfull boxes, zero underfull boxes, zero font warnings, no orphaned pages.
+32 figures, all TikZ.
 
 > **Status: complete.** All 34 chapters and all seven appendices are written.
 > Every blueprint topic is covered and every quality gate reads zero.
@@ -50,13 +51,15 @@ Cisco revises blueprints without renaming exams. Re-check
 | `parts/00_partN_opener.tex` | One concept-map opener per part. |
 | `parts/01_*.tex` … `parts/34_*.tex` | The 34 chapters, in teaching order. |
 | `parts/A_*.tex` … `parts/G_*.tex` | Appendices A–G. |
-| `tools/checkall.py` | **Runs all six gates and reports one verdict.** |
+| `tools/checkall.py` | **Runs all seven gates and reports one verdict.** |
 | `tools/logcheck.py` | Reads the build log; the seven typographic gates. |
 | `tools/lintsource.py` | Source traps LaTeX reports badly or in the wrong place. |
 | `tools/check_coverage.py` | Every blueprint topic is covered by a chapter. |
 | `tools/check_furniture.py` | Every chapter carries its required pedagogy blocks. |
 | `tools/check_answers.py` | Appendix E answers every checkpoint question. |
 | `tools/check_sectionrefs.py` | Literal "Section N.M" references point where they claim. |
+| `tools/check_pages.py` | No page is left almost empty by a bad break. |
+| `tools/prepare_logos.py` | Turns the supplied institutional artwork into usable assets. |
 | `tools/gen_appendices.py` | Generates Appendix D and the lab index. |
 | `tools/gen_drills.py` | Generates Appendix C's drills with computed answers. |
 | `build.ps1` | Build + quality report; exits non-zero on any error. |
@@ -66,13 +69,14 @@ Cisco revises blueprints without renaming exams. Re-check
 ```powershell
 .\build.ps1            # build CCNA_v2_Handout.pdf
 .\build.ps1 -Clean     # remove aux files, then build
-python tools\checkall.py   # all six gates; exits non-zero on any failure
+python tools\checkall.py   # all seven gates; exits non-zero on any failure
 ```
 
 Each gate exists because the error it catches actually happened here and
 nothing else caught it — a raw `_` reported at the wrong line, a chapter with no
 Break & Fix, three literal section references left pointing at the wrong
-sections after content moved.
+sections after content moved, and five chapters that ended with a single review
+question stranded on an otherwise blank page.
 
 **Do not check the log with `grep '^!'`.** latexmk runs with
 `-file-line-error`, which reformats every error as `file:line: message` with no
