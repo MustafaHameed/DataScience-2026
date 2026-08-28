@@ -19,9 +19,9 @@ The three booklets sit in the repository root and are read, not shipped:
 
 | Edition | File | Covers |
 | --- | --- | --- |
-| 2017 | `../BS & MS (CS,SE & IT) Curriculum 2017.pdf` | BSCS, BSSE, BSIT and the MS programmes, 171 pp. |
-| 2023 | `../BS Curriculm Computing Disciplines-2023.pdf` | Eleven BS degrees including BSAI, BSDS and BSIT, 100 pp. |
-| 2025 | `../HEC CURRICULUM OF COMPUTER SCIENCE-2025.pdf` | BS Computer Science only, with fourteen specializations, 86 pp. |
+| 2017 | `curricula/BS & MS (CS,SE & IT) Curriculum 2017.pdf` | BSCS, BSSE, BSIT and the MS programmes, 171 pp. |
+| 2023 | `curricula/BS Curriculm Computing Disciplines-2023.pdf` | Eleven BS degrees including BSAI, BSDS and BSIT, 100 pp. |
+| 2025 | `curricula/HEC CURRICULUM OF COMPUTER SCIENCE-2025.pdf` | BS Computer Science only, with fourteen specializations, 86 pp. |
 
 Every claim about the curriculum is cited to a page range in the closing
 **Sources** section. Page references are to the PDF page, not the printed page
