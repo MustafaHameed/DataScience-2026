@@ -1,0 +1,323 @@
+%=====================================================================
+\chapter{Reference Management and Bibliometrics}\label{ch:bibliometrics}
+%=====================================================================
+\locator{2}{Part~2 --- Finding and Synthesising Knowledge}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Operate} an open-source reference manager as the single source
+    of truth for a review.
+  \item \textbf{Write} BibTeX entries that will still resolve in five years.
+  \item \textbf{Distinguish} co-citation, bibliographic coupling and co-word
+    analysis, and say what each reveals.
+  \item \textbf{Produce} a field map from a Scopus or Web of Science export
+    using open-source tools.
+  \item \textbf{Judge} when a bibliometric analysis is a contribution and when
+    it is a substitute for reading.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{slr} for the review workflow this tooling supports, and \chref{publication}
+for the critique of citation metrics as evaluation --- this chapter uses them
+as \emph{data} instead.
+\end{prereq}
+
+\begin{keyterms}
+reference manager $\bullet$ BibTeX and biblatex $\bullet$ citation key
+$\bullet$ DOI $\bullet$ bibliometrics $\bullet$ co-citation $\bullet$
+bibliographic coupling $\bullet$ co-word analysis $\bullet$ co-authorship
+network $\bullet$ science mapping
+\end{keyterms}
+
+\section{Never Type a Citation Again}
+
+Hand-typed references are wrong. Not occasionally --- systematically. Volume
+numbers drift, initials get dropped, a conference is recorded as a journal, and
+the error propagates because the next author copies your reference list rather
+than the source. In a review with 80 primary studies, hand management
+guarantees a corrupted bibliography and hours lost to reformatting when you
+change venue.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.4cm}L{3.0cm}L{9.0cm}@{}}
+\toprule
+\textbf{Tool} & \textbf{Licence} & \textbf{Why you might choose it} \\
+\midrule
+Zotero   & Open source (AGPL)
+         & Browser connector captures metadata and the PDF in one click; group
+           libraries make two-screener review practical; exports BibTeX.
+           The default recommendation \\
+JabRef   & Open source (MIT)
+         & Native BibTeX: the \texttt{.bib} file \emph{is} the database, so
+           there is no export step to go stale. Best if you write in \LaTeX{}
+           and want one file under version control \\
+Mendeley & Proprietary
+         & Widely used; owned by a publisher, with the data-ownership questions
+           that raises \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{conceptbox}[A workflow that survives a three-year degree]
+\begin{tightnum}
+  \item \textbf{One library, from day one.} Every paper you read goes in
+    immediately, including ones you reject --- with a note saying why. In month
+    20 you will not remember, and you will re-read it.
+  \item \textbf{Collections per review stage.} \texttt{01-identified},
+    \texttt{02-screened}, \texttt{03-included}, and \texttt{99-excluded} with
+    the reason in each item's note. Your PRISMA counts then come out of the
+    library rather than out of a spreadsheet you forgot to update.
+  \item \textbf{Fix metadata on import.} Automatic capture is good, not
+    perfect. Check the DOI, the venue and the year while the paper is in front
+    of you.
+  \item \textbf{Export \texttt{refs.bib} into the repository} and commit it
+    with the thesis. The \texttt{refs.bib} shipped with this handout is exactly
+    that file for this course.
+  \item \textbf{Back it up somewhere that is not your laptop.}
+\end{tightnum}
+\end{conceptbox}
+
+\subsection{BibTeX entries that keep working}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.0cm}L{11.3cm}@{}}
+\toprule
+\textbf{Rule} & \textbf{Why} \\
+\midrule
+Stable keys      & \texttt{author\-year\-firstword}, lowercase. Never renumber;
+                   a key is an identifier, not a position \\
+DOI on everything & The only durable link. URLs rot; DOIs resolve \\
+Correct entry type & \texttt{@inproceedings} for conference papers,
+                   \texttt{@article} for journals. Getting this wrong misformats
+                   the whole reference \\
+Protect capitals & \verb|{PRISMA}|, \verb|{IEEE}|, \verb|{FAIR}| --- otherwise
+                   many styles lowercase them \\
+Full author lists & Let the style truncate to \emph{et al.}, not the data.
+                   Truncating in the \texttt{.bib} loses information permanently \\
+Archived URL + \texttt{urldate} & For anything grey (\chref{greylit}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{pitfall}[The two errors that reach print]
+\textbf{Citing something you have not read.} You copy a reference from another
+paper's list; that paper misdescribed it; now you have too. If you cite it, open
+it. If you genuinely cannot obtain it, cite it as reported in the source you
+read --- ``[8], as cited in [23]'' --- which is honest and rare enough to be
+noticed favourably.
+
+\medskip
+\textbf{Letting the manager write the sentence.} A reference manager gets the
+formatting right and the \emph{meaning} not at all. It cannot tell you that the
+paper you are citing for a claim actually concluded the opposite under
+conditions you did not read. \chref{appraisal} is about that.
+\end{pitfall}
+
+\section{Bibliometrics as a Research Method}
+
+\chref{publication} argued that citation metrics are poor instruments for
+\emph{evaluating} people. That is a separate question from using citation data
+as \emph{evidence about a field} --- which is legitimate, well-established, and
+occasionally a contribution in its own right.
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{3.2cm}L{5.0cm}L{6.0cm}@{}}
+\toprule
+\textbf{Technique} & \textbf{Two items are linked when} & \textbf{What it shows} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Technique} & \textbf{Two items are linked when} & \textbf{What it shows} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Co-citation
+  & Both are cited by the same later paper
+  & The intellectual base a community shares. Backward-looking; identifies
+    foundational works and schools of thought \\
+Bibliographic coupling
+  & Both cite the same earlier paper
+  & Current research fronts. Forward-looking; groups work being done now,
+    before citation has accumulated \\
+Co-word / co-occurrence
+  & Two terms appear together in titles, abstracts or keywords
+  & The conceptual structure and its vocabulary; useful for finding search
+    terms you missed (\chref{slr}) \\
+Co-authorship
+  & Two authors share a paper
+  & Collaboration structure; which groups exist and whether they talk \\
+\end{longtable}
+\end{center}
+
+\begin{conceptbox}[The distinction that matters most]
+Co-citation and bibliographic coupling look similar and answer opposite
+questions.
+
+\medskip
+Co-citation needs \emph{time}: two papers only become co-cited once enough
+later work has cited both. It therefore describes the settled past, and a
+brand-new paper cannot appear in a co-citation map at all.
+
+\medskip
+Bibliographic coupling needs \emph{no} time: two papers published last month
+that cite the same twenty references are strongly coupled immediately. It is
+the right tool for ``what is happening now'', which is usually what a scholar
+choosing a topic actually wants to know.
+\end{conceptbox}
+
+\subsection{Doing it with open-source tools}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.6cm}L{3.2cm}L{8.6cm}@{}}
+\toprule
+\textbf{Tool} & \textbf{What it is} & \textbf{Use} \\
+\midrule
+VOSviewer  & Free (not open source)
+           & Point-and-click maps from Scopus, WoS, Dimensions, Lens exports.
+             The fastest route to a publishable map \\
+bibliometrix / biblioshiny & R package, open source
+           & Scriptable and reproducible, which VOSviewer is not.
+             \texttt{biblioshiny()} gives a browser interface over it \\
+CiteSpace  & Free
+           & Emphasises temporal evolution and burst detection \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{lstlisting}[language=Rlang, caption={A minimal reproducible field map. The
+whole point of scripting it is that the figure in your thesis can be
+regenerated when you add 40 more records.}]
+library(bibliometrix)
+
+# Export from Scopus as BibTeX, or from Web of Science as plain text.
+M <- convert2df("scopus_export.bib", dbsource = "scopus", format = "bibtex")
+
+results <- biblioAnalysis(M)
+summary(results, k = 20)          # top authors, sources, countries, growth
+
+# Conceptual structure: which terms occur together?
+CS <- conceptualStructure(M, field = "ID", method = "MCA",
+                          minDegree = 8, clust = "auto")
+
+# Research fronts: bibliographic coupling of documents.
+NetMatrix <- biblioNetwork(M, analysis = "coupling",
+                           network = "documents", sep = ";")
+networkPlot(NetMatrix, n = 40, type = "fruchterman",
+            labelsize = 0.7, cluster = "louvain")
+\end{lstlisting}
+
+\begin{alertbox}[A map is a hypothesis-generator, not a finding]
+A co-word map will show clusters. Clusters are produced by any clustering
+algorithm on any data, including noise, and their number depends on parameters
+you chose. The map tells you where to look; it does not tell you what is there.
+
+\medskip
+Every cluster you report should be validated by \emph{reading} several papers
+in it and confirming that the label you gave it is the label they would
+recognise. A bibliometric section that reports six clusters without
+demonstrating that anybody read them is the most sophisticated possible way of
+not doing a literature review.
+\end{alertbox}
+
+\begin{conceptbox}[When bibliometrics is itself the contribution]
+A bibliometric study can be a legitimate contribution --- of the ``survey /
+review'' type in \chref{contribution} --- when it answers a question about the
+field that could not be answered by reading. Has research on this topic shifted
+from academia to industry? Do the two communities studying this problem cite
+each other? Has the geographic distribution of authorship changed as the
+problem became commercially important?
+
+\medskip
+Those are real questions with real answers. What is not a contribution is a
+descriptive count of papers per year with a growth curve, which is true of
+almost every topic and tells nobody anything.
+\end{conceptbox}
+
+\begin{traditions}{mapping a field}
+\tradEMP{Bibliometrics is an observational study of the literature: it has a
+population, a sampling frame with known coverage limits, and confounders ---
+notably that database coverage differs systematically by region and venue.}
+\tradDSR{Maps the artefact space: which classes of solution have been built,
+by whom, and where practitioner and academic communities diverge.}
+\tradQUAL{Treats the corpus as documents to be read closely; the map is a
+sampling device for choosing which documents deserve that reading.}
+\tradFORM{Citation graphs are objects in their own right, and the algorithms
+that cluster them have properties worth stating --- resolution limits,
+parameter sensitivity, instability across runs.}
+\end{traditions}
+
+\begin{lab}[Map your own field]
+\begin{tightnum}
+  \item Run your \chref{slr} search on Scopus or Web of Science and export the
+    full records, including references, for at least 200 documents.
+  \item Load them in \texttt{bibliometrix} and produce three artefacts: a
+    co-word map, a bibliographic coupling map of documents, and a table of the
+    ten most locally cited papers.
+  \item Read the abstracts of three papers from each cluster and name the
+    cluster yourself. Compare your labels with the automatic ones.
+  \item Extract from the co-word map at least two terms that were \emph{not} in
+    your search string. Add them and re-run the search from \chref{slr}.
+\end{tightnum}
+
+\medskip
+Step 4 is the reason this chapter sits inside Part~II rather than being an
+optional extra: the map repairs the search.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why can a paper published this month appear in a bibliographic coupling
+    map but not in a co-citation map?
+  \item Give two reasons a reference list should live in a manager rather than
+    a document, beyond convenience.
+  \item A thesis reports a co-word analysis identifying five research themes.
+    What single piece of evidence would most increase your confidence in those
+    five labels?
+  \item Scopus and Web of Science have different coverage. How would that
+    difference bias a bibliometric study of research output by country?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Use an open-source reference manager from the first paper, with
+    collections mirroring the review stages, so PRISMA counts fall out of the
+    library.
+  \item Stable keys, DOIs, correct entry types, protected capitals, full author
+    lists, archived URLs for grey sources.
+  \item Cite only what you have opened. If you truly cannot, say ``as cited
+    in''.
+  \item Co-citation shows the settled intellectual base; bibliographic coupling
+    shows current fronts and works immediately; co-word shows vocabulary and
+    repairs your search string.
+  \item \texttt{bibliometrix} is scriptable and therefore reproducible;
+    VOSviewer is faster but its figures cannot be regenerated automatically.
+  \item A map generates hypotheses. Validate every cluster label by reading, or
+    the analysis is a way of avoiding the literature rather than reviewing it.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \chref{publication} argued citation counts are poor measures of
+    individual quality, yet this chapter uses citation data as evidence about
+    fields. Is this inconsistent? Set out the conditions under which aggregate
+    citation analysis is sound even though individual-level use is not.
+  \item Database coverage is not neutral: Scopus and Web of Science index
+    journals from some regions and languages far more completely than others.
+    What does this imply for a bibliometric claim about research productivity
+    in South Asia?
+  \item Design a bibliometric study that would answer a question about your own
+    field that could not be answered by reading fifty papers. State the
+    question, the data, the technique, and the threat to validity you would
+    have to address.
+  \item Clustering a citation network requires parameter choices that change
+    the number of clusters. What reporting practice would make a bibliometric
+    result as trustworthy as a well-reported statistical one?
+\end{reviewq}

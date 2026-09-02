@@ -1,0 +1,429 @@
+%=====================================================================
+\chapter{Survey Research}\label{ch:survey}
+%=====================================================================
+\locator{3}{Part~3 --- Research Designs for Computing}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Separate} population, sampling frame and achieved sample, and
+    say what each limits.
+  \item \textbf{Choose} a sampling method and state honestly what inference it
+    supports.
+  \item \textbf{Diagnose} nonresponse bias, and explain why response rate alone
+    does not measure it.
+  \item \textbf{Write} items free of the six common wording faults.
+  \item \textbf{Decide} whether to adopt a validated instrument or build one.
+  \item \textbf{Report} a survey to a recognised standard.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{questions} for constructs and operationalisation --- a questionnaire is
+an operationalisation, and most survey failures are measurement failures.
+\chref{measurement} follows this chapter and completes it.
+\end{prereq}
+
+\begin{keyterms}
+population $\bullet$ sampling frame $\bullet$ coverage error $\bullet$
+probability sampling $\bullet$ stratified sampling $\bullet$ cluster sampling
+$\bullet$ convenience sampling $\bullet$ snowball sampling $\bullet$ response
+rate $\bullet$ nonresponse bias $\bullet$ Likert item and Likert scale
+$\bullet$ double-barrelled question $\bullet$ social desirability bias
+$\bullet$ cognitive interview $\bullet$ pilot
+\end{keyterms}
+
+\section{What a Survey Can and Cannot Do}
+
+A survey measures what a population reports about itself at one point in time.
+That is genuinely valuable --- attitudes, practices, perceptions and self-reported
+behaviour are often exactly what you need to know, and no other method gets
+them at scale.
+
+It is also a narrow instrument, and three limits are worth stating at the
+outset.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{4.4cm}L{9.9cm}@{}}
+\toprule
+\textbf{A survey cannot} & \textbf{Because} \\
+\midrule
+Establish causation
+  & Nothing is manipulated and nothing is randomised. Cross-sectional survey
+    data supports association (\chref{quasiexp}) \\
+Measure behaviour
+  & It measures \emph{reported} behaviour. People misremember, round, and
+    present themselves favourably. Where a trace exists, mine it
+    (\chref{quasiexp}) and treat the survey as complementary \\
+Rescue a vague construct
+  & If ``code quality'' is undefined, asking 300 people to rate it produces
+    300 different constructs averaged into one number
+    (\chref{measurement}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Population, Frame, Sample}
+
+\begin{definitionbox}[Three different things, routinely conflated]
+The \term{population} is who you want to say something about --- ``professional
+software developers in Pakistan''.
+
+\medskip
+The \term{sampling frame} is the list you can actually draw from --- members of
+three professional groups on a messaging platform. The gap between population
+and frame is \term{coverage error}, and it is usually the largest error in a
+computing survey, larger than sampling error by a wide margin.
+
+\medskip
+The \term{sample} is who you invited; the \term{achieved sample} is who
+responded. The gap between them is nonresponse.
+\end{definitionbox}
+
+\begin{alertbox}[The confidence interval does not know about coverage error]
+A survey of 400 developers recruited from one online community can report a
+margin of error of about five percentage points. That number describes sampling
+error \emph{within the frame} only. It says nothing about the developers who
+are not in that community, who may be the majority and may differ
+systematically.
+
+\medskip
+Reporting the interval without discussing the frame implies a precision the
+study does not have. State the frame, state who it excludes, and say in which
+direction that would bias each main result.
+\end{alertbox}
+
+\section{Sampling}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{2.9cm}L{5.0cm}L{6.2cm}@{}}
+\toprule
+\textbf{Method} & \textbf{How} & \textbf{Inference it supports} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Method} & \textbf{How} & \textbf{Inference it supports} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Simple random
+  & Every frame member equally likely
+  & To the frame, with quantified uncertainty. Rarely achievable in our field \\
+Stratified
+  & Divide the frame into strata, sample within each
+  & As above, with better precision, and lets you report by stratum ---
+    valuable when a subgroup is small but important \\
+Cluster
+  & Sample groups, then units within them
+  & As above, but with a design effect: correlated units inside clusters mean
+    the effective sample size is smaller than the count \\
+Systematic
+  & Every $k$th member
+  & As simple random, unless the frame has a periodicity matching $k$ \\
+\midrule
+Convenience
+  & Whoever responds
+  & \emph{To nobody beyond the respondents.} Descriptive only \\
+Purposive
+  & Deliberately chosen for a characteristic
+  & Analytic, not statistical (\chref{casestudy}) \\
+Snowball
+  & Respondents recruit others
+  & Reaches hidden populations; biased towards the well-connected \\
+Quota
+  & Fill preset category counts non-randomly
+  & Looks representative on the quota variables, is not on anything else \\
+\end{longtable}
+\end{center}
+
+\begin{conceptbox}[Non-probability sampling is not disqualifying; pretending otherwise is]
+Almost every software engineering survey uses convenience or snowball sampling,
+because no sampling frame for ``software developers'' exists. That is a real
+constraint, not a personal failing.
+
+\medskip
+What separates a good such survey from a bad one is the write-up. A good one
+says: this is a convenience sample recruited from these three channels; here is
+the respondent profile in detail; here is who is likely under-represented; the
+results describe these respondents and generalise only as far as the reader
+judges them typical. A bad one reports a margin of error and calls the sample
+representative.
+
+\medskip
+\reg{PhD Regs 2024}{\S14.3(B)} asks about external validity --- ``can the
+results be generalized to other settings and to other populations?'' The honest
+answer for a convenience sample is ``to a limited degree, and here is why'',
+which is an acceptable answer. A dishonest ``yes'' is not.
+\end{conceptbox}
+
+\section{Nonresponse}
+
+\begin{alertbox}[Response rate is a weak proxy for the thing you actually care about]
+The standard reflex is to worry about response rate. What matters is
+\term{nonresponse bias} --- whether responders differ from non-responders
+\emph{on the variables you are measuring}.
+
+\medskip
+These come apart in both directions. A 20\% response rate with responders and
+non-responders alike on the measured variables produces an unbiased estimate. A
+70\% response rate where the 30\% who declined are precisely the developers
+who found the topic uncomfortable produces a badly biased one. Response rate is
+worth reporting, but it does not settle the question.
+\end{alertbox}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{4.2cm}L{10.1cm}@{}}
+\toprule
+\textbf{Check} & \textbf{How} \\
+\midrule
+Compare with frame characteristics
+  & If you know the frame's distribution on any variable, compare it with your
+    respondents' \\
+Wave analysis
+  & Compare early responders with late ones. Late responders resemble
+    non-responders more closely; a trend across waves suggests bias \\
+Follow up a sample of non-responders
+  & Even 20 short interviews with people who declined is far more informative
+    than any rate \\
+Report the funnel
+  & Invited, opened, started, completed, usable. Each drop-off is a place bias
+    can enter \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Writing Items That Measure Something}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{2.9cm}L{4.6cm}L{6.6cm}@{}}
+\toprule
+\textbf{Fault} & \textbf{Example} & \textbf{Why it breaks} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Fault} & \textbf{Example} & \textbf{Why it breaks} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Double-barrelled
+  & ``Our tests are fast and reliable''
+  & A respondent who thinks they are fast but flaky cannot answer \\
+Leading
+  & ``How much has our tool improved your workflow?''
+  & Presupposes improvement; no option expresses ``it did not'' \\
+Vague quantifier
+  & ``Do you review code regularly?''
+  & Regularly means daily to one person and monthly to another. Ask for a
+    frequency \\
+Assumes knowledge
+  & ``Do you use mutation testing?''
+  & Respondents who do not know the term will guess rather than admit it \\
+Socially loaded
+  & ``Do you write unit tests for your code?''
+  & There is a right answer and everyone knows it. Ask what proportion of last
+    week's commits had tests \\
+Recall-heavy
+  & ``How many bugs did you fix last year?''
+  & Nobody knows. Shorten the window or use a trace \\
+\end{longtable}
+\end{center}
+
+\subsection{Likert items, and one distinction that matters}
+
+A \term{Likert item} is a single statement with an ordered agreement response.
+A \term{Likert scale} is several items summed to measure one construct. The
+distinction matters because it determines what analysis is legitimate: a single
+item is ordinal, and a summed multi-item scale is closer to interval.
+\chref{measurement} and \chref{inference} take this up; the design consequence
+is that \textbf{if you intend to treat a construct as continuous, you must
+write several items for it}, not one.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.4cm}L{10.9cm}@{}}
+\toprule
+Points          & 5 or 7. More points do not add information once respondents
+                  stop discriminating \\
+Midpoint        & Include one unless you have a specific reason to force a
+                  choice; forcing produces arbitrary answers, not decisive ones \\
+Labels          & Label every point, not just the ends \\
+Direction       & Reverse-word a few items to detect straight-lining --- but
+                  avoid negations, which are misread \\
+Don't know      & Offer it separately from the midpoint. They mean different
+                  things and conflating them corrupts the mean \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{conceptbox}[Adopt a validated instrument if one exists]
+If you are measuring technology acceptance, usability, workload or job
+satisfaction, validated instruments exist --- UTAUT2~\cite{venkatesh2012consumer},
+SUS, NASA-TLX and others. Use them, unmodified, and cite them.
+
+\medskip
+The gain is substantial: the construct validity work is done, you can compare
+your results with the literature, and reviewers do not have to take your word
+for the measurement. Modifying items --- even lightly, even to fix awkward
+wording --- discards the validation, so if you must adapt, say so explicitly and
+re-establish reliability and validity on your own data (\chref{measurement},
+\chref{sem}).
+\end{conceptbox}
+
+\begin{templatebox}[C8 --- Survey instrument checklist]
+Work through this before the pilot, not after.
+
+\medskip
+\begin{tabular}{@{}L{0.8cm}L{13.0cm}@{}}
+$\square$ & Every item traces to a construct, and every construct to a research
+            question \\
+$\square$ & Multi-item scales for any construct to be treated as continuous \\
+$\square$ & No double-barrelled, leading or vague-quantifier items \\
+$\square$ & Sensitive items behaviourally anchored rather than asked directly \\
+$\square$ & Response options exhaustive and mutually exclusive \\
+$\square$ & ``Don't know'' distinct from the midpoint \\
+$\square$ & Demographics at the end, and only those actually analysed \\
+$\square$ & Estimated completion time, measured on the pilot not guessed \\
+$\square$ & Consent screen: purpose, storage, withdrawal, contact
+            (\chref{ethics}) \\
+$\square$ & Anonymous or identifiable --- decided, stated, and consistent with
+            the data handling plan \\
+$\square$ & Cognitive interviews with 3--5 people from the target population \\
+$\square$ & Full pilot, with the analysis script run on pilot data \\
+$\square$ & Instrument to be published as an appendix
+            (\chref{reproducibility}) \\
+\end{tabular}
+\end{templatebox}
+
+\subsection{Cognitive interviewing}
+
+Sit with three to five people from the target population and have them complete
+the questionnaire while thinking aloud. Ask what each question meant to them
+and how they arrived at the answer.
+
+This is the single highest-value hour in survey design. It reliably reveals
+items that are read in a sense you never intended --- and unlike a pilot, which
+tells you the distribution of answers, it tells you \emph{why} people answered
+as they did.
+
+\section{Reporting}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{4.0cm}L{10.3cm}@{}}
+\toprule
+Population and frame  & Who you wanted, what list you had, who is missing \\
+Recruitment           & Every channel, with dates \\
+The funnel            & Invited, started, completed, usable, with exclusions
+                        and reasons \\
+Respondent profile    & Enough that a reader can judge typicality \\
+Instrument            & In full, as an appendix or a deposit \\
+Reliability           & For each multi-item scale (\chref{measurement}) \\
+Analysis              & Including how ordinal items were treated and why \\
+Nonresponse           & Which checks you ran and what they showed \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+For internet surveys the CHERRIES checklist~\cite{eysenbach2004improving} is a
+usable reporting standard, and Kitchenham and Pfleeger's series remains the
+software engineering reference~\cite{kitchenham2008personal}.
+
+\begin{pitfall}[The survey that measured nothing]
+The characteristic failure: 300 responses, a 4.1 out of 5 mean agreement that
+``documentation is important'', and no finding.
+
+\medskip
+It happens because the items were written without a research question behind
+them, so no answer could have been surprising. Before writing any item, apply
+the null test from \chref{experiments}: what distribution of answers would have
+made you conclude the opposite? If no distribution would have, delete the item.
+\end{pitfall}
+
+\begin{traditions}{the survey}
+\tradEMP{Estimates a population quantity with quantified uncertainty --- when
+probability sampling is possible. When it is not, the survey is descriptive and
+the write-up must say so.}
+\tradDSR{Surveys practitioners to characterise the problem before designing,
+and to gather perceived-utility evidence afterwards --- which is formative
+naturalistic evaluation, and weak as summative evidence.}
+\tradQUAL{Open-ended responses are qualitative data and deserve real analysis
+(\chref{qda}), not a word cloud. Often the most informative part of the
+instrument.}
+\tradFORM{Little role, except that survey sampling theory is itself a formal
+subject and design effects are computed, not guessed.}
+\end{traditions}
+
+\begin{lab}[Build and cognitively test an instrument]
+\begin{tightnum}
+  \item List your constructs. For each, decide: validated instrument, or your
+    own items?
+  \item Write items. Multi-item scales for anything continuous.
+  \item Work template C8 end to end.
+  \item Run cognitive interviews with three people from the target population.
+    Record every item that was misread.
+  \item Revise, then pilot with 10--15 people and run your full analysis script
+    on the pilot data.
+  \item Write the population, frame and coverage paragraph --- including who is
+    excluded and in which direction it biases each main result.
+\end{tightnum}
+
+\medskip
+This is portfolio piece P4.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Distinguish population, sampling frame and achieved sample for a survey
+    of Pakistani software professionals. Where is the largest error likely to
+    be?
+  \item Why can a 70\% response rate be more biased than a 20\% one?
+  \item Rewrite: ``Do you agree that our new CI pipeline has made builds faster
+    and more reliable?''
+  \item You need to treat ``perceived usefulness'' as continuous in a
+    regression. What does that require of your instrument design?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Surveys measure reported attitudes and practices at one time. They do
+    not establish causation and do not measure behaviour.
+  \item Population, frame and achieved sample are three things. Coverage error
+    usually dominates sampling error in our field, and the confidence interval
+    does not know about it.
+  \item Non-probability sampling is normal and acceptable; claiming
+    representativeness for it is not.
+  \item Nonresponse bias, not response rate, is what matters. Check it with
+    wave analysis, frame comparison or follow-up.
+  \item Six wording faults account for most bad items. Behaviourally anchor
+    anything socially loaded.
+  \item Several items per construct if you want to treat it as continuous.
+    Adopt validated instruments unmodified where they exist.
+  \item Cognitive interviews are the highest-value hour in survey design.
+  \item Report the funnel, the profile and the instrument in full.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item No sampling frame exists for ``software developers''. Given that, is
+    probability sampling ever achievable in software engineering survey
+    research? If so, describe a setting where it is; if not, say what the field
+    should do about its collective reliance on convenience samples.
+  \item Self-report and trace data on the same behaviour frequently disagree.
+    Design a study that would establish the size and direction of that gap for
+    one specific practice, and say what it would be worth knowing.
+  \item Adopting a validated instrument imports its construct definition, which
+    may have been developed in a different culture and language. Discuss the
+    trade-off for research in Pakistan, and describe what re-validation would
+    require.
+  \item \reg{PhD Regs 2024}{\S14.3(B)} asks for external validity in both
+    ecological and population senses. For a convenience-sampled survey, what is
+    the most defensible thing a dissertation can claim, and how should the
+    threats section be written?
+\end{reviewq}

@@ -1,0 +1,387 @@
+%=====================================================================
+\chapter{Regression and Modelling for Inference}\label{ch:regression}
+%=====================================================================
+\locator{4}{Part~4 --- Measurement, Data and Analysis}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Interpret} a regression coefficient correctly, including the
+    conditioning clause everyone omits.
+  \item \textbf{Choose} among linear, logistic, Poisson and negative binomial
+    models by the shape of the outcome.
+  \item \textbf{Specify} a mixed-effects model when observations are nested.
+  \item \textbf{Distinguish} modelling for explanation from modelling for
+    prediction, and stop using the tools of one for the other.
+  \item \textbf{Report} a model completely enough to be reproduced.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{inference} for assumptions and intervals; \chref{questions} for
+variable roles --- a regression coefficient means something quite different
+depending on whether the covariate is a confounder or a mediator.
+\end{prereq}
+
+\begin{keyterms}
+linear model $\bullet$ coefficient $\bullet$ residual $\bullet$ logistic
+regression $\bullet$ odds ratio $\bullet$ Poisson and negative binomial
+$\bullet$ overdispersion $\bullet$ mixed-effects model $\bullet$ random
+intercept and slope $\bullet$ collinearity $\bullet$ VIF $\bullet$ stepwise
+selection $\bullet$ explanation versus prediction
+\end{keyterms}
+
+\section{What a Coefficient Means}
+
+\begin{definitionbox}[The conditioning clause]
+In $y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \varepsilon$, the coefficient
+$\beta_1$ is the expected change in $y$ for a one-unit increase in $x_1$
+\textbf{holding $x_2$ fixed}.
+
+\medskip
+That clause is not decoration. It means $\beta_1$ answers a different question
+depending on what else is in the model, and adding or removing a covariate
+changes its value and sometimes its sign. There is no such thing as ``the
+effect of $x_1$'' independent of the model it sits in.
+\end{definitionbox}
+
+\begin{alertbox}[Which covariates to include is a causal question, not a statistical one]
+The habit of including every available variable ``to control for them'' is
+actively harmful, and which variables belong depends on their causal role
+(\chref{questions}).
+
+\begin{tight}
+  \item \textbf{Confounders} --- causes of both treatment and outcome ---
+    \emph{must} be included, or the estimate is biased.
+  \item \textbf{Mediators} --- on the causal path from treatment to outcome ---
+    must \emph{not} be included if you want the total effect. Controlling for a
+    mediator removes exactly the effect you were trying to measure.
+  \item \textbf{Colliders} --- common effects of treatment and outcome ---
+    must not be included: conditioning on one \emph{creates} an association
+    where none existed.
+\end{tight}
+
+\medskip
+Draw the assumed causal structure before choosing the model. ``I controlled for
+everything I had'' is not a defence; it is a description of a model whose
+coefficients cannot be interpreted.
+\end{alertbox}
+
+\section{Choosing a Model by the Shape of the Outcome}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{3.0cm}L{3.6cm}L{7.0cm}@{}}
+\toprule
+\textbf{Outcome} & \textbf{Model} & \textbf{Coefficient means} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Outcome} & \textbf{Model} & \textbf{Coefficient means} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Continuous, roughly symmetric
+  & Linear regression
+  & Change in $y$ per unit of $x$, in $y$'s units \\
+Binary
+  & Logistic regression
+  & Change in \emph{log odds}. Exponentiate for an odds ratio --- which is
+    \emph{not} a risk ratio, and is routinely misread as one \\
+Count, variance $\approx$ mean
+  & Poisson regression
+  & Multiplicative change in the expected count, after exponentiating \\
+Count, variance $>$ mean
+  & Negative binomial
+  & As Poisson. \textbf{This is the usual case in software data} --- defects,
+    commits and issues are almost always overdispersed \\
+Count with excess zeros
+  & Zero-inflated or hurdle model
+  & Two processes: whether any occur, and how many given some do \\
+Time to event
+  & Cox proportional hazards
+  & Hazard ratio; handles censoring, which matters for time-to-fix data \\
+Ordinal
+  & Ordinal (proportional odds) regression
+  & Respects ordering without assuming equal spacing
+    (\chref{measurement}) \\
+\end{longtable}
+\end{center}
+
+\begin{pitfall}[Fitting Poisson to overdispersed counts]
+Defect counts, commit counts and issue counts nearly always have variance
+substantially greater than their mean, because the units are heterogeneous ---
+some modules are simply more defect-prone than others.
+
+\medskip
+Fitting a Poisson model to such data does not produce wrong coefficients so
+much as \emph{far too narrow} standard errors. The result is confidence
+intervals that are too tight and p-values that are too small, and the entire
+inference is wrong in the direction of over-confidence.
+
+\medskip
+Check: compute the residual deviance divided by its degrees of freedom. If it
+is much above 1, use a negative binomial model. In R this is one function call
+--- \texttt{MASS::glm.nb} in place of \texttt{glm(family = poisson)}.
+\end{pitfall}
+
+\section{Nested Data and Mixed-Effects Models}
+
+\chref{experiments} warned that analysing 200 reviews from 20 developers as
+$N = 200$ inflates significance. The mixed-effects model is the principled fix.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.4cm}L{10.9cm}@{}}
+\toprule
+\textbf{Fixed effect} & The population-level effect you want to estimate ---
+                        the treatment \\
+\textbf{Random intercept} & Each developer has their own baseline. Removes the
+                        assumption that all developers are alike \\
+\textbf{Random slope}  & The treatment effect itself differs by developer. Fit
+                        this when it is plausible, which it usually is \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{lstlisting}[language=Rlang, caption={A mixed-effects model for the code review
+experiment, with reviewer and the reviewed artefact as crossed random effects.}]
+library(lme4); library(lmerTest)
+
+# Reviewers and artefacts are crossed, not nested: every reviewer sees
+# several artefacts and every artefact is seen by several reviewers.
+m <- lmer(defects_found ~ technique + experience +
+            (1 + technique | reviewer) + (1 | artefact),
+          data = reviews)
+
+summary(m)
+confint(m, method = "profile")     # intervals, not just p-values
+
+# Does the random slope earn its place?
+m0 <- lmer(defects_found ~ technique + experience +
+             (1 | reviewer) + (1 | artefact), data = reviews)
+anova(m0, m)
+\end{lstlisting}
+
+\begin{conceptbox}[When you must use a mixed model]
+Whenever observations share something that makes them more alike than
+observations from different groups:
+
+\begin{tight}
+  \item Several measurements from the same participant.
+  \item Several files from the same repository.
+  \item Several students from the same class or supervisor.
+  \item Repeated measures over time on the same unit.
+\end{tight}
+
+\medskip
+Ignoring this structure is one of the most consequential errors available, and
+it is invisible in the output: the model runs, the coefficients look fine, and
+the standard errors are wrong. Decide the random-effects structure from the
+\emph{design}, before fitting --- it is a description of how the data was
+generated, not a modelling choice to be selected by fit
+statistics~\cite{bates2015fitting}.
+\end{conceptbox}
+
+\section{Explanation Is Not Prediction}
+
+\begin{paperbox}[The distinction that resolves most modelling arguments]
+Galit Shmueli, \emph{To Explain or to Predict?}, Statistical Science 25(3),
+2010~\cite{shmueli2010explain}.\oa{}
+
+\medskip
+\textbf{Why it matters.} Explanatory and predictive modelling have different
+goals, and therefore different criteria, different variable selection, and
+different definitions of a good model. Confusing them is behind a great deal of
+muddled work --- especially in computing, where scholars trained on machine
+learning apply its habits to inferential questions.
+
+\medskip
+\textbf{What to extract.} That a model can be excellent for prediction and
+useless for explanation, and the reverse. Decide which you are doing, in
+writing, before you fit anything.
+\end{paperbox}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.0cm}L{5.4cm}L{5.9cm}@{}}
+\toprule
+ & \textbf{Explanation} & \textbf{Prediction} \\
+\midrule
+Goal        & Estimate an effect and its uncertainty
+            & Minimise error on new data \\
+Variables   & Chosen by causal role
+            & Chosen by predictive contribution; causality irrelevant \\
+Judged by   & Unbiasedness; correct standard errors
+            & Held-out performance (\chref{mleval}) \\
+Collinearity& A serious problem: it destroys the interpretability of individual
+              coefficients
+            & Largely harmless: predictions stay accurate \\
+Overfitting & Less central, though still real
+            & The central concern \\
+Report      & Coefficients with intervals
+            & Performance on a test set, with the validation scheme \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{alertbox}[Stepwise selection has no place in explanatory modelling]
+Automated forward, backward or stepwise selection on p-values produces biased
+coefficients, standard errors that are far too small, p-values that are
+meaningless, and $R^2$ that is inflated. It also gives unstable results ---
+resample the data and a different model is selected.
+
+\medskip
+The reason is simple: the selection process is itself an analysis of the data,
+and the reported inference does not account for it. This is the garden of
+forking paths (\chref{inference}) automated.
+
+\medskip
+For explanation, specify the model from the causal structure and report it. For
+prediction, use regularisation --- lasso, ridge, elastic net --- with
+performance judged on held-out data, and do not interpret the resulting
+coefficients as effects.
+\end{alertbox}
+
+\section{Collinearity}
+
+When predictors are strongly correlated, the model cannot separate their
+contributions. Coefficients become unstable and their standard errors inflate,
+even though overall fit is unaffected.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.6cm}L{10.7cm}@{}}
+\toprule
+Diagnose   & Variance inflation factor. Above 5 warrants attention; above 10
+             usually indicates a real problem \\
+Accept it  & If the collinear variables are controls and you do not interpret
+             their coefficients, collinearity among them is not a problem \\
+Combine    & If two predictors measure the same construct, combine them into
+             one scale (\chref{measurement}) rather than fighting the model \\
+Drop       & Only with a substantive reason. Dropping the one with the larger
+             p-value is a data-driven decision that invalidates the inference \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Note the classic case in software engineering: cyclomatic complexity and lines
+of code correlate strongly. A model containing both cannot tell you which
+predicts defects, and a paper claiming complexity predicts defects while
+controlling for size is making a much weaker claim than it sounds.
+
+\section{Reporting a Model}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{4.0cm}L{10.3cm}@{}}
+\toprule
+The full specification & Every term, including random effects, in a form that
+                         could be retyped \\
+Why these covariates   & The causal reasoning, not ``available in the dataset'' \\
+Coefficients           & With confidence intervals, in interpretable units.
+                         Exponentiate log-odds and count-model coefficients \\
+Model checks           & Residual plots, overdispersion, VIF, influential points \\
+Sample size            & At every level: how many observations, how many
+                         developers, how many repositories \\
+Missing data           & How much, and how handled. Listwise deletion is a
+                         choice with consequences, not a neutral default \\
+Software               & Package and version; the model syntax verbatim
+                         (\chref{reproducibility}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{pitfall}[Three interpretation errors that reach print]
+\textbf{Reading an odds ratio as a risk ratio.} An odds ratio of 2.0 does not
+mean the outcome is twice as likely. When the outcome is common the two diverge
+sharply, and the odds ratio always looks more dramatic.
+
+\medskip
+\textbf{Interpreting a coefficient as an effect in observational data.}
+Regression adjusts for what you measured; it does not create the counterfactual
+(\chref{quasiexp}).
+
+\medskip
+\textbf{Comparing standardised coefficients across models or samples.}
+Standardisation divides by that sample's standard deviation, so a
+``standardised'' coefficient is not comparable across populations with
+different variances.
+\end{pitfall}
+
+\begin{traditions}{regression modelling}
+\tradEMP{The workhorse. Model specification follows from the causal structure,
+and the report is coefficients with intervals plus diagnostics.}
+\tradDSR{Used to model the relationship between artefact configuration and
+outcome, and to identify which design parameters matter.}
+\tradQUAL{Not used. The nearest analogue --- explaining variation by tracing
+mechanisms across cases --- is \chref{casestudy}'s explanation building.}
+\tradFORM{Regression models have properties that are proved: identifiability,
+consistency, asymptotic normality. Knowing which of these fail under your data
+is what distinguishes fitting from modelling.}
+\end{traditions}
+
+\begin{lab}[Fit, then break, a model]
+Take a dataset with a nested structure --- multiple observations per unit.
+
+\begin{tightnum}
+  \item Draw the assumed causal structure, and mark each variable as confounder,
+    mediator or collider.
+  \item Fit an ordinary regression ignoring the nesting. Record the standard
+    error on your main coefficient.
+  \item Fit the mixed-effects model with the correct random structure. Record
+    the standard error again.
+  \item Compare. The ratio is how much the naive model overstated your
+    precision.
+  \item Now add a mediator to the model and watch the main coefficient move.
+    Explain in one sentence why it moved.
+\end{tightnum}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why does the meaning of $\beta_1$ depend on what else is in the model?
+  \item Your outcome is a defect count with variance four times its mean. Which
+    model, and what goes wrong if you use Poisson?
+  \item When must you fit a random slope rather than only a random intercept?
+  \item Why is stepwise selection unacceptable for explanation but tolerable
+    for prediction?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A coefficient means change in the outcome \emph{holding the other terms
+    fixed}. Which covariates to include is a causal question: include
+    confounders, exclude mediators and colliders.
+  \item Choose the model from the outcome's shape. Software counts are
+    overdispersed; use negative binomial, not Poisson.
+  \item Nested observations require a mixed-effects model, and the random
+    structure follows from the design, not from fit statistics.
+  \item Explanation and prediction have different goals, criteria and variable
+    selection. Decide which you are doing before fitting.
+  \item Stepwise selection invalidates inference. Specify from causal structure,
+    or regularise and do not interpret coefficients.
+  \item Report the full specification, intervals in interpretable units,
+    diagnostics, sample sizes at every level, missing data handling, and
+    software versions.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item Controlling for a mediator removes the effect you wanted to measure,
+    yet ``controlling for more variables'' is widely treated as more rigorous.
+    Explain the misconception and give a software engineering example where it
+    would reverse a conclusion.
+  \item Shmueli argues explanation and prediction require different models.
+    Computing research increasingly uses machine learning methods for
+    inferential questions. What specifically goes wrong, and how would you
+    detect it as a reviewer?
+  \item Complexity metrics correlate strongly with size. Design a study that
+    could establish whether complexity predicts defects independently of size,
+    and say what data it would require.
+  \item Mixed-effects models are standard in psychology and rare in software
+    engineering, despite our data being at least as nested. Account for the
+    gap, and say what would close it.
+\end{reviewq}

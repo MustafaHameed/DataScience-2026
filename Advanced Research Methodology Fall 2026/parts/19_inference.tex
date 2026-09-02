@@ -1,0 +1,436 @@
+%=====================================================================
+\chapter{Statistical Inference Done Properly}\label{ch:inference}
+%=====================================================================
+\locator{4}{Part~4 --- Measurement, Data and Analysis}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} what a p-value is, and identify the common
+    misinterpretations of it.
+  \item \textbf{Report} a result as an effect size with a confidence interval
+    rather than a significance verdict.
+  \item \textbf{Check} the assumptions a test actually makes, and choose a
+    robust alternative when they fail.
+  \item \textbf{Correct} for multiple comparisons, choosing between family-wise
+    and false-discovery control.
+  \item \textbf{Test} for equivalence when your claim is that there is no
+    meaningful difference.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{sampling} for power and effect sizes --- inference without power is
+uninterpretable. \chref{measurement} for scale types, which constrain the
+tests available.
+\end{prereq}
+
+\begin{keyterms}
+null hypothesis significance testing $\bullet$ p-value $\bullet$ confidence
+interval $\bullet$ effect size $\bullet$ assumption checking $\bullet$
+normality of residuals $\bullet$ non-parametric test $\bullet$ bootstrap
+$\bullet$ family-wise error rate $\bullet$ false discovery rate $\bullet$
+Bonferroni $\bullet$ Holm $\bullet$ Benjamini--Hochberg $\bullet$ equivalence
+testing $\bullet$ TOST $\bullet$ garden of forking paths
+\end{keyterms}
+
+\section{What a p-Value Is}
+
+\begin{definitionbox}[The p-value]
+The probability of obtaining data \emph{at least as extreme} as what you
+observed, \textbf{if the null hypothesis were true} and all other assumptions of
+the model held.
+
+\medskip
+That final clause is routinely dropped and is doing real work. A small p-value
+indicates that the data are unusual under the \emph{entire} model --- null
+hypothesis plus independence, plus the distributional assumptions, plus the
+assumption that this test was the one you planned to run. Any of those can be
+what is wrong.
+\end{definitionbox}
+
+\begin{paperbox}[The two documents to read on this]
+Ronald L. Wasserstein and Nicole A. Lazar, \emph{The ASA Statement on p-Values:
+Context, Process, and Purpose}, The American Statistician 70(2),
+2016~\cite{wasserstein2016asa}.\oa{}
+
+\medskip
+Sander Greenland and colleagues, \emph{Statistical tests, P values, confidence
+intervals, and power: a guide to misinterpretations}, European Journal of
+Epidemiology 31, 2016~\cite{greenland2016statistical}.\oa{}
+
+\medskip
+\textbf{Why they matter.} The first is the American Statistical Association's
+official position --- the professional body of statisticians stating that the
+practice its own members taught for decades is widely misused. The second
+enumerates twenty-five specific misinterpretations, with corrections.
+
+\medskip
+\textbf{What to extract.} From the ASA, the six principles. From Greenland,
+find the misinterpretations you personally hold; most researchers find two or
+three, and finding them is the point.
+\end{paperbox}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{6.4cm}L{7.9cm}@{}}
+\toprule
+\textbf{The misinterpretation} & \textbf{The correction} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{The misinterpretation} & \textbf{The correction} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+``$p$ is the probability the null hypothesis is true''
+  & It is a probability computed \emph{assuming} the null is true. It says
+    nothing directly about the probability of a hypothesis \\
+``$p > 0.05$ means there is no effect''
+  & It means this study did not detect one. With low power, that is expected
+    even for real effects \\
+``$p < 0.05$ means the effect is important''
+  & Significance is not magnitude. With $N = 10{,}000$, a trivial effect is
+    significant \\
+``$p = 0.04$ and $p = 0.06$ are meaningfully different''
+  & They are almost identical evidence. The threshold is a convention, not a
+    boundary in nature \\
+``A significant result will replicate''
+  & The probability of replication depends on the true effect and the
+    replication's power, not on $p$ \\
+``$1 - p$ is the probability the alternative is true''
+  & No. This is the same error as the first, restated \\
+\end{longtable}
+\end{center}
+
+\begin{alertbox}[The ASA's six principles, compressed]
+\begin{tightnum}
+  \item P-values can indicate how incompatible the data are with a specified
+    model.
+  \item P-values do not measure the probability that the hypothesis is true, or
+    that the data were produced by chance alone.
+  \item Scientific conclusions should not be based only on whether a p-value
+    passes a threshold.
+  \item Proper inference requires full reporting and transparency --- every
+    analysis run, not the one that worked.
+  \item A p-value does not measure the size of an effect or the importance of a
+    result.
+  \item By itself, a p-value does not provide a good measure of evidence.
+\end{tightnum}
+\end{alertbox}
+
+\section{Report the Estimate, Not the Verdict}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{6.6cm}L{7.7cm}@{}}
+\toprule
+\textbf{Instead of} & \textbf{Write} \\
+\midrule
+``The difference was significant ($p < 0.05$).''
+  & ``Checklist review found 1.3 more defects on average (95\% CI $[0.4,
+    2.2]$), $d = 0.52$, $p = 0.004$.'' \\
+``No significant difference was found.''
+  & ``The estimated difference was 0.2 defects (95\% CI $[-1.1, 1.5]$). The
+    interval includes effects large enough to matter, so this study does not
+    settle the question.'' \\
+``Group A outperformed group B.''
+  & ``Group A found more defects, by a median difference of 2 (Cliff's $\delta
+    = 0.41$, 95\% CI $[0.12, 0.63]$).'' \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{conceptbox}[Why the interval carries more information]
+A confidence interval tells you the effect size, the precision, and the
+significance verdict all at once --- if the interval excludes zero, $p < 0.05$.
+Nothing is lost by reporting it, and two things are gained.
+
+\medskip
+First, a null result becomes interpretable. An interval of $[-0.1, 0.1]$ says
+the effect is small; an interval of $[-3.0, 3.2]$ says you learned almost
+nothing. Both give $p > 0.05$, and they are entirely different findings.
+
+\medskip
+Second, your study becomes poolable. A meta-analysis (\chref{slr}) needs
+estimates and their uncertainty, not verdicts. Reporting an interval is how a
+small study contributes permanently to the evidence base.
+\end{conceptbox}
+
+\section{Assumptions, and What to Do When They Fail}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{2.8cm}L{5.0cm}L{6.4cm}@{}}
+\toprule
+\textbf{Assumption} & \textbf{What it really says} & \textbf{If it fails} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Assumption} & \textbf{What it really says} & \textbf{If it fails} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Independence
+  & Each observation contributes fresh information
+  & The most serious failure and the least often checked. Model the structure:
+    mixed-effects (\chref{regression}), or analyse at the unit of randomisation \\
+Normality
+  & The \emph{residuals} are approximately normal --- not the raw data
+  & With $N$ moderate, tests are robust. Otherwise use a rank-based test,
+    bootstrap the interval, or transform \\
+Equal variances
+  & Groups have comparable spread
+  & Use Welch's t-test, which does not assume it. Welch should arguably be the
+    default rather than the fallback \\
+Linearity
+  & The relationship has the form the model assumes
+  & Plot residuals against fitted values. Add terms, or use a model that does
+    not assume it \\
+No influential outliers
+  & No single point drives the conclusion
+  & Report the analysis with and without. If they disagree, that is the finding \\
+\end{longtable}
+\end{center}
+
+\begin{pitfall}[Testing for normality is usually the wrong move]
+The reflex is to run Shapiro--Wilk and choose a test based on the outcome. This
+is doubly unhelpful.
+
+\medskip
+With a small sample the normality test has no power, so it passes almost
+anything --- exactly when non-normality would matter most. With a large sample
+it detects trivial deviations and rejects, exactly when the central limit
+theorem has made the parametric test robust anyway. The test's sensitivity runs
+opposite to your need.
+
+\medskip
+Look at a Q--Q plot instead, and decide on the size of the departure. Better
+still, use methods that do not require the assumption: rank-based tests, or
+bootstrap confidence intervals, which make no distributional assumption at all
+and are two lines of R.
+\end{pitfall}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{4.2cm}L{4.6cm}L{5.1cm}@{}}
+\toprule
+\textbf{Question} & \textbf{Parametric} & \textbf{Robust alternative} \\
+\midrule
+Two independent groups   & Welch's t-test & Mann--Whitney U; bootstrap \\
+Two paired measurements  & Paired t-test  & Wilcoxon signed-rank \\
+Three or more groups     & ANOVA          & Kruskal--Wallis \\
+Association, two continuous & Pearson $r$ & Spearman $\rho$; Kendall $\tau$ \\
+Two categorical          & Chi-square     & Fisher's exact for small counts \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Multiple Comparisons}
+
+Run 20 independent tests at $\alpha = 0.05$ on data with no real effects, and
+you expect one significant result. This is not a subtle problem: it is
+arithmetic, and it is why a paper reporting one significant finding out of many
+tested comparisons has usually found nothing.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.8cm}L{4.4cm}L{6.9cm}@{}}
+\toprule
+\textbf{Method} & \textbf{Controls} & \textbf{Use when} \\
+\midrule
+Bonferroni
+  & Family-wise error rate: $\alpha/m$
+  & Few comparisons, and a false positive is costly. Simple, and conservative
+    to the point of destroying power when $m$ is large \\
+Holm
+  & Family-wise error rate, sequentially
+  & Strictly more powerful than Bonferroni with the same guarantee. There is no
+    reason to prefer Bonferroni over Holm~\cite{holm1979simple} \\
+Benjamini--Hochberg
+  & False discovery rate: expected proportion of false positives among
+    rejections
+  & Many comparisons, exploratory work. You accept some false positives in
+    exchange for finding real effects~\cite{benjamini1995controlling} \\
+None, declared
+  & Nothing
+  & One pre-registered primary outcome. Everything else is explicitly
+    exploratory and labelled as such \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{conceptbox}[Declaring a primary outcome is the cleanest solution]
+The strongest option is not a correction at all. Nominate one primary outcome
+and one primary comparison in advance (\chref{prereg}). Test it at 0.05. Report
+everything else as exploratory, without significance claims.
+
+\medskip
+This is honest, it preserves power for the question you care about, and it
+removes the awkward question of what constitutes a ``family'' of comparisons
+--- a question with no principled answer, which is why the choice of correction
+is so often argued about after the fact.
+\end{conceptbox}
+
+\begin{alertbox}[The garden of forking paths]
+Multiplicity is not only about the tests you ran. It is also about the tests
+you \emph{would have} run had the data looked different.
+
+\medskip
+If you would have analysed the subgroup had the main effect failed; if you would
+have log-transformed had the residuals looked worse; if you would have excluded
+that outlier had it gone the other way --- then your effective number of
+comparisons is far larger than the number you performed, and no correction
+applied to the tests you actually ran can fix it. This holds even if you ran
+exactly one test and reported it honestly.
+
+\medskip
+The only real defence is to specify the analysis before seeing the data, which
+is what \chref{prereg} is about, and what portfolio piece P5 asks of you.
+\end{alertbox}
+
+\section{Claiming There Is No Difference}
+
+Failing to reject the null is not evidence for the null. To claim two things
+are equivalent, you must test for equivalence.
+
+\begin{conceptbox}[Two one-sided tests]
+TOST specifies equivalence bounds --- the range within which any difference is
+too small to matter, which is your SESOI from \chref{sampling} --- and tests
+whether the effect is significantly \emph{inside} both
+bounds~\cite{lakens2018equivalence}.
+
+\medskip
+The four possible outcomes are genuinely informative:
+
+\begin{tight}
+  \item Significant difference, not equivalent: a real, meaningful effect.
+  \item Not significant, equivalent: real evidence of no meaningful effect ---
+    a conclusion NHST alone can never deliver.
+  \item Not significant, not equivalent: inconclusive. The study was
+    underpowered, and this is the honest label for it.
+  \item Significant, and equivalent: a real effect that is too small to matter.
+    Common with large samples, and worth reporting plainly.
+\end{tight}
+
+\medskip
+Software engineering has a genuine need for this. ``Our approach is as accurate
+as the state of the art but ten times faster'' is an equivalence claim on
+accuracy, and it is normally supported by a non-significant p-value, which does
+not support it at all.
+\end{conceptbox}
+
+\begin{lstlisting}[language=Rlang, caption={A complete two-group analysis, reported
+as an estimate. Note that the significance test is the least of what is
+computed.}]
+library(effsize); library(boot); library(TOSTER)
+
+# 1. Look at the data before testing anything.
+boxplot(defects ~ condition, data = d)
+qqnorm(residuals(lm(defects ~ condition, data = d)))
+
+# 2. Estimate with an interval that does not assume normality.
+t.test(defects ~ condition, data = d)          # Welch by default in R
+cliff.delta(defects ~ condition, data = d)     # robust effect size + CI
+
+# 3. If the claim is "no meaningful difference", test that claim.
+#    Bounds are the smallest effect of interest, not a convention.
+TOSTtwo(m1 = 6.1, m2 = 5.9, sd1 = 2.4, sd2 = 2.6, n1 = 60, n2 = 60,
+        low_eqbound_d = -0.40, high_eqbound_d = 0.40)
+
+# 4. Correct only across the comparisons declared in the protocol.
+p.adjust(c(p1, p2, p3), method = "holm")
+\end{lstlisting}
+
+\section{A Word on Bayesian Methods}
+
+Bayesian analysis answers the question researchers actually want answered ---
+how probable is this hypothesis given my data --- rather than the inverted one
+NHST answers. It handles optional stopping gracefully, quantifies evidence for
+the null rather than merely failing to reject it, and produces credible
+intervals that mean what people wrongly think confidence intervals mean.
+
+The honest caveats: it requires specifying a prior, which must be justified and
+which reviewers in our field will question; conventions for reporting are less
+settled; and your examiners may not know it. If your question genuinely calls
+for evidence \emph{for} a null, a Bayes factor is the natural tool, and
+equivalence testing is the frequentist alternative that will be more readily
+accepted. Choose deliberately, and be able to defend the choice either way.
+
+\begin{traditions}{statistical inference}
+\tradEMP{Central. The discipline is to report estimates with uncertainty, check
+assumptions, pre-specify comparisons, and treat significance as one piece of
+information rather than a verdict.}
+\tradDSR{Applies to evaluation results. A performance improvement demonstrated
+without an interval is an anecdote (\chref{benchmarking}).}
+\tradQUAL{Not applicable, and importing it is the category error of
+\chref{qualitative}. Counting codes describes a sample; it estimates nothing.}
+\tradFORM{Probability appears as an object of study rather than a tool of
+inference. Randomised algorithms have provable bounds, not confidence
+intervals.}
+\end{traditions}
+
+\begin{lab}[Analyse one dataset three ways]
+Take a two-group dataset --- yours, or any open dataset.
+
+\begin{tightnum}
+  \item Report only ``significant / not significant''.
+  \item Report the effect size with a bootstrap confidence interval.
+  \item Run an equivalence test against a SESOI you justify in one sentence.
+  \item Write the three conclusions side by side. Which would a practitioner
+    act on?
+  \item Now list every analysis decision you made --- exclusions,
+    transformations, which test --- and ask how many you would have made
+    differently had the data looked different. That count is your real
+    multiplicity.
+\end{tightnum}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item State precisely what $p = 0.03$ means, including the clause everyone
+    omits.
+  \item Two studies both report $p > 0.05$. One has CI $[-0.05, 0.05]$, the
+    other $[-2.0, 2.1]$. What does each tell you?
+  \item Why is testing for normality with Shapiro--Wilk usually unhelpful?
+  \item You want to claim your method is as accurate as the state of the art.
+    Why is a non-significant t-test insufficient, and what would suffice?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A p-value is the probability of data this extreme \emph{under the whole
+    model}, not the probability that a hypothesis is true.
+  \item Report effect sizes with confidence intervals. A null result is
+    interpretable only through its interval, and only interval-reporting
+    studies can be pooled.
+  \item Check assumptions by looking at residuals, not by testing normality.
+    Prefer Welch, rank-based methods and the bootstrap.
+  \item Correct for multiplicity, preferring Holm to Bonferroni and
+    Benjamini--Hochberg for exploratory work --- or declare a single primary
+    outcome and label the rest exploratory.
+  \item The garden of forking paths means your effective multiplicity includes
+    analyses you did not run. Only pre-specification defends against it.
+  \item To claim no difference, test for equivalence against a justified bound.
+    Non-significance is not evidence of absence.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item The ASA states that scientific conclusions should not be based on
+    whether a p-value passes a threshold, yet thresholds remain universal.
+    Identify the institutional forces sustaining this and assess whether any
+    proposed reform could overcome them.
+  \item Equivalence testing requires specifying a bound, which is a judgement
+    about practical importance. Critics say this makes it subjective. Is that a
+    weakness, given that the alternative is a threshold nobody chose either?
+  \item Software engineering data is frequently skewed and heteroscedastic, and
+    parametric tests dominate anyway. What accounts for the gap between the
+    field's data and its methods, and what would change it?
+  \item Bayesian methods answer the question researchers want answered but
+    require a prior. For a specific question in your area, specify a prior you
+    could defend to an examiner, and say what you would do if they rejected it.
+\end{reviewq}

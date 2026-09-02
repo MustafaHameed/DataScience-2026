@@ -1,0 +1,408 @@
+%=====================================================================
+\chapter{Reproducibility and Artefact Evaluation}\label{ch:reproducibility}
+%=====================================================================
+\locator{5}{Part~5 --- Rigour, Reproducibility and Ethics}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Use} the ACM terms repeatability, reproducibility and
+    replicability correctly.
+  \item \textbf{Package} a study so a stranger can re-run it.
+  \item \textbf{Capture} a computational environment rather than describing it.
+  \item \textbf{Apply} the FAIR principles to your data and deposit it with a
+    DOI.
+  \item \textbf{License} code and data appropriately.
+  \item \textbf{Proceed} responsibly when the data cannot be shared.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{mleval} for computational pipelines, \chref{benchmarking} for
+non-determinism, \chref{qda} for the qualitative audit trail --- which is the
+same idea in a different tradition.
+\end{prereq}
+
+\begin{keyterms}
+repeatability $\bullet$ reproducibility $\bullet$ replicability $\bullet$
+artefact $\bullet$ badging $\bullet$ container $\bullet$ environment pinning
+$\bullet$ random seed $\bullet$ FAIR $\bullet$ persistent identifier $\bullet$
+DOI $\bullet$ licence $\bullet$ synthetic data
+\end{keyterms}
+
+\section{Three Words That Are Not Synonyms}
+
+ACM's definitions~\cite{acm2020badging} are now standard, and using them
+loosely in a thesis is a small but noticeable error.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.0cm}L{3.6cm}L{3.4cm}L{3.4cm}@{}}
+\toprule
+\textbf{Term} & \textbf{Who} & \textbf{Artefacts} & \textbf{Establishes} \\
+\midrule
+Repeatability   & The same team & The same setup & The measurement is stable \\
+Reproducibility & A different team & The \emph{author's} artefacts &
+                  The result follows from the data and code as given \\
+Replicability   & A different team & \emph{Their own} artefacts &
+                  The finding is about the world, not about the code \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{conceptbox}[Reproducibility is a floor, not a goal]
+A study that reproduces has established only that the reported numbers follow
+from the deposited artefacts. That is a low bar --- and it is a bar a
+substantial proportion of published computational work fails.
+
+\medskip
+Replication is the scientifically interesting property, and it is much harder:
+new data, new implementation, and a finding that survives. Do not describe
+having re-run your own scripts as ``replicating'' your result.
+\end{conceptbox}
+
+\begin{paperbox}[The crisis, and a programme for fixing it]
+Marcus Munaf\`o and colleagues, \emph{A manifesto for reproducible science},
+Nature Human Behaviour 1, 2017~\cite{munafo2017manifesto}.\oa{}
+
+\medskip
+Pair it with John Ioannidis, \emph{Why Most Published Research Findings Are
+False}, PLoS Medicine 2(8), 2005~\cite{ioannidis2005why}\oa{}, and Monya Baker's
+survey of 1,576 researchers~\cite{baker2016reproducibility}, in which more than
+70\% reported having failed to reproduce another scientist's experiment and
+more than half had failed to reproduce their own.
+
+\medskip
+\textbf{What to extract.} The manifesto's table of threats and measures ---
+protecting against bias, improving methodological training, implementing
+independent checks, encouraging transparency, diversifying peer review, and
+changing incentives. Identify which of these you personally control, because
+several of them you do.
+\end{paperbox}
+
+\section{What to Deposit}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{3.0cm}L{4.8cm}L{6.4cm}@{}}
+\toprule
+\textbf{Component} & \textbf{Contents} & \textbf{Notes} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Component} & \textbf{Contents} & \textbf{Notes} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Data
+  & Raw and processed, with a data dictionary
+  & Both. Processed alone hides the cleaning; raw alone forces re-derivation \\
+Code
+  & Collection, cleaning, analysis, figure generation
+  & Including the code that produced each figure and table, keyed to its number \\
+Environment
+  & Container image or lock file, with versions pinned
+  & A prose description of ``Python 3.9 and scikit-learn'' is not an
+    environment \\
+Protocol
+  & Pre-registration, instruments, consent forms
+  & The design, not just the outcome \\
+Seeds
+  & Every random seed used
+  & Without them nothing is repeatable, let alone reproducible \\
+README
+  & How to run it, expected runtime, expected output
+  & Write it for a stranger. Then have a colleague follow it on a clean machine \\
+Licence
+  & For code and data separately
+  & Undeclared means all rights reserved, which prevents reuse entirely \\
+\end{longtable}
+\end{center}
+
+\begin{alertbox}[The one-command test]
+Your artefact passes if a competent stranger, on a machine that is not yours,
+can produce your headline result with one documented command and no
+correspondence with you.
+
+\medskip
+Test it properly: a fresh container or a borrowed laptop, a colleague, and no
+help from you. Almost every first attempt fails on an undocumented dependency,
+an absolute path, or a data file that was never actually committed. Finding
+that out now costs an afternoon; finding it out from an artefact evaluation
+committee costs the badge.
+\end{alertbox}
+
+\section{Capturing an Environment}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.4cm}L{4.0cm}L{7.7cm}@{}}
+\toprule
+\textbf{Level} & \textbf{Tool} & \textbf{Captures} \\
+\midrule
+Language deps & \texttt{requirements.txt} with pins, \texttt{renv.lock},
+                \texttt{poetry.lock}
+              & Library versions. Not the interpreter, the OS, or system
+                libraries \\
+Full stack    & Docker, Podman, Apptainer
+              & OS, system libraries, interpreter, everything. The right answer
+                for most computational work \\
+Declarative   & Nix, Guix
+              & Bit-reproducible builds. Strongest, steepest learning curve \\
+Workflow      & Snakemake, Nextflow, \texttt{targets} in R
+              & The dependency graph between steps, so partial re-runs are
+                correct \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{lstlisting}[language=,basicstyle=\ttfamily\footnotesize,caption={A Dockerfile
+that will still build in three years. Every version is pinned, including the
+base image digest --- tags move, digests do not.}]
+FROM python@sha256:1e8a3f2c...   # pin the digest, not the tag
+WORKDIR /work
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt   # all versions pinned
+COPY . .
+# One command reproduces everything: analysis, tables, figures.
+CMD ["bash", "run_all.sh"]
+\end{lstlisting}
+
+\begin{pitfall}[Seeds are necessary and not sufficient]
+Setting a seed makes a single library's random draws repeatable. It does not
+make results repeatable when:
+
+\begin{tight}
+  \item several libraries maintain independent random states --- Python's
+    \texttt{random}, NumPy, and the framework each need seeding;
+  \item GPU kernels use non-deterministic reduction orders, which most do by
+    default;
+  \item parallel execution merges results in completion order;
+  \item hash randomisation changes dictionary iteration order between runs.
+\end{tight}
+
+\medskip
+Seed everything you can, enable deterministic modes where the framework offers
+them, and then \emph{report the variability that remains} across several seeds
+rather than a single run's number. A result that only holds for one seed is not
+a result (\chref{benchmarking}).
+\end{pitfall}
+
+\section{FAIR Data and Persistent Identifiers}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.6cm}L{11.7cm}@{}}
+\toprule
+\textbf{F}indable    & A persistent identifier and rich metadata, indexed
+                       somewhere searchable \\
+\textbf{A}ccessible  & Retrievable by that identifier over an open protocol.
+                       Metadata stays available even when the data itself is
+                       restricted \\
+\textbf{I}nteroperable & Standard formats and vocabularies; qualified
+                       references to related data \\
+\textbf{R}eusable    & A clear licence, provenance, and community standards
+                       met~\cite{wilkinson2016fair} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{conceptbox}[Accessible does not mean open]
+This is the most useful thing the FAIR principles say for anyone working with
+human-subject or industrial data. A dataset can be FAIR and restricted: the
+record, the metadata and the access procedure are public, while the data itself
+requires an application.
+
+\medskip
+So ``my data is confidential'' does not exempt you. Deposit the metadata, the
+instruments, the analysis code and a synthetic or aggregated version, and
+document the access route. Then the study is checkable in every respect except
+the one that genuinely cannot be.
+\end{conceptbox}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.4cm}L{4.2cm}L{7.5cm}@{}}
+\toprule
+\textbf{Repository} & \textbf{Best for} & \textbf{Notes} \\
+\midrule
+Zenodo   & Anything, up to 50 GB
+         & CERN-operated, free, issues DOIs, integrates with GitHub so a
+           release becomes a citable archive automatically \\
+OSF      & Whole projects
+         & Pre-registration, materials, data and preprints in one place, with
+           version history \\
+figshare & Figures, datasets & DOIs; some features commercial \\
+Institutional & Long-term custody & Check what your university offers;
+           it may be required for thesis data \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{alertbox}[A GitHub link is not a deposit]
+Repositories are deleted, renamed, made private and force-pushed. A URL in your
+thesis that resolves today may not in two years, and the version it points at
+may not be the one you used.
+
+\medskip
+Archive a release to Zenodo, cite the DOI, and put the GitHub URL beside it for
+convenience. The DOI is the citation; the repository is the working copy.
+\end{alertbox}
+
+\section{Licensing}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.2cm}L{4.4cm}L{7.5cm}@{}}
+\toprule
+\textbf{For} & \textbf{Common choice} & \textbf{Effect} \\
+\midrule
+Code & MIT, BSD-3, Apache-2.0
+     & Permissive. Apache-2.0 adds an explicit patent grant \\
+Code & GPL-3.0
+     & Copyleft: derivatives must also be GPL \\
+Data & CC0
+     & Public domain dedication. Maximum reuse, no attribution requirement \\
+Data & CC BY-4.0
+     & Reuse with attribution. The common default \\
+Text & CC BY-4.0
+     & For the manuscript, where the publisher permits \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Do not apply a software licence to data or a Creative Commons licence to code:
+each is drafted for the other kind of work and produces ambiguity. And note
+that no licence at all is the most restrictive option, not the most permissive.
+
+\section{Artefact Evaluation}
+
+Most major computing venues now run artefact evaluation, awarding badges.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{4.2cm}L{10.1cm}@{}}
+\toprule
+Artifacts Available   & Deposited in a public archive with a persistent
+                        identifier. The easiest badge, and you should always
+                        get it \\
+Artifacts Evaluated --- Functional & Documented, consistent, complete, and it
+                        runs \\
+Artifacts Evaluated --- Reusable & Above, plus a standard of quality that lets
+                        others build on it \\
+Results Reproduced    & An independent committee obtained the paper's main
+                        results using your artefacts \\
+Results Replicated    & Obtained independently, without your artefacts \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{templatebox}[C13 --- Reproducibility packaging checklist]
+\begin{tabular}{@{}L{0.8cm}L{13.0cm}@{}}
+$\square$ & Raw data deposited, or the access route documented if restricted \\
+$\square$ & Processed data, with the script that produced it from raw \\
+$\square$ & Data dictionary: every variable, its units, its coding \\
+$\square$ & Analysis code, with each figure and table keyed to the code
+            producing it \\
+$\square$ & Environment captured as a container digest or lock file, all
+            versions pinned \\
+$\square$ & All random seeds recorded; variability across seeds reported \\
+$\square$ & \texttt{run\_all} script producing every result with one command \\
+$\square$ & README: requirements, runtime, expected output, hardware assumed \\
+$\square$ & Licence for code; separate licence for data \\
+$\square$ & Instruments, consent forms and protocol included \\
+$\square$ & Pre-registration linked (\chref{prereg}) \\
+$\square$ & Archived to Zenodo or OSF; DOI cited in the thesis \\
+$\square$ & \textbf{Tested by a colleague on a clean machine, with no help from
+            you} \\
+\end{tabular}
+\end{templatebox}
+
+\begin{regbox}[Raw data is already required --- PhD \S14(i)]
+``The raw data will have to be submitted to the supervisor along with a copy of
+the thesis.''
+
+\medskip
+The regulation asks for the minimum; this chapter asks for the version that is
+also usable. Having built a proper package for the supervisor, depositing it
+publicly costs almost nothing more, and \reg{PhD Regs 2024}{\S14.3(B)} asks
+whether ``the results of the study [are] reproducible'' as an assessment
+criterion in its own right.
+\end{regbox}
+
+\begin{traditions}{reproducibility}
+\tradEMP{Data and analysis scripts deposited; every analytic decision visible.
+The bar is that another analyst gets your numbers from your data.}
+\tradDSR{The artefact is the deposit, and badging is the natural venue
+mechanism. Also deposit the evaluation harness --- without it the evaluation
+cannot be checked.}
+\tradQUAL{Raw transcripts usually cannot be shared, and the analogue is the
+audit trail (\chref{qda}): codebook, memos, decision log, and de-identified
+extracts.}
+\tradFORM{Deposit proof scripts where machine-checked, and full proofs in an
+appendix otherwise. A proof sketch that cannot be completed by a reader is not
+reproducible either.}
+\end{traditions}
+
+\begin{lab}[Package and test]
+\begin{tightnum}
+  \item Work template C13 for a small analysis of your own.
+  \item Write \texttt{run\_all.sh} that produces every figure from raw data.
+  \item Containerise it, pinning the base image digest.
+  \item Give a colleague only the archive and the README. Watch them run it and
+    say nothing.
+  \item Record every point at which they got stuck. Fix each, and repeat with a
+    second colleague.
+  \item Archive to Zenodo and put the DOI in your synopsis.
+\end{tightnum}
+
+\medskip
+Step 4 is uncomfortable and is the whole exercise.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Distinguish repeatability, reproducibility and replicability, and say
+    which your own re-run of your scripts establishes.
+  \item Why is setting a random seed insufficient for deterministic results?
+  \item Your data contains personal information and cannot be shared. What can
+    still be deposited, and what does FAIR require?
+  \item Why is a GitHub URL an inadequate citation for an artefact?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Repeatability, reproducibility and replicability are distinct.
+    Reproducibility is a floor; replication is the scientific goal.
+  \item Deposit data, code, environment, protocol, seeds, README and licences.
+    The one-command test is the standard, and it must be tested by someone else.
+  \item Capture the environment as a container with pinned digests, not as
+    prose.
+  \item Seeds are necessary and insufficient. Report variability across seeds.
+  \item FAIR data can be restricted: deposit metadata, instruments, code and a
+    synthetic version, and document the access route.
+  \item Archive to a repository with a DOI. A GitHub URL is a working copy, not
+    a citation.
+  \item Licence code and data separately. No licence is the most restrictive
+    choice.
+  \item \S14(i) already requires raw data for your supervisor, and \S14.3(B)
+    assesses reproducibility.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item Artefact evaluation is voluntary at most venues and consumes reviewer
+    effort. Should it be mandatory for empirical computing papers? Argue both
+    sides, including the effect on scholars in resource-constrained
+    institutions.
+  \item Reproducibility guarantees that results follow from artefacts, not that
+    they are true. Give a case where a fully reproducible result is
+    nevertheless badly wrong, and say what would have caught it.
+  \item Industrial collaboration frequently prohibits data sharing. Design a
+    protocol allowing meaningful external verification without disclosing the
+    data, and identify what it cannot verify.
+  \item If the field required every paper to pass the one-command test, what
+    would happen to publication volume, and would the trade be worth it?
+\end{reviewq}

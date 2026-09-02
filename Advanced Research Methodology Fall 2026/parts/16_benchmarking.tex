@@ -1,0 +1,354 @@
+%=====================================================================
+\chapter{Benchmarking, Simulation and Performance Evaluation}\label{ch:benchmarking}
+%=====================================================================
+\locator{3}{Part~3 --- Research Designs for Computing}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Design} a benchmark whose workload is defensibly representative.
+  \item \textbf{Measure} performance with a methodology that survives
+    non-determinism.
+  \item \textbf{Choose} the correct summary statistic, and explain why the
+    arithmetic mean of ratios is wrong.
+  \item \textbf{Report} performance results with uncertainty rather than as
+    point values.
+  \item \textbf{Validate} a simulation model, and distinguish verification from
+    validation.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{experiments} for design and randomisation --- a benchmark run is an
+experiment whose subjects are configurations. \chref{questions} for the
+comparison element, which benchmarking makes concrete.
+\end{prereq}
+
+\begin{keyterms}
+benchmark $\bullet$ workload characterisation $\bullet$ representativeness
+$\bullet$ warm-up and steady state $\bullet$ non-determinism $\bullet$
+repetition and replication $\bullet$ geometric mean $\bullet$ speedup
+$\bullet$ confidence interval $\bullet$ verification and validation $\bullet$
+transient removal $\bullet$ benchmark overfitting
+\end{keyterms}
+
+\section{A Benchmark Is an Argument About Representativeness}
+
+Every performance claim has the same structure: on \emph{this} workload, on
+\emph{this} platform, under \emph{this} measurement methodology, X was faster
+than Y by \emph{this much}. Each qualifier is a place the claim can fail to
+transfer, and the benchmark is the argument that the qualifiers do not matter
+as much as one might fear.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.2cm}L{11.1cm}@{}}
+\toprule
+\textbf{Question} & \textbf{What a good answer looks like} \\
+\midrule
+Representative of what?
+  & A named target population of real workloads, characterised on dimensions
+    that matter --- request mix, data size and skew, concurrency, arrival
+    pattern \\
+How do you know?
+  & Evidence: production traces, published characterisations, a survey of
+    practitioners. Not intuition \\
+What does it exclude?
+  & The workload regimes deliberately not covered, and what would happen there \\
+Can it be re-run?
+  & Version-pinned software, published configuration, released harness and
+    data (\chref{reproducibility}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{pitfall}[Building the benchmark that your system wins]
+The characteristic failure, and it is usually unconscious. You develop the
+system, testing on workloads that exercise the parts you optimised. Those
+workloads become the evaluation. The comparison is real, the measurement is
+careful, and the result is uninformative --- because the workload was selected,
+implicitly, by which cases the system handles well.
+
+\medskip
+Two defences. Fix the workload set \emph{before} building, from an external
+characterisation, and write it into the protocol. And include at least one
+workload where you expect your approach to lose, then report that it did. A
+paper that shows where its own contribution fails is dramatically more credible
+than one that wins everywhere, and reviewers know it.
+\end{pitfall}
+
+\section{Measurement Under Non-Determinism}
+
+Modern systems are not deterministic. Just-in-time compilation, garbage
+collection, address space layout randomisation, CPU frequency scaling, cache
+state, background processes and network variability all move the number. A
+single run tells you almost nothing.
+
+\begin{paperbox}[Why one run is not a measurement]
+Andy Georges, Dries Buytaert and Lieven Eeckhout, \emph{Statistically rigorous
+Java performance evaluation}, OOPSLA 2007~\cite{georges2007statistically}.
+
+\medskip
+\textbf{Why it matters.} They showed that the then-standard practice --- report
+the best of a few runs --- produced conclusions that flatly contradicted
+statistically sound analysis of the same data. The paper changed measurement
+practice in the systems community, and its argument generalises well beyond
+Java.
+
+\medskip
+\textbf{What to extract.} The distinction between start-up and steady-state
+performance, the need for multiple JVM invocations rather than multiple
+iterations within one, and the practice of reporting confidence intervals
+rather than a single number.
+\end{paperbox}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{3.0cm}L{5.2cm}L{6.0cm}@{}}
+\toprule
+\textbf{Concern} & \textbf{What to do} & \textbf{Why} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Concern} & \textbf{What to do} & \textbf{Why} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Warm-up
+  & Discard iterations until the metric stabilises; report how you decided
+  & Early iterations measure compilation and cache filling, not the system \\
+Steady state vs start-up
+  & Decide which you are measuring, and say so
+  & They are different questions. A serverless workload cares about start-up;
+    a long-running service does not \\
+Repetitions
+  & Many iterations \emph{within} a process, and many process invocations
+  & Within-process variation and between-process variation have different
+    sources; only the latter captures layout and JIT-decision randomness \\
+Interleaving
+  & Randomise or alternate the order of configurations
+  & Thermal drift and background load change over a session and would otherwise
+    confound whichever configuration ran last \\
+Environment control
+  & Pin frequency, disable turbo, isolate cores, record kernel and library
+    versions
+  & Otherwise the machine is a nuisance variable you have not controlled \\
+Outliers
+  & Decide the rule in advance and report how many were removed
+  & Removing slow runs after the fact biases towards your preferred result \\
+\end{longtable}
+\end{center}
+
+\section{Summarising: the Mean That Is Usually Wrong}
+
+\begin{alertbox}[Never take the arithmetic mean of speedups]
+This is the most common statistical error in systems papers, and it is easy to
+demonstrate.
+
+\medskip
+Two benchmarks. On the first, your system takes 1 second where the baseline
+takes 2 --- a speedup of 2.0. On the second, yours takes 2 seconds where the
+baseline takes 1 --- a speedup of 0.5. The arithmetic mean of the speedups is
+$(2.0 + 0.5)/2 = 1.25$, suggesting a 25\% improvement.
+
+\medskip
+But total time is 3 seconds for both systems. There is no improvement at all.
+Worse, had you defined speedup the other way round --- baseline over yours ---
+the arithmetic mean would give the same 1.25 in favour of the baseline. A
+summary statistic whose answer depends on which system you put on top is not
+measuring anything.
+
+\medskip
+The geometric mean, $\left(\prod_{i=1}^{n} s_i\right)^{1/n}$, gives
+$\sqrt{2.0 \times 0.5} = 1.0$ either way round. For ratios, use it.
+\end{alertbox}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.6cm}L{10.7cm}@{}}
+\toprule
+\textbf{Quantity} & \textbf{Summary to use} \\
+\midrule
+Ratios, speedups, normalised scores & Geometric mean \\
+Times, when total time is what matters & Arithmetic mean, or the sum \\
+Rates (operations per second)       & Harmonic mean of the rates, equivalently
+                                      the reciprocal of mean time \\
+Latency distributions               & Median and high percentiles --- p95, p99,
+                                      p99.9. The mean of a latency distribution
+                                      is close to meaningless, because the tail
+                                      is what users experience \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{conceptbox}[Report an interval, and the whole picture changes]
+A table of point values invites the reader to treat a 3\% difference as real. A
+table with confidence intervals lets them see that the intervals overlap
+entirely, and that the honest conclusion is ``no detectable difference on this
+workload''.
+
+\medskip
+This is the same discipline as \chref{inference}, applied to systems
+measurement, and it has the same consequence: many published performance
+improvements would not survive it. Publish the raw per-run measurements
+alongside the paper so that others can check --- it costs nothing and it is
+what \chref{reproducibility} asks of you.
+\end{conceptbox}
+
+\section{Simulation}
+
+When the real system cannot be built, cannot be perturbed, or cannot be run at
+the scale of interest, simulation substitutes a model. The model's credibility
+is then the whole question.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.0cm}L{11.3cm}@{}}
+\toprule
+\textbf{Verification} & Did I build the model \emph{right}? Does the code
+                        implement the intended model? Debugging, unit tests,
+                        conservation checks, degenerate cases with known
+                        answers \\
+\textbf{Validation}   & Did I build the \emph{right} model? Does it correspond
+                        to the real system well enough for the question being
+                        asked? Comparison with measurements from the real
+                        system, expert review, sensitivity analysis \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{alertbox}[Validation is not optional, and it is what gets skipped]
+A verified but unvalidated simulation is a correct implementation of an
+arbitrary model. Its output is a property of your assumptions, not of the
+world, and any conclusion drawn from it is conditional on assumptions nobody
+checked.
+
+\medskip
+At minimum: compare the model's output against measurements from a real system
+in at least one regime where both can be run, and report the discrepancy. Then
+run a sensitivity analysis --- vary each assumed parameter and report which
+ones the conclusion depends on. If the conclusion flips when an unmeasured
+parameter moves within its plausible range, you have found the study's real
+limitation, and it belongs in the abstract.
+\end{alertbox}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.4cm}L{10.9cm}@{}}
+\toprule
+Random seeds       & Fix and publish them; run enough independent replications
+                     to estimate variability across seeds \\
+Transient removal  & Discard the initial period before the simulated system
+                     reaches steady state; state the method used to decide \\
+Replications       & Independent runs with different seeds. Report the number
+                     and the resulting interval \\
+Run length         & Long enough that the estimate stabilises; show that it does \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Benchmark Suites, and Their Failure Mode}
+
+Standard suites --- SPEC, TPC, YCSB, MLPerf and others --- give comparability
+and save enormous effort. They also create an incentive problem.
+
+\begin{conceptbox}[Benchmark overfitting]
+When a suite becomes the measure of merit, systems get optimised for the suite
+rather than for the workloads it was meant to represent. Over time the suite
+stops being a proxy for reality and becomes a target in its own right --- and
+improvements on it stop transferring.
+
+\medskip
+This is the same phenomenon as test-set overfitting in machine learning
+(\chref{mleval}), and it has the same remedies: hold out workloads the
+community has not tuned against, refresh the suite periodically, and report
+results on a workload of your own alongside the standard one. If your system
+wins on the suite and loses on a realistic workload you constructed, say so ---
+that is a genuine finding about the suite.
+\end{conceptbox}
+
+\begin{traditions}{performance evaluation}
+\tradEMP{A benchmark run is an experiment: configurations are treatments, runs
+are units, and the analysis needs intervals and repetitions like any other.}
+\tradDSR{Benchmarking is summative artificial evaluation of an artefact. The
+FEDS caution applies: strong on technical efficacy, weak on whether anyone
+benefits in practice.}
+\tradQUAL{Asks what practitioners actually optimise for, which is frequently
+not what benchmarks measure --- tail latency under partial failure, or
+predictability rather than throughput.}
+\tradFORM{Provides the asymptotic analysis that measurement complements.
+Neither substitutes for the other: an $O(n \log n)$ algorithm can lose to an
+$O(n^2)$ one at every $n$ anyone runs.}
+\end{traditions}
+
+\begin{lab}[Measure something properly]
+Take any two implementations of the same task --- two sorting libraries, two
+JSON parsers, two database drivers.
+
+\begin{tightnum}
+  \item Write the measurement protocol \emph{first}: warm-up rule, iterations,
+    process invocations, interleaving, environment controls, outlier rule.
+  \item Run it. Record every individual measurement, not summaries.
+  \item Compute the mean, median, and a 95\% confidence interval per
+    configuration. Plot the distributions, not just the summaries.
+  \item Now do the wrong thing deliberately: report the single best run of
+    each. How different is the conclusion?
+  \item Add a workload where you expect the winner to lose. Report the
+    geometric mean across both.
+\end{tightnum}
+
+\medskip
+Step 4 is the point of the exercise, and it is worth doing once so that you
+never again believe a paper that reports one number.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why is the arithmetic mean of speedups wrong, and what test exposes it
+    immediately?
+  \item Distinguish verification from validation, and say which one an
+    unvalidated simulation still passes.
+  \item Why are multiple process invocations necessary rather than multiple
+    iterations within one process?
+  \item Your system wins on SPEC and loses on a production trace. What do you
+    report, and what have you actually discovered?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A benchmark is an argument about representativeness. Fix the workload
+    set before building, from external evidence, and include a case you expect
+    to lose.
+  \item One run is not a measurement. Handle warm-up, distinguish start-up from
+    steady state, repeat within and across processes, interleave
+    configurations, and control the environment.
+  \item Geometric mean for ratios; arithmetic for times; harmonic for rates;
+    percentiles for latency. The arithmetic mean of speedups is not a
+    statistic.
+  \item Report intervals, not point values, and publish the raw measurements.
+  \item Verification asks whether the model was built right; validation asks
+    whether it is the right model. Unvalidated simulation reports your
+    assumptions back to you.
+  \item Standard suites become targets. Report a workload of your own alongside
+    the suite.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item Georges and colleagues showed that a widely used methodology produced
+    conclusions contradicting sound analysis of the same data. What does this
+    imply about the published performance literature predating it, and what
+    should a reviewer today do with such results?
+  \item Benchmark suites both enable comparison and distort optimisation.
+    Design a governance scheme for a suite in your area that mitigates
+    overfitting, and identify who would have to bear its cost.
+  \item Simulation validation requires comparison with a real system, but
+    simulation is often used precisely because the real system cannot be built.
+    How should a study proceed when validation is impossible in principle, and
+    what may it then claim?
+  \item Tail latency matters more than mean latency to users, yet means
+    dominate published results. Give one methodological and one incentive-based
+    explanation, and say which you find more persuasive.
+\end{reviewq}

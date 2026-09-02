@@ -1,0 +1,369 @@
+%=====================================================================
+\chapter{Sampling and Study Power}\label{ch:sampling}
+%=====================================================================
+\locator{4}{Part~4 --- Measurement, Data and Analysis}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Relate} the four quantities --- $\alpha$, power, effect size,
+    $N$ --- and solve for any one.
+  \item \textbf{Choose} a smallest effect size of interest and defend it.
+  \item \textbf{Run} an a-priori power analysis and report it.
+  \item \textbf{Explain} why post-hoc power is uninformative and why
+    underpowered studies inflate published effects.
+  \item \textbf{Estimate} sample size for qualitative work without pretending
+    it is a power calculation.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{experiments} for designs, \chref{survey} for sampling frames, and
+\chref{measurement} --- power depends on measurement precision, so an unreliable
+measure costs you sample size.
+\end{prereq}
+
+\begin{keyterms}
+type I and type II error $\bullet$ $\alpha$ $\bullet$ power $\bullet$ effect
+size $\bullet$ Cohen's $d$ $\bullet$ Cliff's $\delta$ $\bullet$ smallest effect
+size of interest $\bullet$ a-priori power analysis $\bullet$ post-hoc power
+$\bullet$ winner's curse $\bullet$ design effect $\bullet$ saturation
+\end{keyterms}
+
+\section{Four Quantities, Three Free}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.6cm}L{11.7cm}@{}}
+\toprule
+$\alpha$        & Probability of a false positive: concluding there is an
+                  effect when there is none. Conventionally 0.05, which is a
+                  convention, not a law \\
+Power $1-\beta$ & Probability of detecting an effect that is really there.
+                  Conventionally 0.80, meaning you accept a one-in-five chance
+                  of missing a real effect \\
+Effect size     & How big the effect is, in standardised or natural units \\
+$N$             & Sample size, at the unit of randomisation \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Fix any three and the fourth is determined. In practice $\alpha$ and power are
+set by convention, so the real question is always the trade between effect size
+and $N$: \emph{how small an effect do I need to be able to detect, and can I
+afford the sample that requires?}
+
+\begin{alertbox}[Do this before the study, not after]
+An a-priori power analysis is a design decision. A post-hoc one --- computing
+power from the effect you observed --- is uninformative, and specifically so:
+it is a deterministic function of the p-value. A non-significant result always
+yields low ``observed power'', so reporting it adds nothing beyond restating
+that the result was not significant.
+
+\medskip
+If you want to say something useful after a null result, report the confidence
+interval on the effect, or run an equivalence test (\chref{inference}). Those
+answer the question post-hoc power is usually reached for --- ``was my study
+capable of detecting anything worth detecting?'' --- and they answer it
+correctly.
+\end{alertbox}
+
+\section{Choosing an Effect Size, Honestly}
+
+This is where power analysis is usually corrupted. The scholar needs $N$ to
+come out affordable, so they choose a large expected effect, and the
+calculation obligingly returns a small sample.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{4.0cm}L{10.3cm}@{}}
+\toprule
+\textbf{Basis} & \textbf{Assessment} \\
+\midrule
+Meta-analytic estimate from the literature
+  & Best available. Note that published effects are inflated by publication
+    bias, so shade downwards \\
+A pilot study
+  & \textbf{Dangerous.} Effect estimates from small pilots are extremely noisy,
+    and if the pilot happened to over-estimate, you power for an effect that
+    does not exist. Pilots are for feasibility and instrumentation, not effect
+    size \\
+Smallest effect size of interest
+  & \textbf{Best practice.} Not what you expect, but the smallest effect that
+    would matter to anyone. Below it you do not care whether the effect exists \\
+Cohen's conventions (0.2 / 0.5 / 0.8)
+  & A last resort. Cohen offered them for fields with no information and
+    warned against routine use \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{conceptbox}[The smallest effect size of interest turns statistics into an argument about substance]
+Instead of ``what effect do I expect?'', ask ``how large would the effect have
+to be for anyone to act on it?''
+
+\medskip
+If a code review technique saved 30 seconds per review, no team would change
+their process; a saving of 10 minutes would matter. That judgement makes the
+target effect a claim about practice, defensible in the thesis and arguable by
+an examiner --- which is exactly what you want. It also protects you: a study
+powered for the smallest interesting effect gives a meaningful null result,
+because failing to find an effect that size is worth knowing.
+\end{conceptbox}
+
+\subsection{Common effect sizes}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.0cm}L{4.6cm}L{6.7cm}@{}}
+\toprule
+\textbf{Measure} & \textbf{For} & \textbf{Notes} \\
+\midrule
+Cohen's $d$
+  & Difference between two means
+  & $d = (\bar{x}_1 - \bar{x}_2)/s_{\text{pooled}}$. Assumes roughly normal,
+    similar variances \\
+Hedges' $g$
+  & As $d$, small samples
+  & Corrects $d$'s upward bias when $N$ is small. Prefer it below about 20 per
+    group \\
+Cliff's $\delta$
+  & Ordinal or non-normal data
+  & Probability one group exceeds the other, minus the reverse.
+    Distribution-free; the right default for software engineering data, which
+    is rarely normal \\
+Odds ratio / risk ratio
+  & Binary outcomes
+  & Report the risk ratio too: odds ratios are routinely misread as risk
+    ratios and overstate effects when outcomes are common \\
+$r$, $R^2$
+  & Association, variance explained
+  & $R^2$ is sample-dependent; report adjusted $R^2$ and an interval \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{worked}[Powering the code review experiment]
+\textbf{The design.} Two review techniques compared on defects identified.
+Between-subjects, $\alpha = 0.05$, two-tailed, power 0.80.
+
+\medskip
+\textbf{Step 1: smallest effect of interest.} Reviews currently find about 6
+defects on average, with a standard deviation of roughly 2.5. The team lead
+judges that fewer than 1 extra defect per review would not justify changing
+the process. So the SESOI is 1 defect, giving
+$d = 1 / 2.5 = 0.40$.
+
+\medskip
+\textbf{Step 2: required N.}
+\begin{lstlisting}[language=Rlang]
+library(pwr)
+pwr.t.test(d = 0.40, sig.level = 0.05, power = 0.80,
+           type = "two.sample", alternative = "two.sided")
+#   n = 99.08 per group  ->  100 per group, 200 total
+\end{lstlisting}
+
+\medskip
+\textbf{Step 3: confront reality.} You can recruit 30 developers. At $n = 15$
+per group, power to detect $d = 0.40$ is about 0.14 --- a 14\% chance of
+finding a real effect of the size that matters. Running this study is close to
+pointless.
+
+\medskip
+\textbf{Step 4: the four honest responses.}
+\begin{tight}
+  \item \textbf{Change the design.} Within-subjects: each developer reviews
+    under both techniques. This removes between-subject variance and
+    dramatically increases power. With a correlation of about 0.6 between a
+    developer's two scores, roughly 40 to 50 developers-worth of paired
+    observations suffice --- and 30 developers each doing four reviews may
+    reach it, if the nesting is modelled (\chref{regression}).
+  \item \textbf{Change the outcome.} A more precise measure --- fewer missed
+    defects on a seeded-defect task, where the ground truth is known --- shrinks
+    the standard deviation and raises $d$ for the same real effect.
+  \item \textbf{Change the question} to an exploratory or qualitative one
+    (\chref{qualitative}), which 30 people amply supports.
+  \item \textbf{Run it as a registered pilot} whose declared purpose is to
+    estimate parameters for a later multi-site study, and report it as such.
+\end{tight}
+
+\medskip
+\textbf{What is not honest} is running it at $n = 15$, obtaining $p = 0.22$,
+and writing ``no significant difference was found between the techniques''.
+That sentence implies evidence of no difference, and the study had almost no
+capacity to find one.
+
+\medskip
+Figures illustrative.
+\end{worked}
+
+\section{Why Underpowered Studies Damage the Literature}
+
+An underpowered study is not merely uninformative. It is actively harmful, and
+the mechanism is worth understanding~\cite{button2013power}.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.6cm}L{10.7cm}@{}}
+\toprule
+\textbf{Consequence} & \textbf{Mechanism} \\
+\midrule
+Inflated published effects (the winner's curse)
+  & With low power, only unusually large sample effects reach significance. So
+    the effects that get published are systematically over-estimates ---
+    sometimes by a factor of two or more \\
+Low positive predictive value
+  & Among all significant results in a low-powered literature, a large
+    proportion are false positives, even with $\alpha = 0.05$ \\
+Failed replications that teach nothing
+  & A replication powered for the inflated published effect is itself
+    underpowered for the true one \\
+Wasted participants
+  & Subjects gave time to a study that could not answer its question --- which
+    is an ethical issue, not only a methodological one (\chref{ethics}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{conceptbox}[The consolation for a small field]
+Software engineering research often cannot recruit hundreds of professionals.
+That is a real constraint, and the answer is not to give up on quantitative
+work. It is to:
+
+\begin{tight}
+  \item prefer within-subject designs, which buy power for free;
+  \item use precise measures, since precision substitutes for sample size;
+  \item report effect sizes with confidence intervals rather than dichotomous
+    significance verdicts, so that a small study contributes an estimate even
+    when it cannot settle a question;
+  \item and design so the result can be \emph{pooled}. Three well-reported
+    small studies with compatible measures can be meta-analysed
+    (\chref{slr}); three studies reporting only p-values cannot.
+\end{tight}
+
+\medskip
+That last point is the most important one in this chapter. A small study that
+reports its effect size, its interval and its raw data has contributed
+permanently to the evidence base. One that reports only ``no significant
+difference'' has contributed nothing.
+\end{conceptbox}
+
+\section{Sample Size in Qualitative Work}
+
+Power analysis does not apply, and pretending otherwise is a category error.
+But ``as many as I could get'' is not an answer either.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.6cm}L{10.7cm}@{}}
+\toprule
+\textbf{Basis} & \textbf{How to state it} \\
+\midrule
+Saturation
+  & With a stopping rule declared in advance and evidence of new codes per
+    interview (\chref{qualitative}) \\
+Information power
+  & Fewer participants are needed when the aim is narrow, the sample is
+    specific, the theory is established and the dialogue is strong. State which
+    of these apply \\
+Design requirement
+  & A cross-case design needs enough cases for the comparison: theoretical
+    replication requires at least one of each type (\chref{casestudy}) \\
+Pragmatic
+  & Access limited you. Say so plainly, and discuss what it means for the
+    claim. This is an acceptable answer honestly given \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{pitfall}[Five power mistakes]
+\begin{tight}
+  \item \textbf{Post-hoc power} reported after a null result.
+  \item \textbf{Powering from a pilot's observed effect}, which is noise.
+  \item \textbf{Powering at the wrong unit} --- 200 reviews from 20 developers
+    is not $N = 200$ (\chref{experiments}).
+  \item \textbf{Ignoring the design effect} in clustered sampling: correlated
+    units mean the effective sample is smaller than the count.
+  \item \textbf{Ignoring measurement unreliability.} An unreliable measure
+    attenuates the observed effect, so the $N$ you need is larger than the
+    calculation assuming perfect measurement suggests.
+\end{tight}
+\end{pitfall}
+
+\begin{traditions}{sample size}
+\tradEMP{Determined by a-priori power analysis against the smallest effect of
+interest, at the unit of randomisation, and reported in full.}
+\tradDSR{Evaluation sample size follows the FEDS strategy: a naturalistic
+summative evaluation may involve one organisation, and the claim is scoped
+accordingly (\chref{designscience}).}
+\tradQUAL{Determined by saturation or information power, demonstrated rather
+than asserted. More participants is not automatically better; depth competes
+with breadth for the same hours.}
+\tradFORM{Not applicable. A proof holds for all instances, which is precisely
+its advantage.}
+\end{traditions}
+
+\begin{lab}[Power your own study, then face the answer]
+\begin{tightnum}
+  \item State your smallest effect size of interest in \emph{natural units},
+    and justify it with a sentence about practice.
+  \item Convert to a standardised effect using a variance estimate from the
+    literature or your pilot.
+  \item Compute required $N$ with \texttt{pwr} for your design.
+  \item Compare with what you can actually recruit.
+  \item If short, work through the four responses in the worked example and
+    choose one. Write down which, and why.
+\end{tightnum}
+
+\medskip
+Step 5 is the deliverable. Portfolio piece P3 asks for exactly this decision,
+and Appendix~\ref{app:schedule} gives credit for abandoning an infeasible
+design on evidence.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why is post-hoc power uninformative, and what should be reported
+    instead after a null result?
+  \item Explain the winner's curse and why it makes an underpowered literature
+    worse than no literature.
+  \item Why is powering from a pilot's observed effect size dangerous?
+  \item Your measure has reliability 0.6 rather than 0.9. Which direction does
+    that move your required sample size, and why?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item $\alpha$, power, effect size and $N$: fix three, the fourth follows.
+    The real trade is effect size against $N$.
+  \item Do power analysis before, not after. Post-hoc power is a function of
+    the p-value and adds nothing.
+  \item Power for the smallest effect size of interest, not the expected one.
+    That makes the target a defensible claim about practice.
+  \item Cliff's $\delta$ is a better default than Cohen's $d$ for software
+    engineering data, which is rarely normal.
+  \item Underpowered studies inflate published effects and fill the literature
+    with false positives.
+  \item When you cannot recruit: within-subject designs, precise measures,
+    effect sizes with intervals, and reporting that permits later pooling.
+  \item Qualitative sample size rests on saturation or information power,
+    demonstrated --- or on honestly stated access constraints.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item Power of 0.80 accepts a one-in-five failure to detect a real effect,
+    while $\alpha = 0.05$ accepts one-in-twenty false positives. Why are these
+    asymmetric, and is the asymmetry defensible for software engineering
+    research?
+  \item Suppose every software engineering experiment were required to be
+    powered at 0.80 for a defensible SESOI. What would happen to the field's
+    published output, and would the field be better off?
+  \item Design a multi-site study for your topic that would achieve adequate
+    power by combining several institutions' small samples, and identify the
+    methodological problems that combination introduces.
+  \item Underpowered studies waste participants' time, which \chref{ethics}
+    treats as an ethical matter. Should ethics review boards assess statistical
+    power? Argue both sides.
+\end{reviewq}

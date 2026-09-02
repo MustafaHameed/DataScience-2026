@@ -1,0 +1,447 @@
+%=====================================================================
+\chapter{Evaluating Machine Learning Research}\label{ch:mleval}
+%=====================================================================
+\locator{4}{Part~4 --- Measurement, Data and Analysis}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Audit} a pipeline for the eight forms of data leakage.
+  \item \textbf{Choose} a validation scheme that matches how the model would be
+    deployed.
+  \item \textbf{Select} metrics appropriate to the base rate and the costs of
+    error.
+  \item \textbf{Compare} classifiers across datasets without running twenty
+    t-tests.
+  \item \textbf{Design} an ablation that shows which component earns the gain.
+  \item \textbf{Document} a model and a dataset to a recognised standard.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{inference} for multiple comparisons and intervals; \chref{measurement}
+for construct validity, which applies to labels as much as to questionnaires;
+\chref{benchmarking} for measurement under non-determinism.
+\end{prereq}
+
+\begin{keyterms}
+data leakage $\bullet$ train--validation--test split $\bullet$ temporal split
+$\bullet$ group split $\bullet$ baseline $\bullet$ class imbalance $\bullet$
+precision and recall $\bullet$ ROC-AUC and PR-AUC $\bullet$ calibration
+$\bullet$ decision threshold $\bullet$ ablation $\bullet$ Friedman test
+$\bullet$ test set reuse $\bullet$ model card $\bullet$ datasheet
+\end{keyterms}
+
+\section{The Claim a Model Makes}
+
+A machine learning paper claims that a model will perform at some level on data
+it has not seen, drawn from some population, under some deployment conditions.
+Everything in this chapter is about whether the evaluation actually supports
+that claim --- and the dominant finding of the last few years is that very
+often it does not.
+
+\begin{paperbox}[Leakage across an entire literature]
+Sayash Kapoor and Arvind Narayanan, \emph{Leakage and the reproducibility
+crisis in machine-learning-based science}, Patterns 4(9),
+2023~\cite{kapoor2023leakage}.\oa{}
+
+\medskip
+\textbf{Why it matters.} They surveyed 17 fields using ML for scientific
+claims, found leakage affecting 294 papers across them, and showed that
+correcting it frequently eliminated the reported advantage of machine learning
+over much simpler methods. This is not a warning about a rare bug; it is
+evidence of a systematic failure mode.
+
+\medskip
+\textbf{What to extract.} Their taxonomy of eight leakage types, and their
+model info sheet. Fill the sheet in for your own work --- it takes an hour and
+is the cheapest insurance available to a computational thesis.
+\end{paperbox}
+
+\section{Eight Ways Information Leaks}
+
+\begin{definitionbox}[Data leakage]
+\term{Leakage} occurs when information that would not be available at
+prediction time is used during training or model selection. The result is
+performance that is real on your test set and unattainable in deployment.
+\end{definitionbox}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{3.4cm}L{4.6cm}L{6.2cm}@{}}
+\toprule
+\textbf{Type} & \textbf{What happens} & \textbf{Fix} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Type} & \textbf{What happens} & \textbf{Fix} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+No test set at all
+  & Performance reported on training data
+  & Hold out a test set and touch it once \\
+Preprocessing on all data
+  & Scaling, imputation or encoding fitted before splitting
+  & Fit every transform inside the training fold. Use a pipeline object so this
+    cannot be forgotten \\
+Feature selection on all data
+  & Features chosen using the full dataset's labels
+  & Select inside the cross-validation loop. This one routinely produces
+    dramatic apparent performance from pure noise \\
+Duplicates
+  & Near-identical records in train and test
+  & Deduplicate before splitting, including near-duplicates \\
+Temporal leakage
+  & Training on data from after the test period
+  & Split by time, always, whenever the deployment is a forecast \\
+Group leakage
+  & The same patient, developer or repository in both splits
+  & Split by group, not by row \\
+Sampling bias in the test set
+  & The test set is not drawn from the deployment population
+  & Construct it to match deployment, and say how \\
+Tuning on the test set
+  & Hyperparameters or thresholds chosen by test performance
+  & Three-way split, or nested cross-validation \\
+\end{longtable}
+\end{center}
+
+\begin{worked}[A leakage audit that changes the conclusion]
+\textbf{The study.} Predicting defect-prone files from code metrics across 30
+repositories. Reported: 0.91 AUC with a gradient boosting model, ``substantially
+outperforming logistic regression''.
+
+\medskip
+\textbf{Audit finding 1 --- group leakage.} Rows were split randomly. Files from
+the same repository appear in both training and test. Repositories differ
+enormously in defect base rate, so the model can identify the repository from
+its metric profile and predict that repository's base rate. It is not
+predicting defects; it is memorising repositories.
+
+\emph{Fix:} split by repository. Train on 24, test on 6, and rotate.
+
+\medskip
+\textbf{Audit finding 2 --- temporal leakage.} Files were labelled defective if
+a defect was ever found in them, including after the metrics snapshot. The
+model uses present metrics to predict labels partly determined by the future,
+which is unavailable at deployment.
+
+\emph{Fix:} fix a snapshot date; label from defects found in a defined window
+after it.
+
+\medskip
+\textbf{Audit finding 3 --- preprocessing leakage.} Features were standardised
+across the full dataset before splitting, so test-set statistics informed the
+training scaling. Small effect here, but free to fix.
+
+\medskip
+\textbf{Audit finding 4 --- no trivial baseline.} With a 12\% defect rate,
+``always predict not defective'' achieves 88\% accuracy. The paper reports AUC,
+which is better, but never compares against predicting from file size alone ---
+which in defect prediction is a notoriously strong baseline.
+
+\medskip
+\textbf{After correction.} Grouped, temporal split, pipeline-encapsulated
+preprocessing, and a size-only baseline included. Illustrative outcome: AUC
+falls to about 0.68, the size-only baseline reaches 0.65, and logistic
+regression on the same features reaches 0.67. The honest conclusion is that
+gradient boosting offers little over a simple model, and that most of the
+signal is size.
+
+\medskip
+That is a publishable finding --- it is a negative result about a widely
+assumed advantage --- and it is a far better thesis than the original.
+\end{worked}
+
+\section{Validation Must Match Deployment}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.4cm}L{5.0cm}L{5.9cm}@{}}
+\toprule
+\textbf{Deployment} & \textbf{Correct scheme} & \textbf{What random $k$-fold gets wrong} \\
+\midrule
+Predict for new instances from the same population
+  & Random $k$-fold
+  & Nothing. This is the case it is designed for \\
+Predict the future
+  & Time-series split; train on past, test on future, rolling forward
+  & Trains on the future, which inflates results and cannot be reproduced in
+    deployment \\
+Predict for a new group --- new project, hospital, user
+  & Grouped $k$-fold, or leave-one-group-out
+  & Lets the model memorise group identity \\
+Predict under distribution shift
+  & Test explicitly on a shifted set
+  & Reports performance for a world that will not occur \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{alertbox}[The question that settles the scheme]
+Ask: \emph{at prediction time in the real system, what would the model know?}
+
+\medskip
+Then construct the validation so it knows exactly that and no more. Every
+leakage type above is a case of the model knowing something the deployed system
+would not. This single question catches most of them without needing to
+memorise the taxonomy.
+\end{alertbox}
+
+\section{Metrics, and the Base Rate}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{3.0cm}L{4.6cm}L{6.6cm}@{}}
+\toprule
+\textbf{Metric} & \textbf{Answers} & \textbf{Fails when} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Metric} & \textbf{Answers} & \textbf{Fails when} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Accuracy
+  & What fraction is correct?
+  & Classes are imbalanced. At a 1\% base rate, 99\% accuracy is achieved by
+    predicting nothing \\
+Precision
+  & Of those flagged, how many are real?
+  & Used alone --- it says nothing about what was missed \\
+Recall
+  & Of the real ones, how many were found?
+  & Used alone --- flagging everything gives recall 1.0 \\
+$F_1$
+  & Harmonic mean of the two
+  & Precision and recall have different costs, which they usually do.
+    Weight them by cost instead \\
+ROC-AUC
+  & Ranking quality across thresholds
+  & Heavy imbalance --- ROC looks optimistic because true negatives are
+    plentiful~\cite{saito2015precision} \\
+PR-AUC
+  & Ranking quality, precision against recall
+  & Preferred under imbalance. Note the baseline is the positive rate, not 0.5 \\
+Calibration
+  & Are the probabilities meaningful?
+  & Ignored almost always, and essential if a probability feeds a decision \\
+\end{longtable}
+\end{center}
+
+\begin{conceptbox}[The threshold is a decision, not a default]
+Classifiers output scores; 0.5 is a convention with no claim to optimality. The
+right threshold follows from the costs of the two errors.
+
+\medskip
+In defect prediction, a false negative means a defect ships and a false
+positive means a developer spends twenty minutes checking clean code. Those are
+not equal, and the ratio between them determines the threshold. State the cost
+ratio you assume, choose the threshold from it on \emph{validation} data, and
+report performance at that threshold on test data.
+
+\medskip
+A paper reporting only threshold-free metrics has evaded the question its users
+must answer.
+\end{conceptbox}
+
+\section{Baselines and Ablations}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.4cm}L{10.9cm}@{}}
+\toprule
+Trivial baseline    & Majority class; random; predict the mean. Establishes the
+                      floor, and occasionally beats the proposed method \\
+Simple baseline     & Logistic regression, a decision tree, or one strong
+                      feature. In software engineering, file size is a famously
+                      strong baseline for defect prediction \\
+Current best        & The actual state of the art, tuned with the same budget
+                      you gave your own method. Tuning yours for a week and the
+                      baseline for an hour is not a comparison \\
+Ablation            & Your method with one component removed at a time. This is
+                      what identifies which part earns the gain \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{pitfall}[The unablated improvement]
+A paper proposes a method combining a new architecture, a new loss, a new
+augmentation scheme and a longer training schedule, and reports a 2-point gain.
+Without ablations, no reader --- including the authors --- knows which of the
+four produced it, or whether it was the longer schedule alone.
+
+\medskip
+This matters beyond credit assignment: an unablated improvement cannot be
+transferred, because nobody knows what to transfer. Run the ablations, and
+report the ones where removing a component changed nothing. That is
+information, and omitting it is what makes a paper unreproducible in the useful
+sense.
+\end{pitfall}
+
+\section{Comparing Across Datasets}
+
+Comparing $k$ classifiers over $n$ datasets with pairwise t-tests is wrong on
+two counts: the multiplicity is uncorrected (\chref{inference}), and the
+normality assumption is untenable for performance scores across heterogeneous
+datasets.
+
+\begin{conceptbox}[The standard procedure]
+Dem\v{s}ar's recommended approach~\cite{demsar2006statistical} is now
+conventional and is two steps:
+
+\begin{tightnum}
+  \item \textbf{Friedman test} on the ranks of the classifiers across datasets.
+    Non-parametric, and it asks the right global question: are these
+    classifiers performing equivalently overall?
+  \item If significant, a \textbf{post-hoc test} --- Nemenyi for all-pairs
+    comparison, or Bonferroni--Dunn when comparing everything against one
+    control method, which is usually what you actually want.
+\end{tightnum}
+
+\medskip
+Report the result as a \textbf{critical difference diagram}: classifiers on a
+rank axis, with bars joining those not significantly different. It communicates
+the whole comparison in one figure and makes over-claiming difficult.
+\end{conceptbox}
+
+\begin{lstlisting}[language=Rlang, caption={Comparing four classifiers across twelve
+datasets, the way it should be done.}]
+# rows = datasets, columns = classifiers, cells = performance
+friedman.test(as.matrix(results))
+
+# If significant, post-hoc pairwise comparison on ranks
+library(PMCMRplus)
+frdAllPairsNemenyiTest(as.matrix(results))
+
+# Report mean ranks alongside, not raw means: ranks are what was tested
+colMeans(t(apply(-results, 1, rank)))
+\end{lstlisting}
+
+\section{Test Set Reuse}
+
+Every time you look at test performance and change something, you leak a little
+information. Over a project --- or over a community's decade of using one
+benchmark --- this accumulates into overfitting the test set, and reported gains
+stop transferring.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.6cm}L{10.7cm}@{}}
+\toprule
+Three-way split      & Train, validation, test. All decisions on validation;
+                       test touched once, at the end \\
+Nested cross-validation & When data is scarce: an inner loop for tuning, an
+                       outer loop for estimating performance \\
+Count the looks       & Record how many times you evaluated on test. If it is
+                       more than once, say so --- the number is meaningful \\
+A fresh test set      & The only real remedy for a community-level problem.
+                       Where a new one exists, report on it \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Documenting Models and Data}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.2cm}L{11.1cm}@{}}
+\textbf{Datasheet}~\cite{gebru2021datasheets}
+  & For a dataset: motivation, composition, collection process, preprocessing,
+    uses, distribution, maintenance. Crucially, its known biases and the uses
+    for which it is \emph{not} appropriate \\
+\textbf{Model card}~\cite{mitchell2019model}
+  & For a model: intended use, out-of-scope use, training data, evaluation
+    data, metrics \emph{disaggregated by relevant subgroup}, ethical
+    considerations, caveats \\
+\end{tabular}
+\end{center}
+
+Disaggregated evaluation is the part most often skipped and most often
+consequential: an aggregate accuracy of 0.90 can conceal 0.95 on one subgroup
+and 0.60 on another, and only reporting by subgroup reveals it.
+
+\begin{traditions}{evaluating a model}
+\tradEMP{A model evaluation is an experiment. It needs repetitions across
+seeds, intervals rather than point estimates, a baseline, and correction for
+the comparisons made.}
+\tradDSR{The model is the artefact. Held-out performance is artificial
+summative evaluation; whether anyone benefits from deploying it is a separate
+and usually unasked question (\chref{designscience}).}
+\tradQUAL{Asks what the labels mean and who produced them. A defect label is a
+human judgement, and label noise is a measurement validity problem
+(\chref{measurement}), not merely a data quality nuisance.}
+\tradFORM{Provides generalisation bounds and guarantees under stated
+assumptions --- typically far looser than observed performance, but true for
+reasons that do not depend on a test set.}
+\end{traditions}
+
+\begin{lab}[Audit a pipeline]
+Take any ML pipeline --- yours, a published replication package, or a public
+notebook.
+
+\begin{tightnum}
+  \item Work the eight leakage types. For each, state where in the code it
+    would occur and whether it does.
+  \item Ask the deployment question and check the validation scheme matches.
+  \item Add a trivial baseline and one strong simple baseline. Record the gap.
+  \item Re-run with the leakage fixed. Record how much performance falls.
+  \item Write the model card, including disaggregated metrics for at least one
+    meaningful subgroup.
+\end{tightnum}
+
+\medskip
+Step 4 is the one to report in the seminar. A drop is not a failure; it is the
+study working.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why does fitting a scaler before splitting constitute leakage, and how
+    large is the problem in practice?
+  \item You are predicting whether a developer will abandon a project. What
+    split do you use, and why is random $k$-fold wrong?
+  \item At a 2\% positive rate, why is ROC-AUC misleading, and what should you
+    report?
+  \item Why are pairwise t-tests wrong for comparing five classifiers across
+    fifteen datasets, and what replaces them?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Leakage is systematic, not rare, and correcting it frequently
+    eliminates reported advantages of complex methods over simple ones.
+  \item Ask what the deployed system would know at prediction time, and build
+    validation to match. That question catches most leakage.
+  \item Accuracy fails under imbalance; ROC-AUC flatters it; PR-AUC and
+    calibration are usually what you want. The threshold follows from costs.
+  \item Include a trivial baseline, a strong simple baseline, and a fairly
+    tuned state of the art. Ablate, and report the components that changed
+    nothing.
+  \item Compare across datasets with Friedman plus a post-hoc test, reported as
+    a critical difference diagram.
+  \item Touch the test set once, and count the times you did not.
+  \item Publish a datasheet and a model card, with metrics disaggregated by
+    subgroup.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item Kapoor and Narayanan found leakage across 17 fields. What features of
+    how ML is taught and published produce this, and which would be easiest to
+    change?
+  \item Benchmark test sets are reused by whole communities for years. Propose a
+    workable governance mechanism for a benchmark in your area, and identify
+    who bears its cost.
+  \item Defect labels come from issue trackers and are noisy and biased
+    (\chref{quasiexp}). What does label noise do to a reported AUC, and how
+    would you estimate its magnitude?
+  \item \reg{PhD Regs 2024}{\S14.3(B)} asks whether results are replicable. For
+    a deep learning dissertation, enumerate exactly what would have to be
+    deposited for a third party to replicate the reported numbers, and estimate
+    what fraction of published work meets that bar.
+\end{reviewq}

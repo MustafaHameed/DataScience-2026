@@ -1,0 +1,559 @@
+%=====================================================================
+\chapter{Research Questions, Hypotheses and Constructs}\label{ch:questions}
+%=====================================================================
+\locator{1}{Part~1 --- Foundations of Inquiry in Computing}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Classify} a research question into one of six types and name
+    the designs each type admits.
+  \item \textbf{Apply} the FINER criteria to reject or repair a candidate
+    question.
+  \item \textbf{Decompose} a question into PICOC elements and use them to build
+    a search string.
+  \item \textbf{Operationalise} a construct into variables, measures and an
+    instrument, and say where the definition could be contested.
+  \item \textbf{Construct} an alignment table linking every research question
+    to its data and its planned analysis.
+  \item \textbf{Decide} whether your study should state hypotheses at all.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{contribution} for the claim--evidence--falsification triple, and
+\chref{philosophy} for why the question type constrains the method. This
+chapter turns both into a procedure.
+\end{prereq}
+
+\begin{keyterms}
+research question $\bullet$ FINER $\bullet$ PICOC $\bullet$ construct $\bullet$
+operationalisation $\bullet$ variable $\bullet$ independent and dependent
+variable $\bullet$ moderator $\bullet$ mediator $\bullet$ confounder $\bullet$
+null and alternative hypothesis $\bullet$ directional hypothesis $\bullet$
+alignment table
+\end{keyterms}
+
+\section{The Alignment Chain}
+
+Everything in a competent study is a chain, and a study fails at its weakest
+link rather than at its most sophisticated one. A perfectly executed
+mixed-effects model cannot rescue a measure that does not capture the construct
+the question asked about.
+
+\armfigh{
+\begin{tikzpicture}[
+  node distance=0pt,
+  lk/.style={rounded corners=3pt, draw=primary!55, fill=primary!7,
+             text width=2.15cm, align=center, font=\footnotesize,
+             minimum height=1.05cm, inner sep=3pt},
+  q/.style={font=\scriptsize\itshape, text=accent!80!black, align=center,
+            text width=2.3cm},
+  ar/.style={-{Stealth[length=2.2mm]}, draw=secondary, semithick}]
+
+  \foreach \i/\name in {0/{\textbf{Topic}}, 1/{\textbf{Question}},
+                        2/{\textbf{Construct}}, 3/{\textbf{Variable}},
+                        4/{\textbf{Measure}}, 5/{\textbf{Analysis}}}{
+    \node[lk] (n\i) at (\i*2.45,0) {\name};}
+
+  \foreach \i [evaluate=\i as \j using int(\i+1)] in {0,...,4}{
+    \draw[ar] (n\i) -- (n\j);}
+
+  \node[q, below=5pt of n1] {what exactly\\is unknown?};
+  \node[q, below=5pt of n2] {what abstract\\thing is it about?};
+  \node[q, below=5pt of n3] {what observable\\stands for it?};
+  \node[q, below=5pt of n4] {how is it\\recorded?};
+  \node[q, below=5pt of n5] {does it answer\\the question?};
+
+  \draw[ar, dashed, draw=accent, thick] (n5.north) .. controls +(0,1.1) and +(0,1.1) ..
+       node[above, font=\scriptsize, text=accent]
+       {check backwards before collecting any data} (n1.north);
+\end{tikzpicture}}
+{The alignment chain. Build it left to right, then verify it right to left:
+given this analysis, on this measure, of this variable, standing for this
+construct --- have I answered the question I asked? Most fatal design errors
+are visible on that backward pass, and only on it.}{alignchain}
+
+\section{Six Kinds of Question}
+
+The type of question you ask determines the designs available to you. Asking a
+causal question and then running a correlational study is not a small
+mismatch --- it is the flaw that makes a study unpublishable.
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{2.5cm}L{5.2cm}L{6.5cm}@{}}
+\toprule
+\textbf{Type} & \textbf{Form} & \textbf{Designs that can answer it} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Type} & \textbf{Form} & \textbf{Designs that can answer it} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Exploratory
+  & What is going on here? What forms does X take?
+  & Qualitative study, grounded theory, exploratory case study
+    (\chref{qualitative}, \chref{casestudy}) \\
+Descriptive
+  & How prevalent is X? What is the distribution of Y?
+  & Survey with probability sampling; repository mining; systematic mapping
+    (\chref{survey}, \chref{quasiexp}, \chref{slr}) \\
+Relational
+  & Is X associated with Y?
+  & Correlational study, observational repository analysis
+    (\chref{quasiexp}) \\
+Causal
+  & Does X \emph{cause} a change in Y?
+  & Controlled experiment; quasi-experiment with an identification strategy
+    (\chref{experiments}, \chref{quasiexp}) \\
+Design
+  & Can an artefact with properties P be built, and what does building it
+    teach?
+  & Design science research with a matched evaluation
+    (\chref{designscience}) \\
+Evaluative / comparative
+  & Which of A and B performs better under conditions C?
+  & Benchmarking; controlled comparison; classifier comparison across datasets
+    (\chref{benchmarking}, \chref{mleval}) \\
+\end{longtable}
+\end{center}
+
+\begin{paperbox}[Matching method to question]
+Steve Easterbrook, Janice Singer, Margaret-Anne Storey and Daniela Damian,
+\emph{Selecting Empirical Methods for Software Engineering Research}, in
+\emph{Guide to Advanced Empirical Software Engineering}, Springer,
+2008~\cite{easterbrook2008selecting}.
+
+\medskip
+\textbf{Why it matters.} It is the clearest treatment of the point this chapter
+turns on: the method is chosen by the question and the philosophical stance,
+not by preference or familiarity. It also connects method choice back to the
+paradigms of \chref{philosophy} explicitly, which most methods texts do not.
+
+\medskip
+\textbf{What to extract.} Their mapping from question type to method, and their
+discussion of what each method cannot tell you. Write the second one into your
+threats section before you start.
+\end{paperbox}
+
+\section{FINER: Five Tests a Question Must Pass}
+
+A question can be well-formed and still be a bad choice for \emph{you}, in
+\emph{this} degree, with \emph{these} resources. The FINER
+criteria~\cite{hulley2013designing} catch that early, when changing course is
+still cheap.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.2cm}L{5.0cm}L{6.7cm}@{}}
+\toprule
+ & \textbf{Test} & \textbf{What kills a question here} \\
+\midrule
+\textbf{F}easible
+  & Subjects, time, expertise, money, access
+  & 300 developers needed; you can recruit 20. A dataset that requires an
+    agreement no one will sign. A study needing 18 months when you have 9 \\
+\textbf{I}nteresting
+  & To the field, not only to you
+  & Nobody outside your supervisor's office would change any belief on hearing
+    the answer \\
+\textbf{N}ovel
+  & Adds to what is known
+  & Answered in 2019 and again in 2022. Only \chref{slr} can tell you this \\
+\textbf{E}thical
+  & Approvable, and defensible
+  & Deception without debriefing; scraping personal data; a design whose
+    control arm withholds something people need (\chref{ethics}) \\
+\textbf{R}elevant
+  & To practice, policy or subsequent research
+  & Fails \reg{PhD Regs 2024}{\S14.1}: no connection to community need, the
+    national research agenda, or an SDG \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{pitfall}[Feasibility is checked with numbers, not optimism]
+``Feasible'' is the criterion students assess by feel, and it is the one that
+ends degrees. Do the arithmetic before committing: an a-priori power
+calculation (\chref{sampling}) for a quantitative design, or an estimate of
+interviews-to-saturation for a qualitative one, multiplied by the realistic
+recruitment rate you can demonstrate --- not the one you hope for.
+
+\medskip
+If the arithmetic says the study is infeasible, that is a finding, arrived at
+in week 10 rather than month 20. Portfolio piece P3 asks you to record exactly
+such a decision, and Appendix~\ref{app:schedule} gives credit for it.
+\end{pitfall}
+
+\section{PICOC: Decomposing the Question}
+
+PICOC breaks a question into the parts that drive both the design and, later,
+the literature search~\cite{petticrew2006systematic}. It originates in clinical
+research, and in computing the Comparison and Context elements do most of the
+work.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.4cm}L{4.4cm}L{7.1cm}@{}}
+\toprule
+ & \textbf{Element} & \textbf{Example (illustrative)} \\
+\midrule
+\textbf{P}opulation  & Who or what is studied
+                     & Professional developers performing code review \\
+\textbf{I}ntervention& The technique, tool or treatment
+                     & An LLM-based review assistant \\
+\textbf{C}omparison  & The alternative it is measured against
+                     & Unassisted review; static analysis alone \\
+\textbf{O}utcome     & The effect that matters
+                     & Defects correctly identified; false positives raised \\
+\textbf{C}ontext     & Setting, domain, constraints
+                     & Industrial teams, safety-critical C code, time-boxed
+                       reviews \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{conceptbox}[The Comparison element is where most computing questions leak]
+``Does an LLM assistant improve code review?'' has no C. Improve compared with
+what --- no review at all, unassisted review, a linter, a second human
+reviewer? Each comparison makes it a different study with a different
+conclusion, and a paper that leaves C implicit will be attacked on exactly this
+point.
+
+\medskip
+The same omission is what makes a literature search return thousands of
+irrelevant hits: without C, there is no term to constrain the query
+(\chref{slr}).
+\end{conceptbox}
+
+\begin{templatebox}[C1 --- Problem, gap and question]
+Copy this into your portfolio (P1) and fill it in. One page, no more.
+
+\medskip
+\textbf{1. The problem, in the world.} Who has it, and what does it cost them?
+\filllines{2}
+
+\noindent\textbf{2. What is currently known.} Two or three sentences, with
+citations.
+\filllines{2}
+
+\noindent\textbf{3. The gap.} What specifically is \emph{not} known? ``Little
+research exists'' is not a gap; name the missing condition, population or
+comparison.
+\filllines{2}
+
+\noindent\textbf{4. The question.} One sentence, ending in a question mark.
+\filllines{1}
+
+\noindent\textbf{5. Question type.} Exploratory / descriptive / relational /
+causal / design / evaluative. \fillline{4cm}
+
+\noindent\textbf{6. Why the answer matters.} What decision changes?
+\filllines{2}
+\end{templatebox}
+
+\begin{templatebox}[C2 --- FINER and PICOC worksheet]
+\textbf{PICOC}
+
+\medskip
+\begin{tabular}{@{}L{2.3cm}L{11.2cm}@{}}
+Population   & \fillline{10.9cm} \\[7pt]
+Intervention & \fillline{10.9cm} \\[7pt]
+Comparison   & \fillline{10.9cm} \\[7pt]
+Outcome      & \fillline{10.9cm} \\[7pt]
+Context      & \fillline{10.9cm} \\[7pt]
+\end{tabular}
+
+\medskip
+\textbf{FINER} --- for each, write the evidence, not a yes.
+
+\medskip
+\begin{tabular}{@{}L{2.3cm}L{11.2cm}@{}}
+Feasible    & \fillline{10.9cm} \\[7pt]
+Interesting & \fillline{10.9cm} \\[7pt]
+Novel       & \fillline{10.9cm} \\[7pt]
+Ethical     & \fillline{10.9cm} \\[7pt]
+Relevant    & \fillline{10.9cm} \\[7pt]
+\end{tabular}
+\end{templatebox}
+
+\section{From Construct to Measure}
+
+A \term{construct} is the abstract thing you care about: code quality,
+developer productivity, trust in an automated system, technical debt, usability.
+None of these can be observed. What you observe is a \term{measure}, and the
+distance between the two is where studies quietly go wrong.
+
+\begin{definitionbox}[Operationalisation]
+\term{Operationalisation} is the explicit statement of the rule by which an
+abstract construct becomes a recorded observation.
+
+\medskip
+It is a claim, and it can be wrong. ``Developer productivity = commits per
+week'' is an operationalisation; it is also, demonstrably, a bad one, because
+it rewards splitting work and penalises the reading and design that good
+development requires. \chref{measurement} treats validity of measures
+properly; the point here is that the choice must be \emph{visible} so it can be
+argued with.
+\end{definitionbox}
+
+\begin{worked}[Narrowing a topic in four rounds]
+\textbf{Round 1 --- the topic.} ``Code review and software quality.''
+Unbounded. Thousands of papers.
+
+\medskip
+\textbf{Round 2 --- add a population and a context.} ``Code review practices in
+small software houses in Pakistan.'' Now bounded, but still not a question:
+there is no outcome and nothing that could come out either way.
+
+\medskip
+\textbf{Round 3 --- add an outcome and a comparison.} ``Do teams in small
+software houses that use checklist-guided code review find more defects than
+teams using unguided review?'' A causal-comparative question, with a
+falsifier: no difference, or fewer.
+
+\medskip
+\textbf{Round 4 --- confront feasibility, and revise honestly.} A between-teams
+experiment needs many teams. Suppose you can access four. The power
+calculation (\chref{sampling}) says four teams cannot detect any plausible
+effect. Three legitimate moves:
+
+\begin{tight}
+  \item \textbf{Change the unit of analysis.} Randomise \emph{reviews} within
+    teams rather than teams, using a within-subjects design
+    (\chref{experiments}). Many more units, at the cost of a possible carryover
+    effect that must then be controlled.
+  \item \textbf{Change the question type.} Ask an exploratory question instead:
+    how do reviewers in these firms actually decide what to comment on? Four
+    teams is ample for that (\chref{qualitative}).
+  \item \textbf{Change the outcome.} If defects found is too noisy at this
+    scale, a construct closer to the intervention --- review coverage,
+    comment specificity --- may be measurable with the units available.
+\end{tight}
+
+\medskip
+All three are honest. Proceeding with four teams and reporting $p = 0.31$ as
+``no significant difference'' is not: an underpowered null result is not
+evidence of no effect (\chref{inference}).
+\end{worked}
+
+\subsection{Variables and their roles}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.6cm}L{5.0cm}L{6.3cm}@{}}
+\toprule
+\textbf{Role} & \textbf{Definition} & \textbf{Example} \\
+\midrule
+Independent  & What you manipulate or contrast & Review style: checklist vs
+                                                  unguided \\
+Dependent    & What you measure as the outcome & Defects correctly identified \\
+Moderator    & Changes the \emph{size} of the effect & Reviewer experience:
+                                                       the checklist may help
+                                                       novices more \\
+Mediator     & Explains \emph{how} the effect happens & Attention to
+                                                        error-prone constructs \\
+Confounder   & Associated with both, and not controlled & Task difficulty, if
+                                                          harder code happened
+                                                          to get checklists \\
+Control      & Held constant to remove it as an explanation & Same codebase,
+                                                              same time box \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Confounders are the reason \chref{experiments} exists: randomisation is the
+only technique that handles confounders you have not thought of.
+
+\section{Hypotheses, and When Not to Have Them}
+
+A \term{hypothesis} is a specific, testable prediction derived from the
+question. Stating one commits you in advance, which is its whole value ---
+see \chref{prereg} on why a prediction registered before the data is worth
+more than the same prediction offered after.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.2cm}L{11.2cm}@{}}
+\toprule
+$H_0$ (null) & Checklist and unguided review do not differ in mean defects
+               identified. \\
+$H_1$ (alternative, directional) & Checklist-guided review identifies more
+               defects than unguided review. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+A directional hypothesis is stronger and should be used when theory genuinely
+predicts a direction --- but it must be committed to beforehand, because
+choosing the direction after seeing the data is a way of halving your p-value
+without gaining any evidence (\chref{prereg}).
+
+\begin{alertbox}[Exploratory studies should not invent hypotheses]
+Not every study has hypotheses, and manufacturing them is a common way to
+damage otherwise good work.
+
+\medskip
+An exploratory qualitative study is trying to discover what the relevant
+categories \emph{are}; it cannot predict relations between categories it has
+not yet found. A systematic mapping study characterises a literature. A design
+science project asks whether an artefact can be built and what it teaches.
+None of these needs a null hypothesis, and bolting one on invites an examiner
+to ask why it was not tested properly.
+
+\medskip
+State research questions. Add hypotheses only where you are genuinely
+predicting, in advance, a specific relation --- and then test exactly those,
+reporting anything else you find as exploratory.
+\end{alertbox}
+
+\section{The Alignment Table}
+
+This is the single most valuable page in a synopsis, and the one examiners turn
+to first. It forces every question to have a plan, and exposes any question
+that does not.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.7cm}L{3.4cm}L{2.6cm}L{3.2cm}L{3.4cm}@{}}
+\toprule
+ & \textbf{Question} & \textbf{Data} & \textbf{Source} & \textbf{Analysis} \\
+\midrule
+RQ1 & How do reviewers decide what to comment on?
+    & 12 interviews
+    & 4 firms, purposive
+    & Thematic analysis, two coders \\
+RQ2 & Does a checklist change comment specificity?
+    & 240 reviews
+    & Within-subjects, randomised
+    & Mixed-effects model, reviewer as random effect \\
+RQ3 & Does the effect depend on experience?
+    & As RQ2
+    & As RQ2
+    & Experience $\times$ condition interaction \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{conceptbox}[How to use it as a diagnostic]
+Read each row across and ask the four killing questions.
+\begin{tightnum}
+  \item Can this \emph{analysis} produce an answer to this \emph{question}? A
+    thematic analysis cannot answer ``how much''; a regression cannot answer
+    ``what forms does this take''.
+  \item Does this \emph{data} exist, and can you get it? Write the number, and
+    where it comes from.
+  \item Does the analysis assume something the data cannot supply ---
+    independence, when the same reviewer contributes 20 reviews?
+  \item Is any row empty? An empty cell is not an oversight, it is an
+    unanswerable question. Delete the question or fix the row.
+\end{tightnum}
+\medskip
+An alignment table built after data collection is a formality. Built before, it
+is the cheapest possible way to discover that your study cannot work.
+\end{conceptbox}
+
+\begin{pitfall}[Four questions that cannot be answered as written]
+\textbf{The compound question.} ``How do developers use static analysis tools
+and what are the barriers to adoption and how can these be overcome?'' Three
+questions, and the third is not a research question at all --- it asks for a
+recommendation, which is a conclusion, not a finding.
+
+\medskip
+\textbf{The question with no possible negative.} ``How can machine learning
+improve intrusion detection?'' presupposes that it does. Ask whether, and under
+what conditions.
+
+\medskip
+\textbf{The question already answered.} Detectable only by \chref{slr}, which
+is why the review precedes the design.
+
+\medskip
+\textbf{The question whose construct cannot be measured in your setting.}
+``Does technical debt reduce team morale?'' --- both constructs are contested,
+neither has an agreed measure, and you have one semester. Either commit to
+defending an operationalisation properly (\chref{measurement}), or choose
+constructs with validated instruments.
+\end{pitfall}
+
+\begin{traditions}{the research question}
+\tradEMP{The question names variables and a population, and its answer is a
+quantity with an interval. It must be settled before data collection, because
+after that it is no longer a prediction.}
+\tradDSR{The question is a design problem: can an artefact meeting requirements
+R be constructed for context C, and what generalisable design knowledge does
+constructing it yield?}
+\tradQUAL{The question is open and expected to evolve. What is going on here,
+and how do participants understand it? Fixing it too early forecloses exactly
+what the study exists to discover.}
+\tradFORM{The question is a conjecture about a formal object: does this
+property hold, what is the bound, is the problem decidable? It is settled by
+proof, and no sample size applies.}
+\end{traditions}
+
+\begin{lab}[Build your own alignment table]
+Using template C1 and C2, take your own topic through the four rounds of the
+worked example. Then draw the alignment table with a row per research question.
+
+\medskip
+Now apply the backward pass from \figref{alignchain}: start at the analysis
+column and read right to left. For at least one row you will find that the
+analysis does not answer the question as stated. Fix the row --- by changing
+the question, the data or the analysis --- and note in one sentence which you
+changed and why. That sentence is the beginning of portfolio piece P3.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Convert this into a PICOC question: ``I want to study whether
+    containers help deployment.''
+  \item A study asks ``Does pair programming improve code quality?'' and
+    measures quality as lines of comments per function. State the
+    operationalisation, and give the strongest objection to it.
+  \item Why is a directional hypothesis chosen after seeing the data worth less
+    than the same hypothesis chosen before, even though the sentence is
+    identical?
+  \item Give a research question in your own area for which stating a null
+    hypothesis would be inappropriate, and explain why.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Topic, question, construct, variable, measure, analysis form a chain.
+    Build it forwards; verify it backwards before collecting anything.
+  \item Six question types, each admitting different designs. A causal question
+    answered by a correlational study is a fatal mismatch, not a minor one.
+  \item FINER rejects questions early and cheaply. Feasibility is settled with
+    a power calculation or a saturation estimate, not with optimism.
+  \item PICOC decomposes the question and later drives the search string. The
+    Comparison element is the one computing questions most often omit.
+  \item Operationalisation is a claim that can be wrong. Make it visible so it
+    can be argued with.
+  \item The alignment table --- question, data, source, analysis --- is the
+    cheapest diagnostic in the course. An empty cell means an unanswerable
+    question.
+  \item State hypotheses only where you genuinely predict in advance.
+    Exploratory work states questions instead.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item Easterbrook et al. argue method follows from question and stance. Give
+    a case in computing where the same question could legitimately be answered
+    within two different paradigms, and say what each answer would and would
+    not establish.
+  \item A reviewer objects that your operationalisation of ``maintainability''
+    as cyclomatic complexity is invalid. Construct the strongest version of
+    their objection, then the strongest defence available to you, and say what
+    additional evidence would settle it.
+  \item The alignment table exposes underpowered rows before data collection.
+    Why, then, do so many published studies contain them? Give one structural
+    and one psychological reason.
+  \item Under what circumstances is it legitimate to change a research question
+    \emph{after} data collection has begun? Distinguish carefully between the
+    legitimate cases and HARKing (\chref{prereg}).
+\end{reviewq}

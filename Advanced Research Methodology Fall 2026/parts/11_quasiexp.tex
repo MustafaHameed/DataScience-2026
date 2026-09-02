@@ -1,0 +1,357 @@
+%=====================================================================
+\chapter{Quasi-Experiments and Repository Mining}\label{ch:quasiexp}
+%=====================================================================
+\locator{3}{Part~3 --- Research Designs for Computing}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} the selection problem and why it, not sample size, is
+    the central difficulty in observational research.
+  \item \textbf{Choose} an identification strategy --- difference-in-differences,
+    interrupted time series, regression discontinuity or matching --- and state
+    the assumption it rests on.
+  \item \textbf{Design} a repository mining study and enumerate its data
+    quality threats.
+  \item \textbf{Judge} when an observational claim may legitimately be phrased
+    causally.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{experiments}, especially what randomisation buys. This chapter is about
+what to do when you cannot have it. \chref{questions} for confounders.
+\end{prereq}
+
+\begin{keyterms}
+quasi-experiment $\bullet$ selection bias $\bullet$ identification strategy
+$\bullet$ counterfactual $\bullet$ difference-in-differences $\bullet$ parallel
+trends $\bullet$ interrupted time series $\bullet$ regression discontinuity
+$\bullet$ propensity score matching $\bullet$ instrumental variable $\bullet$
+natural experiment $\bullet$ mining software repositories $\bullet$
+survivorship bias $\bullet$ tangled commit
+\end{keyterms}
+
+\section{The Problem Is Selection, Not Size}
+
+Most interesting questions in software engineering cannot be answered by
+experiment. You cannot randomly assign companies to adopt microservices, or
+developers to have ten years of experience. What you can do is observe what
+happened where the choice was made by someone else --- and the difficulty is
+that the choice was not made at random.
+
+\begin{definitionbox}[The selection problem]
+When units choose their own treatment, the treated and untreated groups differ
+in every respect that influenced the choice --- including respects you cannot
+observe.
+
+\medskip
+A comparison of outcomes then confounds the effect of the treatment with the
+effect of \emph{being the kind of unit that selects into it}. More data does
+not help: a million observations estimate the confounded quantity with great
+precision.
+\end{definitionbox}
+
+\begin{conceptbox}[What an identification strategy is]
+An \term{identification strategy} is an argument --- not a statistical
+technique --- that the comparison you are making approximates the
+counterfactual: what would have happened to the treated units had they not been
+treated.
+
+\medskip
+Every strategy below rests on an assumption that cannot be tested directly.
+Your job in the thesis is to state that assumption plainly, give whatever
+indirect evidence for it you can, and say what would happen to your conclusion
+if it failed. A quasi-experimental study whose assumption is stated and
+defended is respectable research. One that runs a regression and says
+``controls were included'' is not.
+\end{conceptbox}
+
+\section{Four Strategies}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{2.7cm}L{4.6cm}L{6.4cm}@{}}
+\toprule
+\textbf{Strategy} & \textbf{How it identifies} & \textbf{The assumption it rests on} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Strategy} & \textbf{How it identifies} & \textbf{The assumption it rests on} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Difference-in\-differences
+  & Compares the \emph{change} in treated units with the \emph{change} in
+    untreated units over the same period
+  & \term{Parallel trends}: absent the treatment, both groups would have
+    changed by the same amount. Partly checkable by inspecting pre-treatment
+    trends \\
+Interrupted time series
+  & Models the series before an intervention and tests for a change in level
+    or slope at the intervention point
+  & No other change occurred at the same moment, and the pre-trend would have
+    continued \\
+Regression discontinuity
+  & Compares units just above and just below a threshold that determines
+    treatment
+  & Units cannot precisely manipulate their position relative to the
+    threshold; nothing else changes at it \\
+Propensity score matching
+  & Matches treated to untreated units with similar probability of being
+    treated, given observed covariates
+  & \term{No unobserved confounding} --- everything driving selection was
+    measured. Strong, untestable, and usually false \\
+\end{longtable}
+\end{center}
+
+\begin{alertbox}[Matching is the weakest of the four, and the most used]
+Propensity score matching is popular because it is easy to run and produces
+balanced-looking tables. But it only balances what you \emph{measured}. If
+teams that adopt a practice differ in engineering culture, and you did not
+measure engineering culture, matching on repository age and star count changes
+nothing about that.
+
+\medskip
+Difference-in-differences is usually available in software repository data ---
+you almost always have a time series --- and it is far stronger, because each
+unit acts as its own control and any time-invariant unmeasured difference
+cancels. When you have a before and an after, prefer it.
+\end{alertbox}
+
+\begin{worked}[Repairing the static analysis study]
+\chref{appraisal} appraised a constructed paper claiming that adopting static
+analysis reduces post-release defects, comparing 100 adopting projects with 100
+non-adopting ones. The design supports association only. Here is the repair.
+
+\medskip
+\textbf{The counterfactual we need.} What would have happened to the adopting
+projects' defect rates had they not adopted?
+
+\medskip
+\textbf{Difference-in-differences.} For each adopting project, identify the
+adoption date. Measure the outcome for 12 months before and 12 months after.
+Do the same for non-adopters over a matched calendar window. The estimate is
+\[
+\hat\delta \;=\; (\bar Y^{\text{post}}_{\text{adopt}} - \bar Y^{\text{pre}}_{\text{adopt}})
+              - (\bar Y^{\text{post}}_{\text{control}} - \bar Y^{\text{pre}}_{\text{control}}).
+\]
+
+\medskip
+\textbf{What this fixes.} Any \emph{time-invariant} difference between adopters
+and non-adopters --- better developers, stricter culture, a more testable
+architecture --- differences out. That is precisely the confounding the
+original design could not address.
+
+\medskip
+\textbf{What it does not fix.} Anything that changed \emph{at the same time} as
+adoption. If teams adopt static analysis as part of a broader quality push that
+also introduced code review and CI, difference-in-differences attributes the
+whole package to static analysis. This must be stated as the principal threat,
+and can be partly probed by checking whether other practices appear in the same
+commits.
+
+\medskip
+\textbf{Checking parallel trends.} Plot both groups' monthly defect rates for
+24 months before adoption. If the curves are roughly parallel, the assumption
+is plausible. If adopters were already improving faster, it is not, and the
+estimate is biased --- report the plot either way.
+
+\medskip
+\textbf{The construct problem remains.} Issues labelled \texttt{bug} still
+measure labelling as much as defects (\chref{measurement}). Difference-in-differences
+helps here too, but only if labelling practice did not change at adoption ---
+which, if the quality push was real, it probably did. Consider a second outcome
+less sensitive to labelling, such as post-release reverts.
+
+\medskip
+All figures illustrative; this is a design, not a result.
+\end{worked}
+
+\section{Mining Software Repositories}
+
+Software development leaves an unusually rich trace: version control, issue
+trackers, code review, CI logs, package registries. Mining it is cheap, scales
+to thousands of projects, and is entirely unobtrusive. It is also, as data, far
+messier than it appears.
+
+\begin{paperbox}[What repository data will and will not tell you]
+Eirini Kalliamvakou, Georgios Gousios, Kelly Blincoe, Leif Singer, Daniel M.
+German and Daniela Damian, \emph{The promises and perils of mining GitHub},
+MSR 2014~\cite{kalliamvakou2014promises}.
+
+\medskip
+\textbf{Why it matters.} It is the standard reference for the data quality
+threats in this design, and it is specific: not ``be careful'' but a catalogue
+of named perils with evidence for each.
+
+\medskip
+\textbf{What to extract.} The list of perils, and the corresponding mitigation
+for each one you cannot avoid. Cite it in your threats section and demonstrate
+you handled the ones that apply.
+\end{paperbox}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{3.0cm}L{5.2cm}L{6.0cm}@{}}
+\toprule
+\textbf{Threat} & \textbf{What goes wrong} & \textbf{What to do} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Threat} & \textbf{What goes wrong} & \textbf{What to do} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Not a project
+  & Many repositories are course assignments, dotfiles, forks or personal
+    experiments
+  & Filter on activity, contributor count, issue use and commit history length;
+    report the filter \\
+Survivorship
+  & Abandoned and deleted projects vanish. You study the ones that survived
+  & Be explicit that inference is to surviving projects; consider archived
+    snapshots \\
+Tangled commits
+  & A single commit mixes a bug fix, a refactor and a formatting change
+  & Do not treat one commit as one change; consider untangling heuristics and
+    report their error rate \\
+Bot activity
+  & Dependabot and CI bots generate large volumes of commits and issues
+  & Detect and exclude bot accounts; report how many were removed \\
+Missing links
+  & Only some commits reference the issue they fix, and not at random
+  & Acknowledge that linked-fix datasets are biased towards disciplined
+    projects \\
+Label semantics
+  & \texttt{bug} means different things across projects
+  & Validate a sample manually; report agreement \\
+Activity is not effort
+  & Commit counts measure committing, not work
+  & Choose constructs closer to the question (\chref{measurement}) \\
+\end{longtable}
+\end{center}
+
+\begin{pitfall}[Generalising from GitHub to software engineering]
+Open-source projects on one platform are not a random sample of software
+development. They differ in ownership, incentives, review practice, team
+stability and above all in what is \emph{visible}: much industrial engineering
+leaves no public trace.
+
+\medskip
+This is a limit on the population your inference reaches
+(\chref{validity}), and the fix is not more repositories --- it is stating the
+population honestly. ``In active open-source projects on GitHub between 2019
+and 2024'' is a defensible scope. ``In software projects'' is not.
+\end{pitfall}
+
+\section{When May You Say ``Causes''?}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{4.0cm}L{10.3cm}@{}}
+\toprule
+\textbf{Design} & \textbf{Language it licenses} \\
+\midrule
+Randomised experiment
+  & ``causes'', ``increases'', ``reduces'' --- within the studied population \\
+Strong quasi-experiment with a defended assumption
+  & ``is associated with, and the difference-in-differences estimate is
+    consistent with a causal effect of X on Y under parallel trends'' \\
+Matching on observed covariates
+  & ``is associated with, after adjusting for observed characteristics'' ---
+    and say what is unobserved \\
+Plain correlation
+  & ``is associated with''. Nothing more, in the title as well as the text \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{conceptbox}[The title is part of the claim]
+A paper whose body carefully says ``associated with'' and whose title says
+``improves'' has made a causal claim. Titles are what get read, cited and
+repeated. \reg{PhD Regs 2024}{\S14.3(C)} requires that ``the obtained results
+should support the study objectives'' --- a title outrunning the design is
+exactly the mismatch that clause is aimed at.
+\end{conceptbox}
+
+\begin{traditions}{observational study}
+\tradEMP{The natural home. The entire methodological effort goes into
+constructing a credible counterfactual, and the reporting standard is that a
+reader can judge the identifying assumption for themselves.}
+\tradDSR{Repository data characterises the problem space before an artefact is
+designed, and can supply the naturalistic evaluation baseline afterwards.}
+\tradQUAL{Trace data shows what happened but never why. Pairing mining with
+interviews of the developers involved is one of the strongest mixed designs
+available in our field (\chref{mixed}).}
+\tradFORM{Treats the artefacts as formal objects --- dependency graphs, call
+graphs, change histories --- where properties can be computed exactly rather
+than estimated.}
+\end{traditions}
+
+\begin{lab}[Turn a correlation into a design]
+Find a published claim in your area that is correlational but written
+causally --- they are not hard to find.
+
+\begin{tightnum}
+  \item State the counterfactual the claim requires.
+  \item Choose an identification strategy that could plausibly recover it from
+    available data.
+  \item Write the identifying assumption in one sentence, and say what evidence
+    you could offer for it.
+  \item Name the confounder that would survive your strategy, and say which
+    direction it would bias the estimate.
+  \item Rewrite the paper's title so that it matches what the original design
+    supports.
+\end{tightnum}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why does increasing the sample size not solve selection bias?
+  \item What does difference-in-differences remove that matching does not, and
+    what does it fail to remove?
+  \item Give two reasons a dataset of commits linked to issues is a biased
+    sample of bug fixes.
+  \item Under what circumstances, if any, would you use propensity score
+    matching in preference to difference-in-differences?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item The obstacle in observational research is selection, not sample size.
+    Precision does not fix bias.
+  \item An identification strategy is an argument about a counterfactual, and
+    every one rests on an untestable assumption. State it, defend it, and say
+    what happens if it fails.
+  \item Prefer difference-in-differences where a before and after exist: it
+    removes all time-invariant unmeasured differences. Matching removes only
+    what you measured.
+  \item Repository data is cheap and scales, and carries specific known threats
+    --- non-projects, survivorship, tangled commits, bots, missing links, label
+    semantics. Handle the ones that apply and report how.
+  \item GitHub is not a sample of software engineering. State the population
+    your inference actually reaches.
+  \item Match the causal strength of your language --- in the title as well as
+    the text --- to the design.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item Parallel trends cannot be verified for the post-treatment period, only
+    made plausible for the pre-treatment period. Does this make
+    difference-in-differences unscientific? Answer with reference to
+    \chref{philosophy}.
+  \item Mining studies routinely analyse thousands of projects and report very
+    small p-values. Explain why this is not reassuring, and what should be
+    reported instead.
+  \item Design a natural experiment in software engineering: identify a real
+    event that assigned something close to randomly, and say what it could
+    identify.
+  \item Industrial software leaves little public trace, so the mining
+    literature describes open source. What does this systematically distort in
+    the field's collective picture of software engineering?
+\end{reviewq}

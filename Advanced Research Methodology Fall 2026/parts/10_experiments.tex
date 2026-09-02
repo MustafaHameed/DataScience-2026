@@ -1,0 +1,421 @@
+%=====================================================================
+\chapter{Controlled Experiments in Software Engineering and HCI}\label{ch:experiments}
+%=====================================================================
+\locator{3}{Part~3 --- Research Designs for Computing}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} the three features that make a study an experiment.
+  \item \textbf{Explain} what randomisation buys that no other technique can.
+  \item \textbf{Choose} between between-subjects, within-subjects and factorial
+    designs, and name what each costs.
+  \item \textbf{Counterbalance} a within-subjects design and say which threat
+    it removes.
+  \item \textbf{Judge} the student-versus-professional question on evidence
+    rather than reflex.
+  \item \textbf{Specify} an experiment completely enough to be pre-registered.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{questions} for causal questions and variable roles, and
+\chref{philosophy} for why this design belongs to the post-positivist
+tradition. \chref{sampling} follows immediately: an experiment you cannot
+power is not an experiment you can run.
+\end{prereq}
+
+\begin{keyterms}
+experiment $\bullet$ manipulation $\bullet$ randomisation $\bullet$ control
+$\bullet$ experimental unit $\bullet$ subject and object $\bullet$ treatment
+$\bullet$ factor and level $\bullet$ between-subjects $\bullet$
+within-subjects $\bullet$ crossover $\bullet$ carryover effect $\bullet$
+counterbalancing $\bullet$ Latin square $\bullet$ blocking $\bullet$ factorial
+design $\bullet$ interaction $\bullet$ pilot study
+\end{keyterms}
+
+\section{Three Features, and Only the Third Is Optional}
+
+\begin{definitionbox}[Controlled experiment]
+A study in which the researcher (1) \term{manipulates} at least one independent
+variable, (2) \term{randomly assigns} experimental units to treatments, and
+(3) \term{controls} other variables that could affect the outcome.
+
+\medskip
+Manipulation and randomisation are what license a causal conclusion. Control
+improves precision, and where randomisation is absent but manipulation remains,
+you have a \term{quasi-experiment} (\chref{quasiexp}) --- weaker, often the only
+option, and requiring an explicit argument that assignment was not confounded.
+\end{definitionbox}
+
+\begin{conceptbox}[What randomisation actually buys]
+This is the most misunderstood idea in empirical research, and it is worth
+being precise.
+
+\medskip
+Randomisation does not make groups \emph{equal}. With 20 subjects per group
+they will differ on experience, on the day they slept badly, on everything.
+What randomisation does is make the assignment \textbf{independent of every
+variable, including the ones you have not thought of and cannot measure}.
+
+\medskip
+That is the whole trick, and nothing else achieves it. Matching handles
+confounders you have identified. Statistical adjustment handles confounders you
+have measured. Only randomisation handles the confounder you have never heard
+of --- which, in a field as young as ours, is most of them. It converts an
+unknown bias into known, quantifiable noise, and the noise is what the
+statistics in \chref{inference} are built to handle.
+\end{conceptbox}
+
+\subsection{Vocabulary that prevents confusion}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.0cm}L{11.3cm}@{}}
+\toprule
+Experimental unit & The thing assigned to a treatment. Randomise it, count it,
+                    and analyse at this level. Getting this wrong is the most
+                    common analysis error in the field \\
+Subject           & The person taking part \\
+Object            & The material worked on --- the code, the document, the
+                    dataset \\
+Factor            & An independent variable being manipulated \\
+Level / treatment & A value of a factor \\
+Response          & The measured outcome \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{alertbox}[If you randomise teams, your sample size is teams]
+Suppose you assign four teams of ten developers each to two conditions and
+analyse 40 individual results as if independent. You have reported a sample
+size of 40 when the design supports 4. Members of a team share a codebase, a
+manager, a culture and a coffee machine; their outcomes are correlated.
+
+\medskip
+This inflates significance dramatically, and it is exactly the error that makes
+underpowered studies look conclusive. The remedies are to analyse at the unit
+of randomisation, or to model the nesting explicitly with a mixed-effects model
+(\chref{regression}). Deciding which \emph{before} collecting data is part of
+portfolio piece P5.
+\end{alertbox}
+
+\section{Three Designs, and the Price of Each}
+
+\armfig{
+\begin{tikzpicture}[
+  grp/.style={rounded corners=2pt, draw=primary!55, fill=primary!7,
+              text width=1.85cm, align=center, font=\scriptsize,
+              minimum height=0.72cm},
+  hdr/.style={font=\scriptsize\bfseries, text=primary},
+  note/.style={font=\scriptsize\itshape, text=neutral, text width=3.6cm, align=center},
+  ar/.style={-{Stealth[length=1.8mm]}, draw=secondary}]
+
+  % between
+  \node[hdr] at (1.0,1.5) {Between-subjects};
+  \node[grp] (bA) at (0,0.72) {S1--S20\\ Treatment A};
+  \node[grp] (bB) at (0,-0.3) {S21--S40\\ Treatment B};
+  \node[note] at (1.0,-1.55) {No carryover.\\ Needs twice the subjects.\\
+        Between-subject variance is noise};
+
+  % within
+  \node[hdr] at (6.0,1.5) {Within-subjects};
+  \node[grp] (wA) at (5.0,0.72) {S1--S20\\ A then B};
+  \node[grp] (wB) at (5.0,-0.3) {S1--S20\\ B then A};
+  \node[note] at (6.0,-1.55) {Each subject is own control.\\
+        Half the subjects.\\ Carryover must be counterbalanced};
+
+  % factorial
+  \node[hdr] at (11.0,1.5) {$2\times2$ factorial};
+  \node[grp] (f1) at (10.1,0.72) {A1\,B1};
+  \node[grp] (f2) at (12.1,0.72) {A2\,B1};
+  \node[grp] (f3) at (10.1,-0.3) {A1\,B2};
+  \node[grp] (f4) at (12.1,-0.3) {A2\,B2};
+  \node[note] at (11.1,-1.55) {Two factors at once.\\
+        Reveals interaction.\\ Cells shrink fast};
+
+  \draw[ar] (2.6,0.2) -- (3.9,0.2);
+  \draw[ar] (7.6,0.2) -- (8.9,0.2);
+\end{tikzpicture}}
+{Three experimental designs. The choice is almost always forced by how many
+subjects you can actually recruit, which is why \chref{sampling} should be read
+before this decision is fixed rather than after.}{expdesigns}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{2.6cm}L{5.4cm}L{6.0cm}@{}}
+\toprule
+\textbf{Design} & \textbf{Use when} & \textbf{Principal threat} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Design} & \textbf{Use when} & \textbf{Principal threat} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Between-subjects
+  & Treatments cannot be un-learned; subjects are plentiful
+  & Individual differences become error variance, so power is low. Randomise
+    well, and consider blocking on experience \\
+Within-subjects (crossover)
+  & Subjects are scarce --- almost always, in software engineering
+  & \emph{Carryover}: having done task A changes performance on B. Also
+    fatigue and learning. Counterbalance, and use different but equivalent
+    objects \\
+Factorial
+  & You suspect two factors interact
+  & Cells shrink: a $2\times2$ with 40 subjects has 10 per cell. Interactions
+    need substantially more power than main effects \\
+Blocked
+  & A known nuisance variable dominates, e.g. experience
+  & None specific; blocking on a variable that turns out irrelevant costs
+    little, so block when in doubt \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+\subsection{Counterbalancing}
+
+In a within-subjects design every subject sees every treatment, so order
+becomes a confound. Counterbalancing distributes order systematically.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.8cm}L{11.5cm}@{}}
+\toprule
+Two treatments  & Half the subjects do A then B, half B then A. Order becomes a
+                  factor you can test rather than a bias you carry \\
+Three or more   & Full counterbalancing needs $k!$ orders. A \term{Latin
+                  square} uses $k$ orders in which each treatment appears once
+                  in each position \\
+Objects too     & Rotate the objects (the code, the task) against the
+                  treatments as well, or the effect of treatment is confounded
+                  with the difficulty of the material \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{worked}[A $3\times3$ Latin square for treatments and objects]
+Three review techniques (T1, T2, T3), three code artefacts (O1, O2, O3), and
+subjects assigned to three groups. Each group sees every technique and every
+artefact, and no group sees the same pairing.
+
+\medskip
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.4cm}ccc@{}}
+\toprule
+ & \textbf{Session 1} & \textbf{Session 2} & \textbf{Session 3} \\
+\midrule
+Group 1 & T1 on O1 & T2 on O2 & T3 on O3 \\
+Group 2 & T2 on O3 & T3 on O1 & T1 on O2 \\
+Group 3 & T3 on O2 & T1 on O3 & T2 on O1 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+Each technique appears once per session position, so learning and fatigue are
+balanced across techniques. Each technique meets each artefact exactly once, so
+artefact difficulty does not favour any technique.
+
+\medskip
+What it does \emph{not} handle: a genuine interaction between technique and
+artefact --- if T1 is uniquely suited to O1 --- which a Latin square averages
+away rather than detects. Detecting that needs a full factorial design and
+correspondingly more subjects.
+\end{worked}
+
+\section{Human Subjects: the Students Question}
+
+Every software engineering experiment using students is challenged on the same
+ground: professionals would behave differently. The question deserves a better
+answer than reflex in either direction, and there is evidence to give
+one~\cite{falessi2018empirical, sjoberg2005survey}.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{4.4cm}L{9.9cm}@{}}
+\toprule
+\textbf{Position} & \textbf{The considered version} \\
+\midrule
+Students are acceptable
+  & For tasks where the relevant skill is one students possess; for testing a
+    theory rather than estimating an industrial effect; for early formative
+    work. Graduate students in particular are often comparable to junior
+    professionals \\
+Students are not acceptable
+  & Where the task depends on experience the population lacks --- architectural
+    judgement, legacy system familiarity, organisational negotiation. Here
+    students are not a noisy proxy, they are a different population \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{conceptbox}[How to answer it in your thesis]
+Do not claim students are equivalent to professionals. Do the following
+instead, and the objection loses most of its force:
+
+\begin{tightnum}
+  \item \textbf{Characterise your subjects} rather than labelling them.
+    Years of programming, industrial months, familiarity with the language and
+    with the task type. ``Students'' spans a first-year undergraduate and a
+    part-time MS scholar with six years in industry.
+  \item \textbf{State the target population} the inference is to, explicitly.
+  \item \textbf{Argue the specific task.} Is the skill it demands one your
+    subjects have?
+  \item \textbf{Put it in threats to external validity} (\chref{validity}) with
+    a direction: would professionals plausibly show a larger or smaller effect,
+    and why?
+\end{tightnum}
+\end{conceptbox}
+
+\section{Pilot First. Always}
+
+A pilot with three or four subjects, analysed exactly as the real study will
+be, is the cheapest insurance in empirical research.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{4.4cm}L{9.9cm}@{}}
+\toprule
+\textbf{What a pilot catches} & \textbf{What it costs you to find later} \\
+\midrule
+Instructions that are ambiguous & Every subject interpreted the task
+                                  differently; the data is uninterpretable \\
+A task too long or too short    & Floor or ceiling effects; no variance to
+                                  analyse \\
+Instrumentation that fails      & Timing not logged; the primary outcome is
+                                  missing \\
+An outcome measure with no variance & The whole study, wasted \\
+An analysis script that cannot run on the data shape & Discovered at the worst
+                                  possible moment \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{alertbox}[Write and run the analysis script on pilot data]
+Run your full analysis on the pilot data --- or on simulated data with the same
+shape --- before collecting anything real. If the script produces a number, the
+design and the analysis are compatible. If it errors, or produces something you
+cannot interpret, you have found a design flaw for the price of an afternoon.
+
+\medskip
+This also forces the analysis to be specified in advance, which is precisely
+what pre-registration requires (\chref{prereg}). Pilot data must not be pooled
+into the final analysis.
+\end{alertbox}
+
+\begin{templatebox}[C7 --- Experiment design sheet]
+\begin{tabular}{@{}L{4.0cm}L{9.5cm}@{}}
+Research question / hypothesis & \fillline{9.2cm} \\[7pt]
+Factor(s) and levels           & \fillline{9.2cm} \\[7pt]
+Experimental unit              & \fillline{9.2cm} \\[7pt]
+Subjects: population, N, recruitment & \fillline{9.2cm} \\[7pt]
+Objects and how they are assigned & \fillline{9.2cm} \\[7pt]
+Design (between / within / factorial) & \fillline{9.2cm} \\[7pt]
+Randomisation procedure        & \fillline{9.2cm} \\[7pt]
+Counterbalancing / blocking    & \fillline{9.2cm} \\[7pt]
+Response variable(s) and instrument & \fillline{9.2cm} \\[7pt]
+Expected effect size, and its source & \fillline{9.2cm} \\[7pt]
+Power and required N (\chref{sampling}) & \fillline{9.2cm} \\[7pt]
+Planned analysis               & \fillline{9.2cm} \\[7pt]
+Exclusion rules, decided now   & \fillline{9.2cm} \\[7pt]
+Ethics approval / consent      & \fillline{9.2cm} \\[7pt]
+\end{tabular}
+\end{templatebox}
+
+\begin{pitfall}[Five ways experiments in our field go wrong]
+\begin{tight}
+  \item \textbf{Analysis at the wrong level.} Randomising teams, analysing
+    individuals.
+  \item \textbf{No power analysis.} Twelve subjects, an effect of $d = 0.4$,
+    and a null result reported as ``no difference''.
+  \item \textbf{An outdated or badly tuned baseline.} Your treatment beats a
+    comparison nobody would use.
+  \item \textbf{Optional stopping.} Collecting until the result is significant
+    is a way of guaranteeing significance (\chref{prereg}).
+  \item \textbf{Exclusions decided after seeing the data.} Removing outliers
+    that inconveniently weaken the effect. Write the rule in advance and apply
+    it blind to condition.
+\end{tight}
+\end{pitfall}
+
+\begin{traditions}{the controlled experiment}
+\tradEMP{Its home. Manipulation plus randomisation is the strongest available
+warrant for a causal claim, and the price is artificiality.}
+\tradDSR{Experiments serve as summative artificial evaluation of an artefact
+(\chref{designscience}); the artefact is the treatment.}
+\tradQUAL{Complements rather than competes: an experiment establishes that an
+effect occurred, and a qualitative strand explains why participants behaved as
+they did. This is a standard explanatory sequential design (\chref{mixed}).}
+\tradFORM{Experiments do not settle formal questions, but they do tell you
+whether an asymptotic result matters at realistic input sizes --- which is
+often the more useful question.}
+\end{traditions}
+
+\begin{lab}[Design one experiment completely]
+Take a causal question from your alignment table (\chref{questions}) and fill in
+template C7 completely --- every row, no blanks.
+
+\medskip
+Then submit it to the two tests that catch most flawed designs:
+\begin{tightnum}
+  \item \textbf{The unit test.} What exactly is randomised? Is your stated N the
+    number of those things?
+  \item \textbf{The null test.} Write the sentence you would publish if the
+    result were exactly zero. If that sentence is not publishable, the study is
+    not worth running as designed --- and you have learned this before spending
+    six months on it.
+\end{tightnum}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Randomisation does not equalise groups. What does it do, and why can no
+    amount of statistical adjustment substitute for it?
+  \item You have 16 professional developers and three techniques to compare.
+    Which design, and what specific threat does it introduce?
+  \item In the Latin square worked example, what is averaged away rather than
+    detected, and what design would detect it?
+  \item Why must outlier exclusion rules be fixed before data collection, even
+    though the rule itself may be entirely reasonable?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Manipulation plus randomisation licenses a causal claim; control adds
+    precision.
+  \item Randomisation makes assignment independent of \emph{unknown}
+    confounders. Nothing else does this.
+  \item Analyse at the unit of randomisation, or model the nesting. Randomising
+    teams and counting individuals inflates significance.
+  \item Between-subjects costs subjects; within-subjects costs carryover and
+    must be counterbalanced; factorial costs cell size but reveals interaction.
+  \item Latin squares balance order and material; they average away
+    treatment-by-object interactions rather than detecting them.
+  \item Characterise subjects rather than labelling them, state the target
+    population, and put the inference limit in threats with a direction.
+  \item Pilot, and run the real analysis script on pilot or simulated data
+    before collecting anything.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item Controlled experiments are high in internal validity and low in
+    external validity. For a specific question in your area, design a two-study
+    programme in which each study's weakness is covered by the other, and say
+    what it would cost.
+  \item The students-versus-professionals debate has run for two decades
+    without resolution. Is it resolvable in principle? If yes, what evidence
+    would settle it; if no, what should the field do instead?
+  \item Optional stopping is prohibited in frequentist analysis but is
+    acceptable under some sequential and Bayesian designs. Explain why the
+    difference exists, and whether it offers a practical route for
+    resource-limited software engineering research.
+  \item An experiment finds no effect with adequate power. Describe how you
+    would write this up so that it is publishable, and identify the features of
+    the reviewing system that make that difficult.
+\end{reviewq}

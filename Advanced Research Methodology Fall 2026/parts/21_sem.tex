@@ -1,0 +1,409 @@
+%=====================================================================
+\chapter{Structural Equation Modelling and Latent Constructs}\label{ch:sem}
+%=====================================================================
+\locator{4}{Part~4 --- Measurement, Data and Analysis}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what a latent variable is and why measurement error
+    matters for estimating relationships.
+  \item \textbf{Separate} the measurement model from the structural model.
+  \item \textbf{Choose} between covariance-based and partial least squares SEM
+    on defensible grounds.
+  \item \textbf{Assess} convergent and discriminant validity, including HTMT.
+  \item \textbf{Detect} and address common method bias.
+  \item \textbf{Report} an SEM study to the standard reviewers expect.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{measurement} for validity and reliability --- SEM is measurement theory
+made operational. \chref{survey} if your data comes from a questionnaire, which
+it usually will. \chref{regression} for the modelling ideas SEM extends.
+\end{prereq}
+
+\begin{keyterms}
+latent variable $\bullet$ indicator $\bullet$ measurement model $\bullet$
+structural model $\bullet$ reflective and formative indicators $\bullet$
+confirmatory factor analysis $\bullet$ CB-SEM $\bullet$ PLS-SEM $\bullet$
+composite reliability $\bullet$ average variance extracted $\bullet$
+Fornell--Larcker $\bullet$ HTMT $\bullet$ common method bias $\bullet$ fit index
+\end{keyterms}
+
+\section{Why This Chapter Exists for an IT Course}
+
+A large share of MS IT theses study technology acceptance, user satisfaction,
+system quality or adoption intention. These are latent constructs measured by
+questionnaire, related to one another in a model --- which is precisely what
+structural equation modelling is for. Done well it is powerful; done as it
+commonly is, it produces impressive diagrams supporting conclusions the data do
+not carry.
+
+\begin{definitionbox}[Latent variable]
+A \term{latent variable} is a construct that cannot be observed directly and is
+inferred from multiple observed \term{indicators}.
+
+\medskip
+``Perceived usefulness'' is latent; the four questionnaire items measuring it
+are indicators. SEM estimates relationships \emph{between the latent
+constructs}, explicitly modelling the fact that each indicator measures its
+construct imperfectly.
+\end{definitionbox}
+
+\begin{conceptbox}[What SEM buys over regression on scale means]
+Averaging four items and running a regression treats the average as if it were
+the construct, measured without error. It is not, and the consequence is
+systematic: measurement error \emph{attenuates} estimated relationships, biasing
+them towards zero.
+
+\medskip
+SEM models the error explicitly and estimates the relationship between the
+error-free constructs. For a scale with reliability 0.7, the attenuation is
+substantial --- so this is not a refinement, it is a correction.
+
+\medskip
+The cost is that SEM requires more data, more assumptions, and considerably
+more reporting. Do not use it because it looks sophisticated; use it because
+your constructs are latent and measured with error.
+\end{conceptbox}
+
+\section{Two Models in One}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.6cm}L{10.7cm}@{}}
+\toprule
+\textbf{Measurement model} & How each latent construct relates to its
+                             indicators. Assessed \emph{first}, and the whole
+                             analysis stops here if it fails \\
+\textbf{Structural model}  & How the latent constructs relate to each other.
+                             The hypotheses live here \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{alertbox}[Assess the measurement model first, and be willing to stop]
+If the indicators do not measure the constructs adequately, the structural
+paths between them are meaningless --- you would be estimating relationships
+between things you have not measured.
+
+\medskip
+The order is non-negotiable, and so is the willingness to act on it. A thesis
+that reports poor discriminant validity and then proceeds to interpret path
+coefficients anyway has told the examiner exactly what to ask about.
+\end{alertbox}
+
+\subsection{Reflective and formative indicators}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{2.4cm}L{5.4cm}L{6.5cm}@{}}
+\toprule
+ & \textbf{Reflective} & \textbf{Formative} \\
+\midrule
+Direction  & Construct $\rightarrow$ indicators
+           & Indicators $\rightarrow$ construct \\
+Meaning    & Indicators are effects of the construct; they should correlate
+             highly and are interchangeable
+           & Indicators are components that constitute the construct; they need
+             not correlate \\
+Example    & Satisfaction: four items all reflecting how satisfied someone is
+           & Socioeconomic status: income, education, occupation. Raising
+             income raises status; it does not raise education \\
+Assessment & Reliability, AVE, discriminant validity
+           & Collinearity among indicators, and the significance of each
+             indicator's weight \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Misspecifying the direction is a common and serious error: applying reflective
+criteria to a formative construct will make a perfectly good construct look
+invalid, and dropping ``poorly loading'' formative indicators removes part of
+the construct's definition.
+
+\section{CB-SEM or PLS-SEM?}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{2.8cm}L{5.3cm}L{5.7cm}@{}}
+\toprule
+ & \textbf{CB-SEM} (\texttt{lavaan}) & \textbf{PLS-SEM} (\texttt{seminr}) \\
+\midrule
+\endfirsthead
+\toprule
+ & \textbf{CB-SEM} & \textbf{PLS-SEM} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Estimates
+  & Parameters reproducing the observed covariance matrix
+  & Composite scores maximising explained variance in the outcomes \\
+Purpose
+  & Theory \emph{testing} and confirmation
+  & Prediction and theory \emph{development} \\
+Sample size
+  & Larger; a common rule of thumb is 10 observations per estimated parameter
+  & Smaller samples tolerated --- though the ``10 times the largest number of
+    paths'' rule is widely criticised as far too permissive \\
+Distribution
+  & Assumes multivariate normality for maximum likelihood
+  & Distribution-free; inference by bootstrapping \\
+Global fit
+  & Yes: $\chi^2$, CFI, TLI, RMSEA, SRMR
+  & No true global fit test. SRMR is reported as an approximate check \\
+Formative constructs
+  & Awkward; requires additional identification constraints
+  & Handles them naturally \\
+\end{longtable}
+\end{center}
+
+\begin{pitfall}[PLS-SEM is not a way to escape a small sample]
+It is chosen for that reason constantly, and the justification does not hold.
+PLS tolerates smaller samples than CB-SEM, but small-sample PLS estimates are
+still imprecise, and the bootstrap intervals will show it if you report them.
+
+\medskip
+Choose PLS because your model contains formative constructs, because your aim
+is prediction, or because the theory is still being developed. Choose CB-SEM
+because you are testing an established theory and want a global fit test. Then
+say which reason applied, in one sentence, in the methods chapter. ``PLS-SEM
+was used due to the small sample size'' is the sentence reviewers have learned
+to distrust.
+\end{pitfall}
+
+\section{Assessing the Measurement Model}
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{3.6cm}L{3.6cm}L{6.6cm}@{}}
+\toprule
+\textbf{Criterion} & \textbf{Conventional threshold} & \textbf{What it checks} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Criterion} & \textbf{Threshold} & \textbf{What it checks} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Indicator loading
+  & $\ge 0.70$
+  & Each indicator relates strongly to its construct \\
+Composite reliability
+  & 0.70 to 0.95
+  & Internal consistency. \emph{Above} 0.95 suggests redundant items, not an
+    excellent scale \\
+Average variance extracted (AVE)
+  & $\ge 0.50$
+  & The construct explains more than half the variance in its indicators \\
+Fornell--Larcker
+  & $\sqrt{\text{AVE}}$ exceeds correlations with other constructs
+  & Discriminant validity. Now known to have poor sensitivity \\
+HTMT
+  & $< 0.85$, or $< 0.90$ for conceptually similar constructs
+  & Discriminant validity, and substantially better at detecting its
+    absence~\cite{henseler2015new} \\
+\end{longtable}
+\end{center}
+
+\begin{conceptbox}[Report HTMT, and understand what failing it means]
+Fornell--Larcker was the standard for two decades and has been shown to miss
+discriminant validity problems in exactly the situations where they matter.
+HTMT --- the heterotrait-monotrait ratio of correlations --- detects them
+reliably, and reviewers in information systems now expect it.
+
+\medskip
+Failing HTMT means two of your constructs are not empirically distinguishable.
+Your respondents did not separate them, whatever the theory says. The honest
+responses are to merge the constructs and rewrite the model, or to redesign the
+items so they diverge --- not to report the failure and interpret the path
+between them anyway.
+\end{conceptbox}
+
+\section{Common Method Bias}
+
+When one respondent supplies both the predictors and the outcome, in one
+questionnaire, at one sitting, some of the observed correlation may be produced
+by the method rather than by the constructs~\cite{podsakoff2003common}. Since
+this describes nearly every acceptance study ever run, it deserves attention
+rather than a formulaic paragraph.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.4cm}L{10.9cm}@{}}
+\toprule
+\textbf{Procedural remedies} (better) & Separate the measurement of predictor
+                                        and outcome in time or source;
+                                        guarantee anonymity; counterbalance
+                                        item order; avoid ambiguous items;
+                                        use different response formats for
+                                        different constructs \\
+\textbf{Statistical detection} (weaker) & Harman's single-factor test --- widely
+                                        used, widely criticised as
+                                        insensitive; a marker variable
+                                        approach; a common latent factor in the
+                                        model \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{alertbox}[Harman's single-factor test proves almost nothing]
+It is reported in a large fraction of IS theses, usually as a single sentence
+concluding that common method bias is not a concern. The test has very low
+power to detect bias, so passing it is weak evidence, and the sentence is
+performing reassurance rather than analysis.
+
+\medskip
+Design the bias out procedurally --- temporal separation between predictor and
+outcome measurement is the single most effective step --- and then report what
+you did in the design, not only what you tested afterwards. That is a stronger
+answer, and it is available to you only before data collection.
+\end{alertbox}
+
+\begin{lstlisting}[language=Rlang, caption={A PLS-SEM assessment in the order that
+matters: measurement model first, structural model only if it passes.}]
+library(seminr)
+
+measurements <- constructs(
+  reflective("PU",  multi_items("PU",  1:4)),   # perceived usefulness
+  reflective("PEOU",multi_items("PEOU",1:4)),   # perceived ease of use
+  reflective("INT", multi_items("INT", 1:3))    # behavioural intention
+)
+
+structure <- relationships(
+  paths(from = c("PU", "PEOU"), to = "INT"),
+  paths(from = "PEOU",          to = "PU")
+)
+
+m <- estimate_pls(data = survey, measurements, structure)
+s <- summary(m)
+
+# 1. Measurement model. Stop here if it fails.
+s$loadings; s$reliability          # loadings, rhoC, AVE
+s$validity$htmt                    # discriminant validity -- the one to report
+
+# 2. Structural model, with bootstrap intervals rather than p-values alone.
+b <- bootstrap_model(m, nboot = 5000)
+summary(b)$bootstrapped_paths
+s$paths                            # R-squared per endogenous construct
+\end{lstlisting}
+
+\section{Reporting}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{4.0cm}L{10.3cm}@{}}
+\toprule
+Why SEM, and which variant & The substantive reason, not the sample size \\
+Every item                 & In an appendix, with its source or its adaptation
+                             stated (\chref{survey}) \\
+Measurement model          & Loadings, composite reliability, AVE, HTMT matrix
+                             --- as tables, in full \\
+Any items dropped          & Which, and why. Dropping items to reach a
+                             threshold is a data-driven decision and must be
+                             disclosed \\
+Structural model           & Path coefficients with bootstrap confidence
+                             intervals, $R^2$, and effect sizes \\
+Fit (CB-SEM)               & $\chi^2$ with df, CFI, TLI, RMSEA, SRMR --- all of
+                             them, not the flattering subset \\
+Common method bias         & What was done procedurally, then what was tested \\
+Data and code              & Deposited (\chref{reproducibility}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{pitfall}[Four things examiners ask about SEM theses]
+\begin{tight}
+  \item \textbf{``Why these paths?''} Every path must come from theory stated
+    in advance. A model with paths between everything is not a hypothesis.
+  \item \textbf{``What did you drop?''} Items removed to improve AVE, and
+    modification indices followed to improve fit, are data-driven decisions.
+    Fit obtained that way is not evidence for the theory.
+  \item \textbf{``Is this causal?''} Cross-sectional SEM estimates
+    associations. Arrows in the diagram are the theory's claims, not the
+    design's warrant (\chref{quasiexp}).
+  \item \textbf{``Would a different model fit as well?''} Usually yes.
+    Equivalent models with reversed paths often fit identically, and
+    acknowledging this is far better than being shown it.
+\end{tight}
+\end{pitfall}
+
+\begin{traditions}{latent variable modelling}
+\tradEMP{Its natural extension: measurement error is modelled rather than
+ignored, and theory is tested against a covariance structure.}
+\tradDSR{Used to evaluate an artefact's perceived qualities and their relation
+to intention to use --- formative naturalistic evaluation, and weak evidence of
+actual use.}
+\tradQUAL{Would object that constructs like ``perceived usefulness'' are
+imposed on respondents rather than derived from them, and that an exploratory
+sequential design (\chref{mixed}) should establish the constructs first.}
+\tradFORM{Identification --- whether parameters can be uniquely determined ---
+is a formal question with a formal answer, and an unidentified model is not a
+statistical problem but an algebraic one.}
+\end{traditions}
+
+\begin{lab}[Assess a measurement model]
+Using an open dataset, or the pilot data from your own instrument
+(\chref{survey}):
+
+\begin{tightnum}
+  \item Specify three constructs with at least three reflective indicators
+    each, and the paths between them, from theory.
+  \item Estimate the measurement model. Report loadings, composite reliability
+    and AVE.
+  \item Compute both Fornell--Larcker and HTMT. Do they agree? If not, which do
+    you trust and why?
+  \item Only if the measurement model passes, estimate the structural model
+    with 5,000 bootstrap resamples and report intervals.
+  \item Write the paragraph you would put in the thesis about common method
+    bias --- describing design steps first.
+\end{tightnum}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why does measurement error bias regression coefficients towards zero,
+    and how does SEM address it?
+  \item Give a formative construct from IT research and explain why reflective
+    assessment criteria would misjudge it.
+  \item Composite reliability of 0.97 is reported as excellent. What is the
+    concern?
+  \item Two constructs fail HTMT. What are your two legitimate options?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Latent constructs measured with error attenuate relationships; SEM
+    corrects for this by modelling the error.
+  \item Measurement model first, structural model only if it passes.
+  \item Reflective and formative indicators require different assessment;
+    misspecifying the direction invalidates the assessment.
+  \item Choose CB-SEM or PLS-SEM for a substantive reason. Small sample size is
+    not one.
+  \item Report HTMT, not only Fornell--Larcker. Failing it means merging
+    constructs or redesigning items.
+  \item Design common method bias out procedurally; Harman's single-factor test
+    is weak evidence.
+  \item Disclose every dropped item and every modification index followed. Fit
+    obtained by data-driven revision is not evidence for the theory.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item Technology acceptance models are among the most replicated in IS and
+    among the most criticised as theoretically thin. Assess that criticism, and
+    say what a genuinely novel contribution using UTAUT2 would have to add.
+  \item Equivalent models can fit identically while asserting opposite causal
+    directions. What does this imply about the evidential value of a
+    well-fitting cross-sectional SEM, and what design would break the tie?
+  \item PLS-SEM's sample size rules of thumb have been shown to be far too
+    permissive. Why do they persist, and what should replace them?
+  \item \reg{PhD Regs 2024}{\S14.2(v)} requires that ``quantitative research
+    proposals must include a valid statistical design for data analysis''. What
+    would a valid design section for an SEM study contain that most contain
+    now?
+\end{reviewq}
