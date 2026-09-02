@@ -1,0 +1,389 @@
+---
+title: "Association Rule Mining in R — A Simple Introduction"
+author: "Instructor"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    code-fold: false
+    theme: flatly
+knitr:
+  opts_chunk:
+    echo: true
+    warning: false
+    message: false
+---
+
+## What is Association Rule Mining?
+
+**Association Rule Mining (ARM)** finds interesting relationships between items
+in a dataset. The classic example is **market basket analysis**:
+
+> *"Customers who buy bread and butter also tend to buy milk."*
+
+This gives us a rule:  `{bread, butter} → {milk}`
+
+---
+
+## The Three Key Measures
+
+Before we write any code, let us understand the three numbers that describe
+every rule.
+
+### Support
+
+How *common* is the itemset?
+
+$$\text{Support}(A) = \frac{\text{Number of transactions containing } A}{\text{Total transactions}}$$
+
+### Confidence
+
+How *reliable* is the rule?
+
+$$\text{Confidence}(A \Rightarrow B) = \frac{\text{Support}(A \cup B)}{\text{Support}(A)}$$
+
+### Lift
+
+Is the rule *better than random chance*?
+
+$$\text{Lift}(A \Rightarrow B) = \frac{\text{Confidence}(A \Rightarrow B)}{\text{Support}(B)}$$
+
+| Lift value | Meaning |
+|-----------|---------|
+| Lift > 1  | Positive association (useful rule) |
+| Lift = 1  | No association (items are independent) |
+| Lift < 1  | Negative association |
+
+---
+
+## A Tiny Example by Hand
+
+Consider **5 transactions** in a small grocery shop:
+
+| TID | Items bought |
+|-----|-------------|
+| T1  | bread, butter, milk |
+| T2  | bread, butter |
+| T3  | bread, milk |
+| T4  | butter, milk |
+| T5  | bread, butter, milk |
+
+Let us calculate the metrics for the rule **{bread, butter} → {milk}**:
+
+- Transactions containing {bread, butter}: T1, T2, T5 → **3**
+- Transactions containing {bread, butter, milk}: T1, T5 → **2**
+- Transactions containing {milk}: T1, T3, T4, T5 → **4**
+
+$$\text{Support}(\{bread, butter, milk\}) = \frac{2}{5} = 0.40$$
+
+$$\text{Confidence}(\{bread, butter\} \Rightarrow \{milk\}) = \frac{2/5}{3/5} = \frac{2}{3} \approx 0.67$$
+
+$$\text{Lift} = \frac{0.67}{4/5} = \frac{0.67}{0.80} \approx 0.83$$
+
+A lift of 0.83 (< 1) means buying bread and butter does **not** strongly predict
+buying milk in this tiny dataset. We need more transactions to find meaningful
+patterns!
+
+---
+
+## Step 1 — Install and Load Packages
+
+We use two packages:
+
+- **`arules`** — the core ARM engine
+- **`arulesViz`** — visualisation tools
+
+```{r}
+#| label: setup
+
+# Install packages if they are not already present
+if (!requireNamespace("arules",     quietly = TRUE)) install.packages("arules")
+if (!requireNamespace("arulesViz",  quietly = TRUE)) install.packages("arulesViz")
+if (!requireNamespace("ggplot2",    quietly = TRUE)) install.packages("ggplot2")
+
+library(arules)
+library(arulesViz)
+library(ggplot2)
+
+cat("Packages loaded successfully.\n")
+```
+
+---
+
+## Step 2 — Create a Small Dataset
+
+We manually define **20 transactions** with only **8 grocery items**.
+This keeps things easy to follow.
+
+```{r}
+#| label: dataset
+
+# Each inner vector is one shopping basket
+baskets <- list(
+  c("bread", "butter", "milk"),
+  c("bread", "butter"),
+  c("bread", "milk"),
+  c("butter", "milk"),
+  c("bread", "butter", "milk"),
+  c("bread", "eggs"),
+  c("bread", "butter", "eggs"),
+  c("milk", "yogurt"),
+  c("milk", "yogurt", "butter"),
+  c("bread", "yogurt"),
+  c("cheese", "bread", "butter"),
+  c("cheese", "milk"),
+  c("bread", "butter", "milk", "eggs"),
+  c("yogurt", "cheese"),
+  c("bread", "milk", "yogurt"),
+  c("butter", "eggs"),
+  c("bread", "cheese"),
+  c("milk", "butter", "cheese"),
+  c("bread", "butter", "yogurt"),
+  c("eggs", "milk")
+)
+
+# Convert to an arules 'transactions' object
+txns <- as(baskets, "transactions")
+
+cat("Number of transactions:", length(txns), "\n")
+cat("Number of unique items:", length(itemLabels(txns)), "\n")
+```
+
+---
+
+## Step 3 — Explore the Data
+
+### Inspect the First Few Transactions
+
+```{r}
+#| label: inspect
+
+inspect(txns[1:5])
+```
+
+### Summary of the Transaction Dataset
+
+```{r}
+#| label: summary-data
+
+summary(txns)
+```
+
+### Item Frequency Plot
+
+This shows how often each item appears across all transactions.
+
+```{r}
+#| label: item-freq
+#| fig-cap: "Item frequency across all transactions"
+#| fig-width: 7
+#| fig-height: 4
+
+itemFrequencyPlot(
+  txns,
+  type  = "relative",
+  col   = "steelblue",
+  main  = "Relative Item Frequency",
+  ylab  = "Support (proportion of transactions)"
+)
+```
+
+---
+
+## Step 4 — Find Frequent Itemsets
+
+The **Apriori algorithm** works in two stages:
+
+1. Find all itemsets with support ≥ `min_support` (**frequent itemsets**)
+2. Generate rules from those itemsets with confidence ≥ `min_confidence`
+
+We start with Stage 1.
+
+```{r}
+#| label: frequent-itemsets
+
+frequent_sets <- apriori(
+  txns,
+  parameter = list(
+    supp   = 0.20,   # appear in at least 20% of transactions
+    target = "frequent itemsets"
+  )
+)
+
+cat("Total frequent itemsets found:", length(frequent_sets), "\n\n")
+
+# Show the top 10 by support
+inspect(sort(frequent_sets, by = "support", decreasing = TRUE)[1:10])
+```
+
+---
+
+## Step 5 — Generate Association Rules
+
+Now Stage 2 — turn frequent itemsets into rules.
+
+```{r}
+#| label: rules
+
+rules <- apriori(
+  txns,
+  parameter = list(
+    supp   = 0.20,   # minimum support
+    conf   = 0.50,   # minimum confidence
+    minlen = 2       # at least 2 items (antecedent + consequent)
+  )
+)
+
+cat("Total rules generated:", length(rules), "\n")
+```
+
+---
+
+## Step 6 — Inspect the Rules
+
+### All Rules (sorted by Lift)
+
+```{r}
+#| label: view-rules
+
+rules_sorted <- sort(rules, by = "lift", decreasing = TRUE)
+inspect(rules_sorted)
+```
+
+### Top 5 Rules by Confidence
+
+```{r}
+#| label: top-conf
+
+top_conf <- head(sort(rules, by = "confidence", decreasing = TRUE), 5)
+inspect(top_conf)
+```
+
+---
+
+## Step 7 — Visualise the Rules
+
+### Scatter Plot (Support vs Confidence, coloured by Lift)
+
+```{r}
+#| label: scatter
+#| fig-cap: "Scatter plot of all rules. Higher lift = stronger rule."
+#| fig-width: 7
+#| fig-height: 5
+
+plot(
+  rules,
+  method  = "scatterplot",
+  measure = c("support", "confidence"),
+  shading = "lift"
+)
+```
+
+### Network Graph of Top Rules
+
+Each circle is an **item** and each arrow represents a rule.
+The size of the arrow-node shows lift.
+
+```{r}
+#| label: graph
+#| fig-cap: "Network graph of the top rules"
+#| fig-width: 8
+#| fig-height: 6
+
+plot(
+  rules_sorted,
+  method = "graph",
+  main   = "Association Rules Network"
+)
+```
+
+---
+
+## Step 8 — Filter Rules for Specific Items
+
+In practice, you often want rules for a single product.
+
+### What leads to buying *milk*?
+
+```{r}
+#| label: target-milk
+
+rules_milk <- apriori(
+  txns,
+  parameter  = list(supp = 0.15, conf = 0.50, minlen = 2),
+  appearance = list(rhs = "milk", default = "lhs")
+)
+
+cat("Rules predicting milk:", length(rules_milk), "\n\n")
+inspect(sort(rules_milk, by = "lift", decreasing = TRUE))
+```
+
+### What leads to buying *yogurt*?
+
+```{r}
+#| label: target-yogurt
+
+rules_yogurt <- apriori(
+  txns,
+  parameter  = list(supp = 0.10, conf = 0.40, minlen = 2),
+  appearance = list(rhs = "yogurt", default = "lhs")
+)
+
+cat("Rules predicting yogurt:", length(rules_yogurt), "\n\n")
+inspect(sort(rules_yogurt, by = "lift", decreasing = TRUE))
+```
+
+---
+
+## Step 9 — Convert Rules to a Data Frame
+
+You can export rules to a regular R data frame for further analysis.
+
+```{r}
+#| label: dataframe
+
+rules_df <- as(rules, "data.frame")
+
+# Round numeric columns for readability
+rules_df$support    <- round(rules_df$support,    3)
+rules_df$confidence <- round(rules_df$confidence, 3)
+rules_df$lift       <- round(rules_df$lift,       3)
+
+# Show all rules in a tidy table
+rules_df[order(-rules_df$lift), ]
+```
+
+---
+
+## Summary
+
+In this lecture we covered:
+
+| Step | Task |
+|------|------|
+| 1 | Install and load `arules` and `arulesViz` |
+| 2 | Create / load a transaction dataset |
+| 3 | Explore item frequencies |
+| 4 | Find frequent itemsets with `apriori()` |
+| 5 | Generate association rules |
+| 6 | Inspect and sort rules by Support, Confidence, Lift |
+| 7 | Visualise rules (scatter plot, network graph) |
+| 8 | Filter rules for a specific item |
+| 9 | Export rules to a data frame |
+
+### Key Takeaways
+
+- **Support** tells us how common an itemset is.
+- **Confidence** tells us how often the rule is correct.
+- **Lift > 1** means a genuinely useful association.
+- The **Apriori algorithm** is the classic method to find these rules efficiently.
+
+---
+
+## References
+
+1. Agrawal, R., & Srikant, R. (1994). *Fast algorithms for mining association rules*. VLDB.
+2. Hahsler, M., Grün, B., & Hornik, K. (2005). `arules` — A computational environment for mining association rules. *Journal of Statistical Software*, 14(15).
+3. Hahsler, M. (2017). `arulesViz`: Visualizing Association Rules and Frequent Itemsets. *Journal of Statistical Software*, 76(2).

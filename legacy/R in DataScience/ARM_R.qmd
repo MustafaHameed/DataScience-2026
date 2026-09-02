@@ -1,0 +1,545 @@
+---
+title: "Association Rule Mining (ARM) in R"
+author: "Instructor"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: false
+  pdf:
+    toc: true
+    number-sections: true
+    geometry: margin=1in
+    fontsize: 11pt
+    pdf-engine: lualatex
+knitr:
+  opts_chunk:
+    echo: true
+    warning: false
+    message: false
+---
+
+## Introduction
+
+**Association Rule Mining (ARM)** is an unsupervised machine learning technique used to
+discover interesting relationships (associations) between variables in large datasets.
+Common applications include:
+
+- **Market basket analysis** (e.g., "customers who buy bread also buy butter")
+- **Recommendation systems**
+- **Medical diagnosis**
+- **Web usage mining**
+
+### Key Metrics
+
+| Metric | Formula | Interpretation |
+|--------|---------|----------------|
+| **Support** | freq(A+B) / N | How often the itemset appears |
+| **Confidence** | Support(A+B) / Support(A) | Reliability of the rule |
+| **Lift** | Confidence(A=>B) / Support(B) | Strength vs. random chance |
+
+A **Lift > 1** indicates that A and B appear together more often than expected by chance.
+
+---
+
+## Setup: Install and Load Packages
+
+```{r}
+#| label: setup
+
+# Check that required packages are installed
+required_pkgs <- c("arules", "arulesViz", "ggplot2", "reshape2", "RColorBrewer")
+missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, FUN.VALUE = logical(1), quietly = TRUE)]
+if (length(missing_pkgs) > 0) {
+  stop(
+    "The following required packages are not installed: ",
+    paste(missing_pkgs, collapse = ", "),
+    "\nPlease install them before rendering this document, e.g.: ",
+    'install.packages(c("arules", "arulesViz", "ggplot2", "reshape2", "RColorBrewer"))'
+  )
+}
+
+library(arules)
+library(arulesViz)
+library(ggplot2)
+library(reshape2)
+library(RColorBrewer)
+
+cat("All packages loaded successfully.\n")
+```
+
+---
+
+## Dataset: Synthetic Grocery Transactions
+
+We simulate a realistic market-basket dataset with **1,000 transactions** across
+**20 grocery items**, then convert it to an `arules` `transactions` object.
+
+```{r}
+#| label: create-dataset
+
+set.seed(42)
+
+grocery_items <- c(
+  "whole milk", "yogurt", "rolls/buns", "soda", "other vegetables",
+  "root vegetables", "tropical fruit", "bottled water", "pastry",
+  "citrus fruit", "shopping bags", "sausage", "newspapers",
+  "bottled beer", "canned beer", "fruit/vegetable juice",
+  "whipped/sour cream", "domestic eggs", "pip fruit", "chocolate"
+)
+
+# Co-purchase basket patterns
+basket_patterns <- list(
+  c("whole milk", "yogurt", "other vegetables"),
+  c("whole milk", "rolls/buns", "soda"),
+  c("root vegetables", "other vegetables", "whole milk"),
+  c("tropical fruit", "yogurt", "whole milk"),
+  c("pastry", "citrus fruit", "whole milk"),
+  c("sausage", "rolls/buns", "soda"),
+  c("bottled beer", "canned beer"),
+  c("shopping bags", "other vegetables", "root vegetables"),
+  c("domestic eggs", "whole milk", "other vegetables"),
+  c("whipped/sour cream", "whole milk", "yogurt")
+)
+
+generate_basket <- function() {
+  pattern <- basket_patterns[[sample(length(basket_patterns), 1)]]
+  extra   <- sample(grocery_items, sample(0:2, 1), replace = FALSE)
+  unique(c(pattern, extra))
+}
+
+basket_list <- replicate(1000, generate_basket(), simplify = FALSE)
+
+# Convert to arules transactions object
+txns <- as(basket_list, "transactions")
+
+cat("Total transactions:", length(txns), "\n")
+cat("Unique items:      ", length(itemLabels(txns)), "\n")
+inspect(txns[1:3])
+```
+
+---
+
+## Exploratory Data Analysis
+
+### Dataset Summary
+
+```{r}
+#| label: dataset-summary
+
+summary(txns)
+```
+
+### Top 15 Most Frequent Items
+
+```{r}
+#| label: item-frequency-abs
+#| fig-cap: "Top 15 Most Frequent Items (Absolute Count)"
+#| fig-width: 8
+#| fig-height: 5
+
+itemFrequencyPlot(
+  txns,
+  topN  = 15,
+  type  = "absolute",
+  col   = "steelblue",
+  main  = "Top 15 Most Frequent Items",
+  xlab  = "Items",
+  ylab  = "Absolute Frequency"
+)
+```
+
+### Top 15 Items by Relative Support
+
+```{r}
+#| label: item-frequency-rel
+#| fig-cap: "Top 15 Items by Relative Support"
+#| fig-width: 8
+#| fig-height: 5
+
+itemFrequencyPlot(
+  txns,
+  topN  = 15,
+  type  = "relative",
+  col   = "coral",
+  main  = "Top 15 Items by Relative Support",
+  xlab  = "Items",
+  ylab  = "Support (Relative Frequency)"
+)
+```
+
+### Item Frequency — ggplot2 Bar Chart
+
+```{r}
+#| label: item-frequency-gg
+#| fig-cap: "Top 15 Items by Support (ggplot2)"
+#| fig-width: 8
+#| fig-height: 5
+
+item_freq <- sort(itemFrequency(txns, type = "relative"), decreasing = TRUE)
+top15_df  <- data.frame(
+  Item    = names(item_freq[1:15]),
+  Support = as.numeric(item_freq[1:15])
+)
+
+ggplot(top15_df, aes(x = reorder(Item, Support), y = Support)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Top 15 Grocery Items by Support",
+    x     = "Item",
+    y     = "Support"
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+### Transaction Length Distribution
+
+```{r}
+#| label: tx-length
+#| fig-cap: "Distribution of Transaction Lengths"
+#| fig-width: 7
+#| fig-height: 4
+
+tx_sizes <- size(txns)
+
+ggplot(data.frame(length = tx_sizes), aes(x = length)) +
+  geom_histogram(binwidth = 1, fill = "coral", color = "white") +
+  labs(
+    title = "Transaction Length Distribution",
+    x     = "Number of Items per Transaction",
+    y     = "Frequency"
+  ) +
+  theme_minimal(base_size = 11)
+
+cat(sprintf("Mean transaction length: %.2f\n", mean(tx_sizes)))
+cat(sprintf("Max  transaction length: %d\n",   max(tx_sizes)))
+```
+
+---
+
+## Mining Frequent Itemsets with Apriori
+
+```{r}
+#| label: apriori-itemsets
+
+frequent_itemsets <- apriori(
+  txns,
+  parameter = list(
+    supp   = 0.05,
+    target = "frequent itemsets",
+    minlen = 1,
+    maxlen = 4
+  )
+)
+
+cat("Total frequent itemsets:", length(frequent_itemsets), "\n")
+inspect(sort(frequent_itemsets, by = "support", decreasing = TRUE)[1:10])
+```
+
+### Frequent Itemsets by Length
+
+```{r}
+#| label: itemsets-by-length
+#| fig-cap: "Number of Frequent Itemsets by Length"
+#| fig-width: 6
+#| fig-height: 4
+
+length_counts <- table(size(frequent_itemsets))
+length_df     <- data.frame(
+  Length = as.integer(names(length_counts)),
+  Count  = as.integer(length_counts)
+)
+
+ggplot(length_df, aes(x = factor(Length), y = Count)) +
+  geom_bar(stat = "identity", fill = "mediumseagreen", color = "white") +
+  labs(
+    title = "Frequent Itemsets by Length",
+    x     = "Itemset Length",
+    y     = "Count"
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+---
+
+## Generating Association Rules
+
+```{r}
+#| label: rules
+
+rules <- apriori(
+  txns,
+  parameter = list(
+    supp   = 0.05,
+    conf   = 0.4,
+    minlen = 2,
+    maxlen = 4,
+    target = "rules"
+  )
+)
+
+cat("Total association rules:", length(rules), "\n")
+rules_sorted <- sort(rules, by = "lift", decreasing = TRUE)
+inspect(head(rules_sorted, 10))
+```
+
+---
+
+## Inspecting Top Rules
+
+### Top 10 Rules by Lift
+
+```{r}
+#| label: top-lift
+
+top_lift <- head(sort(rules, by = "lift", decreasing = TRUE), 10)
+inspect(top_lift)
+```
+
+### Top 10 Rules by Confidence
+
+```{r}
+#| label: top-confidence
+
+top_conf <- head(sort(rules, by = "confidence", decreasing = TRUE), 10)
+inspect(top_conf)
+```
+
+### Top 10 Rules by Support
+
+```{r}
+#| label: top-support
+
+top_supp <- head(sort(rules, by = "support", decreasing = TRUE), 10)
+inspect(top_supp)
+```
+
+---
+
+## Visualizations
+
+### Scatter Plot: Support vs Confidence (Lift as colour)
+
+```{r}
+#| label: scatter-supp-conf
+#| fig-cap: "Scatter Plot: Support vs Confidence, coloured by Lift"
+#| fig-width: 7
+#| fig-height: 5
+
+plot(
+  rules,
+  method  = "scatterplot",
+  measure  = c("support", "confidence"),
+  shading  = "lift",
+  main     = "Association Rules: Support vs Confidence"
+)
+```
+
+### Lift Distribution
+
+```{r}
+#| label: lift-dist
+#| fig-cap: "Distribution of Lift Values Across All Rules"
+#| fig-width: 7
+#| fig-height: 4
+
+lift_vals <- quality(rules)$lift
+lift_df   <- data.frame(lift = lift_vals)
+
+ggplot(lift_df, aes(x = lift)) +
+  geom_histogram(bins = 20, fill = "steelblue", color = "white") +
+  geom_vline(xintercept = 1.0, color = "red", linetype = "dashed",
+             linewidth = 0.8) +
+  annotate("text", x = 1.05, y = Inf, label = "Lift = 1",
+           color = "red", hjust = 0, vjust = 2, size = 3.5) +
+  labs(
+    title = "Distribution of Lift Values",
+    x     = "Lift",
+    y     = "Number of Rules"
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+### Confidence vs Lift (Support as colour)
+
+```{r}
+#| label: conf-lift
+#| fig-cap: "Confidence vs Lift, coloured by Support"
+#| fig-width: 7
+#| fig-height: 5
+
+rules_df <- as(rules, "data.frame")
+
+ggplot(rules_df, aes(x = confidence, y = lift, colour = support)) +
+  geom_point(alpha = 0.7, size = 2) +
+  scale_colour_viridis_c(name = "Support", option = "plasma") +
+  labs(
+    title = "Confidence vs Lift",
+    x     = "Confidence",
+    y     = "Lift"
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+### Top 20 Rules — Graph-Based Network Plot
+
+```{r}
+#| label: graph-plot
+#| fig-cap: "Graph of Top 20 Rules by Lift"
+#| fig-width: 8
+#| fig-height: 6
+
+top20 <- head(sort(rules, by = "lift"), 20)
+plot(
+  top20,
+  method = "graph",
+  main   = "Top 20 Rules – Network Graph"
+)
+```
+
+### Grouped Matrix Plot
+
+```{r}
+#| label: grouped-matrix
+#| fig-cap: "Grouped Matrix of Top 50 Rules"
+#| fig-width: 8
+#| fig-height: 6
+
+top50 <- head(sort(rules, by = "lift"), 50)
+plot(
+  top50,
+  method = "grouped",
+  main   = "Grouped Matrix of Top 50 Rules"
+)
+```
+
+### Parallel Coordinates Plot
+
+```{r}
+#| label: paracoord
+#| fig-cap: "Parallel Coordinates of Top 20 Rules"
+#| fig-width: 8
+#| fig-height: 5
+
+plot(
+  top20,
+  method  = "paracoord",
+  control = list(reorder = TRUE),
+  main    = "Parallel Coordinates of Top 20 Rules"
+)
+```
+
+### Top 15 Rules — Horizontal Bar Chart (Lift)
+
+```{r}
+#| label: bar-lift
+#| fig-cap: "Top 15 Rules Ranked by Lift"
+#| fig-width: 9
+#| fig-height: 6
+
+top15_rules <- head(sort(rules, by = "lift"), 15)
+top15_df2   <- as(top15_rules, "data.frame")
+
+# Format rule labels from the 'rules' column (e.g. "{a,b} => {c}")
+top15_df2$rule  <- as.character(top15_df2$rules)
+top15_df2$rule  <- factor(top15_df2$rule,
+                           levels = top15_df2$rule[order(top15_df2$lift)])
+
+ggplot(top15_df2, aes(x = rule, y = lift)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Top 15 Association Rules by Lift",
+    x     = "Rule",
+    y     = "Lift"
+  ) +
+  theme_minimal(base_size = 10)
+```
+
+---
+
+## Targeted Rule Mining
+
+### Rules with "whole milk" as Consequent
+
+```{r}
+#| label: targeted-milk
+
+rules_milk <- apriori(
+  txns,
+  parameter  = list(supp = 0.03, conf = 0.4, minlen = 2),
+  appearance = list(rhs = "whole milk", default = "lhs")
+)
+cat("Rules with whole milk as consequent:", length(rules_milk), "\n")
+inspect(head(sort(rules_milk, by = "lift"), 10))
+```
+
+### Rules with "yogurt" as Consequent
+
+```{r}
+#| label: targeted-yogurt
+
+rules_yogurt <- apriori(
+  txns,
+  parameter  = list(supp = 0.03, conf = 0.4, minlen = 2),
+  appearance = list(rhs = "yogurt", default = "lhs")
+)
+cat("Rules with yogurt as consequent:", length(rules_yogurt), "\n")
+inspect(head(sort(rules_yogurt, by = "lift"), 10))
+```
+
+---
+
+## Removing Redundant Rules
+
+```{r}
+#| label: remove-redundant
+
+non_redundant <- rules[!is.redundant(rules)]
+
+cat("Total rules:         ", length(rules),        "\n")
+cat("Non-redundant rules: ", length(non_redundant), "\n")
+```
+
+---
+
+## Summary Statistics
+
+```{r}
+#| label: summary
+
+cat("=== Association Rules Quality Summary ===\n")
+print(summary(quality(rules)))
+```
+
+---
+
+## Converting Rules to a Data Frame
+
+```{r}
+#| label: rules-dataframe
+
+rules_df_full <- as(rules, "data.frame")
+head(rules_df_full[order(-rules_df_full$lift), ], 10)
+```
+
+---
+
+## Key Takeaways
+
+- **Support** identifies how frequently an itemset appears in the dataset.
+- **Confidence** measures the reliability of an association rule.
+- **Lift > 1** indicates a positive association stronger than random chance.
+- The **Apriori algorithm** prunes low-support candidates early, making it scalable.
+- `arulesViz` provides rich visualization methods (scatter, graph, grouped matrix, parallel coordinates).
+
+---
+
+## References
+
+1. Agrawal, R., & Srikant, R. (1994). *Fast algorithms for mining association rules*. VLDB.
+2. Hahsler, M., Grün, B., & Hornik, K. (2005). `arules` — A computational environment for mining association rules. *Journal of Statistical Software*, 14(15).
+3. Hahsler, M. (2017). `arulesViz`: Visualizing Association Rules and Frequent Itemsets. *Journal of Statistical Software*, 76(2).
