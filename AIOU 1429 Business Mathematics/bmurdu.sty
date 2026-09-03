@@ -1,0 +1,200 @@
+%=====================================================================
+%  bmurdu.sty
+%  Style package for the Urdu short edition of the AIOU 1429 / 5405
+%  Business Mathematics solved question bank.
+%
+%  ENGINE: XeLaTeX only. pdflatex cannot typeset Urdu -- it has no
+%  OpenType shaping and no bidirectional algorithm. Build with
+%  build_urdu.ps1, which passes -xelatex to latexmk.
+%
+%  Shares the indigo/amber palette of bmsolutions.sty so the two
+%  editions read as one family, but the machinery underneath is
+%  different: fontspec + polyglossia + bidi rather than lmodern.
+%=====================================================================
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{bmurdu}[2026/09/03 AIOU 1429 Business Mathematics -- Urdu edition style]
+
+%---------------------------------------------------------------------
+% Packages
+%
+% ORDER MATTERS. bidi -- which polyglossia loads for us -- requires that
+% it be loaded after essentially everything else; loading a package that
+% patches sectioning, floats or tabulars *after* bidi silently breaks
+% the right-to-left handling. So every other package goes above the
+% \RequirePackage{polyglossia} line, and nothing goes below it.
+%---------------------------------------------------------------------
+\RequirePackage[margin=2.2cm,top=2.5cm,bottom=2.3cm]{geometry}
+\RequirePackage{amsmath,amssymb}
+\RequirePackage{xcolor}
+\RequirePackage{graphicx}
+\RequirePackage{tikz}
+\RequirePackage{booktabs}
+\RequirePackage{array}
+\RequirePackage{colortbl}
+\RequirePackage{enumitem}
+\RequirePackage[most]{tcolorbox}
+\RequirePackage{fancyhdr}
+\RequirePackage{titlesec}
+\RequirePackage{needspace}
+\RequirePackage{hyperref}
+% polyglossia LAST -- see the note above.
+\RequirePackage{polyglossia}
+
+%---------------------------------------------------------------------
+% Languages and fonts
+%
+% "Urdu Typesetting" is the Nastaliq face that ships with Windows. It is
+% drawn on a small body relative to its em, so it needs both a generous
+% Scale and extra leading -- Nastaliq descends steeply from right to
+% left and collides with the line below at normal \baselineskip.
+%---------------------------------------------------------------------
+\setmainlanguage{urdu}
+\setotherlanguage{english}
+
+\newfontfamily\urdufont[Script=Arabic,Scale=1.45]{Urdu Typesetting}
+\setmainfont[Script=Arabic,Scale=1.45]{Urdu Typesetting}
+\newfontfamily\englishfont[Scale=1.0]{Latin Modern Roman}
+
+\linespread{1.55}
+
+%---------------------------------------------------------------------
+% Palette -- shared with bmsolutions.sty
+%---------------------------------------------------------------------
+\definecolor{bmink}   {HTML}{16233A}
+\definecolor{bmblue}  {HTML}{23395B}
+\definecolor{bmblued} {HTML}{16263F}
+\definecolor{bmaccent}{HTML}{A9501B}
+\definecolor{bmgreen} {HTML}{1F6F54}
+\definecolor{bmred}   {HTML}{8E2B20}
+\definecolor{bmtint}  {HTML}{EEF3F8}
+\definecolor{bmtintw} {HTML}{FBF4EC}
+\definecolor{bmtintr} {HTML}{FBEFEE}
+\definecolor{bmgrey}  {HTML}{5A6472}
+
+\hypersetup{
+  colorlinks=true, linkcolor=bmblue, urlcolor=bmaccent,
+  pdftitle={AIOU 1429 Business Mathematics -- Urdu Expected Questions},
+  pdfkeywords={AIOU, 1429, 5405, Business Mathematics, Urdu, guess paper}
+}
+
+\color{bmink}
+
+%---------------------------------------------------------------------
+% Headings
+%
+% titlesec's \filright / \filleft are direction-aware under bidi, so a
+% section heading needs no explicit alignment: it follows the RTL
+% paragraph direction on its own.
+%---------------------------------------------------------------------
+\titleformat{\section}
+  {\normalfont\Large\bfseries\color{bmblue}}{\thesection}{0.6em}{}
+  [{\vspace{2pt}\color{bmblue}\titlerule[1pt]}]
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\color{bmaccent}}{\thesubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{18pt}{10pt}
+\titlespacing*{\subsection}{0pt}{14pt}{6pt}
+
+%---------------------------------------------------------------------
+% Running heads
+%---------------------------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[R]{\small\color{bmgrey}کاروباری ریاضی \textenglish{1429 / 5405}}
+\fancyhead[L]{\small\color{bmgrey}\nouppercase{\leftmark}}
+\fancyfoot[C]{\small\color{bmgrey}\thepage}
+\fancypagestyle{plain}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}%
+  \fancyfoot[C]{\small\color{bmgrey}\thepage}}
+
+%---------------------------------------------------------------------
+% Boxes
+%
+% The boxed titles attach to the top RIGHT, not the top left: in a
+% right-to-left page the reader's eye starts at the right margin, and a
+% title tab on the left would be the last thing seen rather than the
+% first.
+%---------------------------------------------------------------------
+\newtcolorbox{sawal}[1]{%
+  enhanced, breakable,
+  colback=bmtint, colframe=bmblue, boxrule=0.5pt, arc=2pt,
+  left=9pt, right=9pt, top=14pt, bottom=8pt,
+  fonttitle=\bfseries, coltitle=white, colbacktitle=bmblue, title={#1},
+  attach boxed title to top right={xshift=-9pt, yshift=-\tcboxedtitleheight/2},
+  boxed title style={arc=1.5pt, boxrule=0pt, left=6pt, right=6pt, top=2pt, bottom=2pt}
+}
+
+% The solution rule sits on the EAST edge, again because the text block
+% begins at the right margin in Urdu.
+\newtcolorbox{hal}[1][حل]{%
+  enhanced, breakable, sharp corners,
+  colback=white, colframe=white, boxrule=0pt,
+  borderline east={1.8pt}{0pt}{bmaccent},
+  left=0pt, right=11pt, top=5pt, bottom=5pt,
+  before upper={\textcolor{bmaccent}{\textbf{#1}}\par\vspace{3pt}}
+}
+
+\newtcolorbox{nukta}[1][اہم اصول]{%
+  enhanced, breakable,
+  colback=bmtintw, colframe=bmaccent, boxrule=0.5pt, arc=2pt,
+  left=9pt, right=9pt, top=14pt, bottom=8pt,
+  fonttitle=\bfseries, coltitle=white, colbacktitle=bmaccent, title={#1},
+  attach boxed title to top right={xshift=-9pt, yshift=-\tcboxedtitleheight/2},
+  boxed title style={arc=1.5pt, boxrule=0pt, left=6pt, right=6pt, top=2pt, bottom=2pt}
+}
+
+\newtcolorbox{ghalti}[1][عام غلطی]{%
+  enhanced, breakable,
+  colback=bmtintr, colframe=bmred, boxrule=0.5pt, arc=2pt,
+  left=9pt, right=9pt, top=14pt, bottom=8pt,
+  fonttitle=\bfseries, coltitle=white, colbacktitle=bmred, title={#1},
+  attach boxed title to top right={xshift=-9pt, yshift=-\tcboxedtitleheight/2},
+  boxed title style={arc=1.5pt, boxrule=0pt, left=6pt, right=6pt, top=2pt, bottom=2pt}
+}
+
+\newcommand{\jawab}[1]{%
+  \par\vspace{4pt}\noindent
+  \begin{tcolorbox}[enhanced, sharp corners, breakable,
+    colback=bmgreen!7, colframe=bmgreen, boxrule=0pt,
+    borderline east={1.8pt}{0pt}{bmgreen},
+    left=7pt, right=9pt, top=4pt, bottom=4pt]
+  \textcolor{bmgreen}{\textbf{جواب:\ }}#1
+  \end{tcolorbox}\par\vspace{2pt}}
+
+% Substituting the answer back is worth marks in an AIOU script, so the
+% check line is a first-class element rather than a parenthesis.
+\newcommand{\parakh}[1]{%
+  \par\smallskip\noindent
+  {\color{bmgreen}$\checkmark$}\ \textbf{پڑتال:}\ #1\par\smallskip}
+
+%---------------------------------------------------------------------
+% Tables
+%
+% bidi reverses the column order of every tabular to match the page
+% direction. That is right for a table of Urdu labels, and wrong for one
+% whose columns carry an intended left-to-right sequence (D, Dx, Dy, Dz).
+% \ltrtab wraps such a table so its columns keep the order they are
+% written in.
+%---------------------------------------------------------------------
+\newenvironment{ltrtab}{\begin{LTR}}{\end{LTR}}
+
+\renewcommand{\arraystretch}{1.3}
+\arrayrulecolor{bmgrey}
+
+\setlist[enumerate]{itemsep=4pt, topsep=5pt, parsep=0pt}
+\setlist[itemize]{itemsep=4pt, topsep=5pt, parsep=0pt}
+
+%---------------------------------------------------------------------
+% Maths shorthands, shared with the English edition
+%---------------------------------------------------------------------
+\newcommand{\dt}[1]{\begin{vmatrix}#1\end{vmatrix}}
+\newcommand{\mat}[1]{\begin{pmatrix}#1\end{pmatrix}}
+\newcommand{\prob}[1]{P\!\left(#1\right)}
+\newcommand{\dd}[2]{\frac{\mathrm{d} #1}{\mathrm{d} #2}}
+\newcommand{\pd}[2]{\frac{\partial #1}{\partial #2}}
+\newcommand{\pdd}[2]{\frac{\partial^{2} #1}{\partial #2^{2}}}
+
+\widowpenalty=10000
+\clubpenalty=10000
+\raggedbottom
+
+\endinput
