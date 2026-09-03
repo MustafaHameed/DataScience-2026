@@ -1,0 +1,247 @@
+%=====================================================================
+%  bmsolutions.sty
+%  Shared style package for the AIOU 1429 / 5405 Business Mathematics
+%  Solved Question Bank.
+%
+%  Follows the typographic engineering of dshandout.sty / armhandout.sty
+%  (Latin Modern + T1 before microtype, ragged table columns, widow
+%  control, placeins float discipline) and carries the reasons with it.
+%  What differs: an indigo/amber palette, and four boxes tuned to a
+%  worked-solutions document rather than a lecture handout --
+%  question, solution, keyidea and pitfall.
+%
+%  Single source of truth for colours, boxes and pedagogical furniture.
+%  Do not duplicate this preamble into individual part files.
+%=====================================================================
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{bmsolutions}[2026/09/03 AIOU 1429 Business Mathematics solutions style]
+
+%---------------------------------------------------------------------
+% Packages
+%---------------------------------------------------------------------
+\RequirePackage[margin=2.3cm,top=2.6cm,bottom=2.4cm]{geometry}
+% Latin Modern + T1 before microtype: the default CM fonts include bitmap
+% variants, and microtype font expansion is a fatal error on any
+% non-scalable font. lmodern is scalable Type1 throughout.
+\RequirePackage{lmodern}
+\RequirePackage[T1]{fontenc}
+\RequirePackage[utf8]{inputenc}
+\RequirePackage{textcomp}
+\RequirePackage{microtype}
+% Latin Modern Roman has no bold small-caps shape, so the kickers use
+% medium-weight small caps, letterspaced -- which is what a kicker wants.
+\SetTracking{encoding=*, shape=sc}{45}
+\RequirePackage{amsmath,amssymb,amsfonts}
+\RequirePackage{graphicx}
+\RequirePackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,calc,fit,backgrounds}
+\RequirePackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{fillbetween}
+\RequirePackage{colortbl}
+\RequirePackage{enumitem}
+\RequirePackage{booktabs}
+\RequirePackage{longtable}
+\RequirePackage{array}
+\RequirePackage{tabularx}
+% ragged2e, not the kernel \raggedright: \RaggedRight caps the stretch it
+% allows and keeps hyphenation on, so a narrow column comes out with a soft
+% right edge instead of a saw-toothed one.
+\RequirePackage{ragged2e}
+\RequirePackage{xcolor}
+\RequirePackage{fancyhdr}
+\RequirePackage{titlesec}
+\RequirePackage[most]{tcolorbox}
+\RequirePackage{multicol}
+\RequirePackage{setspace}
+\RequirePackage{float}
+\RequirePackage{caption}
+% Tables and plots here are tightly coupled to the solution that
+% introduces them, so a float must never drift past its own heading.
+\RequirePackage[section]{placeins}
+\RequirePackage{emptypage}
+% A heading must not be stranded at the foot of a page.
+\RequirePackage{needspace}
+\RequirePackage[english]{babel}
+% hidelinks is deliberately not used: \hypersetup below turns colourlinks
+% on, which would override it. Links are coloured, never boxed.
+\RequirePackage{hyperref}
+\RequirePackage{bookmark}
+
+%---------------------------------------------------------------------
+% Palette
+%---------------------------------------------------------------------
+\definecolor{bmink}   {HTML}{16233A}  % near-black body ink
+\definecolor{bmblue}  {HTML}{23395B}  % primary: headings, question frames
+\definecolor{bmblued} {HTML}{16263F}  % darker primary for the title page
+\definecolor{bmaccent}{HTML}{A9501B}  % amber accent: solution rules
+\definecolor{bmgreen} {HTML}{1F6F54}  % answer / verified
+\definecolor{bmred}   {HTML}{8E2B20}  % pitfall
+\definecolor{bmtint}  {HTML}{EEF3F8}  % cool tint behind questions
+\definecolor{bmtintw} {HTML}{FBF4EC}  % warm tint behind key ideas
+\definecolor{bmtintr} {HTML}{FBEFEE}  % red tint behind pitfalls
+\definecolor{bmgrey}  {HTML}{5A6472}  % metadata, rules
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=bmblue,
+  urlcolor=bmaccent,
+  citecolor=bmblue,
+  pdftitle={AIOU 1429 Business Mathematics -- Solved Question Bank},
+  pdfsubject={Worked solutions to the official AIOU Business Mathematics self-assessment questions, Units 1--9},
+  pdfkeywords={AIOU, 1429, 5405, Business Mathematics, solved, past paper, assignment}
+}
+
+\color{bmink}
+
+%---------------------------------------------------------------------
+% Headings
+%---------------------------------------------------------------------
+% The kicker is small caps and the chapter title is sans. Latin Modern Sans has
+% no small-caps shape in T1 (T1/lmss/m/sc is undefined), so asking for small
+% caps inside the \sffamily group silently substitutes upright sans and loses
+% the caps. \rmfamily on the label only: the kicker gets real small caps, the
+% title stays sans.
+\titleformat{\chapter}[display]
+  {\normalfont\sffamily\bfseries\color{bmblue}}
+  {\normalsize\rmfamily\mdseries\scshape\lsstyle\color{bmgrey}\MakeLowercase{Unit \thechapter}}
+  {6pt}
+  {\Huge}
+  [{\vspace{4pt}\color{bmblue}\titlerule[1.2pt]}]
+\titlespacing*{\chapter}{0pt}{-14pt}{22pt}
+
+\titleformat{\section}
+  {\normalfont\sffamily\large\bfseries\color{bmblue}}{\thesection}{0.7em}{}
+\titleformat{\subsection}
+  {\normalfont\sffamily\normalsize\bfseries\color{bmaccent}}{\thesubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{16pt}{7pt}
+\titlespacing*{\subsection}{0pt}{12pt}{5pt}
+
+%---------------------------------------------------------------------
+% Running heads
+%---------------------------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{bmgrey}\leaders\hrule height \headrulewidth\hfill}}
+\fancyhead[L]{\footnotesize\sffamily\color{bmgrey}AIOU 1429 / 5405 \textbullet\ Business Mathematics}
+\fancyhead[R]{\footnotesize\sffamily\color{bmgrey}\nouppercase{\leftmark}}
+\fancyfoot[C]{\footnotesize\sffamily\color{bmgrey}\thepage}
+\fancypagestyle{plain}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}%
+  \fancyfoot[C]{\footnotesize\sffamily\color{bmgrey}\thepage}}
+\renewcommand{\chaptermark}[1]{\markboth{Unit \thechapter\ \textbullet\ #1}{}}
+
+%---------------------------------------------------------------------
+% Boxes
+%
+% question -- reproduces the official AIOU wording, so it is visually
+%             sealed off from anything this document adds to it.
+% solution -- an open block with a single accent rule; a full frame
+%             around several pages of working reads as a cage.
+% keyidea  -- the rule or formula the question is really testing.
+% pitfall  -- the specific mistake that loses the marks.
+%---------------------------------------------------------------------
+\newtcolorbox{question}[1]{%
+  enhanced, breakable,
+  colback=bmtint, colframe=bmblue, boxrule=0.5pt, arc=2pt,
+  left=9pt, right=9pt, top=13pt, bottom=8pt,
+  fonttitle=\sffamily\bfseries\small,
+  coltitle=white, colbacktitle=bmblue,
+  title={#1},
+  attach boxed title to top left={xshift=9pt, yshift=-\tcboxedtitleheight/2},
+  boxed title style={arc=1.5pt, boxrule=0pt, left=5pt, right=5pt, top=2pt, bottom=2pt}
+}
+
+\newtcolorbox{solution}[1][Solution]{%
+  enhanced, breakable, sharp corners,
+  colback=white, colframe=white, boxrule=0pt,
+  borderline west={1.8pt}{0pt}{bmaccent},
+  left=11pt, right=0pt, top=5pt, bottom=5pt,
+  before upper={\textcolor{bmaccent}{\sffamily\bfseries\small #1}\par\vspace{3pt}}
+}
+
+\newtcolorbox{keyidea}[1][Key idea]{%
+  enhanced, breakable,
+  colback=bmtintw, colframe=bmaccent, boxrule=0.5pt, arc=2pt,
+  left=9pt, right=9pt, top=13pt, bottom=8pt,
+  fonttitle=\sffamily\bfseries\small,
+  coltitle=white, colbacktitle=bmaccent,
+  title={#1},
+  attach boxed title to top left={xshift=9pt, yshift=-\tcboxedtitleheight/2},
+  boxed title style={arc=1.5pt, boxrule=0pt, left=5pt, right=5pt, top=2pt, bottom=2pt}
+}
+
+\newtcolorbox{pitfall}[1][Where marks are lost]{%
+  enhanced, breakable,
+  colback=bmtintr, colframe=bmred, boxrule=0.5pt, arc=2pt,
+  left=9pt, right=9pt, top=13pt, bottom=8pt,
+  fonttitle=\sffamily\bfseries\small,
+  coltitle=white, colbacktitle=bmred,
+  title={#1},
+  attach boxed title to top left={xshift=9pt, yshift=-\tcboxedtitleheight/2},
+  boxed title style={arc=1.5pt, boxrule=0pt, left=5pt, right=5pt, top=2pt, bottom=2pt}
+}
+
+% The final answer, set off so that a marker can find it without reading
+% the working, and so that a student can self-check before reading on.
+\newcommand{\ans}[1]{%
+  \par\vspace{4pt}\noindent
+  \begin{tcolorbox}[enhanced, sharp corners, breakable,
+    colback=bmgreen!7, colframe=bmgreen, boxrule=0pt,
+    borderline west={1.8pt}{0pt}{bmgreen},
+    left=9pt, right=7pt, top=4pt, bottom=4pt]
+  \textcolor{bmgreen}{\sffamily\bfseries Answer.\ }#1
+  \end{tcolorbox}\par\vspace{2pt}}
+
+% A verification line: AIOU papers award method marks, and substituting
+% the answer back is the cheapest way to buy confidence in the exam hall.
+\newcommand{\vcheck}[1]{%
+  \par\smallskip\noindent
+  {\color{bmgreen}$\checkmark$}\ \textit{\small Check:}\ {\small #1}\par\smallskip}
+
+% Provenance for a question, set small underneath the question box.
+\newcommand{\srcnote}[1]{%
+  \par\vspace{-2pt}\noindent{\footnotesize\sffamily\color{bmgrey}#1}\par\vspace{6pt}}
+
+% The name of the source question sets, always set in real small caps.
+% Latin Modern Sans has no small-caps shape and Latin Modern Roman has no bold
+% one, so the roman medium series is forced regardless of the surrounding
+% context -- most uses sit inside \srcnote, which is sans.
+\newcommand{\saq}[1]{{\rmfamily\mdseries\scshape #1}}
+
+%---------------------------------------------------------------------
+% Lists
+%---------------------------------------------------------------------
+\setlist[enumerate]{itemsep=3pt, topsep=4pt, parsep=0pt, leftmargin=*}
+\setlist[itemize]{itemsep=3pt, topsep=4pt, parsep=0pt, leftmargin=*}
+\setlist[description]{itemsep=3pt, topsep=4pt, parsep=0pt, leftmargin=*, font=\sffamily\bfseries\color{bmblue}}
+
+%---------------------------------------------------------------------
+% Tables
+%---------------------------------------------------------------------
+\renewcommand{\arraystretch}{1.22}
+\arrayrulecolor{bmgrey}
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\Centering\arraybackslash}p{#1}}
+\newcolumntype{R}[1]{>{\RaggedLeft\arraybackslash}p{#1}}
+\captionsetup{font=small, labelfont={sf,bf,color=bmblue}, textfont=sf, skip=6pt}
+
+%---------------------------------------------------------------------
+% Maths shorthands used throughout the solutions
+%---------------------------------------------------------------------
+\newcommand{\prob}[1]{P\!\left(#1\right)}
+\newcommand{\md}{\,\mathrm{d}}
+\newcommand{\pd}[2]{\frac{\partial #1}{\partial #2}}
+\newcommand{\pdd}[2]{\frac{\partial^{2} #1}{\partial #2^{2}}}
+\newcommand{\dd}[2]{\frac{\md #1}{\md #2}}
+% Determinant bars and matrix parens, sized by amsmath.
+\newcommand{\dt}[1]{\begin{vmatrix}#1\end{vmatrix}}
+\newcommand{\mat}[1]{\begin{pmatrix}#1\end{pmatrix}}
+
+% Widow and orphan control: a solution split so that one line of working
+% sits alone on a page is unreadable, and these are cheap to forbid.
+\widowpenalty=10000
+\clubpenalty=10000
+\raggedbottom
+
+\endinput
