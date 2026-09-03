@@ -4,7 +4,23 @@ Full worked solutions to the end-of-unit **Self Assessment Questions** of the
 official AIOU course book *Business Mathematics*, Course Code 5405/1429,
 Units 1–9, Department of Mathematics, AIOU Islamabad (2023 printing).
 
-**Output:** `AIOU_1429_Solved_QuestionBank.pdf` — 84 pages.
+**Three editions**, same source and same palette, at three lengths:
+
+| File | Language | Pages | Scope |
+| --- | --- | --- | --- |
+| `AIOU_1429_Solved_QuestionBank.pdf` | English | 84 | All nine units, every question, full working |
+| `AIOU_1429_Urdu_Guess_Paper.pdf` | اردو | 35 | 27 expected questions, concise answers |
+| `AIOU_1429_Urdu_Brief.pdf` | اردو | 19 | 16 highest-yield questions, capped at 21 pp |
+
+The Urdu editions share the English one's box vocabulary —
+سوال / حل / اہم اصول / عام غلطی / جواب / پڑتال.
+
+**How the brief edition selects.** Weighted by what the paper actually asks
+for, not spread evenly: unit 6 (determinants, inverse, Cramer) gets three
+questions; units 1, 4, 7 and 9 get two each; the lighter units get one. Every
+mistake named on its closing checklist is demonstrated by a question in the
+document — that is why the Unit 2 question carries a third part on sampling
+*without* replacement.
 
 ## Why these questions rather than a scanned past paper
 
@@ -19,7 +35,7 @@ assignments and the final paper are drawn from — one step upstream of the pape
 ## Contents
 
 | Unit | Topic | Source |
-|---|---|---|
+| --- | --- | --- |
 | 1 | Probability theory | §1.9, pp. 25–26 |
 | 2 | Random variables | §2.7, pp. 42–43 |
 | 3 | Equations and inequalities | §3.9, pp. 64–65 |
@@ -54,33 +70,80 @@ they occur and skipped rather than guessed at.
 ## Build
 
 ```powershell
-.\build.ps1           # normal build
-.\build.ps1 -Clean    # remove aux files first
+.\build.ps1                # English edition, 84 pp (pdfLaTeX)
+.\build_urdu.ps1           # Urdu, 27 questions, 35 pp (XeLaTeX)
+.\build_urdu.ps1 -Brief    # Urdu brief, 16 questions, 19 pp (XeLaTeX)
+.\build.ps1 -Clean         # remove aux files first
 ```
 
-Requires MiKTeX (or TeX Live) with `latexmk`. On Windows, `build.ps1` borrows
+Requires MiKTeX (or TeX Live) with `latexmk`. On Windows both scripts borrow
 the Perl bundled with Git for Windows if no `perl` is on `PATH`, since MiKTeX
-ships `latexmk` without an interpreter. The script ends with a build report
-(pages, errors, undefined refs, overfull/underfull boxes, font warnings) and
-exits non-zero on any LaTeX error.
+ships `latexmk` without an interpreter. Each ends with a build report and exits
+non-zero on any LaTeX error.
 
-Current status: **84 pages, 0 errors, 0 undefined refs, 0 overfull boxes,
-0 font warnings.**
+**The Urdu edition needs XeLaTeX, not pdfLaTeX** — pdfTeX has neither OpenType
+shaping (Nastaliq ligatures) nor a bidirectional algorithm. It also needs the
+**Urdu Typesetting** font, which ships with Windows; `build_urdu.ps1` checks
+for it up front and fails with a clear message rather than emitting hundreds of
+`nullfont` lines. On other platforms, substitute a Nastaliq or Urdu Naskh face
+(e.g. Noto Nastaliq Urdu) in `bmurdu.sty`. That build report carries an extra
+metric, **missing glyphs**, because the signature failure for an Urdu document
+is that the font silently fails to load and every Arabic-script character is
+dropped from the page.
+
+`build_urdu.ps1 -Brief` additionally enforces the brief edition's 21-page cap
+and fails the build if it is exceeded — the point of that edition is that it
+fits in one sitting, so the constraint is checked rather than trusted.
+
+Current status — English: **84 pages, 0 errors, 0 undefined refs, 0 overfull
+boxes, 0 font warnings.** Urdu: **35 pages, 0 errors, 0 missing glyphs.**
+Urdu brief: **19 pages, 0 errors, 0 missing glyphs, 0 overfull boxes.**
 
 ## Layout
 
-```
-AIOU_1429_Solved_QuestionBank.tex   master file, inputs the parts
-bmsolutions.sty                     all style and pedagogy macros
+```text
+AIOU_1429_Solved_QuestionBank.tex   English master
+bmsolutions.sty                     English style and pedagogy macros
 parts/00_frontmatter.tex            title page, provenance, how to use
 parts/unit1_probability.tex … unit9_optimization.tex
 parts/appendix_formulae.tex         formula sheet + exam method
-build.ps1
+
+AIOU_1429_Urdu_Guess_Paper.tex      Urdu master, 27 questions
+AIOU_1429_Urdu_Brief.tex            Urdu master, 16 questions  [compact]
+bmurdu.sty                          Urdu style (fontspec + polyglossia + bidi)
+parts_ur/00_front_ur.tex            title page, how to use, exam map
+parts_ur/01_units1to4_ur.tex        units 1-4
+parts_ur/02_units5to9_ur.tex        units 5-9
+parts_ur/03_formula_ur.tex          formula sheet + eight common mistakes
+parts_ur_brief/00_front_brief.tex   title page + one orientation page
+parts_ur_brief/01_questions_brief.tex   the sixteen selected questions
+parts_ur_brief/02_formula_brief.tex     condensed formula sheet + mistakes
+
+build.ps1  build_urdu.ps1
 ```
 
-All colours, boxes (`question`, `solution`, `keyidea`, `pitfall`) and macros
-(`\ans`, `\vcheck`, `\srcnote`, `\saq`, `\dt`, `\mat`) live in
-`bmsolutions.sty`. Do not duplicate the preamble into part files.
+Both Urdu documents share `bmurdu.sty`. The brief edition loads it as
+`\usepackage[compact]{bmurdu}`, which tightens margins, leading (1.55 → 1.38)
+and box padding. The option defaults to **off**, so the 35-page edition is
+unaffected — verified by rebuilding it after the option was added and
+confirming identical metrics (a byte-comparison is meaningless here, since
+PDFs embed a creation timestamp).
+
+All colours, boxes and macros live in the `.sty` files — `question`,
+`solution`, `keyidea`, `pitfall`, `\ans`, `\vcheck` in `bmsolutions.sty`;
+`sawal`, `hal`, `nukta`, `ghalti`, `\jawab`, `\parakh` in `bmurdu.sty`. Do not
+duplicate a preamble into part files.
+
+### Two constraints worth knowing before editing `bmurdu.sty`
+
+- **Package order.** `polyglossia` pulls in `bidi`, which insists on being
+  loaded last. Every other package must be required *above* it; anything
+  loaded afterwards that patches sectioning, floats or tabulars silently
+  breaks the right-to-left handling.
+- **Tables.** `bidi` reverses the column order of every `tabular` to match the
+  page direction. That is correct for a table of Urdu labels and wrong for one
+  whose columns carry an intended left-to-right sequence, so order-sensitive
+  tables are wrapped in the `ltrtab` environment.
 
 ## Status
 
