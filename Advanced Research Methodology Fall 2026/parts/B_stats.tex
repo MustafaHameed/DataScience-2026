@@ -2,4 +2,297 @@
 \chapter{Statistical Test Selection and Formula Sheet}\label{app:stats}
 %=====================================================================
 
-% TODO: appendix not yet written.
+A working reference for Part~IV. Nothing here replaces understanding what the
+test assumes (\chref{inference}) --- it is here so you do not have to remember
+which function to call.
+
+\section{Choosing a Test}
+
+Read down the first two columns to your situation.
+
+\begin{center}
+\small
+\begin{longtable}{@{}L{3.2cm}L{2.6cm}L{4.0cm}L{4.2cm}@{}}
+\toprule
+\textbf{Question} & \textbf{Outcome} & \textbf{Parametric} & \textbf{Robust alternative} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Question} & \textbf{Outcome} & \textbf{Parametric} & \textbf{Robust alternative} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+One group vs a value
+  & Continuous
+  & One-sample $t$
+  & Wilcoxon signed-rank; bootstrap CI \\
+Two independent groups
+  & Continuous
+  & Welch's $t$ (\emph{not} Student's)
+  & Mann--Whitney $U$; bootstrap \\
+Two paired measurements
+  & Continuous
+  & Paired $t$
+  & Wilcoxon signed-rank \\
+$k$ independent groups
+  & Continuous
+  & One-way ANOVA
+  & Kruskal--Wallis \\
+$k$ paired measurements
+  & Continuous
+  & Repeated-measures ANOVA
+  & Friedman \\
+Two factors
+  & Continuous
+  & Two-way ANOVA
+  & Aligned rank transform ANOVA \\
+Nested / repeated data
+  & Continuous
+  & Linear mixed model (\chref{regression})
+  & Same, with bootstrap CIs \\
+Association
+  & Both continuous
+  & Pearson $r$
+  & Spearman $\rho$; Kendall $\tau$ \\
+Association
+  & Both categorical
+  & Chi-square test of independence
+  & Fisher's exact (small expected counts) \\
+Agreement, 2 raters
+  & Categorical
+  & ---
+  & Cohen's $\kappa$ \\
+Agreement, $n$ raters
+  & Any
+  & ---
+  & Krippendorff's $\alpha$ \\
+Predict a continuous outcome
+  & Continuous
+  & Linear regression
+  & Robust regression; quantile regression \\
+Predict a binary outcome
+  & Binary
+  & Logistic regression
+  & --- \\
+Predict a count
+  & Count
+  & Poisson --- only if variance $\approx$ mean
+  & Negative binomial (usually correct for software data) \\
+Time to event
+  & Duration
+  & Cox proportional hazards
+  & Kaplan--Meier with log-rank \\
+Classifiers over datasets
+  & Performance
+  & ---
+  & Friedman + Nemenyi (\chref{mleval}) \\
+``No meaningful difference''
+  & Continuous
+  & TOST equivalence test
+  & Bayes factor \\
+\end{longtable}
+\end{center}
+
+\begin{alertbox}[Before any of them]
+Plot the data. A boxplot with the points overlaid, and a Q--Q plot of the
+residuals, will tell you more in ten seconds than the test will --- including
+whether the test is appropriate at all. Testing for normality is not the way to
+decide (\chref{inference}).
+\end{alertbox}
+
+\section{Formulas Worth Having}
+
+\subsection*{Descriptive}
+
+\[
+\bar{x} = \frac{1}{n}\sum_{i=1}^{n} x_i
+\qquad
+s = \sqrt{\frac{1}{n-1}\sum_{i=1}^{n}(x_i - \bar{x})^2}
+\qquad
+\mathrm{SE} = \frac{s}{\sqrt{n}}
+\]
+
+\subsection*{Confidence interval for a mean}
+
+\[
+\bar{x} \pm t_{\alpha/2,\;n-1}\cdot \frac{s}{\sqrt{n}}
+\]
+
+\noindent A 95\% interval means: if the study were repeated many times, 95\% of
+such intervals would contain the true value. It does \emph{not} mean there is a
+95\% probability the true value lies in this one (\chref{inference}).
+
+\subsection*{Effect sizes}
+
+\[
+d = \frac{\bar{x}_1 - \bar{x}_2}{s_{\text{pooled}}},
+\qquad
+s_{\text{pooled}} = \sqrt{\frac{(n_1-1)s_1^2 + (n_2-1)s_2^2}{n_1+n_2-2}}
+\]
+
+\[
+g = d\left(1 - \frac{3}{4(n_1+n_2)-9}\right)
+\qquad\text{(Hedges' correction; use below about $n=20$ per group)}
+\]
+
+\[
+\delta = \frac{\#\{x_i > y_j\} - \#\{x_i < y_j\}}{n_1 n_2}
+\qquad\text{(Cliff's $\delta$; distribution-free, $-1$ to $1$)}
+\]
+
+\[
+\text{OR} = \frac{p_1/(1-p_1)}{p_2/(1-p_2)}
+\qquad
+\text{RR} = \frac{p_1}{p_2}
+\]
+
+\noindent Report the risk ratio alongside the odds ratio: they diverge sharply
+when the outcome is common, and the odds ratio always looks larger
+(\chref{regression}).
+
+\subsection*{Agreement}
+
+\[
+\kappa = \frac{p_o - p_e}{1 - p_e}
+\]
+
+\noindent $p_o$ observed agreement, $p_e$ agreement expected by chance from the
+observed marginals (\chref{slr}, \chref{qualitative}).
+
+\subsection*{Multiple comparisons}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.6cm}L{10.7cm}@{}}
+\toprule
+Bonferroni  & Reject $H_i$ if $p_i < \alpha/m$ \\
+Holm        & Sort ascending; reject while $p_{(i)} < \alpha/(m-i+1)$; stop at
+              the first failure. Uniformly better than Bonferroni \\
+Benjamini--Hochberg & Sort ascending; find the largest $k$ with
+              $p_{(k)} \le \frac{k}{m}\alpha$; reject all up to $k$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{Interpreting effect sizes}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.0cm}L{2.6cm}L{2.6cm}L{2.6cm}L{2.4cm}@{}}
+\toprule
+ & \textbf{Negligible} & \textbf{Small} & \textbf{Medium} & \textbf{Large} \\
+\midrule
+Cohen's $d$      & $<0.2$ & 0.2 & 0.5 & 0.8 \\
+Cliff's $\delta$ & $<0.147$ & 0.147 & 0.33 & 0.474 \\
+Pearson $r$      & $<0.1$ & 0.1 & 0.3 & 0.5 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{alertbox}[These bands are conventions, not findings]
+Cohen proposed them for fields with no prior information and warned repeatedly
+against routine use. A $d$ of 0.2 may be practically enormous where the outcome
+is costly and the intervention is free, and a $d$ of 0.9 may be worthless if
+the intervention cannot be deployed.
+
+\medskip
+Interpret against your smallest effect size of interest (\chref{sampling}), not
+against this table. The table is here because reviewers ask for it.
+\end{alertbox}
+
+\section{Sample Size Quick Reference}
+
+Approximate $n$ \emph{per group}, two-sided $\alpha = 0.05$, power 0.80,
+two-group comparison of means:
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{3.0cm}ccccc@{}}
+\toprule
+Effect $d$        & 0.20 & 0.35 & 0.50 & 0.80 & 1.00 \\
+\midrule
+$n$ per group     & 394  & 130  & 64   & 26   & 17 \\
+Total $N$         & 788  & 260  & 128  & 52   & 34 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Within-subjects designs need substantially fewer participants, by a
+factor depending on the correlation between conditions --- which is the main
+practical reason to prefer them (\chref{experiments}). Always compute your own
+with \texttt{pwr} rather than reading off this table; it is here for a sense of
+scale.
+
+\section{Code}
+
+Runnable versions of everything above are in the \texttt{code/} directory
+alongside this handout, keyed by chapter.
+
+\begin{lstlisting}[language=Rlang, caption={\texttt{code/appB\_tests.R} --- the
+common cases, with the reporting each needs.}]
+# --- Two independent groups -------------------------------------------
+t.test(y ~ g, data = d)                      # Welch by default in R
+effsize::cohen.d(y ~ g, data = d)            # with CI
+effsize::cliff.delta(y ~ g, data = d)        # distribution-free
+
+# --- Paired ------------------------------------------------------------
+t.test(pre, post, paired = TRUE)
+wilcox.test(pre, post, paired = TRUE, conf.int = TRUE)
+
+# --- Nested / repeated -------------------------------------------------
+m <- lme4::lmer(y ~ cond + (1 + cond | subject) + (1 | item), data = d)
+confint(m, method = "profile")
+
+# --- Counts ------------------------------------------------------------
+m <- MASS::glm.nb(defects ~ size + churn, data = d)   # not glm(poisson)
+performance::check_overdispersion(m)
+
+# --- Power -------------------------------------------------------------
+pwr::pwr.t.test(d = 0.35, sig.level = 0.05, power = 0.80,
+                type = "two.sample")
+
+# --- Equivalence -------------------------------------------------------
+TOSTER::tsum_TOST(m1 = 6.1, m2 = 5.9, sd1 = 2.4, sd2 = 2.6,
+                  n1 = 60, n2 = 60, eqb = 0.40)
+
+# --- Multiplicity ------------------------------------------------------
+p.adjust(pvals, method = "holm")   # confirmatory
+p.adjust(pvals, method = "BH")     # exploratory
+\end{lstlisting}
+
+\begin{lstlisting}[language=PythonARM, caption={\texttt{code/appB\_tests.py} --- the
+same cases in Python, for those who prefer it.}]
+import numpy as np, pingouin as pg, statsmodels.formula.api as smf
+
+pg.ttest(a, b, correction=True)          # Welch
+pg.compute_effsize(a, b, eftype="cohen")
+pg.mwu(a, b)                             # Mann-Whitney
+
+# Mixed model
+smf.mixedlm("y ~ cond", data=d, groups=d["subject"]).fit().summary()
+
+# Negative binomial for counts
+smf.negativebinomial("defects ~ size + churn", data=d).fit().summary()
+
+# Power
+from statsmodels.stats.power import TTestIndPower
+TTestIndPower().solve_power(effect_size=0.35, alpha=0.05, power=0.80)
+
+# Multiplicity
+from statsmodels.stats.multitest import multipletests
+multipletests(pvals, method="holm")
+\end{lstlisting}
+
+\begin{conceptbox}[Reporting checklist for any quantitative result]
+\begin{tight}
+  \item The estimate, in natural units.
+  \item A confidence interval on it.
+  \item An effect size, with its interval.
+  \item $n$, at every level of nesting.
+  \item The test used, and why it rather than the alternative.
+  \item Assumption checks performed, and what they showed.
+  \item Any multiplicity correction, and which comparisons it covered.
+  \item The p-value, last, as one piece of information among several.
+\end{tight}
+\end{conceptbox}

@@ -2,4 +2,299 @@
 \chapter{Five Worked IT Studies}\label{app:vignettes}
 %=====================================================================
 
-% TODO: appendix not yet written.
+Five studies carried from question to write-up, one per major design. They show
+the whole chain in one place, which no individual chapter can.
+
+\begin{alertbox}[Everything here is constructed]
+These studies were written for this book. The settings are realistic and the
+methods are correct, but \textbf{every number is invented}. Nothing in this
+appendix may be cited as a finding, and no result here is attributed to any
+real study. They are shapes to imitate, not evidence.
+\end{alertbox}
+
+\section{Vignette 1 --- Systematic Review}
+
+\begin{vignette}[Testing techniques for microservice architectures]
+\textbf{Question.} What techniques are used to test microservice-based systems,
+and which have been evaluated in industrial settings?
+
+\medskip
+\textbf{Type.} Systematic review, descriptive and evaluative
+(\chref{questions}). Chosen over a mapping study because enough primary studies
+exist to answer a specific question about industrial evaluation.
+
+\medskip
+\textbf{PICOC.} P: microservice-based systems. I: testing techniques.
+C: each other, and testing of monolithic systems where reported. O: defects
+found, coverage achieved, effort. C: industrial versus academic settings.
+
+\medskip
+\textbf{Protocol} (C3), fixed before searching. Databases: IEEE Xplore, ACM DL,
+Scopus, SpringerLink. Range 2014--2025. Quasi-gold standard of 7 papers;
+the string reached full recall on the fourth iteration.
+
+\medskip
+\textbf{PRISMA counts.} 3,180 identified; 1,042 duplicates removed; 2,138
+title-and-abstract screened, 1,905 excluded; 233 full texts assessed, 178
+excluded --- 61 not microservice-specific, 54 no testing technique, 39 not a
+study, 24 unobtainable; 26 added by snowballing; \textbf{81 included}.
+$\kappa = 0.71$ on a 15\% double-screened sample.
+
+\medskip
+\textbf{Appraisal.} C6 applied; quality used as a \emph{moderator}, not an
+exclusion threshold, decided in the protocol.
+
+\medskip
+\textbf{Synthesis.} Narrative and thematic --- effect sizes were reported in
+only 9 of 81 studies, so meta-analysis was impossible. That impossibility is
+reported as a finding about the field's measurement practices, not hidden.
+
+\medskip
+\textbf{Result.} Six technique families. 68 of 81 studies evaluated only in
+laboratory or simulated settings; 13 in industry, of which 9 were single-company
+experience reports. The gap: contract testing is the most-proposed technique
+and among the least industrially evaluated.
+
+\medskip
+\textbf{Threats} (\chref{validity}). \emph{Construct}: ``microservice'' is
+inconsistently defined across studies, so inclusion required a judgement that
+two screeners applied with $\kappa = 0.71$ --- adequate, not excellent.
+\emph{Conclusion}: no pooling was possible, so all synthesis is narrative.
+\emph{External}: English-language venues only.
+
+\medskip
+\textbf{What it becomes.} A journal paper in its own right, \emph{and} the
+literature review chapter, \emph{and} the evidenced gap in the synopsis
+(\chref{synopsis}). One piece of work, three uses --- which is how a PhD
+publication plan should be built (\chref{publishing}).
+\end{vignette}
+
+\section{Vignette 2 --- Controlled Experiment}
+
+\begin{vignette}[Does an LLM review assistant change defect detection?]
+\textbf{Question.} Causal: does an LLM-based review assistant change the number
+of seeded defects a reviewer identifies, and does the effect depend on the time
+budget?
+
+\medskip
+\textbf{Design} (C7). $2\times2$ within-subjects: assistant present or absent,
+time box 10 or 25 minutes. 34 professional developers, each completing four
+reviews. Latin square over four equivalent code artefacts, so technique never
+meets the same artefact twice in the same position (\chref{experiments}).
+
+\medskip
+\textbf{Unit of analysis.} The \emph{review}, 136 in total, nested within 34
+developers and 4 artefacts. Analysed with crossed random effects --- not as
+$N=136$ independent observations.
+
+\medskip
+\textbf{Power} (\chref{sampling}). SESOI set at 1 additional defect; baseline
+$s = 2.5$, so $d = 0.40$. Within-subjects with an assumed correlation of 0.6
+gives 0.83 power at 34 participants. Pre-registered (C12) before recruitment.
+
+\medskip
+\textbf{Measures.} Primary: seeded defects correctly identified, out of 12.
+Secondary: false positives raised --- included precisely because the review
+review in \chref{appraisal} showed omitting it inflates apparent benefit.
+
+\medskip
+\textbf{Analysis, pre-specified.}
+\begin{lstlisting}[language=Rlang]
+m <- lmer(found ~ assistant * timebox + (1 + assistant | dev) + (1 | artefact),
+          data = reviews)
+\end{lstlisting}
+
+\medskip
+\textbf{Result.} Main effect of assistant $+0.9$ defects (95\% CI $[0.2,
+1.6]$). Interaction with time box: at 25 minutes $+1.6$ $[0.7, 2.5]$; at 10
+minutes $+0.1$ $[-0.8, 1.0]$. False positives rose by 2.3 $[1.4, 3.2]$ with the
+assistant, independent of time box.
+
+\medskip
+\textbf{Interpretation.} The assistant helps when there is time to evaluate its
+suggestions and not otherwise, while adding false positives throughout. Under
+tight time budgets it is plausibly net harmful --- a claim the secondary
+measure makes possible and that the primary measure alone would have missed.
+
+\medskip
+\textbf{Threats.} \emph{Construct}: seeded defects are not naturally occurring
+defects. \emph{External}: 200--400 line artefacts, not legacy systems.
+\emph{Internal}: mitigated by randomisation and counterbalancing. \emph{Conclusion}:
+powered for $d = 0.40$; smaller effects would be missed.
+\end{vignette}
+
+\section{Vignette 3 --- Design Science}
+
+\begin{vignette}[Federated learning across hospitals with correlated missingness]
+\textbf{Problem class.} Clinical prediction across institutions that cannot
+share records, where missingness patterns differ by institution because
+recording practices differ.
+
+\medskip
+\textbf{Positioning} (\chref{designscience}). Gregor--Hevner:
+\emph{improvement} --- a known problem, a new solution. Federated learning
+exists; handling hospital-correlated missingness within it does not.
+
+\medskip
+\textbf{Artefact type.} A \emph{method} --- a missingness-aware aggregation
+rule --- demonstrated by an \emph{instantiation}. The method is the
+contribution; the system is the evidence it is realisable.
+
+\medskip
+\textbf{Design knowledge sentence.} ``If the artefact were deleted, what
+remains is: when missingness is correlated with the partition, proximal
+regularisation penalises the local adaptation that recovers it, and an
+aggregation rule weighting by per-feature completeness restores most of the
+lost accuracy.''
+
+\medskip
+\textbf{Objectives} (DSRM step 2, fixed before building). O1: accuracy within
+2 points of centralised training at realistic skew. O2: no raw record leaves
+its institution. O3: deployable on hardware the partner sites have.
+
+\medskip
+\textbf{Evaluation} (FEDS). Dominant risk is \emph{technical efficacy}, so:
+three rounds of artificial formative evaluation on public datasets with
+synthetic missingness; then summative artificial comparison against FedAvg and
+FedProx on two clinical datasets, ten seeds each with intervals; then one
+naturalistic summative case study at a single partner hospital
+(\chref{casestudy}) to check O3.
+
+\medskip
+\textbf{Result.} 1.4 points below centralised at high skew, against 4.8 for
+FedAvg and 5.6 for FedProx. The naturalistic study found O3 satisfied but
+revealed an unanticipated requirement: site staff needed a way to audit what
+left the building, which no baseline provides. That requirement is reported as
+design knowledge in its own right.
+
+\medskip
+\textbf{Threats.} \emph{Conclusion}: two datasets, so the result is not shown to
+generalise across clinical domains. \emph{External}: one partner site.
+\emph{Construct}: synthetic missingness in formative evaluation may not
+resemble real recording practice --- which is exactly why the naturalistic
+stage was included.
+\end{vignette}
+
+\section{Vignette 4 --- Survey and PLS-SEM}
+
+\begin{vignette}[Determinants of e-governance system adoption]
+\textbf{Question.} Relational: which UTAUT2 constructs predict intention to use
+a provincial e-governance portal among municipal officers?
+
+\medskip
+\textbf{Instrument} (\chref{survey}). UTAUT2 adopted \emph{unmodified}, four
+items per construct, seven-point scale. Adopting rather than adapting keeps the
+validation evidence, and is stated as the reason.
+
+\medskip
+\textbf{Sampling.} Population: municipal officers in the province. No sampling
+frame exists, so: stratified purposive across three district types, recruited
+through departmental contacts. \textbf{Reported as a non-probability sample};
+no margin of error claimed (\chref{survey}).
+
+\medskip
+\textbf{Common method bias, designed out.} Predictors measured at time 1,
+intention at time 2 four weeks later. Temporal separation is procedural, and
+far stronger than Harman's test after the fact (\chref{sem}).
+
+\medskip
+\textbf{Funnel.} 640 invited, 411 started, 352 completed, 338 usable. Wave
+analysis found no difference between early and late responders on the primary
+constructs.
+
+\medskip
+\textbf{Measurement model, assessed first.} Loadings all above 0.71. Composite
+reliability 0.83--0.91 --- none above 0.95. AVE 0.58--0.74. HTMT: all below
+0.85 \emph{except} effort expectancy against facilitating conditions at 0.89.
+
+\medskip
+\textbf{The decision that matters.} That HTMT failure was not reported and
+ignored. The two constructs were merged into a single ``perceived ease of
+access'' construct, the model was respecified, and \textbf{the change was
+disclosed as data-driven}, with the results reported as exploratory for that
+path (\chref{prereg}).
+
+\medskip
+\textbf{Structural model.} 5,000 bootstrap resamples. Performance expectancy
+$\rightarrow$ intention $\beta = 0.41$ $[0.29, 0.52]$; perceived ease of access
+$\beta = 0.22$ $[0.09, 0.34]$; social influence $\beta = 0.07$ $[-0.04, 0.19]$
+--- interval includes zero, reported as no detectable effect rather than as
+non-significant. $R^2 = 0.47$.
+
+\medskip
+\textbf{Threats.} \emph{Internal}: cross-sectional despite temporal separation;
+arrows are theory, not design warrant. \emph{External}: one province.
+\emph{Construct}: a construct merge, disclosed. \emph{Conclusion}: bootstrap
+intervals reported throughout.
+\end{vignette}
+
+\section{Vignette 5 --- Repository Mining and Machine Learning}
+
+\begin{vignette}[Does defect prediction survive an honest validation scheme?]
+\textbf{Question.} Evaluative and replicative: do published defect prediction
+results hold under grouped and temporal validation?
+
+\medskip
+\textbf{Why it is a contribution.} \chref{contribution} would classify this as
+a \emph{replication}. \chref{mleval} supplies the reason it is worth doing: the
+leakage literature suggests reported advantages may not survive correction.
+
+\medskip
+\textbf{Data.} 30 open-source Java projects. Filters applied and reported:
+minimum 3 contributors, minimum 200 commits, issue tracker in use, bot accounts
+removed (\chref{quasiexp}). 1,247 bot-authored commits excluded.
+
+\medskip
+\textbf{The four corrections.}
+\begin{tight}
+  \item \emph{Group split.} Train on 24 projects, test on 6, rotated --- rather
+    than randomly splitting files, which lets the model memorise per-project
+    base rates.
+  \item \emph{Temporal labelling.} Metrics at a fixed snapshot; labels from
+    defects found in the following 12 months only.
+  \item \emph{Pipeline-encapsulated preprocessing.} Scaling and imputation fit
+    inside each training fold.
+  \item \emph{Baselines added.} Predict-majority, and logistic regression on
+    file size alone.
+\end{tight}
+
+\medskip
+\textbf{Result.} Under random file-level splitting, gradient boosting reaches
+0.89 AUC. Under the corrected scheme: gradient boosting 0.67, logistic
+regression 0.66, size-only baseline 0.64. Friedman across the 30 projects finds
+no significant difference between gradient boosting and logistic regression;
+both exceed the size-only baseline (\chref{mleval}).
+
+\medskip
+\textbf{Interpretation.} Most of the reported advantage of complex models in
+this task is an artefact of the validation scheme, and most of the remaining
+signal is size. This is a negative result, and it is the contribution.
+
+\medskip
+\textbf{Artefacts.} Container with pinned digest, all seeds, both validation
+schemes runnable from one command so a reader can reproduce the drop
+themselves. Deposited with a DOI (C13).
+
+\medskip
+\textbf{Threats.} \emph{Construct}: \texttt{bug}-labelled issues measure
+labelling practice as well as defects; a 200-issue manual validation found 82\%
+agreement, reported. \emph{External}: open-source Java only. \emph{Internal}:
+observational, so no causal claim is made about metrics and defects.
+\end{vignette}
+
+\begin{conceptbox}[What the five have in common]
+Read across them and the same six moves appear every time, whatever the design:
+
+\begin{tightnum}
+  \item The question is stated in a form that could come out either way.
+  \item The design is chosen against a named alternative, for a stated reason.
+  \item The sample size is justified before collection.
+  \item The analysis is specified before the data exists.
+  \item A measure or comparison is included specifically because omitting it
+    would flatter the result.
+  \item The threats section names the study's own worst problem first.
+\end{tightnum}
+
+\medskip
+Those six are the course. Everything else is the detail of a particular method.
+\end{conceptbox}

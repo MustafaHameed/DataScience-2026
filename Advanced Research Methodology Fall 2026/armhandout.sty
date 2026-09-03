@@ -91,6 +91,25 @@
                 minbibnames=3,giveninits=true,doi=true,url=true,
                 isbn=false,eprint=true]{biblatex}
 
+% In refs.bib, note = {openaccess} is authoring metadata: it records that the
+% publisher version was verified free at the last link check, and it is what
+% the \oa badge and the Appendix F access column are set from. It is not a
+% note to the reader, and printing it drops a bare "openaccess" into the
+% middle of a reference -- exactly the kind of leaked field a student would
+% copy. Strip the flag at load time; keep any human-readable remainder, so
+% "openaccess; cited by ..." still prints its second half.
+\DeclareSourcemap{
+  \maps[datatype=bibtex]{
+    \map{
+      \step[fieldsource=note, match=\regexp{\A\s*openaccess\s*;\s*}, replace={}]
+    }
+    \map{
+      \step[fieldsource=note, match=\regexp{\A\s*openaccess\s*\Z}, final]
+      \step[fieldset=note, null]
+    }
+  }
+}
+
 %---------------------------------------------------------------------
 % Spacing
 %---------------------------------------------------------------------
