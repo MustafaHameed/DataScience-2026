@@ -21,7 +21,7 @@ By the end of this chapter you will be able to:
 
 \begin{prereq}
 \chref{math} (conditional probability, Bayes' theorem, the Gaussian, maximum
-likelihood) and \chref{trees} (the PlayTennis data, used again here).
+likelihood) and \chref{trees} (the sprint data, used again here).
 \end{prereq}
 
 \begin{keyterms}
@@ -61,25 +61,25 @@ If every hypothesis is equally likely a priori, this reduces to the \term{maximu
 likelihood} hypothesis $h_{ML} = \arg\max_h P(D \mid h)$.
 \end{definitionbox}
 
-\begin{worked}[A Positive Lab Test (Mitchell)]
-Two hypotheses: the patient has a particular cancer, or does not. 0.8\% of the
-population has it. The test is positive in 98\% of cases where the cancer is
-present, and in 3\% where it is not. A patient tests positive.
+\begin{worked}[A Flagged Code Change]
+Two hypotheses: a code change contains a critical defect, or it is clean. 0.8\% of
+changes contain one. A static-analysis tool flags 98\% of the changes that do, and
+3\% of those that do not. The tool flags a change.
 
 \smallskip
 \begin{tight}
-  \item $P(+ \mid \text{cancer})\,P(\text{cancer}) = 0.98 \times 0.008 = 0.0078$
-  \item $P(+ \mid \neg\text{cancer})\,P(\neg\text{cancer}) = 0.03 \times 0.992 = 0.0298$
+  \item $P(\text{flag} \mid \text{defect})\,P(\text{defect}) = 0.98 \times 0.008 = 0.0078$
+  \item $P(\text{flag} \mid \text{clean})\,P(\text{clean}) = 0.03 \times 0.992 = 0.0298$
 \end{tight}
-\textbf{$h_{MAP} = \neg$cancer}, because $0.0298 > 0.0078$. Normalising:
+\textbf{$h_{MAP} =$ clean}, because $0.0298 > 0.0078$. Normalising:
 \[
-P(\text{cancer} \mid +) = \frac{0.0078}{0.0078 + 0.0298} = \mathbf{0.21}
+P(\text{defect} \mid \text{flag}) = \frac{0.0078}{0.0078 + 0.0298} = \mathbf{0.21}
 \]
-A positive result raises the probability from 0.8\% to 21\% --- a
-twenty-six-fold increase --- and it is still more likely than not that the
-patient is healthy. The maximum likelihood hypothesis, which ignores the prior,
-would say ``cancer'' ($0.98 > 0.03$). This is the base-rate effect of
-\chref{math}, now read as a choice between hypotheses.
+A flag raises the probability from 0.8\% to 21\% --- a twenty-six-fold increase
+--- and it is still more likely than not that the change is clean. The maximum
+likelihood hypothesis, which ignores the prior, would say ``defect''
+($0.98 > 0.03$). This is the base-rate effect of \chref{math}, now read as a choice
+between hypotheses.
 \end{worked}
 
 \dsfig{%
@@ -87,26 +87,26 @@ would say ``cancer'' ($0.98 > 0.03$). This is the base-rate effect of
 \begin{groupplot}[
   group style={group size=3 by 1, horizontal sep=1.0cm},
   width=4.9cm, height=4.4cm, ybar, /pgf/bar width=0.55cm, axis lines=left,
-  ymin=0, symbolic x coords={cancer,healthy}, xtick=data,
+  ymin=0, symbolic x coords={defect,clean}, xtick=data,
   tick label style={font=\tiny}, title style={font=\scriptsize\bfseries},
   nodes near coords, nodes near coords style={font=\tiny},
   enlarge x limits=0.5]
 \nextgroupplot[title={prior $P(h)$}, ymax=1.2,
   point meta=explicit symbolic]
 \addplot[fill=primary!45, draw=primary] coordinates
-  {(cancer,0.008)[0.008] (healthy,0.992)[0.992]};
-\nextgroupplot[title={likelihood $P(+ \mid h)$}, ymax=1.2,
+  {(defect,0.008)[0.008] (clean,0.992)[0.992]};
+\nextgroupplot[title={likelihood $P(\text{flag} \mid h)$}, ymax=1.2,
   point meta=explicit symbolic]
 \addplot[fill=goldhl!55, draw=goldhl] coordinates
-  {(cancer,0.98)[0.98] (healthy,0.03)[0.03]};
-\nextgroupplot[title={posterior $P(h \mid +)$}, ymax=1.0,
+  {(defect,0.98)[0.98] (clean,0.03)[0.03]};
+\nextgroupplot[title={posterior $P(h \mid \text{flag})$}, ymax=1.0,
   point meta=explicit symbolic]
 \addplot[fill=greenhl!50, draw=greenhl!70!black] coordinates
-  {(cancer,0.21)[0.21] (healthy,0.79)[0.79]};
+  {(defect,0.21)[0.21] (clean,0.79)[0.79]};
 \end{groupplot}
 \end{tikzpicture}}%
-{Prior times likelihood, normalised, gives the posterior. A test that strongly favours
-``cancer'' is not enough to overturn a prior that strongly favours ``healthy''.}{bayes-update}
+{Prior times likelihood, normalised, gives the posterior. A flag that strongly favours
+``defect'' is not enough to overturn a prior that strongly favours ``clean''.}{bayes-update}
 
 \begin{conceptbox}[Least Squares Is a MAP Hypothesis in Disguise]
 If the training labels are the true function plus Gaussian noise and all
@@ -172,38 +172,38 @@ examples that have value $a_j$. Training is a single pass of counting.
   att/.style={circle, draw=secondary, fill=secondary!8, text=secondary!70!black,
               font=\scriptsize, minimum size=1.15cm, align=center},
   a/.style={-{Stealth[length=2mm]}, gray!60, line width=0.9pt}]
-\node[cls] (c) at (0,0) {Play?};
-\node[att] (o) at (-3.3,-2.1) {Outlook};
-\node[att] (t) at (-1.1,-2.1) {Temp.};
-\node[att] (h) at (1.1,-2.1) {Humidity};
-\node[att] (w) at (3.3,-2.1) {Wind};
+\node[cls] (c) at (0,0) {Goal\\met?};
+\node[att] (o) at (-3.3,-2.1) {Reqs.};
+\node[att] (t) at (-1.1,-2.1) {Pressure};
+\node[att] (h) at (1.1,-2.1) {Load};
+\node[att] (w) at (3.3,-2.1) {Deps.};
 \foreach \n in {o,t,h,w}{\draw[a] (c) -- (\n);}
 \node[font=\tiny, text=gray!55!black, align=center] at (0,-3.2)
      {no arrows between the attributes: given the class, they are assumed independent};
 \node[anchor=west, align=left, text width=5.8cm, font=\scriptsize, text=gray!55!black]
      at (4.6,-0.9)
      {\textbf{What is estimated.} One prior $P(v)$ per class, and one table
-      $P(a_j \mid v)$ per attribute and class. For PlayTennis that is 2 priors and
-      $2 \times (3 + 3 + 2 + 2) = 20$ conditional probabilities --- instead of a
+      $P(a_j \mid v)$ per attribute and class. For the sprint data that is 2 priors
+      and $2 \times (3 + 3 + 2 + 2) = 20$ conditional probabilities --- instead of a
       joint distribution over all 36 combinations of attribute values for each
       class.};
 \end{tikzpicture}}%
 {The naive Bayes assumption drawn as a network: the class causes each attribute, and
 the attributes do not influence each other once the class is known.}{nb-graph}
 
-\begin{worked}[Naive Bayes on PlayTennis]
-Classify the new day $\langle$Sunny, Cool, High, Strong$\rangle$ using the fourteen
-days of \chref{trees}.
+\begin{worked}[Naive Bayes on the Sprint Data]
+Will a new sprint with $\langle$Changing requirements, Low pressure, High load,
+Many dependencies$\rangle$ meet its goal? Use the fourteen sprints of \chref{trees}.
 
 \smallskip
 \textbf{Priors:} $P(\text{Yes}) = 9/14 = 0.643$; $P(\text{No}) = 5/14 = 0.357$.
 
 \textbf{Conditionals}, counted within each class:
 \begin{tight}
-  \item Yes: $P(\text{Sunny}\mid\text{Yes}) = 2/9$, $P(\text{Cool}\mid\text{Yes}) = 3/9$,
-        $P(\text{High}\mid\text{Yes}) = 3/9$, $P(\text{Strong}\mid\text{Yes}) = 3/9$.
-  \item No: $P(\text{Sunny}\mid\text{No}) = 3/5$, $P(\text{Cool}\mid\text{No}) = 1/5$,
-        $P(\text{High}\mid\text{No}) = 4/5$, $P(\text{Strong}\mid\text{No}) = 3/5$.
+  \item Yes: $P(\text{Changing}\mid\text{Yes}) = 2/9$, $P(\text{Low}\mid\text{Yes}) = 3/9$,
+        $P(\text{High load}\mid\text{Yes}) = 3/9$, $P(\text{Many}\mid\text{Yes}) = 3/9$.
+  \item No: $P(\text{Changing}\mid\text{No}) = 3/5$, $P(\text{Low}\mid\text{No}) = 1/5$,
+        $P(\text{High load}\mid\text{No}) = 4/5$, $P(\text{Many}\mid\text{No}) = 3/5$.
 \end{tight}
 \textbf{Scores:}
 \[
@@ -212,16 +212,16 @@ days of \chref{trees}.
 \text{No: } 0.357 \times \tfrac{3}{5} \times \tfrac{1}{5} \times \tfrac{4}{5} \times \tfrac{3}{5} = 0.0206
 \]
 \textbf{Prediction: No.} Normalised, $P(\text{No} \mid x) = 0.0206/(0.0206 + 0.0053)
-= \mathbf{0.795}$. (The decision tree of \chref{trees} agrees: Sunny and High
-humidity means No.)
+= \mathbf{0.795}$. (The decision tree of \chref{trees} agrees: changing
+requirements and a high load means the goal is missed.)
 \end{worked}
 
 \section{The Zero-Frequency Problem and Laplace Smoothing}
 
-Classify $\langle$Overcast, Hot, High, Strong$\rangle$. No training day with
-PlayTennis = No was Overcast, so $P(\text{Overcast} \mid \text{No}) = 0/5 = 0$, and
-the whole product for No is zero --- however strongly High humidity and Strong
-wind point towards No. One unseen attribute value silences all the others.
+Classify $\langle$Frozen, High, High, Many$\rangle$. No training sprint that missed
+its goal had Frozen requirements, so $P(\text{Frozen} \mid \text{No}) = 0/5 = 0$,
+and the whole product for No is zero --- however strongly a high load and many
+dependencies point towards No. One unseen attribute value silences all the others.
 
 \begin{definitionbox}[Laplace Smoothing and the $m$-Estimate]
 Add one imaginary example of every value:
@@ -236,8 +236,9 @@ Mitchell's more general \term{$m$-estimate}, $(n_{v,c} + m\,p)/(n_c + m)$, adds 
 imaginary examples distributed according to a prior estimate $p$; Laplace smoothing
 is the case $m = k_j$, $p = 1/k_j$.
 
-\begin{worked}[Smoothing Rescues the Overcast Day]
-With Laplace smoothing (Outlook and Temperature have 3 values, Humidity and Wind 2):
+\begin{worked}[Smoothing Rescues the Frozen Sprint]
+With Laplace smoothing (Requirements and Pressure have 3 values, Load and
+Dependencies 2):
 \begin{tight}
   \item Yes: $0.643 \times \tfrac{4+1}{9+3} \times \tfrac{2+1}{9+3} \times
         \tfrac{3+1}{9+2} \times \tfrac{3+1}{9+2} = 0.643 \times 0.417 \times 0.250
@@ -248,7 +249,8 @@ With Laplace smoothing (Outlook and Temperature have 3 values, Humidity and Wind
 \end{tight}
 $P(\text{Yes} \mid x) = 0.0089/(0.0089 + 0.0068) = \mathbf{0.56}$. Without smoothing the
 answer was ``Yes with certainty''; with it, a narrow Yes that reflects the conflict
-between Overcast (always Yes in training) and High, Strong (usually No).
+between Frozen requirements (always Yes in training) and a high load with many
+dependencies (usually No).
 \end{worked}
 
 \section{Continuous Features: Gaussian Naive Bayes}
@@ -263,22 +265,23 @@ P(a_j \mid c) \;\propto\; \frac{1}{\sqrt{2\pi}\,\sigma_{j,c}}
 \]
 
 \begin{worked}[One Feature, Two Classes, a Strong Prior]
-Mean packet size is 500 bytes (sd 100) for normal flows and 900 bytes (sd 150) for a
-data-exfiltration attack; 5\% of flows are attacks. A flow averages 750 bytes.
+Modules that pass QA see 500 lines of code changed per week on average (sd 100);
+modules that go on to fail QA see 900 (sd 150); 5\% of modules fail. This week a
+module had 750 lines changed.
 \begin{tight}
-  \item Normal: density $\dfrac{1}{100\sqrt{2\pi}}e^{-(250)^2/(2 \cdot 100^2)}
+  \item Pass: density $\dfrac{1}{100\sqrt{2\pi}}e^{-(250)^2/(2 \cdot 100^2)}
         = 0.00399 \times e^{-3.125} = 0.000175$
-  \item Attack: density $\dfrac{1}{150\sqrt{2\pi}}e^{-(150)^2/(2 \cdot 150^2)}
+  \item Fail: density $\dfrac{1}{150\sqrt{2\pi}}e^{-(150)^2/(2 \cdot 150^2)}
         = 0.00266 \times e^{-0.5} = 0.00161$
 \end{tight}
-The likelihood favours attack by $0.00161/0.000175 = 9.2$ to 1. Now the priors:
+The likelihood favours failure by $0.00161/0.000175 = 9.2$ to 1. Now the priors:
 \[
-P(\text{attack} \mid 750) = \frac{0.05 \times 0.00161}{0.05 \times 0.00161 + 0.95 \times 0.000175}
+P(\text{fail} \mid 750) = \frac{0.05 \times 0.00161}{0.05 \times 0.00161 + 0.95 \times 0.000175}
 = \frac{0.0000807}{0.000247} = \mathbf{0.33}
 \]
-Nine-to-one evidence against nineteen-to-one prior odds leaves the flow more likely
-normal. \dsref{gaussian-nb} shows the whole picture: the boundary is at 772
-bytes.
+Nine-to-one evidence against nineteen-to-one prior odds leaves the module more
+likely to pass. \dsref{gaussian-nb} shows the whole picture: the boundary is at
+772 lines.
 \end{worked}
 
 \dsfig{%
@@ -288,19 +291,19 @@ bytes.
   width=6.9cm, height=4.8cm, axis lines=left,
   tick label style={font=\tiny}, label style={font=\tiny},
   title style={font=\scriptsize\bfseries},
-  xlabel={mean packet size (bytes)}, xmin=150, xmax=1450]
+  xlabel={lines changed per week}, xmin=150, xmax=1450]
 \nextgroupplot[title={Likelihoods $P(x \mid \text{class})$}, ylabel={density},
   ymin=0, ymax=0.0046, ytick=\empty,
   legend style={font=\tiny, draw=gray!40, at={(0.98,0.97)}, anchor=north east}]
 \addplot[primary, line width=1.3pt, domain=150:1450, samples=150]
   {exp(-(x-500)^2/(2*100^2))/(100*sqrt(2*pi))};
-\addlegendentry{normal}
+\addlegendentry{passes QA}
 \addplot[accent, line width=1.3pt, domain=150:1450, samples=150]
   {exp(-(x-900)^2/(2*150^2))/(150*sqrt(2*pi))};
-\addlegendentry{attack}
+\addlegendentry{fails QA}
 \draw[gray!55, dashed] (axis cs:750,0) -- (axis cs:750,0.0030);
 \node[font=\tiny, gray!55!black, anchor=south] at (axis cs:750,0.0030) {750};
-\nextgroupplot[title={Posterior $P(\text{attack} \mid x)$, prior 5\%},
+\nextgroupplot[title={Posterior $P(\text{fail} \mid x)$, prior 5\%},
   ylabel={probability}, ymin=0, ymax=1.05]
 \addplot[accent, line width=1.3pt, domain=150:1450, samples=200]
   {0.05*exp(-(x-900)^2/(2*150^2))/150 /
@@ -308,23 +311,23 @@ bytes.
 \addplot[gray!55, dashed] coordinates {(150,0.5)(1450,0.5)};
 \draw[greenhl!70!black, line width=0.9pt] (axis cs:772,0) -- (axis cs:772,0.5);
 \node[font=\tiny, greenhl!45!black, anchor=north west, align=left] at (axis cs:790,0.44)
-     {boundary at 772 bytes:\\beyond it, attack wins};
+     {boundary at 772 lines:\\beyond it, fail wins};
 \addplot[only marks, mark=*, mark size=1.8pt, primary] coordinates {(750,0.326)};
-\node[font=\tiny, primary, anchor=east] at (axis cs:730,0.33) {750 bytes: 0.33};
+\node[font=\tiny, primary, anchor=east] at (axis cs:730,0.33) {750 lines: 0.33};
 \end{groupplot}
 \end{tikzpicture}}%
-{Left: the two class-conditional densities; at 750 bytes the attack density is nine
-times higher. Right: after weighting by the 5\% prior, the posterior crosses 0.5 only at
-772 bytes. The boundary sits beyond the midpoint of the means because the rare class
-needs more evidence.}{gaussian-nb}
+{Left: the two class-conditional densities; at 750 lines the fail density is nine times
+higher. Right: after weighting by the 5\% prior, the posterior crosses 0.5 only at 772
+lines. The boundary sits beyond the midpoint of the means because the rare class needs
+more evidence.}{gaussian-nb}
 
 \section{Text Classification}
 
-Naive Bayes's most famous success is text: spam filtering, topic labelling,
-sentiment. A document is represented as a \term{bag of words} --- the count of
-each vocabulary word, order ignored --- and \term{multinomial naive Bayes} treats
-each word occurrence as an independent draw from a class-specific distribution over
-the vocabulary:
+Naive Bayes's most famous success is text: routing tickets, labelling commit
+messages, spotting duplicate bug reports. A document is represented as a
+\term{bag of words} --- the count of each vocabulary word, order ignored --- and
+\term{multinomial naive Bayes} treats each word occurrence as an independent draw
+from a class-specific distribution over the vocabulary:
 \begin{gather*}
 P(w \mid c) = \frac{\text{count}(w, c) + 1}{\text{total words in } c + |V|}, \\
 v_{NB} = \arg\max_c\Big[\log P(c) + \sum_{\text{words } w \text{ in doc}} \log P(w \mid c)\Big]
@@ -332,41 +335,41 @@ v_{NB} = \arg\max_c\Big[\log P(c) + \sum_{\text{words } w \text{ in doc}} \log P
 Working in logarithms turns the product into a sum; a product of a few hundred
 probabilities would otherwise underflow to zero on a computer.
 
-\begin{worked}[A Four-Word Spam Filter]
-Training counts over a vocabulary of $|V| = 4$ words; both classes contain 40 words
-and are equally likely:
+\begin{worked}[A Four-Word Ticket Router]
+Training counts over a vocabulary of $|V| = 4$ words, from bug reports and feature
+requests; both classes contain 40 words and are equally likely:
 
 \smallskip
 \begin{center}
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
- & \textbf{free} & \textbf{win} & \textbf{meeting} & \textbf{report} \\
+ & \textbf{crash} & \textbf{error} & \textbf{add} & \textbf{option} \\
 \midrule
-spam & 20 & 15 & 2 & 3 \\
-ham & 2 & 1 & 18 & 19 \\
+bug & 20 & 15 & 2 & 3 \\
+feature & 2 & 1 & 18 & 19 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \smallskip
-With smoothing, $P(\text{free}\mid\text{spam}) = 21/44$, $P(\text{meeting}\mid\text{spam}) = 3/44$,
-$P(\text{free}\mid\text{ham}) = 3/44$, $P(\text{meeting}\mid\text{ham}) = 19/44$.
+With smoothing, $P(\text{crash}\mid\text{bug}) = 21/44$, $P(\text{add}\mid\text{bug}) = 3/44$,
+$P(\text{crash}\mid\text{feature}) = 3/44$, $P(\text{add}\mid\text{feature}) = 19/44$.
 
-\textbf{Message:} ``free meeting free''.
+\textbf{Ticket:} ``crash add crash''.
 \begin{tight}
-  \item spam: $\log\tfrac{1}{2} + 2\log\tfrac{21}{44} + \log\tfrac{3}{44}
+  \item bug: $\log\tfrac{1}{2} + 2\log\tfrac{21}{44} + \log\tfrac{3}{44}
         = -0.693 - 1.479 - 2.686 = -4.858$
-  \item ham: $\log\tfrac{1}{2} + 2\log\tfrac{3}{44} + \log\tfrac{19}{44}
+  \item feature: $\log\tfrac{1}{2} + 2\log\tfrac{3}{44} + \log\tfrac{19}{44}
         = -0.693 - 5.371 - 0.840 = -6.904$
 \end{tight}
-\textbf{Spam} wins by $2.05$ in log-probability, a likelihood ratio of
-$e^{2.05} \approx 7.7$, so $P(\text{spam}) = 7.7/8.7 = \mathbf{0.885}$. The two
-``free''s outweigh the one ``meeting'' --- which is also how a spammer defeats the
-filter: add enough innocent words.
+\textbf{Bug} wins by $2.05$ in log-probability, a likelihood ratio of
+$e^{2.05} \approx 7.7$, so $P(\text{bug}) = 7.7/8.7 = \mathbf{0.885}$. The two
+``crash''es outweigh the one ``add'' --- which also shows the router's weakness: a
+feature request that happens to mention crashes is sent to the bug queue.
 \end{worked}
 
 \begin{alertbox}[Why Naive Bayes Works When Its Assumption Is False]
-Words are obviously not independent --- ``free'' and ``prize'' travel together.
+Words are obviously not independent --- ``stack'' and ``trace'' travel together.
 Naive Bayes therefore double-counts correlated evidence and its probabilities are
 badly \emph{over-confident}. But classification needs only the right \emph{ranking}
 of classes, and the double-counting usually inflates the right class as much as
@@ -389,46 +392,28 @@ networks --- are the next step, and are covered in Mitchell's Chapter~6.
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Naive Bayes}
-\lensLA{Classify forum posts as questions, complaints or social chat from their
-words, so that teaching assistants see the questions first. Naive Bayes trains in
-seconds on a few hundred labelled posts, and it can be retrained every week as the
-course vocabulary changes.}
-
-\lensPM{Triage incoming tickets into bug, feature request or support query from
-their text. The per-word log-probabilities explain each decision (``crash'' and
-``error'' pushed it to bug), which helps the team trust the router.}
-
-\lensIOT{Gaussian naive Bayes over a handful of sensor summaries is a fault
-classifier that fits in a few kilobytes and updates its means and variances
-incrementally as new labelled readings arrive --- useful on a gateway with no
-room for a training framework.}
-
-\lensSEC{The original statistical spam filters were naive Bayes, and the
-adversarial lesson came quickly: attackers padded spam with ham words (``Bayesian
-poisoning''). Keep the model retrained on fresh spam, and do not rely on it
-alone.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[Naive Bayes by Counting, Then by Library]
 \begin{lstlisting}[language=Python]
-from sklearn.datasets import load_breast_cancer
-from sklearn.model_selection import cross_val_score
+import numpy as np
 from sklearn.naive_bayes import GaussianNB, MultinomialNB
 from sklearn.feature_extraction.text import CountVectorizer
 
-# --- 1. naive Bayes on PlayTennis, by counting ---------------------------
-days = [("Sunny Hot High Weak", "No"), ("Sunny Hot High Strong", "No"),
-        ("Overcast Hot High Weak", "Yes"), ("Rain Mild High Weak", "Yes"),
-        ("Rain Cool Normal Weak", "Yes"), ("Rain Cool Normal Strong", "No"),
-        ("Overcast Cool Normal Strong", "Yes"),
-        ("Sunny Mild High Weak", "No"), ("Sunny Cool Normal Weak", "Yes"),
-        ("Rain Mild Normal Weak", "Yes"), ("Sunny Mild Normal Strong", "Yes"),
-        ("Overcast Mild High Strong", "Yes"),
-        ("Overcast Hot Normal Weak", "Yes"), ("Rain Mild High Strong", "No")]
-X = [d.split() for d, _ in days]
-y = [c for _, c in days]
+# --- 1. naive Bayes on the sprint data, by counting ----------------------
+sprints = [("Changing High High Few", "No"),
+           ("Changing High High Many", "No"),
+           ("Frozen High High Few", "Yes"),
+           ("Vague Medium High Few", "Yes"),
+           ("Vague Low Normal Few", "Yes"), ("Vague Low Normal Many", "No"),
+           ("Frozen Low Normal Many", "Yes"),
+           ("Changing Medium High Few", "No"),
+           ("Changing Low Normal Few", "Yes"),
+           ("Vague Medium Normal Few", "Yes"),
+           ("Changing Medium Normal Many", "Yes"),
+           ("Frozen Medium High Many", "Yes"),
+           ("Frozen High Normal Few", "Yes"),
+           ("Vague Medium High Many", "No")]
+X = [s.split() for s, _ in sprints]
+y = [c for _, c in sprints]
 n_values = [3, 3, 2, 2]                  # values per attribute
 
 
@@ -445,42 +430,51 @@ def naive_bayes(x, laplace=0):
     return {c: round(s / total, 3) for c, s in scores.items()}, scores
 
 
-post, raw = naive_bayes(["Sunny", "Cool", "High", "Strong"])
+post, raw = naive_bayes(["Changing", "Low", "High", "Many"])
 print("unnormalised:", {c: round(s, 5) for c, s in raw.items()})
 print("posterior:   ", post)
-day = ["Overcast", "Hot", "High", "Strong"]
-print("Overcast day, no smoothing:", naive_bayes(day)[1])
-print("Overcast day, Laplace     :", naive_bayes(day, laplace=1)[0])
+frozen = ["Frozen", "High", "High", "Many"]
+print("Frozen sprint, no smoothing:", naive_bayes(frozen)[1])
+print("Frozen sprint, Laplace     :", naive_bayes(frozen, laplace=1)[0])
 
-# --- 2. Gaussian naive Bayes on 30 continuous measurements ---------------
-Xb, yb = load_breast_cancer(return_X_y=True)
-print("GaussianNB 5-fold accuracy:",
-      cross_val_score(GaussianNB(), Xb, yb, cv=5).mean().round(3))
+# --- 2. Gaussian naive Bayes on the code-churn example -------------------
+rng = np.random.default_rng(0)
+churn = np.r_[rng.normal(500, 100, 1900),       # modules that pass QA
+              rng.normal(900, 150, 100)]         # the 5% that fail
+fails = np.r_[np.zeros(1900), np.ones(100)]
+gnb = GaussianNB().fit(churn.reshape(-1, 1), fails)
+print("learned means:", gnb.theta_.ravel().round(0))
+print("P(fail | 750 lines):", gnb.predict_proba([[750]])[0, 1].round(2))
+grid = np.arange(600, 1000).reshape(-1, 1)
+print("boundary near", int(grid[gnb.predict(grid) == 1][0, 0]), "lines")
 
-# --- 3. a spam filter from twelve messages -------------------------------
-msgs = ["win a free prize now", "free money win cash", "claim your free gift",
-        "cheap loans win now", "free entry win big",
-        "urgent cash prize claim",
-        "meeting moved to monday", "please review the report",
-        "lunch meeting tomorrow", "report due friday please",
-        "project meeting notes", "draft report for review"]
-labels = [1] * 6 + [0] * 6                         # 1 = spam
+# --- 3. a ticket router from twelve tickets ------------------------------
+tickets = ["app crashes when saving", "error on the export page",
+           "crash after the update", "null pointer error in upload",
+           "report page crashes on load", "error message on checkout",
+           "add an option to export pdf", "please add a dark mode",
+           "option to filter by date", "add support for csv import",
+           "add a bulk edit option", "please add weekly summary"]
+labels = [1] * 6 + [0] * 6                         # 1 = bug
 vec = CountVectorizer()
-nb = MultinomialNB(alpha=1.0).fit(vec.fit_transform(msgs), labels)
-for m in ["free meeting free", "report on the prize", "win win win"]:
-    p = nb.predict_proba(vec.transform([m]))[0, 1]
-    print(f"{m!r:24s} P(spam) = {p:.3f}")
+nb = MultinomialNB(alpha=1.0).fit(vec.fit_transform(tickets), labels)
+for t in ["crash after export", "add export option", "crash option crash"]:
+    p = nb.predict_proba(vec.transform([t]))[0, 1]
+    print(f"{t!r:22s} P(bug) = {p:.3f}")
 \end{lstlisting}
-Part 1 reproduces both worked examples. In part 3, \texttt{alpha} is the smoothing
-constant: set it to \texttt{1e-9} and classify ``report on the prize'' again.
+Part 1 reproduces both worked examples. Part 2 samples modules from the two
+Gaussians of the worked example and lets \texttt{GaussianNB} estimate them; its
+answer is close to the 0.33 and 772 lines computed by hand. In part 3,
+\texttt{alpha} is the smoothing constant: set it to \texttt{1e-9} and classify
+``crash option crash'' again.
 \end{lab}
 
 %---------------------------------------------------------------------
 \begin{checkpoint}
 \begin{tightnum}
-  \item A disease has prior 1\%. A test has $P(+\mid\text{disease}) = 0.9$ and
-        $P(+\mid\text{healthy}) = 0.05$. Give $h_{MAP}$ and $h_{ML}$ after a
-        positive test.
+  \item 1\% of releases would break production. A pre-release check flags 90\% of
+        those and 5\% of good releases. Give $h_{MAP}$ and $h_{ML}$ for a release
+        the check has flagged.
   \item What exactly does naive Bayes assume, and what goes wrong in the
         probabilities when the assumption fails?
   \item Why must naive Bayes for text work with log-probabilities?
@@ -497,7 +491,7 @@ constant: set it to \texttt{1e-9} and classify ``report on the prize'' again.
   \item The Bayes optimal classifier weights every hypothesis's vote by its
         posterior and can overrule the MAP hypothesis.
   \item Naive Bayes assumes attributes are independent given the class, which
-        reduces training to counting; on PlayTennis it predicts No with 0.795.
+        reduces training to counting; on the sprint data it predicts No with 0.795.
   \item Smooth the counts (Laplace, $m$-estimate) to avoid zero vetoes; use
         Gaussian likelihoods for continuous features.
   \item For text, use a bag of words and log-probabilities. Trust the ranking, not
@@ -519,10 +513,11 @@ constant: set it to \texttt{1e-9} and classify ``report on the prize'' again.
         Bayes optimal classification, with an example.
   \item \textbf{(Short)} Why can naive Bayes classify well even when its
         probabilities are poor?
-  \item \textbf{(Short)} Describe how a spammer can exploit a naive Bayes filter.
-  \item \textbf{(Applied)} Using the PlayTennis data and Laplace smoothing, classify
-        $\langle$Rain, Hot, Normal, Weak$\rangle$. Show every probability.
-  \item \textbf{(Applied)} For the Gaussian example, find the packet size at which
-        the two prior-weighted densities are equal, to the nearest 10 bytes, by
+  \item \textbf{(Short)} Describe how a user could word a feature request so that
+        a naive Bayes router sends it to the faster bug queue.
+  \item \textbf{(Applied)} Using the sprint data and Laplace smoothing, classify
+        $\langle$Vague, High, Normal, Few$\rangle$. Show every probability.
+  \item \textbf{(Applied)} For the Gaussian example, find the weekly churn at which
+        the two prior-weighted densities are equal, to the nearest 10 lines, by
         trying values. Explain why it is not 700, the midpoint of the means.
 \end{reviewq}

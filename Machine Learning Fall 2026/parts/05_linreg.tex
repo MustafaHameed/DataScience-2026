@@ -277,8 +277,8 @@ it.}{residual-plots}
 
 \begin{alertbox}[Always Compare With the Mean]
 The baseline for regression is ``predict the training mean for everyone'', which
-has $R^2 = 0$. On the diabetes data of this chapter's lab it has an RMSE of 70;
-linear regression brings that to 56. Whether that improvement is worth having is
+has $R^2 = 0$. On the 400 completed stories of this chapter's lab it has an RMSE
+of 11.8 hours; linear regression brings that to 4.3. Whether that improvement is worth having is
 a question about the application, not the algorithm --- but without the baseline
 nobody could even ask it.
 \end{alertbox}
@@ -300,35 +300,13 @@ nobody could even ask it.
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Linear Regression}
-\lensLA{Predict a final mark from coursework. The weights are the attraction:
-``each extra lab submitted is worth 1.8 marks'' is something an adviser can say to
-a student. The danger is reading it causally --- students who submit labs differ
-in many ways from those who do not.}
-
-\lensPM{Effort estimation is the textbook regression problem, and the
-story-point example is real practice. Report RMSE in hours, compare with ``hours
-per point'' from last quarter as the baseline, and refit every few sprints: teams
-change, and so does the slope.}
-
-\lensIOT{Predict energy use from outdoor temperature and occupancy. The residual
-plot matters: consumption is U-shaped in temperature (heating when cold, cooling
-when hot), so a straight line leaves exactly the pattern of
-\dsref{residual-plots}; a squared temperature feature removes it.}
-
-\lensSEC{Predict normal outbound traffic per host from time of day and number of
-users, then treat a large positive residual as suspicious. The regression is not
-the detector; its residuals are. This is regression used for anomaly detection,
-and it works only if the training period was clean.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[Least Squares Three Ways]
-The worked example by formula, then by gradient descent, then a real dataset:
-disease progression in 442 diabetes patients from ten measurements.
+The worked example by formula, then by gradient descent, then a larger dataset:
+400 completed user stories, with the hours each took predicted from five
+features --- story points, files touched, requirement changes, the developer's
+years of experience, and whether the story touches the database.
 \begin{lstlisting}[language=Python]
 import numpy as np
-from sklearn.datasets import load_diabetes
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
@@ -349,8 +327,18 @@ for step in range(2000):
     bg -= alpha * 2 * err.mean()
 print(f"gradient descent: w = {wg:.2f}, b = {bg:.2f}")
 
-# --- 3. a real dataset, against the mean baseline ------------------------
-X, t = load_diabetes(return_X_y=True)
+# --- 3. 400 completed stories, against the mean baseline -----------------
+rng = np.random.default_rng(5)
+n = 400
+points = rng.choice([1, 2, 3, 5, 8, 13], n)
+files = rng.poisson(2 + 0.5 * points)            # files touched
+changes = rng.poisson(1.0, n)                    # requirement changes
+years = rng.integers(0, 11, n)                   # developer experience
+db = (rng.random(n) < 0.3).astype(int)           # touches the database
+t = (2 + 2.2 * points + 0.8 * files + 1.5 * changes - 0.3 * years
+     + 3 * db + rng.normal(0, 4, n)).clip(min=1)  # actual hours
+X = np.column_stack([points, files, changes, years, db])
+names = ["points", "files", "changes", "years", "db"]
 X_tr, X_te, t_tr, t_te = train_test_split(X, t, test_size=0.25,
                                           random_state=0)
 scaler = StandardScaler().fit(X_tr)
@@ -361,9 +349,8 @@ for name, p in [("baseline (mean)", base), ("linear regression", pred)]:
     print(f"{name:18s} MAE {mean_absolute_error(t_te, p):5.1f}  "
           f"RMSE {mean_squared_error(t_te, p) ** 0.5:5.1f}  "
           f"R2 {r2_score(t_te, p):5.2f}")
-names = load_diabetes().feature_names
 for i in np.argsort(-np.abs(model.coef_))[:3]:
-    print(f"  weight on {names[i]:4s}: {float(model.coef_[i]):6.1f}")
+    print(f"  weight on {names[i]:7s}: {float(model.coef_[i]):6.1f}")
 \end{lstlisting}
 Change \texttt{alpha} to \texttt{0.2} in part 2 and run it again. Explain what you
 see using the worked example of \chref{math}.

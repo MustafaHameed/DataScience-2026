@@ -42,9 +42,10 @@ counts as ``similar'' is a choice (of features, their scaling and a distance), a
 so is the number of groups; change either and the clusters change.
 
 That makes clustering exploratory: a way of proposing structure for a person to
-examine. Customer segments, kinds of network traffic, families of malware, modes
-in which a machine operates --- each is a clustering that someone then named and
-decided was useful. Two families of algorithm cover the HEC outline:
+examine. Kinds of project in a portfolio, tickets that describe the same
+underlying fault, developers with similar skill profiles, the phases a project
+passes through --- each is a clustering that someone then named and decided was
+useful. Two families of algorithm cover the HEC outline:
 \term{partitional} methods such as $k$-means divide the data into a fixed number of
 groups; \term{hierarchical} methods build a whole tree of nested groupings.
 
@@ -65,8 +66,10 @@ on where it started.
 \end{definitionbox}
 
 \begin{worked}[$k$-Means by Hand]
-Seven points: A1 $(1, 1)$, A2 $(1.5, 2)$, A3 $(3, 4)$, A4 $(5, 7)$, A5 $(3.5, 5)$,
-A6 $(4.5, 5)$, A7 $(3.5, 4.5)$. $k = 2$, with initial centroids A2 and A4.
+Seven past projects, each described by its budget (in hundreds of thousands of
+dollars) and its duration (in months): A1 $(1, 1)$, A2 $(1.5, 2)$, A3 $(3, 4)$,
+A4 $(5, 7)$, A5 $(3.5, 5)$, A6 $(4.5, 5)$, A7 $(3.5, 4.5)$. $k = 2$, with initial
+centroids A2 and A4.
 
 \smallskip
 \textbf{Iteration 1 --- assign.} Distances to $\mu_1 = (1.5, 2)$ and $\mu_2 = (5, 7)$:
@@ -85,7 +88,8 @@ $\mu_2$: it moves to $C_2$. Every other point stays.
 
 \smallskip
 \textbf{Iteration 3.} No point changes cluster, so the centroids stop moving:
-\textbf{converged}, with $C_1 = \{$A1, A2$\}$ and $C_2 = \{$A3, \dots, A7$\}$.
+\textbf{converged}, with $C_1 = \{$A1, A2$\}$ and $C_2 = \{$A3, \dots, A7$\}$ ---
+two small, short projects and five larger ones.
 \end{worked}
 
 \dsfig{%
@@ -156,7 +160,7 @@ two clusters is defined by the \term{linkage}:
 \end{definitionbox}
 
 \begin{worked}[Single and Complete Linkage on Five Numbers]
-Points on a line: 1, 2, 4, 9, 11.
+Five tickets, described only by how many days each took to resolve: 1, 2, 4, 9, 11.
 
 \smallskip
 \textbf{Single linkage.} Closest pair: \{1, 2\} at distance 1. Next, \{1, 2\} to 4 is
@@ -284,29 +288,6 @@ $k$-means turns out to be a special case.
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Clustering}
-\lensLA{Cluster students by how they study --- when they log in, how they use
-videos and quizzes --- and advisers can tailor support to ``last-minute crammers''
-or ``steady early starters''. The names come from people looking at the clusters,
-and the clusters change if you add or remove a behavioural feature.}
-
-\lensPM{Clustering past projects on size, duration, team and technology yields
-project archetypes, each with its own typical overrun. A new project is estimated
-from its archetype --- nearest-centroid classification built from an unsupervised
-start.}
-
-\lensIOT{Clustering a machine's sensor readings recovers its operating modes ---
-idle, normal load, heavy load --- without anyone labelling them. A reading far from
-every centroid is a candidate anomaly; one that drifts from its mode's centroid over
-weeks is wear.}
-
-\lensSEC{Clustering malware by behaviour groups new samples into families, so
-analysts examine one sample per cluster instead of thousands. Network traffic
-clusters separate normal services; a small, tight new cluster appearing overnight
-deserves attention.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[k-Means, a Dendrogram and the Choice of k]
 \begin{lstlisting}[language=Python]
 import warnings
@@ -328,7 +309,7 @@ print("centroids:", km.cluster_centers_.round(3).tolist(),
 
 # --- 2. choosing k: the elbow and the silhouette -------------------------
 X, truth = make_blobs(n_samples=600, centers=4, cluster_std=1.0,
-                      random_state=3)
+                      random_state=3)     # 600 projects of four kinds
 for k in range(2, 8):
     m = KMeans(n_clusters=k, n_init=10, random_state=0).fit(X)
     print(f"k={k}: WCSS {m.inertia_:8.1f}   "
@@ -356,8 +337,10 @@ print("rescaled feature, adjusted Rand: raw",
       round(adjusted_rand_score(truth, raw), 3), " standardised",
       round(adjusted_rand_score(truth, fix), 3))
 \end{lstlisting}
-The warning filter hides a harmless message scikit-learn prints on some Windows
-installations. Change \texttt{cluster\_std} to 2.5 in part 2: do the elbow and the
+Part 2 stands in for 600 projects of four kinds, described by two numeric
+features; the kinds are known (\texttt{truth}) only so that part 4 can check the
+clusters against them. The warning filter hides a harmless message scikit-learn
+prints on some Windows installations. Change \texttt{cluster\_std} to 2.5 in part 2: do the elbow and the
 silhouette still agree?
 \end{lab}
 

@@ -74,7 +74,7 @@ far apart as possible on purpose. Everything between them --- every choice of
 feature, algorithm and setting --- is made while looking only at training and
 validation data. If any of those choices is made while looking at the test set,
 the final number measures how well you fitted the test set, not how well the
-model will do on the next student, e-mail or sensor reading.
+model will do on the next task, ticket or project.
 \end{conceptbox}
 
 \section{Examples, Features and Labels}
@@ -91,17 +91,17 @@ it must be prepared.
 \textbf{Feature type} & \textbf{Examples} & \textbf{Preparation} \\
 \midrule
 \endhead
-Numeric, continuous & Attendance rate, CPU load, bytes sent & Impute gaps; scale
-for distance- and gradient-based models \\
-Numeric, count & Logins per week, failed login attempts & As above; a log
-transform often helps with long tails \\
-Categorical, nominal & Programme, protocol, device type & One-hot encode; never
-treat the codes as numbers \\
-Categorical, ordinal & Grade band, severity level & Map to ordered integers, or
-one-hot if the gaps are not equal \\
-Text & E-mail body, commit message & Turn into counts or weights of words
+Numeric, continuous & Budget spent, hours logged, test coverage & Impute gaps;
+scale for distance- and gradient-based models \\
+Numeric, count & Open bugs, change requests & As above; a log transform often
+helps with long tails \\
+Categorical, nominal & Team, project type, technology stack & One-hot encode;
+never treat the codes as numbers \\
+Categorical, ordinal & Priority (low to critical), severity level & Map to ordered
+integers, or one-hot if the gaps are not equal \\
+Text & Ticket description, commit message & Turn into counts or weights of words
 (\chref{bayes}) \\
-Identifier & Student ID, IP address, serial number & Usually drop. An ID that
+Identifier & Task ID, ticket number, employee number & Usually drop. An ID that
 predicts the label is a leak, not a pattern \\
 \bottomrule
 \end{longtable}
@@ -144,7 +144,7 @@ data, and it stays honest only if it is looked at once.}{split}
 Split first, and stratify: \texttt{train\_test\_split(..., stratify=y)} keeps the
 proportion of each class the same in every part, which matters when one class is
 rare. Two further rules apply to data with structure. If there are several rows
-per person, machine or account, keep all of an entity's rows on the same side of
+per project or per developer, keep all of an entity's rows on the same side of
 the split. If the data is ordered in time, train on the past and test on the
 future --- a random split lets the model peek at tomorrow.
 \end{alertbox}
@@ -154,15 +154,16 @@ future --- a random split lets the model peek at tomorrow.
 \textbf{Missing values.} Most algorithms cannot accept a blank. Either drop the
 rows (wasteful, and biased if the gaps are not random) or \term{impute}: fill
 each gap with the median of that feature in the training data. When a value is
-missing \emph{for a reason} --- a sensor that fails when it overheats, a student
-who never opened the quiz --- add a yes/no column recording that it was missing;
-the absence is itself informative.
+missing \emph{for a reason} --- a timesheet never filled in during a crunch, a
+project that never kept a risk register --- add a yes/no column recording that it
+was missing; the absence is itself informative.
 
 \textbf{Categories.} \term{One-hot encoding} replaces a categorical feature with
-one 0/1 column per category. \texttt{programme} $\in \{$BSIT, BSCS, BSSE$\}$
+one 0/1 column per category. \texttt{ptype} $\in \{$Web, Mobile, Data$\}$
 becomes three columns, exactly one of which is 1 in each row. Coding the
-programmes as 1, 2 and 3 instead would tell the model that BSSE is ``three times''
-BSIT, which is nonsense that a linear model will happily use.
+project types as 1, 2 and 3 instead would tell the model that a Data project is
+``three times'' a Web project, which is nonsense that a linear model will happily
+use.
 
 \textbf{Scaling.} \chref{math} showed a distance dominated by the feature with the
 largest units. \term{Standardisation} rescales each feature to mean 0 and
@@ -176,28 +177,27 @@ $x' = (x - \min)/(\max - \min)$. Tree-based models (\chref{trees},
 $k$-means, PCA and anything trained by gradient descent do.
 
 \begin{worked}[Standardising with Training Statistics]
-Four training students have attendance $0.6, 0.8, 0.9, 0.7$ and logins
-$2, 4, 6, 8$.
+Four past releases had test coverage $0.6, 0.8, 0.9, 0.7$ and $2, 4, 6, 8$
+open bugs.
 
 \smallskip
-\textbf{Attendance:} $\mu = 0.75$;
+\textbf{Coverage:} $\mu = 0.75$;
 $\sigma = \sqrt{\tfrac{0.15^2 + 0.05^2 + 0.15^2 + 0.05^2}{4}}
 = \sqrt{0.0125} = 0.112$.\\
-\textbf{Logins:} $\mu = 5$;
+\textbf{Open bugs:} $\mu = 5$;
 $\sigma = \sqrt{\tfrac{9 + 1 + 1 + 9}{4}} = \sqrt{5} = 2.236$.
 
 \smallskip
-A new student arrives with attendance $0.5$ and 10 logins:
+A new release arrives with coverage $0.5$ and 10 open bugs:
 \[
-z_{\text{att}} = \frac{0.5 - 0.75}{0.112} = -2.24, \qquad
-z_{\text{log}} = \frac{10 - 5}{2.236} = +2.24
+z_{\text{cov}} = \frac{0.5 - 0.75}{0.112} = -2.24, \qquad
+z_{\text{bugs}} = \frac{10 - 5}{2.236} = +2.24
 \]
 \textbf{Both are now equally unusual} --- 2.24 standard deviations from the
-training mean, in opposite directions --- where before the logins difference
-(5) was twenty times the attendance difference (0.25). Note that $\mu$ and
-$\sigma$ came from the \emph{training} students only. The new student is
-transformed with the training statistics, never with statistics that include
-the new student.
+training mean, in opposite directions --- where before the bug difference (5)
+was twenty times the coverage difference (0.25). Note that $\mu$ and $\sigma$
+came from the \emph{training} releases only. The new release is transformed with
+the training statistics, never with statistics that include the new release.
 \end{worked}
 
 \section{The scikit-learn Interface}
@@ -249,8 +249,8 @@ then fails in use.
 \end{definitionbox}
 
 Leakage comes in two forms. \term{Target leakage} is a feature that is recorded
-after, or because of, the outcome: \texttt{days\_until\_account\_closed} in a model
-of which customers will leave. \term{Train--test contamination} is subtler:
+after, or because of, the outcome: \texttt{days\_overdue} in a model of which
+tasks will finish late. \term{Train--test contamination} is subtler:
 preparing the data using statistics that include the test rows. Fit a scaler on
 the full dataset and then split, and the training data has been shifted by the
 test data's mean --- the model has seen a summary of the exam.
@@ -309,10 +309,11 @@ the most common class (classification) or always predict the training mean
 beat it clearly has learned nothing useful.
 \end{definitionbox}
 
-Baselines are humbling. On the breast-cancer data of \chref{introduction}'s lab,
-``always benign'' already scores 63\%. On intrusion data where 99\% of connections
-are benign, ``always benign'' scores 99\% --- which is why a detector's accuracy
-means nothing until it is set beside the baseline (\chref{evaluation}).
+Baselines are humbling. On the late-task data of \chref{introduction}'s lab,
+``always on time'' already scores 66\% --- more than the hand-written rule. On
+commit data where 99\% of commits are clean, ``always clean'' scores 99\% ---
+which is why a defect predictor's accuracy means nothing until it is set beside
+the baseline (\chref{evaluation}).
 
 \begin{pitfall}
 \begin{tight}
@@ -321,9 +322,9 @@ means nothing until it is set beside the baseline (\chref{evaluation}).
         step in a pipeline.
   \item \textbf{Using the test set to choose.} Every look at the test set that
         changes a decision turns it into a validation set. Use it once.
-  \item \textbf{Label-encoding a nominal feature.} Programme codes 1, 2, 3 impose an
-        order that does not exist. One-hot encode.
-  \item \textbf{Keeping an identifier.} If \texttt{student\_id} improves accuracy,
+  \item \textbf{Label-encoding a nominal feature.} Project-type codes 1, 2, 3 impose
+        an order that does not exist. One-hot encode.
+  \item \textbf{Keeping an identifier.} If \texttt{task\_id} improves accuracy,
         IDs were assigned in a way that encodes the outcome --- a leak.
   \item \textbf{Reporting a score without the baseline.} ``92\% accurate'' is
         meaningless until you know that ``always no'' scores 90\%.
@@ -331,32 +332,10 @@ means nothing until it is set beside the baseline (\chref{evaluation}).
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Preparing the Data}
-\lensLA{Missing quiz marks are not random: the students who skip quizzes are the
-ones at risk. Impute, but add a \texttt{quiz\_missing} column, and it will often
-be one of the strongest features in the model. Split by student, never by row,
-if a student has several records.}
-
-\lensPM{Project data is small and full of categories --- team, project type,
-technology stack. One-hot encoding thirty technologies across two hundred
-projects gives most columns only a handful of ones; group the rare categories
-into ``other'' before encoding.}
-
-\lensIOT{Sensor data is ordered in time, so split by time: train on January to
-September, validate on October, test on November. A random split puts readings
-from the same minute on both sides, and the test score measures interpolation,
-not forecasting.}
-
-\lensSEC{The classic security leak is a feature derived from the analyst's
-verdict --- a ``ticket escalated'' flag, a signature name --- that exists only
-because the event was already known to be malicious. Ask of every feature: would
-this value exist, with this value, at the moment the model has to decide?}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[A Leak-Proof Pipeline]
-A synthetic cohort of 600 students with a missing-value problem and one
-categorical feature. The whole workflow, in the order of \dsref{workflow}.
+Six hundred synthetic past projects with a missing-value problem and one
+categorical feature; the label is whether the project finished late. The whole
+workflow, in the order of \dsref{workflow}.
 \begin{lstlisting}[language=Python]
 import numpy as np
 import pandas as pd
@@ -368,32 +347,32 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.linear_model import LogisticRegression
 from sklearn.dummy import DummyClassifier
 
-# --- a synthetic cohort of 600 students, with gaps ----------------------
+# --- 600 past projects, with gaps ---------------------------------------
 rng = np.random.default_rng(0)
 n = 600
 df = pd.DataFrame({
-    "attendance": rng.uniform(0.3, 1.0, n),
-    "quiz_avg": rng.uniform(0.0, 1.0, n),
-    "logins": rng.poisson(5, n).astype(float),
-    "programme": rng.choice(["BSIT", "BSCS", "BSSE"], n),
+    "clarity": rng.uniform(0.3, 1.0, n),         # requirement clarity
+    "coverage": rng.uniform(0.0, 1.0, n),        # test coverage
+    "changes": rng.poisson(5, n).astype(float),  # change requests
+    "ptype": rng.choice(["Web", "Mobile", "Data"], n),
 })
-risk = 3.6 - 4 * df.attendance - 2 * df.quiz_avg - 0.1 * df.logins
-df["fail"] = (risk + rng.normal(0, 0.5, n) > 0).astype(int)
-df.loc[rng.random(n) < 0.1, "quiz_avg"] = np.nan        # 10% missing
-print("fail rate:", df.fail.mean().round(3))
+risk = 2.6 - 4 * df.clarity - 2 * df.coverage + 0.1 * df.changes
+df["late"] = (risk + rng.normal(0, 0.5, n) > 0).astype(int)
+df.loc[rng.random(n) < 0.1, "coverage"] = np.nan        # 10% missing
+print("late rate:", df.late.mean().round(3))
 
-X, y = df.drop(columns="fail"), df["fail"]
+X, y = df.drop(columns="late"), df["late"]
 
 # --- 1. split FIRST; the test set is locked away ------------------------
 X_tr, X_te, y_tr, y_te = train_test_split(
     X, y, test_size=0.2, stratify=y, random_state=0)
 
 # --- 2. every preparation step lives inside the pipeline ----------------
-num = ["attendance", "quiz_avg", "logins"]
+num = ["clarity", "coverage", "changes"]
 prep = ColumnTransformer([
     ("num", make_pipeline(SimpleImputer(strategy="median"),
                           StandardScaler()), num),
-    ("cat", OneHotEncoder(handle_unknown="ignore"), ["programme"]),
+    ("cat", OneHotEncoder(handle_unknown="ignore"), ["ptype"]),
 ])
 model = Pipeline([("prep", prep), ("clf", LogisticRegression())])
 
@@ -418,10 +397,10 @@ the interface.
 \begin{tightnum}
   \item Why must the scaler's mean and standard deviation be computed from the
         training set only?
-  \item A dataset has a column \texttt{protocol} with values TCP, UDP and ICMP.
-        How should it be encoded, and why not as 1, 2, 3?
-  \item A model predicting equipment failure scores 97\% accuracy. What single
-        number do you ask for before you are impressed?
+  \item A dataset has a column \texttt{method} with values Scrum, Kanban and
+        Waterfall. How should it be encoded, and why not as 1, 2, 3?
+  \item A model predicting which projects will be cancelled scores 97\% accuracy.
+        What single number do you ask for before you are impressed?
 \end{tightnum}
 \end{checkpoint}
 
@@ -450,9 +429,9 @@ the interface.
         SVM? (a)~training (b)~validation (c)~test (d)~all three.
   \item \textbf{(MCQ)} Which model does \emph{not} need its features scaled?
         (a)~$k$-nearest neighbours (b)~SVM (c)~decision tree (d)~$k$-means.
-  \item \textbf{(MCQ)} A column recording the date a loan was written off, in a
-        model predicting default, is an example of: (a)~target leakage
-        (b)~stratification (c)~imputation (d)~a baseline.
+  \item \textbf{(MCQ)} A column recording the date a project was formally closed
+        as failed, in a model predicting project failure, is an example of:
+        (a)~target leakage (b)~stratification (c)~imputation (d)~a baseline.
   \item \textbf{(Short)} Explain the difference between \texttt{fit},
         \texttt{transform} and \texttt{predict}.
   \item \textbf{(Short)} Why should a time-ordered dataset not be split at random?

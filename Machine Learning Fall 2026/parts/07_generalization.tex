@@ -46,8 +46,11 @@ distinction seriously.
 
 \section{Underfitting and Overfitting}
 
-\dsref{polyfits} fits polynomials of three degrees to the same ten noisy samples
-of a sine wave. Degree 1 is too rigid to follow the curve at all. Degree 9 has ten
+\dsref{polyfits} fits polynomials of three degrees to the same ten noisy
+measurements of a smooth rise and fall: a team's weekly ticket volume over one
+release cycle, which climbs after each release and falls as the fixes land ($x$ is
+the position in the cycle, $y$ the volume on a scaled axis). Degree 1 is too rigid
+to follow the curve at all. Degree 9 has ten
 coefficients for ten points, so it passes through every one of them --- training
 error exactly zero --- and swings wildly between them. Degree 3 follows the shape
 and ignores the noise.
@@ -204,8 +207,8 @@ moves the bottom to the right.
 \section{Noisy Data}
 
 Noise is not only measurement error in the features. It is also \emph{label}
-noise: a student recorded as failing who in fact withdrew, an intrusion alert
-closed as benign by a tired analyst. Noise sets the floor on achievable error,
+noise: a task recorded as late that was in fact cancelled, a bug report closed as
+``not a bug'' by a tired reviewer. Noise sets the floor on achievable error,
 and it is exactly what an overfitting model memorises. Two consequences follow.
 First, a training error far below the noise level is a symptom, not an
 achievement --- the model has fitted the noise. Second, the noisier the data, the
@@ -448,30 +451,6 @@ comparison --- wrap the whole search in an outer cross-validation loop:
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Bias and Variance}
-\lensLA{A dropout model trained on one cohort of 200 students is a high-variance
-model: retrained on next year's cohort it gives different students different
-risks. Strong regularisation and a small number of well-understood features
-usually beat a flexible model here, because the data is small and the cohorts
-drift.}
-
-\lensPM{Effort data from one team is tiny and noisy, so the right model is nearly
-always simpler than it looks. A regression with two features that generalises
-beats one with twenty that fits last quarter perfectly; learning curves on
-project data usually show high variance.}
-
-\lensIOT{Vibration data is plentiful but each machine is different. A model with
-low variance across machines --- tested by holding out whole machines in
-cross-validation, not random readings --- is worth more than one that is very
-accurate on the machines it was trained on.}
-
-\lensSEC{An intrusion model that fits last month's traffic perfectly has learned
-last month's attacks, including their noise. Overfitting here is also a security
-weakness: a model that memorises exact signatures is evaded by the smallest
-variation. Regularised, simpler models degrade more gracefully.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[Find the Bottom of the U]
 \begin{lstlisting}[language=Python]
 import numpy as np
@@ -481,7 +460,7 @@ from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.model_selection import (train_test_split, KFold,
                                      cross_val_score, GridSearchCV)
 
-# --- noisy samples of a sine wave ----------------------------------------
+# --- a release cycle: ticket volume rises and falls, plus noise ---------
 rng = np.random.default_rng(0)
 X = rng.uniform(0, 1, (60, 1))
 y = np.sin(2 * np.pi * X[:, 0]) + rng.normal(0, 0.25, 60)

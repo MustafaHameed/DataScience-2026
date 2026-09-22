@@ -42,8 +42,8 @@ training examples and does nothing more until asked to classify a new one; only
 then does it look for the stored examples most similar to the query and let them
 decide.
 
-The idea is old and intuitive: to predict whether a student will pass, find the
-students most like them and see how they did. Its strengths follow directly.
+The idea is old and intuitive: to predict whether a new project will finish on
+time, find the past projects most like it and see how they did. Its strengths follow directly.
 There is no training time, the model can be as complex as the data (the decision
 boundary follows whatever shape the examples trace), and new examples are added
 by simply storing them. Its weaknesses follow too: every prediction requires
@@ -68,9 +68,9 @@ most similar to the classifications of instances nearby in the feature space.
 \begin{tikzpicture}[font=\scriptsize,
   ps/.style={circle, fill=greenhl!70!black, inner sep=1.9pt},
   fl/.style={rectangle, fill=accent, inner sep=2.1pt}]
-\draw[-{Stealth[length=2mm]}, gray!60] (0,0) -- (7.4,0) node[below left, font=\tiny] {attendance};
-\draw[-{Stealth[length=2mm]}, gray!60] (0,0) -- (0,5.6) node[above right, font=\tiny] {quiz average};
-% scale: x = (att-30)/10, y = (quiz-30)/10
+\draw[-{Stealth[length=2mm]}, gray!60] (0,0) -- (7.4,0) node[below left, font=\tiny] {requirement stability};
+\draw[-{Stealth[length=2mm]}, gray!60] (0,0) -- (0,5.6) node[above right, font=\tiny] {team experience};
+% scale: x = (stability-30)/10, y = (experience-30)/10
 \node[ps, label={[font=\tiny]right:A}] at (6.0,5.5) {};
 \node[ps, label={[font=\tiny]right:B}] at (5.0,4.0) {};
 \node[ps, label={[font=\tiny]above:C}] at (3.0,4.5) {};
@@ -78,47 +78,48 @@ most similar to the classifications of instances nearby in the feature space.
 \node[fl, label={[font=\tiny]right:E}] at (4.2,1.6) {};
 \node[fl, label={[font=\tiny]left:F}] at (1.0,3.0) {};
 \node[star, star points=5, fill=primary, inner sep=1.8pt] (q) at (3.5,3.0) {};
-\node[font=\tiny\bfseries, text=primary, anchor=north] at (3.5,2.85) {query};
+\node[font=\tiny\bfseries, text=primary, anchor=north] at (3.5,2.85) {new};
 \draw[primary!60, dashed, line width=0.8pt] (3.5,3.0) circle (1.573);
 \draw[secondary!70, dashed, line width=0.8pt] (3.5,3.0) circle (1.82);
 \draw[goldhl, dashed, line width=0.8pt] (3.5,3.0) circle (2.52);
-\node[font=\tiny, text=primary!80!black, anchor=west] at (7.8,4.6) {$k = 1$: E \quad$\Rightarrow$ Fail};
-\node[font=\tiny, text=secondary!70!black, anchor=west] at (7.8,4.0) {$k = 3$: E, C, B \quad$\Rightarrow$ Pass (2--1)};
-\node[font=\tiny, text=goldhl!45!black, anchor=west] at (7.8,3.4) {$k = 5$: E, C, B, D, F \quad$\Rightarrow$ Fail (3--2)};
+\node[font=\tiny, text=primary!80!black, anchor=west] at (7.8,4.6) {$k = 1$: E \quad$\Rightarrow$ Late};
+\node[font=\tiny, text=secondary!70!black, anchor=west] at (7.8,4.0) {$k = 3$: E, C, B \quad$\Rightarrow$ On time (2--1)};
+\node[font=\tiny, text=goldhl!45!black, anchor=west] at (7.8,3.4) {$k = 5$: E, C, B, D, F \quad$\Rightarrow$ Late (3--2)};
 \node[anchor=north west, align=left, text width=5.2cm, font=\tiny, text=gray!55!black] at (7.8,2.9)
      {Circles of increasing radius capture 1, 3 and 5 neighbours. The prediction
       changes twice: $k$ is not a detail but a modelling decision.};
-\node[ps] at (8.0,1.1) {}; \node[font=\tiny, anchor=west] at (8.15,1.1) {pass};
-\node[fl] at (9.2,1.1) {}; \node[font=\tiny, anchor=west] at (9.35,1.1) {fail};
+\node[ps] at (8.0,1.1) {}; \node[font=\tiny, anchor=west] at (8.15,1.1) {on time};
+\node[fl] at (9.5,1.1) {}; \node[font=\tiny, anchor=west] at (9.65,1.1) {late};
 \end{tikzpicture}}%
-{Six students and one query. Which class the query receives depends on how many
-neighbours are asked. (Axes scaled so that 10 marks $=$ one unit.)}{knn-votes}
+{Six past projects and one new project. Which class the new project receives depends
+on how many neighbours are asked. (Axes scaled so that 10 points $=$ one unit.)}{knn-votes}
 
 \begin{worked}[Three Values of $k$, Three Answers]
-Six students, with attendance and quiz average in percent:
-A (90, 85) Pass; B (80, 70) Pass; C (60, 75) Pass; D (55, 40) Fail; E (72, 46) Fail;
-F (40, 60) Fail. Classify the query Q (65, 60). Both features are on the same 0--100
-scale, so no rescaling is needed.
+Six past projects, each scored from 0 to 100 for requirement stability and for
+the team's experience with the technology:
+A (90, 85) On time; B (80, 70) On time; C (60, 75) On time; D (55, 40) Late;
+E (72, 46) Late; F (40, 60) Late. Classify the new project Q (65, 60). Both
+features are on the same 0--100 scale, so no rescaling is needed.
 
 \smallskip
 \textbf{Distances from Q}, sorted:
 \begin{tight}
-  \item E: $\sqrt{7^2 + 14^2} = \sqrt{245} = 15.65$ \quad (Fail)
-  \item C: $\sqrt{5^2 + 15^2} = \sqrt{250} = 15.81$ \quad (Pass)
-  \item B: $\sqrt{15^2 + 10^2} = \sqrt{325} = 18.03$ \quad (Pass)
-  \item D: $\sqrt{10^2 + 20^2} = \sqrt{500} = 22.36$ \quad (Fail)
-  \item F: $\sqrt{25^2 + 0^2} = 25.00$ \quad (Fail)
-  \item A: $\sqrt{25^2 + 25^2} = \sqrt{1250} = 35.36$ \quad (Pass)
+  \item E: $\sqrt{7^2 + 14^2} = \sqrt{245} = 15.65$ \quad (Late)
+  \item C: $\sqrt{5^2 + 15^2} = \sqrt{250} = 15.81$ \quad (On time)
+  \item B: $\sqrt{15^2 + 10^2} = \sqrt{325} = 18.03$ \quad (On time)
+  \item D: $\sqrt{10^2 + 20^2} = \sqrt{500} = 22.36$ \quad (Late)
+  \item F: $\sqrt{25^2 + 0^2} = 25.00$ \quad (Late)
+  \item A: $\sqrt{25^2 + 25^2} = \sqrt{1250} = 35.36$ \quad (On time)
 \end{tight}
-\textbf{$k = 1$:} E $\Rightarrow$ \textbf{Fail}. \quad
-\textbf{$k = 3$:} E, C, B $\Rightarrow$ \textbf{Pass}, 2 to 1. \quad
-\textbf{$k = 5$:} add D, F $\Rightarrow$ \textbf{Fail}, 3 to 2.
+\textbf{$k = 1$:} E $\Rightarrow$ \textbf{Late}. \quad
+\textbf{$k = 3$:} E, C, B $\Rightarrow$ \textbf{On time}, 2 to 1. \quad
+\textbf{$k = 5$:} add D, F $\Rightarrow$ \textbf{Late}, 3 to 2.
 
 \smallskip
 \textbf{Distance-weighted, $k = 5$.} Weight each vote by $1/d^2$:
-Fail $= \tfrac{1}{245} + \tfrac{1}{500} + \tfrac{1}{625} = 0.00768$;
-Pass $= \tfrac{1}{250} + \tfrac{1}{325} = 0.00708$. \textbf{Fail}, narrowly --- E, the
-nearest neighbour, counts for more than F, the farthest.
+Late $= \tfrac{1}{245} + \tfrac{1}{500} + \tfrac{1}{625} = 0.00768$;
+On time $= \tfrac{1}{250} + \tfrac{1}{325} = 0.00708$. \textbf{Late}, narrowly --- E,
+the nearest neighbour, counts for more than F, the farthest.
 \end{worked}
 
 \section{Distance and Scale}
@@ -140,11 +141,12 @@ For vectors $\mathbf{x}$ and $\mathbf{z}$ with $d$ features:
 \end{definitionbox}
 
 \begin{alertbox}[Always Scale Before Measuring Distance]
-Add ``logins per week'' (0--40) to the worked example, and a difference of 20 logins
-outweighs every difference in marks. The distance is decided by whichever feature
-has the largest units. Standardise first (\chref{workflow}). On the breast cancer
-data of this chapter's lab, 5-NN makes 7.0\% cross-validated errors on raw
-features and 3.3\% after standardising --- the same algorithm, half the error.
+Add the budget, in thousands of dollars (50--2{,}000), to the worked example, and
+a difference of a few hundred outweighs every difference in the two scores. The
+distance is decided by whichever feature has the largest units. Standardise first
+(\chref{workflow}). On the projects of this chapter's lab, 5-NN makes 24.5\%
+cross-validated errors on raw features and 13.0\% after standardising --- the
+same algorithm, about half the error.
 \end{alertbox}
 
 A second, subtler problem is \term{irrelevant features}. $k$-NN uses every feature
@@ -168,22 +170,22 @@ knob of \chref{generalization}, and it is chosen the same way.
 \begin{axis}[width=9.8cm, height=5.0cm, axis lines=left, xmode=log, log basis x=10,
   xlabel={$k$ (number of neighbours, log scale)}, ylabel={10-fold CV error},
   tick label style={font=\tiny}, label style={font=\scriptsize},
-  xmin=0.8, xmax=190, ymin=0.02, ymax=0.09,
+  xmin=0.8, xmax=190, ymin=0.08, ymax=0.19,
   xtick={1,3,5,11,21,51,101,151}, xticklabels={1,3,5,11,21,51,101,151},
   scaled y ticks=false,
   yticklabel style={/pgf/number format/fixed, /pgf/number format/precision=2}]
 \addplot[secondary, line width=1.3pt, mark=*, mark size=1.5pt] coordinates
-  {(1,0.0492) (3,0.0352) (5,0.0334) (7,0.0334) (9,0.0334) (11,0.0334) (15,0.0387) (21,0.0440) (31,0.0457) (51,0.0475) (75,0.0563) (101,0.0703) (151,0.0826)};
-\node[font=\tiny, accent, anchor=south west, align=left] at (axis cs:1.05,0.05)
+  {(1,0.1500) (3,0.1300) (5,0.1300) (7,0.1250) (9,0.1117) (11,0.1167) (15,0.1133) (21,0.1117) (31,0.1233) (51,0.1350) (75,0.1550) (101,0.1483) (151,0.1683)};
+\node[font=\tiny, accent, anchor=south west, align=left] at (axis cs:1.05,0.155)
      {$k = 1$: follows\\every stray example};
-\node[font=\tiny, accent, anchor=south east, align=right] at (axis cs:145,0.083)
+\node[font=\tiny, accent, anchor=south east, align=right] at (axis cs:145,0.172)
      {large $k$: the boundary\\is smoothed away};
-\draw[greenhl!70!black, dashed] (axis cs:7,0.02) -- (axis cs:7,0.0334);
-\node[font=\tiny, greenhl!45!black, anchor=north west] at (axis cs:7.2,0.031) {best: $k = 5$ to $11$};
+\draw[greenhl!70!black, dashed] (axis cs:9,0.08) -- (axis cs:9,0.1117);
+\node[font=\tiny, greenhl!45!black, anchor=north west] at (axis cs:9.4,0.106) {best: $k = 9$ to $21$};
 \end{axis}
 \end{tikzpicture}}%
-{Cross-validated error of $k$-NN on the (standardised) breast cancer data. Small $k$
-has high variance, large $k$ high bias; the familiar U-shape.}{knn-k}
+{Cross-validated error of $k$-NN on the (standardised) project data of this chapter's
+lab. Small $k$ has high variance, large $k$ high bias; the familiar U-shape.}{knn-k}
 
 Two practical rules: for two classes use an odd $k$, so votes cannot tie; and
 treat $\sqrt{n}$ as a rough upper starting point, then let cross-validation
@@ -265,33 +267,9 @@ a small device may be impossible.
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Nearest Neighbours}
-\lensLA{``Students like you'' is $k$-NN, and it is how many course
-recommendation systems work: find the ten most similar past students and suggest
-the electives they did well in. The explanation is built in --- here are the
-students you resemble --- which advisers find easier to trust than a weight.}
-
-\lensPM{Analogy-based effort estimation is $k$-NN regression: find the three
-completed projects most similar to the new one and average their effort. It is
-one of the oldest estimation methods in software engineering, and it works
-because a team's past projects are the best guide to its next.}
-
-\lensIOT{A machine's current vibration signature is compared with a library of
-signatures recorded before known failures; the nearest match names the likely
-fault. The library grows every time an engineer labels a new failure, with no
-retraining --- the lazy learner's great advantage.}
-
-\lensSEC{Anomaly detection by distance: a login whose nearest neighbours among
-the account's own history are all far away is unusual. The curse of dimensionality
-is the enemy here --- with hundreds of raw log features, every login looks equally
-unusual --- so reduce the features first.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[Neighbours, Scaling and the Choice of k]
 \begin{lstlisting}[language=Python]
 import numpy as np
-from sklearn.datasets import load_breast_cancer
 from sklearn.model_selection import cross_val_score, GridSearchCV
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import make_pipeline
@@ -299,7 +277,7 @@ from sklearn.preprocessing import StandardScaler
 
 # --- 1. the worked example -----------------------------------------------
 X = np.array([[90, 85], [80, 70], [60, 75], [55, 40], [72, 46], [40, 60]])
-y = np.array(["Pass", "Pass", "Pass", "Fail", "Fail", "Fail"])
+y = np.array(["OnTime", "OnTime", "OnTime", "Late", "Late", "Late"])
 q = np.array([[65, 60]])
 for k in (1, 3, 5):
     plain = KNeighborsClassifier(k).fit(X, y).predict(q)[0]
@@ -307,7 +285,15 @@ for k in (1, 3, 5):
     print(f"k={k}: vote {plain}, distance-weighted {weighted.predict(q)[0]}")
 
 # --- 2. scaling matters ----------------------------------------------------
-Xb, yb = load_breast_cancer(return_X_y=True)
+rng = np.random.default_rng(11)
+n = 600                                          # past projects
+Xb = np.column_stack([rng.uniform(20, 100, n),   # requirement stability
+                      rng.uniform(20, 100, n),   # team experience
+                      rng.uniform(50, 2000, n),  # budget, thousand USD
+                      rng.uniform(4, 52, n)])    # planned weeks
+yb = (Xb[:, 0] * Xb[:, 1] < 2500).astype(int)    # 1 = late
+flip = rng.random(n) < 0.05                      # 5% recorded wrongly
+yb[flip] = 1 - yb[flip]
 raw = cross_val_score(KNeighborsClassifier(5), Xb, yb, cv=10).mean()
 scaled = cross_val_score(make_pipeline(StandardScaler(),
                                        KNeighborsClassifier(5)),
@@ -331,16 +317,19 @@ for dim in (2, 10, 100, 1000):
     ratio = (D.min(1) / D.max(1)).mean()
     print(f"d={dim:4d}: nearest/farthest = {ratio:.2f}")
 \end{lstlisting}
+In part 2 a project is late when stability times experience falls below 2{,}500;
+budget and planned weeks are irrelevant, but budget has by far the largest units.
 scikit-learn's \texttt{weights="distance"} uses $1/d$ rather than the $1/d^2$ of
 the worked example; here both give the same answers. Add ten columns of random
-noise to the breast cancer features and rerun part 3: what happens to the best
+noise to the project features and rerun part 3: what happens to the best
 accuracy?
 \end{lab}
 
 %---------------------------------------------------------------------
 \begin{checkpoint}
 \begin{tightnum}
-  \item In the worked example, what does 3-NN predict for the query (50, 55)?
+  \item In the worked example, what does 3-NN predict for a new project at
+        (50, 55)?
   \item Why is $k$-NN called a lazy learner, and what does laziness cost at
         prediction time?
   \item As $k$ grows from 1 to $n$, what happens to bias and to variance?
@@ -379,10 +368,10 @@ accuracy?
   \item \textbf{(Short)} Why does $k$-NN need feature scaling while a decision tree
         does not?
   \item \textbf{(Short)} Describe locally weighted regression in your own words.
-  \item \textbf{(Applied)} Add a seventh student G (68, 58, Pass) to the worked
+  \item \textbf{(Applied)} Add a seventh project G (68, 58, On time) to the worked
         example. Recompute the 1-, 3- and 5-NN predictions for Q.
-  \item \textbf{(Applied)} A dataset has features ``age'' (18--60) and ``annual
-        income'' (100{,}000--2{,}000{,}000 rupees). Compute the Euclidean distance
-        between (25, 400{,}000) and (55, 410{,}000) before and after min--max
-        scaling, and comment.
+  \item \textbf{(Applied)} A project dataset has features ``team size'' (2--60
+        people) and ``budget'' (100{,}000--2{,}000{,}000 rupees). Compute the
+        Euclidean distance between (25, 400{,}000) and (55, 410{,}000) before and
+        after min--max scaling, and comment.
 \end{reviewq}

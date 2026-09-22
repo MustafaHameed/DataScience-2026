@@ -2062,8 +2062,8 @@ class Deck:
         if next_ch:
             cards.append(("NEXT", f"Chapter {next_ch[0]} — {next_ch[1]}"))
         elif last:
-            cards.append(("THE COURSE", "22 chapters  ·  six parts  ·  four "
-                          "lenses  ·  one project"))
+            cards.append(("THE COURSE", "22 chapters  ·  six parts  ·  one "
+                          "project"))
         cards.append(("READ", f"Handout Chapter {ch.number}, pages "
                               f"{ch.page}–{ch.last_page}"))
         if week:

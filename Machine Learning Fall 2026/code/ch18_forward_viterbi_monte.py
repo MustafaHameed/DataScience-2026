@@ -1,13 +1,13 @@
 # Chapter 18 lab -- extracted from parts/ by sync_labs.py. Edit the chapter, not this file.
 import numpy as np
 
-# --- the worked example: a server that is Healthy (0) or Degraded (1) ----
+# --- the worked example: a project, Healthy (0) or Distressed (1) --------
 pi = np.array([0.7, 0.3])                        # initial state
 A = np.array([[0.8, 0.2],                        # transitions, row = from
               [0.3, 0.7]])
-B = np.array([[0.70, 0.25, 0.05],                # emissions: fast, slow,
-              [0.10, 0.50, 0.40]])               #            timeout
-obs = [0, 1, 2]                                  # fast, slow, timeout
+B = np.array([[0.70, 0.25, 0.05],                # reports: on plan, behind,
+              [0.10, 0.50, 0.40]])               #          blocked
+obs = [0, 1, 2]                                  # on plan, behind, blocked
 
 
 def forward(obs, pi, A, B):
@@ -30,7 +30,7 @@ def viterbi(obs, pi, A, B):
 
 
 alpha = forward(obs, pi, A, B)
-print("P(fast, slow, timeout) =", round(alpha.sum(), 6))
+print("P(on plan, behind, blocked) =", round(alpha.sum(), 6))
 print("P(state at t=3 | obs)  =", (alpha / alpha.sum()).round(3))
 path, p = viterbi(obs, pi, A, B)
 print("most likely states:", ["HD"[s] for s in path], "prob", round(p, 5))

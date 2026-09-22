@@ -6,7 +6,7 @@ from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.model_selection import (train_test_split, KFold,
                                      cross_val_score, GridSearchCV)
 
-# --- noisy samples of a sine wave ----------------------------------------
+# --- a release cycle: ticket volume rises and falls, plus noise ---------
 rng = np.random.default_rng(0)
 X = rng.uniform(0, 1, (60, 1))
 y = np.sin(2 * np.pi * X[:, 0]) + rng.normal(0, 0.25, 60)

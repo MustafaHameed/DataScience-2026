@@ -55,10 +55,11 @@ nudge your estimate towards that (temporal-difference learning).
 
 \chref{hmm} introduced \emph{Monte Carlo estimation}: estimate an expectation by
 sampling and averaging, with error shrinking like $1/\sqrt{n}$. The simplest
-illustration needs no MDP at all. A server stays healthy for another minute with
-probability 0.8; what is the chance it survives ten minutes? Exactly, $0.8^{10} =
-0.107$. By simulation: run the ten minutes 100 times and count survivals --- the lab
-gets 0.120; a million runs give 0.1071. The same procedure works when no exact formula
+illustration needs no MDP at all. In the model of \chref{hmm}, a healthy project
+stays healthy for another week with probability 0.8; what is the chance it stays
+healthy for ten weeks? Exactly, $0.8^{10} = 0.107$. By simulation: run the ten weeks
+100 times and count the runs that stay healthy --- the lab gets 0.120; a million runs
+give 0.1071. The same procedure works when no exact formula
 exists, which is the point.
 
 \begin{definitionbox}[Monte Carlo Prediction]
@@ -121,9 +122,12 @@ proportion to how \emph{uncertain} their estimate is: optimism under uncertainty
 \bottomrule
 \end{longtable}
 
-\begin{worked}[Which Advert Next?]
-A site has tried three adverts, with click rewards averaging: A $0.5$ (shown 10
-times), B $0.6$ (5 times), C $0.3$ (twice). Total pulls $t = 17$; $\ln 17 = 2.833$.
+\begin{worked}[Which Estimation Technique Next Sprint?]
+A team is trying three estimation techniques --- A planning poker, B t-shirt sizing,
+C three-point estimates --- one per sprint. The reward is 1 when the sprint's
+estimate lands within 10\% of the actual effort, 0 otherwise. So far the rewards
+average: A $0.5$ (used in 10 sprints), B $0.6$ (5 sprints), C $0.3$ (2 sprints).
+Total pulls $t = 17$; $\ln 17 = 2.833$.
 
 \smallskip
 \textbf{Greedy:} B, the highest average.
@@ -137,13 +141,14 @@ $0.9 + 0.1/3 = 0.933$; A and C with $0.033$ each.
   \item B: $0.6 + \sqrt{2.833/5} = 0.6 + 0.753 = 1.353$
   \item C: $0.3 + \sqrt{2.833/2} = 0.3 + 1.190 = \mathbf{1.490}$
 \end{tight}
-UCB shows \textbf{C}: its average is lowest, but it has been tried only twice, so its
-true value is the most uncertain. If C really is poor, a few more pulls will lower its
-bonus and UCB will stop choosing it; if it is good, greedy would never have found out.
+UCB chooses \textbf{C}: its average is lowest, but it has been tried only twice, so
+its true value is the most uncertain. If C really is poor, a few more sprints will
+lower its bonus and UCB will stop choosing it; if it is good, greedy would never have
+found out.
 
 \smallskip
-\textbf{Update} after B is shown again and clicked (reward 1): $N(B) = 6$ and
-$Q(B) = 0.6 + \tfrac{1}{6}(1 - 0.6) = 0.667$.
+\textbf{Update} after B is used again and its estimate lands (reward 1): $N(B) = 6$
+and $Q(B) = 0.6 + \tfrac{1}{6}(1 - 0.6) = 0.667$.
 \end{worked}
 
 \dsfig{%
@@ -214,28 +219,29 @@ suitably decreasing $\alpha$ --- $Q$ converges to the optimal $Q^{*}$ of \chref{
 whatever exploratory policy generated the experience.
 \end{definitionbox}
 
-\begin{worked}[Three Q-Learning Updates on the Maintenance MDP]
-The agent does not know the transition probabilities of \dsref{maintenance-mdp}; it
-only experiences them. $Q$ starts at 0 everywhere; $\alpha = 0.5$, $\gamma = 0.9$.
+\begin{worked}[Three Q-Learning Updates on the Technical-Debt MDP]
+The agent does not know the transition probabilities of \dsref{debt-mdp}; it only
+experiences them, one sprint at a time. $Q$ starts at 0 everywhere; $\alpha = 0.5$,
+$\gamma = 0.9$.
 
 \smallskip
-\textbf{Step 1:} in H, operate; reward $+10$; stays in H.
-$Q(H, \text{op}) \leftarrow 0 + 0.5\,[10 + 0.9 \times \max(0, 0) - 0] = \mathbf{5}$.
+\textbf{Step 1:} in H, ship; reward $+10$; stays in H.
+$Q(H, \text{ship}) \leftarrow 0 + 0.5\,[10 + 0.9 \times \max(0, 0) - 0] = \mathbf{5}$.
 
-\textbf{Step 2:} in H, operate; reward $+10$; degrades to D.
-$Q(H, \text{op}) \leftarrow 5 + 0.5\,[10 + 0.9 \times \max(Q(D, \cdot)) - 5] = 5 + 0.5 \times 5 =
+\textbf{Step 2:} in H, ship; reward $+10$; debt builds up, now D.
+$Q(H, \text{ship}) \leftarrow 5 + 0.5\,[10 + 0.9 \times \max(Q(D, \cdot)) - 5] = 5 + 0.5 \times 5 =
 \mathbf{7.5}$.
 
-\textbf{Step 3:} in D, repair; reward $-4$; back to H.
-$Q(D, \text{rep}) \leftarrow 0 + 0.5\,[-4 + 0.9 \times 7.5 - 0] = 0.5 \times 2.75 =
+\textbf{Step 3:} in D, refactor; reward $-4$; back to H.
+$Q(D, \text{ref}) \leftarrow 0 + 0.5\,[-4 + 0.9 \times 7.5 - 0] = 0.5 \times 2.75 =
 \mathbf{1.375}$.
 
 \smallskip
-The repair was penalised $-4$, yet its Q-value is \emph{positive}: the update already
-credits it with the value of the healthy state it leads to. Run for 200{,}000 steps (the
-lab), Q-learning arrives at the same policy value iteration computed from the full
-model --- operate when healthy, repair when degraded or failed --- having never seen
-a single transition probability.
+The refactoring was penalised $-4$, yet its Q-value is \emph{positive}: the update
+already credits it with the value of the healthy state it leads to. Run for 200{,}000
+steps (the lab), Q-learning arrives at the same policy value iteration computed from
+the full model --- ship when healthy, refactor when debt-laden or frozen --- having
+never seen a single transition probability.
 \end{worked}
 
 \begin{conceptbox}[Q-Learning and SARSA: Off-Policy and On-Policy]
@@ -245,30 +251,31 @@ policy while behaving exploratorily: \term{off-policy}. \textbf{SARSA} uses inst
 action $a'$ the agent actually takes next,
 $Q(s, a) \leftarrow Q(s, a) + \alpha[r + \gamma Q(s', a') - Q(s, a)]$ (the name lists the
 quintuple $s, a, r, s', a'$). It learns the value of the policy it follows, exploration
-included: \term{on-policy}. Near a cliff edge, where an exploratory step is
-disastrous, SARSA learns a safer path than Q-learning, because it accounts for its own
-occasional random steps.
+included: \term{on-policy}. Where an exploratory step is disastrous --- pushing an
+untested build to production, say --- SARSA learns a safer policy than Q-learning,
+because it accounts for its own occasional random steps.
 \end{conceptbox}
 
 \section{From Tables to Deep Reinforcement Learning}
 
-A table with one entry per state--action pair is fine for three machine states and
-hopeless for a chessboard or a camera image. \term{Function approximation} replaces
-the table by a model $\hat{Q}(s, a; \mathbf{w})$ --- a linear model over state features,
-or a neural network (\chref{ann}) --- trained with the same TD targets as regression
-targets. A \term{deep Q-network} (DQN, 2015) used a convolutional network on raw
-screen pixels to learn dozens of Atari games; AlphaGo (2016) combined deep networks
-with Monte Carlo tree search and self-play. Approximation brings instability that the
-tabular case does not have, which is why those systems also needed engineering tricks
-(experience replay, target networks) that belong to a deep RL course.
+A table with one entry per state--action pair is fine for three codebase states and
+hopeless for the full state of a project portfolio --- every team, task and deadline.
+\term{Function approximation} replaces the table by a model $\hat{Q}(s, a; \mathbf{w})$
+--- a linear model over state features, or a neural network (\chref{ann}) ---
+trained with the same TD targets as regression targets. A deep neural network
+trained this way is a \term{deep Q-network} (DQN), and the field is \term{deep
+reinforcement learning}, the technology behind AlphaGo. Approximation
+brings instability that the tabular case does not have, which is why deep RL systems
+need engineering tricks (experience replay, target networks) that belong to a deep
+RL course.
 
 \begin{alertbox}[What Makes Real Reinforcement Learning Hard]
 \begin{tight}
   \item \textbf{Samples are expensive.} Q-learning needed 200{,}000 steps on a
-        three-state problem; a real machine, network or classroom cannot be
-        experimented on that freely. Most practical RL learns in a simulator first.
+        three-state problem; a real team runs perhaps twenty-five sprints a year.
+        Most practical RL learns in a simulator first.
   \item \textbf{Exploration can be unsafe.} ``Try a random action'' is unacceptable
-        for a medical dose or a power grid.
+        for a production release or a client's budget.
   \item \textbf{The reward is the specification.} An agent will exploit any gap
         between the reward and what was meant.
 \end{tight}
@@ -290,27 +297,6 @@ tabular case does not have, which is why those systems also needed engineering t
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Reinforcement Learning}
-\lensLA{Adaptive tutoring systems choose the next exercise to maximise long-run
-learning --- an RL problem. The bandit view is already practical: which hint, which
-explanation, which reminder message works best, learned from students' responses
-while still serving them.}
-
-\lensPM{Choosing which of several process changes to trial across teams is a
-bandit: every sprint is a pull, and UCB directs trials towards the options whose
-effect is still uncertain rather than repeating the current favourite.}
-
-\lensIOT{Building energy management is a standard RL application: states from sensors,
-actions to heat or cool, rewards trading comfort against cost. Controllers are
-trained in a simulator of the building, then deployed with conservative exploration.}
-
-\lensSEC{RL agents are used for automated penetration testing (learning which
-sequence of actions compromises a network) and for adaptive defence (where to
-deploy honeypots or tighten rules). Both sides can learn, which makes the environment
-non-stationary --- a hard case for every method in this chapter.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[Monte Carlo, Bandits and Q-Learning]
 \begin{lstlisting}[language=Python]
 import numpy as np
@@ -318,11 +304,11 @@ import numpy as np
 rng = np.random.default_rng(0)
 
 # --- 1. Monte Carlo inference: estimate an expectation by averaging ------
-# the chance that a server survives 10 minutes healthy (it degrades with
-# probability 0.2 each minute): exact answer 0.8 ** 10 = 0.107
+# the chance that a project stays healthy for 10 weeks (it slips with
+# probability 0.2 each week): exact answer 0.8 ** 10 = 0.107
 for n in (100, 10_000, 1_000_000):
     runs = rng.random((n, 10)) > 0.2            # True = stayed healthy
-    print(f"{n:9,d} simulated runs: P(survive 10 min) ~ "
+    print(f"{n:9,d} simulated runs: P(healthy 10 weeks) ~ "
           f"{runs.all(axis=1).mean():.4f}")
 
 
@@ -353,13 +339,13 @@ for s in ("greedy", "e-greedy", "ucb"):
     print(f"{s:8s}: mean reward, steps 1-100 {avg[:100].mean():.2f}; "
           f"steps 901-1000 {avg[900:].mean():.2f}")
 
-# --- 3. Q-learning on the maintenance MDP, without being told P ----------
-P = {("H", "operate"): ([0.8, 0.2, 0.0], 10),
-     ("D", "operate"): ([0.0, 0.5, 0.5], 5),
-     ("F", "operate"): ([0.0, 0.0, 1.0], 0),
-     ("H", "repair"): ([1, 0, 0], -2), ("D", "repair"): ([1, 0, 0], -4),
-     ("F", "repair"): ([1, 0, 0], -15)}
-S, A = ["H", "D", "F"], ["operate", "repair"]
+# --- 3. Q-learning on the technical-debt MDP, without being told P -------
+P = {("H", "ship"): ([0.8, 0.2, 0.0], 10),
+     ("D", "ship"): ([0.0, 0.5, 0.5], 5),
+     ("F", "ship"): ([0.0, 0.0, 1.0], 0),
+     ("H", "refactor"): ([1, 0, 0], -2), ("D", "refactor"): ([1, 0, 0], -4),
+     ("F", "refactor"): ([1, 0, 0], -15)}
+S, A = ["H", "D", "F"], ["ship", "refactor"]
 
 
 def env_step(s, a):                         # the agent only sees samples
@@ -375,13 +361,14 @@ for t in range(200_000):
     s2, r = env_step(s, a)
     Q[s, a] += alpha * (r + gamma * Q[s2].max() - Q[s, a])   # Q-learning
     s = s2
-print("learned Q (rows H, D, F; columns operate, repair):")
+print("learned Q (rows H, D, F; columns ship, refactor):")
 print(Q.round(1))
 print("learned policy:", dict(zip(S, [A[a] for a in Q.argmax(axis=1)])))
 \end{lstlisting}
-The learned Q-values approach the true $Q^{*}$ (for H: operate 78.6, repair 68.8) but
+The learned Q-values approach the true $Q^{*}$ (for H: ship 78.6, refactor 68.8) but
 do not reach them exactly, because $\alpha$ stays at 0.1 and the agent keeps
-exploring. Try $\varepsilon = 0$: does Q-learning still find the repair policy?
+exploring. Try $\varepsilon = 0$: does Q-learning still discover that refactoring
+pays?
 \end{lab}
 
 %---------------------------------------------------------------------
@@ -428,10 +415,10 @@ exploring. Try $\varepsilon = 0$: does Q-learning still find the repair policy?
   \item \textbf{(Short)} Explain ``optimism under uncertainty'' with reference to UCB.
   \item \textbf{(Short)} Why is exploration dangerous in some real applications, and
         what is done about it?
-  \item \textbf{(Applied)} For the advert example, compute the UCB scores with $c = 2$
-        and state which advert is shown. Then suppose it is shown and not clicked
-        (reward 0): recompute its average.
+  \item \textbf{(Applied)} For the estimation example, compute the UCB scores with
+        $c = 2$ and state which technique is chosen. Then suppose it is used and the
+        estimate misses (reward 0): recompute its average.
   \item \textbf{(Applied)} Continue the Q-learning worked example with step 4: in H,
-        repair, reward $-2$, stays in H. Compute the new $Q(H, \text{repair})$ and
-        state which action is now greedy in H.
+        refactor, reward $-2$, stays in H. Compute the new $Q(H, \text{refactor})$
+        and state which action is now greedy in H.
 \end{reviewq}

@@ -50,30 +50,31 @@ until a leaf is reached.
              font=\scriptsize\bfseries, minimum width=1.2cm, minimum height=0.55cm},
   br/.style={font=\tiny, text=gray!55!black, fill=white, inner sep=1pt},
   e/.style={gray!60, line width=0.9pt}]
-\node[attr] (o) at (0,0) {Outlook};
-\node[attr] (h) at (-4.0,-1.7) {Humidity};
+\node[attr] (o) at (0,0) {Requirements};
+\node[attr] (h) at (-4.0,-1.7) {Load};
 \node[yes] (ov) at (0,-1.7) {Yes};
-\node[attr] (w) at (4.0,-1.7) {Wind};
+\node[attr] (w) at (4.0,-1.7) {Dependencies};
 \node[no]  (h1) at (-5.3,-3.3) {No};
 \node[yes] (h2) at (-2.7,-3.3) {Yes};
 \node[no]  (w1) at (2.7,-3.3) {No};
 \node[yes] (w2) at (5.3,-3.3) {Yes};
-\draw[e] (o) -- node[br] {Sunny} (h);
-\draw[e] (o) -- node[br] {Overcast} (ov);
-\draw[e] (o) -- node[br] {Rain} (w);
+\draw[e] (o) -- node[br] {Changing} (h);
+\draw[e] (o) -- node[br] {Frozen} (ov);
+\draw[e] (o) -- node[br] {Vague} (w);
 \draw[e] (h) -- node[br] {High} (h1);
 \draw[e] (h) -- node[br] {Normal} (h2);
-\draw[e] (w) -- node[br] {Strong} (w1);
-\draw[e] (w) -- node[br] {Weak} (w2);
-\node[font=\tiny, text=gray!55!black] at (-5.3,-3.85) {D1, D2, D8};
-\node[font=\tiny, text=gray!55!black] at (-2.7,-3.85) {D9, D11};
-\node[font=\tiny, text=gray!55!black] at (0,-2.25) {D3, D7, D12, D13};
-\node[font=\tiny, text=gray!55!black] at (2.7,-3.85) {D6, D14};
-\node[font=\tiny, text=gray!55!black] at (5.3,-3.85) {D4, D5, D10};
+\draw[e] (w) -- node[br] {Many} (w1);
+\draw[e] (w) -- node[br] {Few} (w2);
+\node[font=\tiny, text=gray!55!black] at (-5.3,-3.85) {S1, S2, S8};
+\node[font=\tiny, text=gray!55!black] at (-2.7,-3.85) {S9, S11};
+\node[font=\tiny, text=gray!55!black] at (0,-2.25) {S3, S7, S12, S13};
+\node[font=\tiny, text=gray!55!black] at (2.7,-3.85) {S6, S14};
+\node[font=\tiny, text=gray!55!black] at (5.3,-3.85) {S4, S5, S10};
 \end{tikzpicture}}%
-{The tree ID3 learns from the fourteen PlayTennis days. Under each leaf are the training
-days that reach it; every leaf is pure. It is equivalent to the rule: play if
-(Sunny and Normal humidity) or Overcast or (Rain and Weak wind).}{playtennis-tree}
+{The tree ID3 learns from the fourteen past sprints. Under each leaf are the training
+sprints that reach it; every leaf is pure. It is equivalent to the rule: the goal is met
+if (requirements Changing and load Normal) or requirements Frozen or (requirements
+Vague and Few dependencies).}{sprint-tree}
 
 A tree is a disjunction of conjunctions: each root-to-leaf path is an AND of tests,
 and the tree is the OR of the paths that end in ``Yes''. That makes trees far more
@@ -85,29 +86,34 @@ values.
 
 \section{Choosing the Question: Entropy and Information Gain}
 
-The fourteen training days of \emph{PlayTennis}, from Mitchell's set text:
+Fourteen past sprints, each described by four attributes, and whether the sprint
+met its goal. \emph{Requirements} were Changing, Frozen or Vague during the
+sprint; \emph{Pressure} is the deadline pressure; \emph{Load} is whether the team
+was carrying more work than usual; \emph{Dependencies} counts waits on other
+teams. (This is Mitchell's \emph{PlayTennis} table with the attributes renamed,
+so every number below can be checked against the set text.)
 
 \rowcolors{2}{white}{lightbg}
-\begin{longtable}{@{}L{1.1cm}L{2.3cm}L{2.5cm}L{2.3cm}L{2.0cm}L{2.2cm}@{}}
+\begin{longtable}{@{}L{1.3cm}L{2.5cm}L{2.2cm}L{2.0cm}L{2.6cm}L{2.2cm}@{}}
 \toprule
 \rowcolor{primary!15}
-\textbf{Day} & \textbf{Outlook} & \textbf{Temperature} & \textbf{Humidity} & \textbf{Wind} & \textbf{PlayTennis} \\
+\textbf{Sprint} & \textbf{Requirements} & \textbf{Pressure} & \textbf{Load} & \textbf{Dependencies} & \textbf{Goal met} \\
 \midrule
 \endhead
-D1 & Sunny & Hot & High & Weak & No \\
-D2 & Sunny & Hot & High & Strong & No \\
-D3 & Overcast & Hot & High & Weak & Yes \\
-D4 & Rain & Mild & High & Weak & Yes \\
-D5 & Rain & Cool & Normal & Weak & Yes \\
-D6 & Rain & Cool & Normal & Strong & No \\
-D7 & Overcast & Cool & Normal & Strong & Yes \\
-D8 & Sunny & Mild & High & Weak & No \\
-D9 & Sunny & Cool & Normal & Weak & Yes \\
-D10 & Rain & Mild & Normal & Weak & Yes \\
-D11 & Sunny & Mild & Normal & Strong & Yes \\
-D12 & Overcast & Mild & High & Strong & Yes \\
-D13 & Overcast & Hot & Normal & Weak & Yes \\
-D14 & Rain & Mild & High & Strong & No \\
+S1 & Changing & High & High & Few & No \\
+S2 & Changing & High & High & Many & No \\
+S3 & Frozen & High & High & Few & Yes \\
+S4 & Vague & Medium & High & Few & Yes \\
+S5 & Vague & Low & Normal & Few & Yes \\
+S6 & Vague & Low & Normal & Many & No \\
+S7 & Frozen & Low & Normal & Many & Yes \\
+S8 & Changing & Medium & High & Few & No \\
+S9 & Changing & Low & Normal & Few & Yes \\
+S10 & Vague & Medium & Normal & Few & Yes \\
+S11 & Changing & Medium & Normal & Many & Yes \\
+S12 & Frozen & Medium & High & Many & Yes \\
+S13 & Frozen & High & Normal & Few & Yes \\
+S14 & Vague & Medium & High & Many & No \\
 \bottomrule
 \end{longtable}
 
@@ -146,36 +152,36 @@ highest gain at the node.
 {Two impurity measures for a two-class node. Both are zero for a pure node and largest
 for an even split; they almost always pick the same attribute.}{impurity}
 
-\begin{worked}[ID3's First Choice on PlayTennis]
+\begin{worked}[ID3's First Choice on the Sprint Data]
 \textbf{The root.} 9 Yes, 5 No: $\text{Entropy}(S) = 0.940$ (computed in \chref{math}).
 
 \smallskip
-\textbf{Outlook} splits $S$ into Sunny (2 Yes, 3 No: entropy 0.971), Overcast (4, 0:
-entropy 0) and Rain (3, 2: entropy 0.971):
+\textbf{Requirements} splits $S$ into Changing (2 Yes, 3 No: entropy 0.971), Frozen
+(4, 0: entropy 0) and Vague (3, 2: entropy 0.971):
 \[
-\text{Gain}(S, \text{Outlook}) = 0.940 - \tfrac{5}{14}(0.971) - \tfrac{4}{14}(0)
+\text{Gain}(S, \text{Requirements}) = 0.940 - \tfrac{5}{14}(0.971) - \tfrac{4}{14}(0)
 - \tfrac{5}{14}(0.971) = \mathbf{0.246}
 \]
-\textbf{Humidity}: High (3, 4: 0.985), Normal (6, 1: 0.592):
+\textbf{Load}: High (3, 4: 0.985), Normal (6, 1: 0.592):
 \[
-\text{Gain}(S, \text{Humidity}) = 0.940 - \tfrac{7}{14}(0.985) - \tfrac{7}{14}(0.592) = \mathbf{0.151}
+\text{Gain}(S, \text{Load}) = 0.940 - \tfrac{7}{14}(0.985) - \tfrac{7}{14}(0.592) = \mathbf{0.151}
 \]
-\textbf{Wind}: Weak (6, 2: 0.811), Strong (3, 3: 1.000):
+\textbf{Dependencies}: Few (6, 2: 0.811), Many (3, 3: 1.000):
 \[
-\text{Gain}(S, \text{Wind}) = 0.940 - \tfrac{8}{14}(0.811) - \tfrac{6}{14}(1.000) = \mathbf{0.048}
+\text{Gain}(S, \text{Dependencies}) = 0.940 - \tfrac{8}{14}(0.811) - \tfrac{6}{14}(1.000) = \mathbf{0.048}
 \]
-\textbf{Temperature}: $\text{Gain} = \mathbf{0.029}$ (check it yourself).
+\textbf{Pressure}: $\text{Gain} = \mathbf{0.029}$ (check it yourself).
 
 \smallskip
-\textbf{Outlook wins} and goes at the root. Its Overcast branch is already pure, so
-it becomes a Yes leaf.
+\textbf{Requirements wins} and goes at the root. Its Frozen branch is already pure,
+so it becomes a Yes leaf.
 
 \smallskip
-\textbf{The Sunny branch} (D1, D2, D8, D9, D11; entropy 0.971) is split the same
-way, using only those five days: Gain(Humidity) $= 0.971$, Gain(Temperature)
-$= 0.571$, Gain(Wind) $= 0.020$. Humidity separates them perfectly. On the Rain
-branch Wind does the same. Every leaf is now pure, and ID3 stops with the tree of
-\dsref{playtennis-tree}.
+\textbf{The Changing branch} (S1, S2, S8, S9, S11; entropy 0.971) is split the
+same way, using only those five sprints: Gain(Load) $= 0.971$, Gain(Pressure)
+$= 0.571$, Gain(Dependencies) $= 0.020$. Load separates them perfectly. On the
+Vague branch Dependencies does the same. Every leaf is now pure, and ID3 stops
+with the tree of \dsref{sprint-tree}.
 \end{worked}
 
 \section{Beyond the Basic Algorithm}
@@ -186,20 +192,22 @@ values where the class changes; each is scored by information gain like any
 other attribute.
 
 \begin{worked}[Choosing a Threshold]
-Six days with Temperature $40, 48, 60, 72, 80, 90$ and PlayTennis No, No, Yes, Yes,
-Yes, No. The class changes between 48 and 60 and between 80 and 90, so the
-candidates are $t = 54$ and $t = 85$. The set has 3 Yes and 3 No: entropy 1.
+Six sprints in which $40, 48, 60, 72, 80, 90$ per cent of the stories had been
+refined (given acceptance criteria) before the sprint began, and the goal was met
+No, No, Yes, Yes, Yes, No. The class changes between 48 and 60 and between 80 and
+90, so the candidates are $t = 54$ and $t = 85$. The set has 3 Yes and 3 No:
+entropy 1.
 \begin{tight}
   \item $t = 54$: $\le 54$ holds \{No, No\} (entropy 0); $> 54$ holds 3 Yes, 1 No
         (entropy 0.811). Gain $= 1 - \tfrac{4}{6}(0.811) = \mathbf{0.459}$.
   \item $t = 85$: $\le 85$ holds 3 Yes, 2 No (0.971); $> 85$ holds \{No\} (0).
         Gain $= 1 - \tfrac{5}{6}(0.971) = \mathbf{0.191}$.
 \end{tight}
-The test Temperature $\le 54$ is chosen.
+The test Refined $\le 54$ is chosen.
 \end{worked}
 
 \textbf{Attributes with many values.} Information gain favours attributes with
-many values. An attribute such as \emph{Date} splits the training days into
+many values. An attribute such as \emph{SprintID} splits the training sprints into
 fourteen pure singletons --- maximal gain, zero use. C4.5 corrects this with the
 \term{gain ratio}, dividing the gain by the \term{split information}, the entropy
 of the split itself:
@@ -208,15 +216,15 @@ of the split itself:
 \qquad
 \text{GainRatio}(S, A) = \frac{\text{Gain}(S, A)}{\text{SplitInfo}(S, A)}
 \]
-For Outlook (5, 4, 5 days) SplitInfo $= 1.577$ and the gain ratio is
-$0.246/1.577 = 0.156$. For Date, SplitInfo $= \log_2 14 = 3.81$, which heavily
+For Requirements (5, 4, 5 sprints) SplitInfo $= 1.577$ and the gain ratio is
+$0.246/1.577 = 0.156$. For SprintID, SplitInfo $= \log_2 14 = 3.81$, which heavily
 discounts its gain.
 
 \textbf{The Gini index.} CART, and scikit-learn by default, uses
-$\text{Gini}(S) = 1 - \sum_i p_i^2$ instead of entropy. For the PlayTennis root it is
-$1 - (9/14)^2 - (5/14)^2 = 0.459$, falling to 0.343 after splitting on Outlook.
-\dsref{impurity} shows why the choice rarely matters: the two curves have the same
-shape.
+$\text{Gini}(S) = 1 - \sum_i p_i^2$ instead of entropy. At the root of the sprint
+data it is $1 - (9/14)^2 - (5/14)^2 = 0.459$, falling to 0.343 after splitting on
+Requirements. \dsref{impurity} shows why the choice rarely matters: the two
+curves have the same shape.
 
 \textbf{Missing values.} An example missing the tested attribute can be sent down
 the most common branch, or split fractionally among all branches in proportion to
@@ -226,9 +234,9 @@ their training frequencies (C4.5's approach).
 
 ID3 keeps splitting until every leaf is pure. With noisy data that means growing
 branches whose only purpose is to fit the mislabelled examples: add one wrongly
-labelled day to PlayTennis --- (Sunny, Hot, Normal, Strong, No) --- and ID3 must
-grow a new subtree under Sunny/Normal just to isolate it. \dsref{tree-overfit}
-shows the effect on a dataset in which 15\% of the labels were flipped.
+recorded sprint --- (Changing, High, Normal, Many, No) --- and ID3 must grow a new
+subtree under Changing/Normal just to isolate it. \dsref{tree-overfit} shows the
+effect on a dataset in which 15\% of the labels were flipped.
 
 \dsfig{%
 \begin{tikzpicture}
@@ -271,9 +279,10 @@ then cuts it back:
 \begin{conceptbox}[Why Rules Are Easier to Prune Than Trees]
 Pruning a tree removes a node and everything below it --- a decision about the
 root's test affects every path through it. Converting to rules first lets each
-path be simplified on its own: the test Outlook = Sunny can be dropped from one
-rule and kept in another. It also produces a list of plain if--then statements,
-which is what a domain expert actually wants to read.
+path be simplified on its own: the test Requirements = Changing can be dropped
+from one rule and kept in another. It also produces a list of plain if--then
+statements, which is what a project manager actually wants to read --- and can
+turn straight into a risk checklist.
 \end{conceptbox}
 
 \section{The Inductive Bias of ID3}
@@ -305,28 +314,6 @@ so a short tree that fits the data is less likely to fit it by coincidence.
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Decision Trees}
-\lensLA{An advising tree --- ``attendance below 60\% and two quizzes missed:
-refer'' --- can be printed on one page and checked by staff, which matters more
-in a university committee than two points of accuracy. Keep it shallow: a
-depth-3 tree is policy; a depth-12 tree is noise.}
-
-\lensPM{Trees handle the mix of categorical and numeric project attributes
-(methodology, team size, number of integrations) without encoding, and their
-rules --- ``fixed-price and more than three external integrations'' --- map
-directly onto risk checklists.}
-
-\lensIOT{A shallow tree compiles to a few nested \texttt{if} statements, so it runs
-on the smallest microcontroller with no library at all. Threshold tests on sensor
-readings are also exactly how maintenance engineers already think.}
-
-\lensSEC{Early intrusion detection systems were decision trees over connection
-features, and the rules are still a good way to explain an alert. Their
-weakness is that an attacker who learns the thresholds can stay just inside
-them --- keep the rules secret, and prefer ensembles of trees in deployment.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[ID3 by Hand, Then Pruning by Cross-Validation]
 \begin{lstlisting}[language=Python]
 import numpy as np
@@ -336,15 +323,15 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.tree import DecisionTreeClassifier, export_text
 
 # --- 1. ID3's first choice, computed by hand -----------------------------
-rows = ["Sunny Hot High Weak No", "Sunny Hot High Strong No",
-        "Overcast Hot High Weak Yes", "Rain Mild High Weak Yes",
-        "Rain Cool Normal Weak Yes", "Rain Cool Normal Strong No",
-        "Overcast Cool Normal Strong Yes", "Sunny Mild High Weak No",
-        "Sunny Cool Normal Weak Yes", "Rain Mild Normal Weak Yes",
-        "Sunny Mild Normal Strong Yes", "Overcast Mild High Strong Yes",
-        "Overcast Hot Normal Weak Yes", "Rain Mild High Strong No"]
+rows = ["Changing High High Few No", "Changing High High Many No",
+        "Frozen High High Few Yes", "Vague Medium High Few Yes",
+        "Vague Low Normal Few Yes", "Vague Low Normal Many No",
+        "Frozen Low Normal Many Yes", "Changing Medium High Few No",
+        "Changing Low Normal Few Yes", "Vague Medium Normal Few Yes",
+        "Changing Medium Normal Many Yes", "Frozen Medium High Many Yes",
+        "Frozen High Normal Few Yes", "Vague Medium High Many No"]
 df = pd.DataFrame([r.split() for r in rows],
-                  columns=["Outlook", "Temp", "Humidity", "Wind", "Play"])
+                  columns=["Reqs", "Pressure", "Load", "Deps", "Met"])
 
 
 def entropy(labels):
@@ -353,16 +340,16 @@ def entropy(labels):
 
 
 def gain(data, attr):
-    rest = sum(len(g) / len(data) * entropy(g.Play)
+    rest = sum(len(g) / len(data) * entropy(g.Met)
                for _, g in data.groupby(attr))
-    return entropy(data.Play) - rest
+    return entropy(data.Met) - rest
 
 
-for a in ["Outlook", "Temp", "Humidity", "Wind"]:
+for a in ["Reqs", "Pressure", "Load", "Deps"]:
     print(f"Gain(S, {a:8s}) = {gain(df, a):.3f}")
-sunny = df[df.Outlook == "Sunny"]
-print("inside Sunny:", {a: round(gain(sunny, a), 3)
-                        for a in ["Temp", "Humidity", "Wind"]})
+changing = df[df.Reqs == "Changing"]
+print("inside Changing:", {a: round(gain(changing, a), 3)
+                           for a in ["Pressure", "Load", "Deps"]})
 
 # --- 2. noisy data: a tree grown without limit, then pruned -------------
 X, y = make_classification(n_samples=1500, n_features=10, n_informative=4,
@@ -387,10 +374,12 @@ print(f"pruned:   {pruned.tree_.node_count:3d} nodes, "
       f"test {pruned.score(X_te, y_te):.3f}  (alpha = {best:.4f})")
 print(export_text(pruned, max_depth=1))
 \end{lstlisting}
-Part 1 prints 0.247 for Outlook where the worked example has 0.246: the code does
-not round the intermediate entropies. In part 2, pruning cuts the tree from 207 to
-63 nodes and \emph{raises} test accuracy from 0.72 to 0.75 while lowering training
-accuracy --- the signature of removing overfitting.
+Part 1 prints 0.247 for Requirements and 0.152 for Load where the worked example
+has 0.246 and 0.151: the code does not round the intermediate entropies. Part 2 stands in for 1{,}500 past
+sprints described by ten numeric features, 15\% of them recorded with the wrong
+outcome. Pruning cuts the tree from 207 to 63 nodes and \emph{raises} test
+accuracy from 0.72 to 0.75 while lowering training accuracy --- the signature of
+removing overfitting.
 \end{lab}
 
 %---------------------------------------------------------------------
@@ -398,7 +387,7 @@ accuracy --- the signature of removing overfitting.
 \begin{tightnum}
   \item A node holds 8 positive and 8 negative examples. A test splits it into
         (6+, 2$-$) and (2+, 6$-$). Compute the information gain.
-  \item Why does information gain favour an attribute such as \emph{StudentID}?
+  \item Why does information gain favour an attribute such as \emph{TaskID}?
         What fixes it?
   \item What is the difference between a restriction bias and a preference bias?
         Which does ID3 have?
@@ -411,7 +400,8 @@ accuracy --- the signature of removing overfitting.
   \item A decision tree is a disjunction of conjunctions of attribute tests; it
         can represent any discrete function and reads as a set of rules.
   \item ID3 grows the tree greedily, choosing at each node the attribute with the
-        greatest information gain; on PlayTennis, Outlook (0.246) wins at the root.
+        greatest information gain; on the sprint data, Requirements (0.246) wins
+        at the root.
   \item Numeric attributes become threshold tests at class boundaries; the gain
         ratio corrects the preference for many-valued attributes; Gini behaves
         like entropy.
@@ -436,9 +426,9 @@ accuracy --- the signature of removing overfitting.
   \item \textbf{(Short)} Describe reduced-error pruning and state what data it
         requires.
   \item \textbf{(Short)} Why do decision trees not need feature scaling?
-  \item \textbf{(Applied)} Compute Gain(S, Temperature) for the full PlayTennis
-        data, showing the entropy of each of the three branches.
-  \item \textbf{(Applied)} On the Rain branch of PlayTennis (D4, D5, D6, D10,
-        D14), compute the gain of Humidity, Temperature and Wind, and confirm that
-        ID3 chooses Wind.
+  \item \textbf{(Applied)} Compute Gain(S, Pressure) for the full sprint data,
+        showing the entropy of each of the three branches.
+  \item \textbf{(Applied)} On the Vague branch of the sprint data (S4, S5, S6,
+        S10, S14), compute the gain of Load, Pressure and Dependencies, and
+        confirm that ID3 chooses Dependencies.
 \end{reviewq}

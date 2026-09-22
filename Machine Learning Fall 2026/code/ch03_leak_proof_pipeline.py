@@ -9,32 +9,32 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.linear_model import LogisticRegression
 from sklearn.dummy import DummyClassifier
 
-# --- a synthetic cohort of 600 students, with gaps ----------------------
+# --- 600 past projects, with gaps ---------------------------------------
 rng = np.random.default_rng(0)
 n = 600
 df = pd.DataFrame({
-    "attendance": rng.uniform(0.3, 1.0, n),
-    "quiz_avg": rng.uniform(0.0, 1.0, n),
-    "logins": rng.poisson(5, n).astype(float),
-    "programme": rng.choice(["BSIT", "BSCS", "BSSE"], n),
+    "clarity": rng.uniform(0.3, 1.0, n),         # requirement clarity
+    "coverage": rng.uniform(0.0, 1.0, n),        # test coverage
+    "changes": rng.poisson(5, n).astype(float),  # change requests
+    "ptype": rng.choice(["Web", "Mobile", "Data"], n),
 })
-risk = 3.6 - 4 * df.attendance - 2 * df.quiz_avg - 0.1 * df.logins
-df["fail"] = (risk + rng.normal(0, 0.5, n) > 0).astype(int)
-df.loc[rng.random(n) < 0.1, "quiz_avg"] = np.nan        # 10% missing
-print("fail rate:", df.fail.mean().round(3))
+risk = 2.6 - 4 * df.clarity - 2 * df.coverage + 0.1 * df.changes
+df["late"] = (risk + rng.normal(0, 0.5, n) > 0).astype(int)
+df.loc[rng.random(n) < 0.1, "coverage"] = np.nan        # 10% missing
+print("late rate:", df.late.mean().round(3))
 
-X, y = df.drop(columns="fail"), df["fail"]
+X, y = df.drop(columns="late"), df["late"]
 
 # --- 1. split FIRST; the test set is locked away ------------------------
 X_tr, X_te, y_tr, y_te = train_test_split(
     X, y, test_size=0.2, stratify=y, random_state=0)
 
 # --- 2. every preparation step lives inside the pipeline ----------------
-num = ["attendance", "quiz_avg", "logins"]
+num = ["clarity", "coverage", "changes"]
 prep = ColumnTransformer([
     ("num", make_pipeline(SimpleImputer(strategy="median"),
                           StandardScaler()), num),
-    ("cat", OneHotEncoder(handle_unknown="ignore"), ["programme"]),
+    ("cat", OneHotEncoder(handle_unknown="ignore"), ["ptype"]),
 ])
 model = Pipeline([("prep", prep), ("clf", LogisticRegression())])
 

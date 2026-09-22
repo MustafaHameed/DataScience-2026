@@ -38,8 +38,9 @@ $\bullet$ confidence interval $\bullet$ McNemar's test
 The HEC outline calls this topic \emph{measuring classifier accuracy}, and the
 first lesson is that accuracy is usually the wrong measure. A classifier makes
 two kinds of mistake, and in almost every real problem one costs far more than
-the other: a missed intrusion against a wasted analyst hour, an undetected
-failing student against an unnecessary phone call. A single number that adds the
+the other: a defective release shipped against a reviewer's hour spent on a
+change that was fine, a late task nobody warned about against a needless check-in
+with a team that was on track. A single number that adds the
 two together hides exactly the information needed to decide whether the
 classifier is any use.
 
@@ -60,19 +61,19 @@ Every metric in this chapter is a ratio of these four counts.
 \begin{tikzpicture}[font=\scriptsize,
   cell/.style={rounded corners=3pt, minimum width=2.9cm, minimum height=1.5cm,
                align=center, line width=0.9pt}]
-\node[font=\scriptsize\bfseries, text=primary] at (1.55,2.0) {truly malicious};
+\node[font=\scriptsize\bfseries, text=primary] at (1.55,2.0) {truly defective};
 \node[font=\scriptsize\bfseries, text=primary] at (4.65,2.0) {truly clean};
 \node[font=\scriptsize\bfseries, text=primary, rotate=90] at (-0.35,0.8) {flagged};
 \node[font=\scriptsize\bfseries, text=primary, rotate=90] at (-0.35,-0.8) {not flagged};
 \node[cell, draw=greenhl, fill=greenhl!14] at (1.55,0.8)
      {{\color{greenhl!45!black}\bfseries TP = 225}\\[2pt]{\tiny caught}};
 \node[cell, draw=accent, fill=accent!10] at (4.65,0.8)
-     {{\color{accent}\bfseries FP = 75}\\[2pt]{\tiny false alarm}};
+     {{\color{accent}\bfseries FP = 75}\\[2pt]{\tiny needless review}};
 \node[cell, draw=accent, fill=accent!10] at (1.55,-0.8)
      {{\color{accent}\bfseries FN = 25}\\[2pt]{\tiny missed}};
 \node[cell, draw=greenhl, fill=greenhl!14] at (4.65,-0.8)
      {{\color{greenhl!45!black}\bfseries TN = 4{,}675}\\[2pt]{\tiny left alone}};
-\node[font=\tiny, text=gray!55!black] at (1.55,-1.8) {250 malicious};
+\node[font=\tiny, text=gray!55!black] at (1.55,-1.8) {250 defective};
 \node[font=\tiny, text=gray!55!black] at (4.65,-1.8) {4{,}750 clean};
 \node[font=\tiny, text=gray!55!black, anchor=west] at (6.2,0.8) {300 flagged};
 \node[font=\tiny, text=gray!55!black, anchor=west] at (6.2,-0.8) {4{,}700 not};
@@ -92,13 +93,14 @@ Every metric in this chapter is a ratio of these four counts.
     {\tiny harmonic mean of the two}
   \end{tabular}};
 \end{tikzpicture}}%
-{A malware scanner's confusion matrix on 5{,}000 files, and the five metrics
-computed from it. Precision reads along the ``flagged'' row; recall reads down the
-``truly malicious'' column.}{confusion}
+{A defect predictor's confusion matrix on 5{,}000 code changes, and the five
+metrics computed from it. Precision reads along the ``flagged'' row; recall reads
+down the ``truly defective'' column.}{confusion}
 
-\begin{worked}[One Scanner, Five Metrics]
-The scanner of \dsref{confusion} examined 5{,}000 files, of which 250 were
-malicious. It flagged 300, of which 225 were malicious.
+\begin{worked}[One Defect Predictor, Five Metrics]
+Before a release, the predictor of \dsref{confusion} examined 5{,}000 code changes,
+of which 250 later turned out to have introduced a defect. It flagged 300 for extra
+review, of which 225 were defective.
 
 \smallskip
 \textbf{Cells:} TP $= 225$, FP $= 300 - 225 = 75$, FN $= 250 - 225 = 25$,
@@ -115,10 +117,10 @@ TN $= 5000 - 225 - 75 - 25 = 4675$.
 
 \smallskip
 \textbf{Against the baseline.} ``Flag nothing'' is right on the 4{,}750 clean
-files: 95.0\% accuracy. The scanner's 98.0\% is three points better than
-doing nothing, which sounds small; its recall of 90\% --- nine malicious files in
-ten caught, at the cost of one false alarm for every three real detections --- is
-what actually describes it.
+changes: 95.0\% accuracy. The predictor's 98.0\% is three points better than
+doing nothing, which sounds small; its recall of 90\% --- nine defective changes
+in ten caught, at the cost of one needless review for every three real finds ---
+is what actually describes it.
 \end{worked}
 
 \begin{alertbox}[The Accuracy Paradox]
@@ -138,10 +140,10 @@ the other, so the threshold must be chosen from the costs of the two errors ---
 which is a decision about the application, not about the algorithm.
 
 \begin{worked}[Choosing an Operating Threshold From Costs]
-For the malware scanner, a missed malicious file (FN) is estimated to cost 50
-times as much as a false alarm (FP) --- an infection against ten minutes of an
-analyst's time. The scanner's precision and recall at four thresholds, with 250
-malicious files:
+For the defect predictor, a missed defective change (FN) is estimated to cost 50
+times as much as a needless review (FP) --- a production incident against twenty
+minutes of a reviewer's time. The predictor's precision and recall at four
+thresholds, with 250 defective changes:
 
 \smallskip
 \begin{center}
@@ -161,7 +163,7 @@ malicious files:
 
 \smallskip
 \textbf{The cheapest threshold is 0.3}, which almost halves the cost of the
-default 0.5 by accepting 121 more false alarms to catch 15 more infections. With
+default 0.5 by accepting 121 more needless reviews to catch 15 more defects. With
 a cost ratio of 1:1 the answer would be different. The threshold is where the
 business decision enters the model.
 \end{worked}
@@ -217,9 +219,9 @@ alerts are false, which the ROC plot hides.}{roc-pr}
 The ROC false positive rate divides false alarms by the (huge) number of
 negatives, so hundreds of false alarms can look like a rate of 0.01. A
 precision--recall curve uses precision directly and does not flatter a
-rare-event detector. For intrusion, fraud and failure detection, report the PR
+rare-event detector. For defect, outage and overrun prediction, report the PR
 curve or its area (average precision), and quote precision at the recall the
-application needs.
+project needs.
 \end{alertbox}
 
 \section{More Than Two Classes}
@@ -232,22 +234,23 @@ the plain mean of the per-class values, so every class counts equally.
 equally --- and micro-averaged recall equals accuracy.
 
 \begin{worked}[Macro Against Micro]
-A traffic classifier is tested on 100 flows: 80 web, 15 e-mail, 5 streaming. It
-labels 76 web, 9 e-mail and 1 streaming flow correctly.
+A ticket router is tested on 100 tickets: 80 bug reports, 15 feature requests and
+5 security reports. It labels 76 bug reports, 9 feature requests and 1 security
+report correctly.
 
 \smallskip
-\textbf{Per-class recall:} web $76/80 = 0.95$; e-mail $9/15 = 0.60$;
-streaming $1/5 = 0.20$.
+\textbf{Per-class recall:} bug $76/80 = 0.95$; feature $9/15 = 0.60$;
+security $1/5 = 0.20$.
 
 \textbf{Micro (accuracy):} $(76 + 9 + 1)/100 = \mathbf{0.86}$.
 
 \textbf{Macro:} $(0.95 + 0.60 + 0.20)/3 = \mathbf{0.58}$.
 
 \smallskip
-The micro figure is carried by the web class; the macro figure reveals that the
-classifier almost never recognises streaming. If the rare classes matter --- and
-in security they usually are the ones that matter --- report the macro figure
-and the per-class table.
+The micro figure is carried by the bug class; the macro figure reveals that the
+router almost never recognises a security report. If the rare classes matter ---
+and security reports are exactly the tickets that must not wait --- report the
+macro figure and the per-class table.
 \end{worked}
 
 \section{How Sure Is the Number? Confidence Intervals for Error}
@@ -313,15 +316,15 @@ $b$ and $c$ should be similar. \term{McNemar's test} statistic
 is compared with 3.84, the 95\% point of the chi-squared distribution with one
 degree of freedom; a larger value means the difference is unlikely to be chance.
 
-\begin{worked}[McNemar on 500 Test Emails]
-A spam classifier A and a new classifier B are run on the same 500 e-mails. They
-disagree on 40: B is right and A wrong on $b = 12$; A is right and B wrong on
+\begin{worked}[McNemar on 500 Test Tickets]
+The current ticket router A and a new router B are run on the same 500 tickets.
+They disagree on 40: B is right and A wrong on $b = 12$; A is right and B wrong on
 $c = 28$.
 \[
 \chi^2 = \frac{(|12 - 28| - 1)^2}{12 + 28} = \frac{15^2}{40} = 5.63 \;>\; 3.84
 \]
 \textbf{A is significantly better} at the 5\% level ($p \approx 0.018$): it is right on
-16 more e-mails, 3.2 points of accuracy. The 460 e-mails on which they agree play
+16 more tickets, 3.2 points of accuracy. The 460 tickets on which they agree play
 no part --- which is why the test is sensitive even when the accuracies look
 close. When the comparison is across cross-validation folds instead of one test
 set, the equivalent tool is a paired $t$-test on the per-fold scores.
@@ -359,30 +362,10 @@ order of preference:
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Choosing the Metric}
-\lensLA{Recall at a fixed outreach budget: the advisers can call 50 students, so
-report how many of the eventual failures are among the top 50 scores. Precision
-matters too --- if most calls reach students who were fine, the advisers stop
-trusting the list.}
-
-\lensPM{Over- and under-predicting a project overrun cost roughly the same, so
-$F_1$ or balanced accuracy is reasonable. With 40 projects in the test set, the
-confidence interval on any rate is about $\pm 15$ points; say so, rather than
-reporting three significant figures.}
-
-\lensIOT{Failures are rare and a miss can stop a production line, so optimise
-recall and then cap false alarms at what the maintenance team can inspect. Use
-the PR curve; ROC-AUC will look excellent on a detector the technicians
-quickly learn to ignore.}
-
-\lensSEC{Report precision at a fixed recall --- ``62\% precision at 90\%
-recall'' --- and alerts per analyst per hour. Choose the threshold from the cost
-ratio, as in the malware example; and compare a new detector with the old on the
-same traffic with McNemar's test, not on two different weeks.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[Evaluate an Imbalanced Classifier Properly]
+Six thousand synthetic code changes, 5\% of which introduced a defect, each
+described by twelve numeric features (size, files touched, the author's
+experience and so on).
 \begin{lstlisting}[language=Python]
 import numpy as np
 from scipy.stats import chi2
@@ -393,7 +376,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import (confusion_matrix, precision_score, recall_score,
                              f1_score, roc_auc_score, average_precision_score)
 
-# --- an imbalanced problem: 5% positives ---------------------------------
+# --- an imbalanced problem: 5% of changes are defective ------------------
 X, y = make_classification(n_samples=6000, n_features=12, n_informative=5,
                            weights=[0.95], flip_y=0.01, random_state=1)
 X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.4,
@@ -441,8 +424,8 @@ finds only a third of the positives. Add \texttt{class\_weight="balanced"} to
 %---------------------------------------------------------------------
 \begin{checkpoint}
 \begin{tightnum}
-  \item Of 400 flagged logins, 100 were attacks; 20 attacks were not flagged.
-        Compute precision and recall.
+  \item Of 400 tasks flagged as at risk, 100 did finish late; 20 late tasks were
+        not flagged. Compute precision and recall.
   \item A classifier's ROC-AUC is 0.97 on data with 0.1\% positives. What should
         you ask for before believing it is useful?
   \item A model makes 15 errors on 100 test examples. Give an approximate 95\%
@@ -483,10 +466,11 @@ finds only a third of the positives. Add \texttt{class\_weight="balanced"} to
   \item \textbf{(Short)} Why do only the disagreements matter in McNemar's test?
   \item \textbf{(Short)} Give a situation where you would choose a threshold that
         makes precision 0.2, and justify it.
-  \item \textbf{(Applied)} A model tested on 10{,}000 connections, 200 of them
-        attacks, flags 500, of which 160 are attacks. Build the confusion matrix
-        and compute accuracy, precision, recall, specificity and $F_1$. Which two
-        numbers would you put in a report to the security manager?
+  \item \textbf{(Applied)} A defect predictor tested on 10{,}000 code changes, 200
+        of them defective, flags 500, of which 160 are defective. Build the
+        confusion matrix and compute accuracy, precision, recall, specificity and
+        $F_1$. Which two numbers would you put in a report to the release
+        manager?
   \item \textbf{(Applied)} Classifier A has 18\% error and classifier B 15\% on the
         same 300 test examples. Compute a 95\% interval for each. On the
         disagreements, A is wrong and B right 25 times, and the reverse 16

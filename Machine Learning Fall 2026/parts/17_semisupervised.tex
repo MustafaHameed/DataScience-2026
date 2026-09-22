@@ -34,9 +34,11 @@ assignment $\bullet$ label propagation
 
 \section{Few Labels, Many Examples}
 
-Labels are expensive. A radiologist labels a scan; a security analyst investigates a
-binary; a teacher marks an essay. Unlabelled examples are nearly free: every scan in
-the archive, every file on every machine, every essay ever submitted.
+Labels are expensive. A senior engineer must read a ticket to name its root
+cause; a reviewer must study a commit to say whether it introduced a defect; a
+project manager must reconstruct why a project slipped. Unlabelled examples are
+nearly free: every ticket in the tracker, every commit in the history, every
+project in the archive.
 \term{Semi-supervised learning} uses both --- a small labelled set and a large
 unlabelled one --- to learn a better classifier than the labelled set alone would
 give.
@@ -96,9 +98,9 @@ The simplest method needs no new theory. \term{Self-training} (pseudo-labelling)
         confidence to the training set, with their predicted labels;
   \item retrain, and repeat until no confident predictions remain.
 \end{tightnum}
-It works with any classifier that gives probabilities, and on the handwritten digits
-of this chapter's lab it lifts accuracy from 80\% with 50 labels to 90\% using the
-1{,}207 unlabelled images as well (all 1{,}257 labels give 97\%). Its risk is
+It works with any classifier that gives probabilities, and on the tickets of this
+chapter's lab it lifts accuracy from 92\% with 50 labels to 97\% using the 1{,}210
+unlabelled tickets as well (all 1{,}260 labels give 98\%). Its risk is
 \term{confirmation bias}: an early confident mistake becomes a training label, is
 reinforced at every round, and is never corrected. A high confidence threshold
 limits the damage.
@@ -145,8 +147,10 @@ Each iteration never decreases the likelihood of the data, so EM converges --- t
 \end{definitionbox}
 
 \begin{worked}[EM for Two Means (Mitchell's Example, in Numbers)]
-Six values: $x = 1, 2, 3, 7, 8, 9$. Model: two Gaussians with known $\sigma = 1$ and equal
-weights; unknown means. Start from $\mu_1 = 2$, $\mu_2 = 5$.
+Six tickets took $x = 1, 2, 3, 7, 8, 9$ hours to resolve. There seem to be two kinds
+--- quick fixes and investigations --- but nobody recorded which was which. Model:
+two Gaussians with known $\sigma = 1$ and equal weights; unknown means. Start from
+$\mu_1 = 2$, $\mu_2 = 5$.
 
 \smallskip
 \textbf{E-step.} For each $x$, the densities are proportional to
@@ -232,8 +236,9 @@ fills that variable in with probabilities and fits as if it were observed.}{em-l
 \section{EM With Labelled and Unlabelled Data}
 
 This is the method the HEC outline names. Nigam, McCallum, Thrun and Mitchell (2000)
-used it to classify web pages and news articles from a handful of labelled documents
-and thousands of unlabelled ones. The recipe:
+used it to classify text documents from a handful of labelled ones and thousands of
+unlabelled ones --- exactly the position of a ticket tracker with two hundred
+triaged tickets and ten thousand untriaged. The recipe:
 \begin{tightnum}
   \item Fit the model --- naive Bayes for text, or a Gaussian per class --- on the
         labelled examples alone.
@@ -250,8 +255,9 @@ are. The authors report that adding unlabelled documents to small labelled sets
 reduced text-classification error by up to 30\%.
 
 \begin{worked}[Two Labels and Four Unlabelled Points]
-The six values of the previous example, but now $x = 3$ is labelled class A and $x = 7$
-class B; the rest are unlabelled.
+The six tickets of the previous example, but now an engineer has checked two: the
+3-hour ticket was a quick fix (class A) and the 7-hour ticket an investigation
+(class B); the rest are unlabelled.
 
 \smallskip
 \textbf{Labelled data alone} gives $\mu_A = 3$, $\mu_B = 7$, and a boundary at 5.
@@ -289,32 +295,13 @@ follow curved clusters that a Gaussian mixture cannot represent.
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Semi-Supervised Learning}
-\lensLA{A few hundred essays have been marked by a teacher; tens of thousands have
-not. Self-training a quality classifier on both is attractive, and dangerous: an
-early confident mistake about a style of writing becomes a rule. Keep a human in the
-loop for the pseudo-labels that change decisions.}
-
-\lensPM{Only a few projects have a formal post-mortem label (``failed because of
-scope creep''), but all projects have metrics. EM over labelled and unlabelled
-projects estimates the typical metric profile of each failure mode from far more than
-the labelled handful.}
-
-\lensIOT{Engineers can label only a few fault episodes, but sensors record years of
-unlabelled operation. A Gaussian mixture of normal operating modes, anchored by the
-few labelled faults, is a practical starting point for a fault detector.}
-
-\lensSEC{Security labels are scarce, slow and expensive --- each needs an analyst.
-Semi-supervised malware and intrusion classifiers are standard, and so is their
-failure mode: an attacker who knows the model self-trains can feed it examples
-designed to be pseudo-labelled benign.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[EM by Hand, Then Fifty Labels and a Thousand Guesses]
+Part 3 uses 1{,}800 synthetic tickets, each described by ten numeric features of
+its text and history, with four possible root causes; only 50 of the training
+tickets are labelled.
 \begin{lstlisting}[language=Python]
 import numpy as np
-from sklearn.datasets import load_digits
+from sklearn.datasets import make_classification
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.semi_supervised import SelfTrainingClassifier
@@ -343,18 +330,20 @@ for it in range(10):
     mu = (r * x[:, None]).sum(axis=0) / r.sum(axis=0)
 print("EM with the unlabelled points too: mu =", mu.round(3))
 
-# --- 3. self-training with 50 labels out of 1,257 ------------------------
-X, y = load_digits(return_X_y=True)
+# --- 3. self-training with 50 labels out of 1,260 ------------------------
+X, y = make_classification(n_samples=1800, n_features=10, n_informative=6,
+                           n_redundant=2, n_classes=4, n_clusters_per_class=1,
+                           class_sep=2.0, random_state=6)   # 4 root causes
 X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3,
                                           random_state=0, stratify=y)
 rng = np.random.default_rng(0)
 keep = rng.choice(len(y_tr), size=50, replace=False)
 y_part = np.full_like(y_tr, -1)                 # -1 means "unlabelled"
 y_part[keep] = y_tr[keep]
-base = make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000))
+base = make_pipeline(StandardScaler(), LogisticRegression())
 only = base.fit(X_tr[keep], y_tr[keep]).score(X_te, y_te)
 self_t = SelfTrainingClassifier(
-    make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000)),
+    make_pipeline(StandardScaler(), LogisticRegression()),
     threshold=0.9).fit(X_tr, y_part)
 print(f"50 labels only: {only:.3f}   self-training with the rest "
       f"unlabelled: {self_t.score(X_te, y_te):.3f}   "

@@ -3,13 +3,13 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split, cross_val_score
 
-# --- a synthetic admissions dataset with a protected group ---------------
+# --- a synthetic hiring dataset with a protected group -------------------
 rng = np.random.default_rng(0)
 n = 6000
 group = rng.integers(0, 2, n)                     # 0 = group A, 1 = group B
-# group B had fewer chances to build a strong record (historical bias)
-record = rng.normal(0.6 - 0.25 * group, 0.15, n)
-aptitude = rng.normal(0.5, 0.15, n)               # equal in both groups
+# group B had fewer internships and projects to show (historical bias)
+record = rng.normal(0.6 - 0.25 * group, 0.15, n)  # CV: internships, projects
+aptitude = rng.normal(0.5, 0.15, n)               # coding test: equal
 district = group + rng.normal(0, 0.3, n)          # a proxy for the group
 qualified = (0.5 * record + 0.5 * aptitude
              + rng.normal(0, 0.05, n) > 0.5).astype(int)

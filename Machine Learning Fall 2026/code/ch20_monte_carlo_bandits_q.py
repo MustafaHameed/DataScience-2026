@@ -4,11 +4,11 @@ import numpy as np
 rng = np.random.default_rng(0)
 
 # --- 1. Monte Carlo inference: estimate an expectation by averaging ------
-# the chance that a server survives 10 minutes healthy (it degrades with
-# probability 0.2 each minute): exact answer 0.8 ** 10 = 0.107
+# the chance that a project stays healthy for 10 weeks (it slips with
+# probability 0.2 each week): exact answer 0.8 ** 10 = 0.107
 for n in (100, 10_000, 1_000_000):
     runs = rng.random((n, 10)) > 0.2            # True = stayed healthy
-    print(f"{n:9,d} simulated runs: P(survive 10 min) ~ "
+    print(f"{n:9,d} simulated runs: P(healthy 10 weeks) ~ "
           f"{runs.all(axis=1).mean():.4f}")
 
 
@@ -39,13 +39,13 @@ for s in ("greedy", "e-greedy", "ucb"):
     print(f"{s:8s}: mean reward, steps 1-100 {avg[:100].mean():.2f}; "
           f"steps 901-1000 {avg[900:].mean():.2f}")
 
-# --- 3. Q-learning on the maintenance MDP, without being told P ----------
-P = {("H", "operate"): ([0.8, 0.2, 0.0], 10),
-     ("D", "operate"): ([0.0, 0.5, 0.5], 5),
-     ("F", "operate"): ([0.0, 0.0, 1.0], 0),
-     ("H", "repair"): ([1, 0, 0], -2), ("D", "repair"): ([1, 0, 0], -4),
-     ("F", "repair"): ([1, 0, 0], -15)}
-S, A = ["H", "D", "F"], ["operate", "repair"]
+# --- 3. Q-learning on the technical-debt MDP, without being told P -------
+P = {("H", "ship"): ([0.8, 0.2, 0.0], 10),
+     ("D", "ship"): ([0.0, 0.5, 0.5], 5),
+     ("F", "ship"): ([0.0, 0.0, 1.0], 0),
+     ("H", "refactor"): ([1, 0, 0], -2), ("D", "refactor"): ([1, 0, 0], -4),
+     ("F", "refactor"): ([1, 0, 0], -15)}
+S, A = ["H", "D", "F"], ["ship", "refactor"]
 
 
 def env_step(s, a):                         # the agent only sees samples
@@ -61,6 +61,6 @@ for t in range(200_000):
     s2, r = env_step(s, a)
     Q[s, a] += alpha * (r + gamma * Q[s2].max() - Q[s, a])   # Q-learning
     s = s2
-print("learned Q (rows H, D, F; columns operate, repair):")
+print("learned Q (rows H, D, F; columns ship, refactor):")
 print(Q.round(1))
 print("learned policy:", dict(zip(S, [A[a] for a in Q.argmax(axis=1)])))

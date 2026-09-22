@@ -1,6 +1,6 @@
 # Chapter 17 lab -- extracted from parts/ by sync_labs.py. Edit the chapter, not this file.
 import numpy as np
-from sklearn.datasets import load_digits
+from sklearn.datasets import make_classification
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.semi_supervised import SelfTrainingClassifier
@@ -29,18 +29,20 @@ for it in range(10):
     mu = (r * x[:, None]).sum(axis=0) / r.sum(axis=0)
 print("EM with the unlabelled points too: mu =", mu.round(3))
 
-# --- 3. self-training with 50 labels out of 1,257 ------------------------
-X, y = load_digits(return_X_y=True)
+# --- 3. self-training with 50 labels out of 1,260 ------------------------
+X, y = make_classification(n_samples=1800, n_features=10, n_informative=6,
+                           n_redundant=2, n_classes=4, n_clusters_per_class=1,
+                           class_sep=2.0, random_state=6)   # 4 root causes
 X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3,
                                           random_state=0, stratify=y)
 rng = np.random.default_rng(0)
 keep = rng.choice(len(y_tr), size=50, replace=False)
 y_part = np.full_like(y_tr, -1)                 # -1 means "unlabelled"
 y_part[keep] = y_tr[keep]
-base = make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000))
+base = make_pipeline(StandardScaler(), LogisticRegression())
 only = base.fit(X_tr[keep], y_tr[keep]).score(X_te, y_te)
 self_t = SelfTrainingClassifier(
-    make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000)),
+    make_pipeline(StandardScaler(), LogisticRegression()),
     threshold=0.9).fit(X_tr, y_part)
 print(f"50 labels only: {only:.3f}   self-training with the rest "
       f"unlabelled: {self_t.score(X_te, y_te):.3f}   "

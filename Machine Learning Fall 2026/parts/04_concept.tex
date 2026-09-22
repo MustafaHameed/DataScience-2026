@@ -37,8 +37,8 @@ $\bullet$ unbiased learner $\bullet$ inductive bias
 
 \section{Concept Learning as a Task}
 
-Much of learning is learning a \emph{category}: which e-mails are phishing, which
-days are good for a match, which students need help. Each such category is a
+Much of learning is learning a \emph{category}: which releases are ready to ship,
+which tasks will slip, which tickets are urgent. Each such category is a
 \term{concept}, and it can be described as a yes/no function over the things
 being classified.
 
@@ -55,50 +55,57 @@ examples of its input and output. Formally:
 \end{tight}
 \end{definitionbox}
 
-The running example of this chapter is Mitchell's \emph{EnjoySport}: on which days
-does a friend enjoy their favourite water sport? Each day is described by six
-attributes, and four days have been observed.
+The running example of this chapter is a \emph{change advisory board}, which
+decides whether each software release may go to production. Each release is
+described by six attributes, and four of the board's decisions have been
+observed. (The table is Mitchell's \emph{EnjoySport} example with its attributes
+renamed, so every number in this chapter can be checked against the set text.)
 
 \rowcolors{2}{white}{lightbg}
-\begin{longtable}{@{}L{0.9cm}L{1.6cm}L{1.7cm}L{1.9cm}L{1.6cm}L{1.6cm}L{1.9cm}L{2.2cm}@{}}
+\begin{longtable}{@{}L{1.4cm}L{1.3cm}L{1.6cm}L{1.9cm}L{1.8cm}L{1.6cm}L{1.6cm}L{1.9cm}@{}}
 \toprule
 \rowcolor{primary!15}
-\textbf{Day} & \textbf{Sky} & \textbf{AirTemp} & \textbf{Humidity} & \textbf{Wind} &
-\textbf{Water} & \textbf{Forecast} & \textbf{EnjoySport} \\
+\textbf{Release} & \textbf{Tests} & \textbf{Review} & \textbf{Docs} & \textbf{Rollback} &
+\textbf{Traffic} & \textbf{Scope} & \textbf{Approve} \\
 \midrule
 \endhead
-1 & Sunny & Warm & Normal & Strong & Warm & Same & Yes \\
-2 & Sunny & Warm & High & Strong & Warm & Same & Yes \\
-3 & Rainy & Cold & High & Strong & Warm & Change & No \\
-4 & Sunny & Warm & High & Strong & Cool & Change & Yes \\
+1 & Pass & Done & Complete & Ready & Quiet & Same & Yes \\
+2 & Pass & Done & Partial & Ready & Quiet & Same & Yes \\
+3 & Fail & Pending & Partial & Ready & Quiet & Changed & No \\
+4 & Pass & Done & Partial & Ready & Peak & Changed & Yes \\
 \bottomrule
 \end{longtable}
+
+\noindent Tests is Pass, Flaky or Fail; Review is Done or Pending; Docs is
+Complete or Partial; Rollback (a tested plan to undo the release) is Ready or
+None; Traffic, the load expected at release time, is Quiet or Peak; and Scope
+records whether the scope has Changed since the last review.
 
 \begin{definitionbox}[Hypotheses as Conjunctions of Constraints]
 Each hypothesis is a vector of six \term{constraints}, one per attribute. Each
 constraint is one of:
 \begin{tight}
-  \item a specific value, such as \emph{Warm} --- only that value is acceptable;
+  \item a specific value, such as \emph{Done} --- only that value is acceptable;
   \item ``?'' --- any value is acceptable;
   \item ``$\varnothing$'' --- no value is acceptable.
 \end{tight}
 A hypothesis classifies an instance as positive if the instance satisfies every
-constraint. So $\langle$Sunny, ?, ?, Strong, ?, ?$\rangle$ means ``sunny and windy,
-whatever else''; $\langle$?, ?, ?, ?, ?, ?$\rangle$ says every day is positive; and a
-hypothesis containing $\varnothing$ says no day is.
+constraint. So $\langle$Pass, ?, ?, Ready, ?, ?$\rangle$ means ``tests pass and a
+rollback is ready, whatever else''; $\langle$?, ?, ?, ?, ?, ?$\rangle$ approves
+every release; and a hypothesis containing $\varnothing$ approves none.
 \end{definitionbox}
 
 \begin{worked}[How Big Are These Spaces?]
-Sky has 3 values and the other five attributes have 2 each.
+Tests has 3 values and the other five attributes have 2 each.
 \begin{tight}
-  \item \textbf{Instances:} $3 \times 2^5 = \mathbf{96}$ possible days.
+  \item \textbf{Instances:} $3 \times 2^5 = \mathbf{96}$ possible releases.
   \item \textbf{Hypotheses, as written:} each constraint can also be ``?'' or
         ``$\varnothing$'', so $5 \times 4^5 = 5120$.
   \item \textbf{Hypotheses, by meaning:} every hypothesis containing a
-        $\varnothing$ classifies every day as negative, so they all mean the same
-        thing. Counting that as one: $1 + 4 \times 3^5 = \mathbf{973}$.
-  \item \textbf{All possible concepts} over 96 days: every subset of the days
-        is a concept, so $2^{96} \approx 7.9 \times 10^{28}$.
+        $\varnothing$ classifies every release as negative, so they all mean the
+        same thing. Counting that as one: $1 + 4 \times 3^5 = \mathbf{973}$.
+  \item \textbf{All possible concepts} over 96 releases: every subset of the
+        releases is a concept, so $2^{96} \approx 7.9 \times 10^{28}$.
 \end{tight}
 \smallskip
 \textbf{The conjunctive language can express 973 of the $7.9 \times 10^{28}$
@@ -155,11 +162,11 @@ pairs of hypotheses are not comparable at all.
 \node[font=\small\bfseries, text=gray!55!black, anchor=north west] at (7.1,4.15)
      {Hypotheses $H$};
 \node[hn, draw=secondary, fill=secondary!10, text=secondary!70!black] (h2) at (11.4,3.1)
-     {$h_2 = \langle$Sunny, ?, ?, ?, ?, ?$\rangle$};
+     {$h_2 = \langle$Pass, ?, ?, ?, ?, ?$\rangle$};
 \node[hn, draw=greenhl!70!black, fill=greenhl!12, text=greenhl!40!black, align=center]
-     (h1) at (8.85,1.2) {$h_1 =$\\$\langle$Sunny, ?, ?, Strong, ?, ?$\rangle$};
+     (h1) at (8.85,1.2) {$h_1 =$\\$\langle$Pass, ?, ?, Ready, ?, ?$\rangle$};
 \node[hn, draw=goldhl, fill=goldhl!14, text=goldhl!40!black, align=center]
-     (h3) at (13.95,1.2) {$h_3 =$\\$\langle$Sunny, ?, ?, ?, Cool, ?$\rangle$};
+     (h3) at (13.95,1.2) {$h_3 =$\\$\langle$Pass, ?, ?, ?, Peak, ?$\rangle$};
 \draw[-{Stealth[length=2mm]}, gray!60, line width=0.9pt] (h1) -- (h2);
 \draw[-{Stealth[length=2mm]}, gray!60, line width=0.9pt] (h3) -- (h2);
 \node[font=\tiny, text=gray!55!black, align=center] at (11.4,1.2)
@@ -168,8 +175,8 @@ pairs of hypotheses are not comparable at all.
 \node[font=\tiny, text=primary, rotate=90, anchor=south] at (16.2,2.1) {more general};
 \node[anchor=north west, align=left, text width=16.4cm, font=\scriptsize, text=gray!55!black]
      at (0,-0.15)
-     {$x_1 = \langle$Sunny, Warm, High, Strong, Cool, Same$\rangle$ satisfies all three;
-      $x_2 = \langle$Sunny, Warm, High, Weak, Warm, Same$\rangle$ satisfies only $h_2$.
+     {$x_1 = \langle$Pass, Done, Partial, Ready, Peak, Same$\rangle$ satisfies all three;
+      $x_2 = \langle$Pass, Done, Partial, None, Quiet, Same$\rangle$ satisfies only $h_2$.
       $h_2 \ge_g h_1$ and $h_2 \ge_g h_3$, because the set each covers is inside the set
       $h_2$ covers.};
 \end{tikzpicture}}%
@@ -195,27 +202,27 @@ hypothesis and generalises only as far as each positive example forces it to.
 \end{tightnum}
 \end{definitionbox}
 
-\begin{worked}[Find-S on EnjoySport]
+\begin{worked}[Find-S on the Release Decisions]
 \textbf{Start:} $h_0 = \langle\varnothing, \varnothing, \varnothing, \varnothing,
 \varnothing, \varnothing\rangle$.
 
-\textbf{Day 1 (+):} nothing is satisfied, so copy the example:
-$h_1 = \langle$Sunny, Warm, Normal, Strong, Warm, Same$\rangle$.
+\textbf{Release 1 (+):} nothing is satisfied, so copy the example:
+$h_1 = \langle$Pass, Done, Complete, Ready, Quiet, Same$\rangle$.
 
-\textbf{Day 2 (+):} Humidity is High, not Normal, so generalise that constraint:
-$h_2 = \langle$Sunny, Warm, ?, Strong, Warm, Same$\rangle$.
+\textbf{Release 2 (+):} Docs is Partial, not Complete, so generalise that
+constraint: $h_2 = \langle$Pass, Done, ?, Ready, Quiet, Same$\rangle$.
 
-\textbf{Day 3 ($-$):} ignored. (It is correctly classified as negative anyway ---
-Sky is Rainy.)
+\textbf{Release 3 ($-$):} ignored. (It is correctly classified as negative anyway
+--- its tests failed.)
 
-\textbf{Day 4 (+):} Water and Forecast differ, so generalise both:
-$h_4 = \langle$Sunny, Warm, ?, Strong, ?, ?$\rangle$.
+\textbf{Release 4 (+):} Traffic and Scope differ, so generalise both:
+$h_4 = \langle$Pass, Done, ?, Ready, ?, ?$\rangle$.
 
 \smallskip
-\textbf{Output:} ``sunny, warm and windy''. Why is it safe to ignore negatives? If
-the target concept is in $H$, it is at least as general as $h$ (which only ever
-generalised as far as positives forced). A negative example is excluded by the
-target, so it is excluded by the more specific $h$ as well.
+\textbf{Output:} ``tests pass, review done and a rollback ready''. Why is it safe
+to ignore negatives? If the target concept is in $H$, it is at least as general as
+$h$ (which only ever generalised as far as positives forced). A negative example
+is excluded by the target, so it is excluded by the more specific $h$ as well.
 \end{worked}
 
 \begin{alertbox}[What Find-S Cannot Tell You]
@@ -237,7 +244,7 @@ hypothesis the data has not yet ruled out.
 
 The obvious way to find it is \textsc{List-Then-Eliminate}: write down every
 hypothesis in $H$, and for each training example cross out the ones it
-contradicts. What remains is the version space. For EnjoySport's 973 hypotheses
+contradicts. What remains is the version space. For this example's 973 hypotheses
 this is feasible; for any realistic hypothesis space it is not. The trick of the
 next section is that the version space never needs to be listed --- two
 boundaries are enough.
@@ -294,42 +301,42 @@ $\{\langle\varnothing, \varnothing, \varnothing, \varnothing, \varnothing,
 {The version space is everything between the two boundaries. Each example moves one
 boundary towards the other; if they meet, the concept has been learned exactly.}{boundaries}
 
-\begin{worked}[Candidate-Elimination on EnjoySport]
+\begin{worked}[Candidate-Elimination on the Release Decisions]
 \textbf{Start.} $S_0 = \{\langle\varnothing, \varnothing, \varnothing, \varnothing,
 \varnothing, \varnothing\rangle\}$, $\;G_0 = \{\langle ?, ?, ?, ?, ?, ?\rangle\}$.
 
 \smallskip
-\textbf{Day 1 (+)} $\langle$Sunny, Warm, Normal, Strong, Warm, Same$\rangle$.
+\textbf{Release 1 (+)} $\langle$Pass, Done, Complete, Ready, Quiet, Same$\rangle$.
 $G_0$ covers it: keep. $S_0$ does not: generalise minimally.\\
-$S_1 = \{\langle$Sunny, Warm, Normal, Strong, Warm, Same$\rangle\}$, $\;G_1 = G_0$.
+$S_1 = \{\langle$Pass, Done, Complete, Ready, Quiet, Same$\rangle\}$, $\;G_1 = G_0$.
 
 \smallskip
-\textbf{Day 2 (+)} $\langle$Sunny, Warm, High, Strong, Warm, Same$\rangle$.
-Humidity differs, so it becomes ``?''.\\
-$S_2 = \{\langle$Sunny, Warm, ?, Strong, Warm, Same$\rangle\}$, $\;G_2 = G_0$.
+\textbf{Release 2 (+)} $\langle$Pass, Done, Partial, Ready, Quiet, Same$\rangle$.
+Docs differs, so it becomes ``?''.\\
+$S_2 = \{\langle$Pass, Done, ?, Ready, Quiet, Same$\rangle\}$, $\;G_2 = G_0$.
 
 \smallskip
-\textbf{Day 3 ($-$)} $\langle$Rainy, Cold, High, Strong, Warm, Change$\rangle$.
+\textbf{Release 3 ($-$)} $\langle$Fail, Pending, Partial, Ready, Quiet, Changed$\rangle$.
 $S_2$ already excludes it. $G_2$ covers it, so specialise $\langle ?, ?, ?, ?, ?,
 ?\rangle$ one attribute at a time to a value the negative example does not have:
 \begin{tight}
-  \item Sky: Sunny or Cloudy. Only \emph{Sunny} is still more general than $S_2$.
-  \item AirTemp: \emph{Warm}. Kept.
-  \item Humidity: Normal --- but $S_2$ has ``?'' there, so this is not more
+  \item Tests: Pass or Flaky. Only \emph{Pass} is still more general than $S_2$.
+  \item Review: \emph{Done}. Kept.
+  \item Docs: Complete --- but $S_2$ has ``?'' there, so this is not more
         general than $S_2$. Dropped.
-  \item Wind: Weak --- contradicts $S_2$'s Strong. Dropped.
-  \item Water: Cool --- contradicts $S_2$'s Warm. Dropped.
-  \item Forecast: \emph{Same}. Kept.
+  \item Rollback: None --- contradicts $S_2$'s Ready. Dropped.
+  \item Traffic: Peak --- contradicts $S_2$'s Quiet. Dropped.
+  \item Scope: \emph{Same}. Kept.
 \end{tight}
-$S_3 = S_2$, $\;G_3 = \{\langle$Sunny, ?, ?, ?, ?, ?$\rangle$, $\langle$?, Warm, ?,
+$S_3 = S_2$, $\;G_3 = \{\langle$Pass, ?, ?, ?, ?, ?$\rangle$, $\langle$?, Done, ?,
 ?, ?, ?$\rangle$, $\langle$?, ?, ?, ?, ?, Same$\rangle\}$.
 
 \smallskip
-\textbf{Day 4 (+)} $\langle$Sunny, Warm, High, Strong, Cool, Change$\rangle$.
+\textbf{Release 4 (+)} $\langle$Pass, Done, Partial, Ready, Peak, Changed$\rangle$.
 $\langle$?, ?, ?, ?, ?, Same$\rangle$ does not cover it: removed from $G$. $S$
-generalises Water and Forecast.\\
-$S_4 = \{\langle$Sunny, Warm, ?, Strong, ?, ?$\rangle\}$, $\;G_4 = \{\langle$Sunny, ?,
-?, ?, ?, ?$\rangle$, $\langle$?, Warm, ?, ?, ?, ?$\rangle\}$.
+generalises Traffic and Scope.\\
+$S_4 = \{\langle$Pass, Done, ?, Ready, ?, ?$\rangle\}$, $\;G_4 = \{\langle$Pass, ?,
+?, ?, ?, ?$\rangle$, $\langle$?, Done, ?, ?, ?, ?$\rangle\}$.
 
 \smallskip
 \textbf{Check.} $S_4$ is exactly what \textsc{Find-S} returned. The difference is
@@ -342,45 +349,46 @@ holds six hypotheses, drawn in \dsref{final-vs}.
   hv/.style={rounded corners=2pt, draw=#1, fill=#1!9, text=#1!55!black,
              font=\scriptsize, minimum height=0.6cm, inner xsep=4pt},
   e/.style={gray!55, line width=0.8pt}]
-\node[hv=secondary] (g1) at (2.6,3.2) {$\langle$Sunny, ?, ?, ?, ?, ?$\rangle$};
-\node[hv=secondary] (g2) at (9.4,3.2) {$\langle$?, Warm, ?, ?, ?, ?$\rangle$};
-\node[hv=purplehl] (m1) at (0.9,1.6) {$\langle$Sunny, ?, ?, Strong, ?, ?$\rangle$};
-\node[hv=purplehl] (m2) at (6.0,1.6) {$\langle$Sunny, Warm, ?, ?, ?, ?$\rangle$};
-\node[hv=purplehl] (m3) at (11.1,1.6) {$\langle$?, Warm, ?, Strong, ?, ?$\rangle$};
-\node[hv=greenhl] (s1) at (6.0,0) {$\langle$Sunny, Warm, ?, Strong, ?, ?$\rangle$};
+\node[hv=secondary] (g1) at (2.6,3.2) {$\langle$Pass, ?, ?, ?, ?, ?$\rangle$};
+\node[hv=secondary] (g2) at (9.4,3.2) {$\langle$?, Done, ?, ?, ?, ?$\rangle$};
+\node[hv=purplehl] (m1) at (0.9,1.6) {$\langle$Pass, ?, ?, Ready, ?, ?$\rangle$};
+\node[hv=purplehl] (m2) at (6.0,1.6) {$\langle$Pass, Done, ?, ?, ?, ?$\rangle$};
+\node[hv=purplehl] (m3) at (11.1,1.6) {$\langle$?, Done, ?, Ready, ?, ?$\rangle$};
+\node[hv=greenhl] (s1) at (6.0,0) {$\langle$Pass, Done, ?, Ready, ?, ?$\rangle$};
 \draw[e] (g1) -- (m1); \draw[e] (g1) -- (m2); \draw[e] (g2) -- (m2); \draw[e] (g2) -- (m3);
 \draw[e] (m1) -- (s1); \draw[e] (m2) -- (s1); \draw[e] (m3) -- (s1);
 \node[font=\scriptsize\bfseries, text=secondary!70!black, anchor=east] at (-1.1,3.2) {$G_4$:};
 \node[font=\scriptsize\bfseries, text=greenhl!45!black, anchor=east] at (-1.1,0) {$S_4$:};
 \end{tikzpicture}}%
-{The final version space for EnjoySport: two maximally general hypotheses, one maximally
-specific one, and the three between them. A line joins each pair related by
-$\ge_g$.}{final-vs}
+{The final version space for the release decisions: two maximally general hypotheses,
+one maximally specific one, and the three between them. A line joins each pair related
+by $\ge_g$.}{final-vs}
 
 \section{Using a Partially Learned Concept}
 
 Four examples have not pinned the concept down: six hypotheses survive. They can
-still classify new days, by voting.
+still classify new releases, by voting.
 
 \begin{worked}[Classifying by Vote]
 \begin{tight}
-  \item $\langle$Sunny, Warm, Normal, Strong, Cool, Change$\rangle$: satisfies $S_4$,
-        and so every hypothesis above it. \textbf{6 yes, 0 no} --- classified
-        positive with the same confidence as if the concept were fully learned.
-  \item $\langle$Rainy, Cold, Normal, Weak, Warm, Same$\rangle$: satisfies neither
-        member of $G_4$, so no hypothesis. \textbf{0 yes, 6 no}.
-  \item $\langle$Sunny, Warm, Normal, Weak, Warm, Same$\rangle$: \textbf{3 yes,
+  \item $\langle$Pass, Done, Complete, Ready, Peak, Changed$\rangle$: satisfies $S_4$,
+        and so every hypothesis above it. \textbf{6 yes, 0 no} --- approved with
+        the same confidence as if the concept were fully learned.
+  \item $\langle$Fail, Pending, Complete, None, Quiet, Same$\rangle$: satisfies
+        neither member of $G_4$, so no hypothesis. \textbf{0 yes, 6 no}.
+  \item $\langle$Pass, Done, Complete, None, Quiet, Same$\rangle$: \textbf{3 yes,
         3 no}. The data genuinely cannot decide.
-  \item $\langle$Sunny, Cold, Normal, Strong, Warm, Same$\rangle$: \textbf{2 yes,
+  \item $\langle$Pass, Pending, Complete, Ready, Quiet, Same$\rangle$: \textbf{2 yes,
         4 no} --- a majority, but not a certainty.
 \end{tight}
 \smallskip
 Two tests are enough for the unanimous cases: an instance satisfying every
 member of $S$ is positive for the whole version space; one satisfying no member
-of $G$ is negative for all of it. And if the learner may \emph{ask} for a label,
-the best question is the third day: whatever the answer, it eliminates half the
-version space. Repeating that halves it each time, so the concept is found in
-about $\log_2 |VS|$ queries --- here $\log_2 6 \approx 2.6$, so three.
+of $G$ is negative for all of it. And if the learner may \emph{ask} the board for a
+decision, the best question is the third release: whatever the answer, it
+eliminates half the version space. Repeating that halves it each time, so the
+concept is found in about $\log_2 |VS|$ queries --- here $\log_2 6 \approx 2.6$,
+so three.
 \end{worked}
 
 \section{Inductive Bias}
@@ -392,11 +400,12 @@ certainly in it?
 \begin{conceptbox}[The Futility of an Unbiased Learner]
 Give \textsc{Candidate-Elimination} a hypothesis space containing every subset
 of $X$. After any training set, $S$ is the disjunction of the positive examples
-seen --- ``day 1 or day 2 or day 4'' --- and $G$ is ``anything except day 3''. The
-version space contains every concept between them. For any day \emph{not} in the
-training data, exactly half of those concepts call it positive and half negative:
-the vote is always a tie. The unbiased learner can classify the examples it has
-seen and nothing else. It has memorised; it has not learned.
+seen --- ``release 1 or release 2 or release 4'' --- and $G$ is ``anything except
+release 3''. The version space contains every concept between them. For any
+release \emph{not} in the training data, exactly half of those concepts call it
+positive and half negative: the vote is always a tie. The unbiased learner can
+classify the examples it has seen and nothing else. It has memorised; it has not
+learned.
 \end{conceptbox}
 
 \begin{definitionbox}[Inductive Bias]
@@ -417,8 +426,8 @@ classifies everything. Every algorithm in the rest of this course has a bias,
 and its chapter names it.
 
 \begin{alertbox}[The Weakness Every Later Chapter Fixes]
-\textsc{Candidate-Elimination} assumes the data is \emph{noise-free}. Label one
-positive day as negative by mistake and the true concept is eliminated; with
+\textsc{Candidate-Elimination} assumes the data is \emph{noise-free}. Record one
+approved release as rejected by mistake and the true concept is eliminated; with
 enough errors $S$ and $G$ cross, and the version space is empty. Real data always
 contains errors. The algorithms of Part III therefore replace ``consistent with
 every example'' by ``makes few errors'' and accept a hypothesis that is probably
@@ -432,7 +441,7 @@ not how practical systems are built.
         member of $G$ must still be more general than a member of $S$; check each
         candidate against $S$ before keeping it.
   \item \textbf{Forgetting to prune $G$ on a positive example.} Members of $G$ that
-        do not cover a positive example are removed, as on Day 4.
+        do not cover a positive example are removed, as at Release 4.
   \item \textbf{Believing Find-S's answer is unique.} It is one of the
         six hypotheses in the version space --- the most specific.
   \item \textbf{Reading ``unbiased'' as ``better''.} A learner with no bias
@@ -443,32 +452,6 @@ not how practical systems are built.
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Hypothesis Spaces}
-\lensLA{A conjunctive concept is an early-warning rule an adviser can read:
-$\langle$attendance low, quiz missing, ?, \dots$\rangle$. The version space tells
-the adviser something a single model cannot --- which students the evidence is
-split on, and so which cases deserve a human look rather than an automatic
-flag.}
-
-\lensPM{With a dozen past projects, the $S$ and $G$ boundaries are an honest
-summary of what is known: ``every late project had an external dependency'' ($S$)
-against ``no project without a new technology was late'' ($G$). Where they
-disagree, the data has not decided --- and with twelve projects, that is most of
-the space.}
-
-\lensIOT{Alarm conditions on a device are often exactly conjunctions:
-$\langle$temperature high, vibration high, ?, load normal$\rangle$. The general
-boundary is the broadest rule that has not yet fired on a healthy machine, which
-is useful to know before widening a rule that currently misses failures.}
-
-\lensSEC{Signature generation is \textsc{Find-S}: from several samples of one
-malware family, keep the byte patterns they share and generalise the rest. The
-most specific signature misses the next variant; the most general one that still
-excludes every benign file in the corpus catches more but will eventually flag a
-legitimate program. Real signature engines choose between those two ends.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[Candidate Elimination in Forty Lines]
 The whole of this chapter, run: \textsc{Find-S}, the boundary trace of the worked
 example, and a brute-force check of the version space by listing every
@@ -476,13 +459,14 @@ hypothesis.
 \begin{lstlisting}[language=Python]
 from itertools import product
 
-# EnjoySport. "?" = any value, "0" = no value (the empty constraint)
-VALUES = [("Sunny", "Cloudy", "Rainy"), ("Warm", "Cold"), ("Normal", "High"),
-          ("Strong", "Weak"), ("Warm", "Cool"), ("Same", "Change")]
-D = [(("Sunny", "Warm", "Normal", "Strong", "Warm", "Same"), True),
-     (("Sunny", "Warm", "High", "Strong", "Warm", "Same"), True),
-     (("Rainy", "Cold", "High", "Strong", "Warm", "Change"), False),
-     (("Sunny", "Warm", "High", "Strong", "Cool", "Change"), True)]
+# Release decisions. "?" = any value, "0" = no value (empty constraint)
+VALUES = [("Pass", "Flaky", "Fail"), ("Done", "Pending"),
+          ("Complete", "Partial"), ("Ready", "None"), ("Quiet", "Peak"),
+          ("Same", "Changed")]
+D = [(("Pass", "Done", "Complete", "Ready", "Quiet", "Same"), True),
+     (("Pass", "Done", "Partial", "Ready", "Quiet", "Same"), True),
+     (("Fail", "Pending", "Partial", "Ready", "Quiet", "Changed"), False),
+     (("Pass", "Done", "Partial", "Ready", "Peak", "Changed"), True)]
 show = lambda hs: "  ".join("<" + ", ".join(h) + ">" for h in sorted(hs))
 
 
@@ -526,18 +510,18 @@ for k, (x, positive) in enumerate(D, 1):
                     if any(more_general(h, s) for s in S)}
         G = {g for g in new
              if not any(o != g and more_general(o, g) for o in new)}
-    print(f"day {k}  S: {show(S)}\n       G: {show(G)}")
+    print(f"release {k}  S: {show(S)}\n           G: {show(G)}")
 
 # --- brute force: list every hypothesis, keep the consistent ones ---------
 H = list(product(*[v + ("?",) for v in VALUES]))
 VS = [h for h in H if all(covers(h, x) == p for x, p in D)]
 print(len(VS), "hypotheses in the version space:")
 print(show(VS))
-day = ("Sunny", "Warm", "Normal", "Weak", "Warm", "Same")
-yes = sum(covers(h, day) for h in VS)
-print(f"vote on {day}: {yes} yes, {len(VS) - yes} no")
+new_release = ("Pass", "Done", "Complete", "None", "Quiet", "Same")
+yes = sum(covers(h, new_release) for h in VS)
+print(f"vote on {new_release}: {yes} yes, {len(VS) - yes} no")
 \end{lstlisting}
-Now add a fifth example, a copy of Day 1 labelled \emph{No} --- a labelling
+Now add a fifth example, a copy of Release 1 recorded as \emph{No} --- a data-entry
 mistake --- and run the trace again. What happens to $S$, $G$ and the version
 space?
 \end{lab}
@@ -545,10 +529,10 @@ space?
 %---------------------------------------------------------------------
 \begin{checkpoint}
 \begin{tightnum}
-  \item Is $\langle$Sunny, ?, ?, Strong, ?, ?$\rangle \ge_g \langle$Sunny, Warm,
-        ?, Strong, ?, ?$\rangle$? Is the reverse true?
-  \item Run \textsc{Find-S} on the EnjoySport data with Day 4 removed. What does
-        it return?
+  \item Is $\langle$Pass, ?, ?, Ready, ?, ?$\rangle \ge_g \langle$Pass, Done,
+        ?, Ready, ?, ?$\rangle$? Is the reverse true?
+  \item Run \textsc{Find-S} on the release decisions with Release 4 removed. What
+        does it return?
   \item Why does an unbiased learner's vote on an unseen instance always end in a
         tie?
 \end{tightnum}
@@ -589,11 +573,12 @@ space?
         assumption rather than a theorem?
   \item \textbf{(Short)} Explain how a single mislabelled training example affects
         \textsc{Candidate-Elimination}.
-  \item \textbf{(Applied)} Trace \textsc{Candidate-Elimination} on the EnjoySport
-        data presented in the order Day 3, Day 1, Day 2, Day 4. Is the final
-        version space the same? Is any intermediate boundary different?
-  \item \textbf{(Applied)} For the final version space of this chapter, find an
-        instance that splits the vote 2 to 4 other than the one in the worked
+  \item \textbf{(Applied)} Trace \textsc{Candidate-Elimination} on the release
+        decisions presented in the order Release 3, Release 1, Release 2,
+        Release 4. Is the final version space the same? Is any intermediate
+        boundary different?
+  \item \textbf{(Applied)} For the final version space of this chapter, find a
+        release that splits the vote 2 to 4 other than the one in the worked
         example, and one that splits it 3 to 3. Explain why the second is the
         better query.
 \end{reviewq}

@@ -6,10 +6,19 @@ parts, 22 chapters, six appendices, from what learning means to reinforcement
 learning, responsible practice and an end-to-end project. Every chapter has a
 matching PowerPoint deck generated from the handout, and a runnable Python lab.
 
-**Current build:** 217 pages · 73 figures, all numbered, captioned and listed ·
-22 labs, all run · 22 decks, 1,065 slides · zero LaTeX errors, zero undefined
+**Current build:** 210 pages · 72 figures, all numbered, captioned and listed ·
+22 labs, all run · 22 decks, 954 slides · zero LaTeX errors, zero undefined
 references, zero overfull or underfull boxes, zero font warnings · slide QA
 static checks clean.
+
+**One running example.** Every example in the handout comes from IT project
+management: effort and schedules, tasks and sprints, tickets and releases, risk,
+staffing and technical debt. There are no other application domains and no "four
+lenses" panels — the front matter lists which recurring example belongs to which
+chapter. The set text's classic tables appear with their attributes renamed
+(EnjoySport becomes release approvals in Chapter 4; PlayTennis becomes sprint
+outcomes in Chapters 9 and 10), so every number can still be checked against
+Mitchell.
 
 ## What the course is built on
 
@@ -67,10 +76,11 @@ lecture and three lab hours, with the midterm after Week 8 and the project from
 Week 11.
 
 Every worked example was computed, not typed: the numbers in the handout were
-checked in Python before they were written, and the classic examples of the set
-text (EnjoySport, PlayTennis) reproduce Mitchell's published values. Figures
+checked in Python before they were written, and the renamed classic tables of the
+set text reproduce Mitchell's published values (information gains 0.246/0.151/
+0.048/0.029, the six-hypothesis version space, naive Bayes at 0.795). Figures
 that show results (the polynomial fits, error curves, tree size, bandits,
-ensembles, scree plot, gridworld) are drawn from real computed data.
+ensembles, the scree plot) are drawn from real computed data.
 
 ## Build
 
@@ -122,7 +132,7 @@ TikZ, so a figure corrected in the handout reaches the slides on the next build.
 
 Each deck has the same shape: title slide, where the chapter sits in the course,
 outcomes, vocabulary, a section agenda, one slide per figure and box (lists and
-worked-example steps build one click at a time), the four lenses, the lab as a
+worked-example steps build one click at a time), the lab as a
 stepped code walk-through with its runnable file, checkpoint question-then-answer
 pairs, the summary, the multiple-choice review, and a closing slide naming the
 next chapter and the week's lab. Speaker notes carry the handout's prose.
@@ -154,7 +164,6 @@ handout — and the slide pipeline depends on it:
 ...content: definitionbox / conceptbox / alertbox / \dsfig ...
 \begin{worked}[title] ... \end{worked}
 \begin{pitfall} ... \end{pitfall}
-\begin{fourlenses}{topic} \lensLA{} \lensPM{} \lensIOT{} \lensSEC{} \end{fourlenses}
 \begin{lab}[title] ... one lstlisting ... \end{lab}
 \begin{checkpoint} ... three items ... \end{checkpoint}
 \begin{chaptersummary} ... \end{chaptersummary}
@@ -205,3 +214,14 @@ here that are worth porting back:
 - A long lab step is split at a blank line or before a top-level statement,
   never inside a bracketed expression. Before, a hard cut at 20 lines could leave
   one continuation line alone on its own slide.
+- Lab slides number their lines as the runnable file does, and a set-up of three
+  lines or fewer joins the first step instead of taking a slide of its own.
+- Display formulas that are slightly too wide shrink to fit instead of wrapping
+  mid-equation (`mathrender.py`).
+- `\varnothing` in prose reaches the slides as ∅ instead of vanishing
+  (`texparse.py`'s symbol table).
+
+The deck builder still carries the Data Science pipeline's four-lens card code
+(`lens_slides` in `dsdeck.py`, the `fourlenses` box in `texparse.py`). No chapter
+here uses it, so it never runs; it is kept only to keep this copy diffable
+against the Data Science one.

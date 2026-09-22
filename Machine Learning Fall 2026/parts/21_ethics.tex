@@ -22,8 +22,7 @@ By the end of this chapter you will be able to:
 \begin{prereq}
 \chref{evaluation} (confusion matrices, precision, recall, thresholds) and
 \chref{workflow} (data and features). This chapter delivers the HEC 2025 outcome
-``discuss ethical considerations while applying ML to societal problems''; every
-Four Lenses panel in the handout has been practice for it.
+``discuss ethical considerations while applying ML to societal problems''.
 \end{prereq}
 
 \begin{keyterms}
@@ -38,8 +37,8 @@ adversarial example $\bullet$ data poisoning
 
 \section{Why a Machine Learning Course Has an Ethics Chapter}
 
-A model is a decision procedure applied at scale. A biased admissions officer affects
-the applicants they meet; a biased admissions model affects every applicant, the same
+A model is a decision procedure applied at scale. A biased hiring manager affects the
+candidates they interview; a biased screening model affects every candidate, the same
 way, every year, and looks objective while doing it. The earlier chapters taught how
 to make a model accurate. This one asks the questions an accurate model does not
 answer: accurate for whom, measured how, used to decide what, and with what recourse
@@ -67,7 +66,7 @@ is often the only person who can answer it.
      node[above, font=\tiny, text=accent!80!black] {feedback loop: decisions change the world, which becomes next year's data} (s1.north);
 \node[bi, anchor=north] at (0,-0.6) {\textbf{historical}: the past was unfair, and the data records it};
 \node[bi, anchor=north] at (2.8,-0.6) {\textbf{representation}: some groups barely appear};
-\node[bi, anchor=north] at (5.6,-0.6) {\textbf{measurement}: the label is a proxy (arrests for crime, clicks for interest)};
+\node[bi, anchor=north] at (5.6,-0.6) {\textbf{measurement}: the label is a proxy (tickets closed for productivity, past promotions for talent)};
 \node[bi, anchor=north] at (8.4,-0.6) {\textbf{aggregation}: one model, one threshold for groups that differ};
 \node[bi, anchor=north] at (11.2,-0.6) {\textbf{use}: a score built for one purpose applied to another};
 \end{tikzpicture}}%
@@ -76,12 +75,12 @@ addresses none of them.}{bias-sources}
 
 Two points from \dsref{bias-sources} catch almost every team. First, a model does not
 need to see a \term{protected attribute} (gender, religion, ethnicity, region) to
-discriminate on it. Other features act as \term{proxy variables}: home district,
-school, name, even the time of day someone applies. In this chapter's lab, three
-ordinary features recover group membership with 97\% accuracy. Second,
-\term{feedback loops}: a model that sends more patrols to one district records more
-incidents there, which becomes next year's training data, which sends more patrols.
-The model's prediction makes itself come true.
+discriminate on it. Other features act as \term{proxy variables}: university, home
+district, name, even a gap in a CV. In this chapter's lab, three ordinary features
+recover group membership with 97\% accuracy. Second, \term{feedback loops}: a model
+that gives the most visible projects to the developers it rates highest hands them the
+achievements that make next year's model rate them highest again. The model's
+prediction makes itself come true.
 
 \section{Measuring Fairness}
 
@@ -107,10 +106,11 @@ the same in every group \\
 \bottomrule
 \end{longtable}
 
-\begin{worked}[Auditing an Admissions Model]
-A model screens 1{,}000 applicants from each of two groups. Group A has 400 truly
-qualified applicants; group B, whose members had fewer chances to build a strong record,
-has 200.
+\begin{worked}[Auditing a Hiring Screen]
+A software company's model screens 1{,}000 applicants for developer roles from each of
+two groups. Group A has 400 truly qualified applicants; group B, whose members had fewer
+chances to build a strong record (fewer internships, less access to paid courses), has
+200.
 
 \smallskip
 \begin{center}
@@ -261,43 +261,21 @@ Security & Who benefits from fooling it? Has it been tested against them? \\
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Responsible Machine Learning}
-\lensLA{An early-warning model that flags students from one region more often may be
-measuring unequal preparation, not ability; and a flag seen by a teacher can lower
-expectations and cause the failure it predicted. Use flags to offer support, never to
-restrict opportunity, and audit TPR by group every term.}
-
-\lensPM{Models that score employees' productivity from commit counts or ticket
-throughput measure what is easy to count. They reward gaming, and penalise the people
-doing the unglamorous work --- reviews, mentoring, documentation --- that keeps a team
-functioning.}
-
-\lensIOT{Sensor data from homes and vehicles reveals when people are in, asleep or
-travelling. Process on the device where possible, send aggregates rather than raw
-streams, and treat a smart-meter dataset as the personal data it is.}
-
-\lensSEC{Security models are the most adversarial setting of all: the people they
-classify are actively trying to defeat them. Test against evasion and poisoning, and
-remember that a false positive may lock an innocent user out of an account --- give
-them a fast route back in.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[Auditing a Model for Fairness]
-A synthetic admissions dataset in which group B had fewer chances to build a strong
+A synthetic hiring dataset in which group B had fewer chances to build a strong
 record. The group is never given to the model as a feature.
 \begin{lstlisting}[language=Python]
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split, cross_val_score
 
-# --- a synthetic admissions dataset with a protected group ---------------
+# --- a synthetic hiring dataset with a protected group -------------------
 rng = np.random.default_rng(0)
 n = 6000
 group = rng.integers(0, 2, n)                     # 0 = group A, 1 = group B
-# group B had fewer chances to build a strong record (historical bias)
-record = rng.normal(0.6 - 0.25 * group, 0.15, n)
-aptitude = rng.normal(0.5, 0.15, n)               # equal in both groups
+# group B had fewer internships and projects to show (historical bias)
+record = rng.normal(0.6 - 0.25 * group, 0.15, n)  # CV: internships, projects
+aptitude = rng.normal(0.5, 0.15, n)               # coding test: equal
 district = group + rng.normal(0, 0.3, n)          # a proxy for the group
 qualified = (0.5 * record + 0.5 * aptitude
              + rng.normal(0, 0.05, n) > 0.5).astype(int)
@@ -337,7 +315,7 @@ pred = np.where(g_te == 1, p > t_b, p > 0.5).astype(int)
 report(f"threshold 0.5 for A, {t_b:.2f} for B (equal opportunity):", pred)
 \end{lstlisting}
 Equalising the TPR costs group B precision and raises its false positive rate --- the
-impossibility result in action. Write two sentences, as if for the admissions committee,
+impossibility result in action. Write two sentences, as if for the hiring committee,
 explaining the trade-off you would recommend.
 \end{lab}
 
@@ -374,13 +352,13 @@ explaining the trade-off you would recommend.
 \begin{reviewq}
   \item \textbf{(MCQ)} Equal opportunity requires equal: (a)~selection rates
         (b)~true positive rates (c)~precision (d)~accuracy.
-  \item \textbf{(MCQ)} Using arrest records as the label for ``committed a crime'' is an
-        example of: (a)~representation bias (b)~measurement bias (c)~a feedback loop
-        only (d)~data poisoning.
+  \item \textbf{(MCQ)} Using ``tickets closed per month'' as the label for ``good
+        developer'' is an example of: (a)~representation bias (b)~measurement bias
+        (c)~a feedback loop only (d)~data poisoning.
   \item \textbf{(MCQ)} A selection-rate ratio of 0.42 between two groups: (a)~passes the
         four-fifths rule (b)~fails it (c)~proves intent to discriminate (d)~says nothing.
-  \item \textbf{(Short)} Explain a feedback loop with an example from a domain of your
-        choice.
+  \item \textbf{(Short)} Explain a feedback loop with an example of your own from IT
+        project management.
   \item \textbf{(Short)} Why can equal opportunity and predictive parity not both hold
         when base rates differ?
   \item \textbf{(Short)} List the sections of a model card and justify one of them.

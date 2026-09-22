@@ -18,7 +18,7 @@ print("centroids:", km.cluster_centers_.round(3).tolist(),
 
 # --- 2. choosing k: the elbow and the silhouette -------------------------
 X, truth = make_blobs(n_samples=600, centers=4, cluster_std=1.0,
-                      random_state=3)
+                      random_state=3)     # 600 projects of four kinds
 for k in range(2, 8):
     m = KMeans(n_clusters=k, n_init=10, random_state=0).fit(X)
     print(f"k={k}: WCSS {m.inertia_:8.1f}   "

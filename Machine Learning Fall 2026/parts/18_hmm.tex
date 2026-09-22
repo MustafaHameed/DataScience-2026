@@ -39,12 +39,11 @@ estimation
 \section{When Order Matters}
 
 Every model so far has treated examples as independent: shuffling the training
-set changes nothing. Much real data is a \emph{sequence} in which the order carries
-the information --- the words of a sentence, the readings of a sensor, the actions
-of a user in a session, the calls a program makes to the operating system. Hidden
-Markov models were the standard tool for such data for thirty years, in speech
-recognition, part-of-speech tagging and gene finding, and they remain the clearest
-introduction to reasoning about sequences.
+set changes nothing. Much project data is a \emph{sequence} in which the order
+carries the information --- a project's weekly status reports, the stages a ticket
+passes through, the runs of a build pipeline, the commits on a feature branch.
+Hidden Markov models were the standard tool for sequences for thirty years, and they
+remain the clearest introduction to reasoning about them.
 
 \section{Markov Chains}
 
@@ -57,26 +56,27 @@ chain} is such a sequence, described by an initial distribution $\pi$ and a
 of $A$ sums to 1.
 \end{definitionbox}
 
-A server is either Healthy (H) or Degraded (D). From one minute to the next it stays
-healthy with probability 0.8 and degrades with probability 0.2; once degraded, it
-recovers with probability 0.3 and stays degraded with 0.7:
+A project is either Healthy (H) or Distressed (D). From one week to the next a
+healthy project stays healthy with probability 0.8 and slips into distress with
+probability 0.2; a distressed one recovers with probability 0.3 and stays
+distressed with 0.7:
 \[
 A = \begin{pmatrix} 0.8 & 0.2 \\ 0.3 & 0.7 \end{pmatrix}
 \]
-If it is healthy now, the probability it is degraded in two minutes sums over the
+If it is healthy now, the probability it is distressed in two weeks sums over the
 two routes: H$\to$H$\to$D $= 0.8 \times 0.2 = 0.16$ and H$\to$D$\to$D $= 0.2 \times 0.7
 = 0.14$, total 0.30 --- which is the entry of $A^2$ in row H, column D. Run long
 enough, the chain forgets where it started and settles into a \term{stationary
-distribution}: here 60\% healthy, 40\% degraded (check: $0.6 \times 0.2 = 0.4 \times
-0.3$, so the flows between the states balance).
+distribution}: here 60\% healthy, 40\% distressed (check: $0.6 \times 0.2 = 0.4
+\times 0.3$, so the flows between the states balance).
 
 \section{Hidden Markov Models}
 
-In practice the server's true state is not visible. What the monitoring sees is its
-\emph{response time}, which depends on the state but only probabilistically: a
-healthy server is usually fast, a degraded one usually slow or timing out, but either
-can produce any reading. The states are \emph{hidden}; the observations are what is
-recorded.
+In practice a project's true state is not visible. What the project office sees is
+the weekly \emph{status report}, which depends on the state but only
+probabilistically: a healthy project usually reports \emph{on plan}, a distressed
+one usually \emph{behind} or \emph{blocked}, but either can produce any report. The
+states are \emph{hidden}; the observations are what is recorded.
 
 \begin{definitionbox}[Hidden Markov Model]
 An HMM has hidden states $S$ and observable symbols $O$, and three sets of
@@ -98,39 +98,39 @@ hidden state at the same time.
              minimum height=0.6cm, font=\tiny\bfseries},
   a/.style={-{Stealth[length=2mm]}, line width=0.9pt}]
 \node[st=greenhl!70!black] (H) at (0,0) {Healthy};
-\node[st=accent] (D) at (4.6,0) {Degraded};
+\node[st=accent] (D) at (4.6,0) {Distressed};
 \draw[a, greenhl!60!black] (H) to[out=130, in=50, looseness=6] node[above, font=\tiny] {0.8} (H);
 \draw[a, accent] (D) to[out=130, in=50, looseness=6] node[above, font=\tiny] {0.7} (D);
 \draw[a, gray!60!black] (H) to[bend left=25] node[above, font=\tiny] {0.2} (D);
 \draw[a, gray!60!black] (D) to[bend left=25] node[below, font=\tiny] {0.3} (H);
-\node[ob] (f) at (-0.6,-2.9) {fast};
-\node[ob] (s) at (2.3,-2.9) {slow};
-\node[ob] (t) at (5.2,-2.9) {timeout};
+\node[ob] (f) at (-0.6,-2.9) {on plan};
+\node[ob] (s) at (2.3,-2.9) {behind};
+\node[ob] (t) at (5.2,-2.9) {blocked};
 \foreach \o in {f,s,t}{
   \draw[a, greenhl!60!black, dashed, line width=0.6pt] (H) -- (\o);
   \draw[a, accent, dashed, line width=0.6pt] (D) -- (\o);}
 \node[anchor=north west, font=\scriptsize] at (7.0,1.3) {%
   \renewcommand{\arraystretch}{1.25}%
   \begin{tabular}{@{}lccc@{}}
-  \multicolumn{4}{@{}l}{\textbf{Emissions} $B$: $P(\text{reading} \mid \text{state})$} \\[2pt]
-  & fast & slow & timeout \\
+  \multicolumn{4}{@{}l}{\textbf{Emissions} $B$: $P(\text{report} \mid \text{state})$} \\[2pt]
+  & on plan & behind & blocked \\
   {\color{greenhl!45!black}\bfseries H} & 0.70 & 0.25 & 0.05 \\
   {\color{accent}\bfseries D} & 0.10 & 0.50 & 0.40 \\[4pt]
   \multicolumn{4}{@{}l}{\textbf{Start} $\pi$: H 0.7, D 0.3} \\[2pt]
   \multicolumn{4}{@{}l}{\textbf{Transitions} $A$: solid arrows} \\
   \end{tabular}};
 \node[font=\tiny, text=gray!55!black, anchor=west] at (7.0,-2.9)
-     {\textbf{hidden}: the state (top); \textbf{observed}: the reading (bottom)};
+     {\textbf{hidden}: the state (top); \textbf{observed}: the report (bottom)};
 \end{tikzpicture}}%
-{The hidden Markov model used throughout this chapter. The monitoring system never sees
-the state, only a response time whose probabilities depend on it.}{hmm-model}
+{The hidden Markov model used throughout this chapter. The project office never sees
+the state, only a weekly status report whose probabilities depend on it.}{hmm-model}
 
 \begin{conceptbox}[Three Questions an HMM Answers]
 \begin{tight}
   \item \textbf{Evaluation:} how probable is an observed sequence under this model?
-        (Is this pattern of response times normal?) --- the forward algorithm.
+        (Is this run of status reports normal?) --- the forward algorithm.
   \item \textbf{Decoding:} which sequence of hidden states most probably produced
-        it? (When did the server actually degrade?) --- the Viterbi algorithm.
+        it? (When did the project actually slip?) --- the Viterbi algorithm.
   \item \textbf{Learning:} which parameters make the observed sequences most
         probable? --- the Baum--Welch algorithm, an instance of EM.
 \end{tight}
@@ -154,21 +154,21 @@ so far \emph{and} being in state $i$ now.
 The cost is $N^2 T$ instead of $N^T$.
 \end{definitionbox}
 
-\begin{worked}[How Likely Is ``Fast, Slow, Timeout''?]
-Observations $o = $ (fast, slow, timeout), model of \dsref{hmm-model}.
+\begin{worked}[How Likely Is ``On Plan, Behind, Blocked''?]
+Three weekly reports $o = $ (on plan, behind, blocked), model of \dsref{hmm-model}.
 
 \smallskip
-\textbf{$t = 1$ (fast):} $\alpha_1(H) = 0.7 \times 0.70 = 0.49$;
+\textbf{$t = 1$ (on plan):} $\alpha_1(H) = 0.7 \times 0.70 = 0.49$;
 $\alpha_1(D) = 0.3 \times 0.10 = 0.03$.
 
-\textbf{$t = 2$ (slow):}
+\textbf{$t = 2$ (behind):}
 \[
 \alpha_2(H) = (0.49 \times 0.8 + 0.03 \times 0.3) \times 0.25 = 0.401 \times 0.25 = 0.10025
 \]
 \[
 \alpha_2(D) = (0.49 \times 0.2 + 0.03 \times 0.7) \times 0.50 = 0.119 \times 0.5 = 0.0595
 \]
-\textbf{$t = 3$ (timeout):}
+\textbf{$t = 3$ (blocked):}
 \[
 \alpha_3(H) = (0.10025 \times 0.8 + 0.0595 \times 0.3) \times 0.05 = 0.09805 \times 0.05 = 0.00490
 \]
@@ -179,8 +179,8 @@ $\alpha_1(D) = 0.3 \times 0.10 = 0.03$.
 
 \smallskip
 The same numbers answer a second question for free: given everything seen so far,
-the server is now degraded with probability $0.02468/0.0296 = \mathbf{0.83}$ ---
-the \emph{filtered} state estimate, which is what a live monitoring dashboard wants.
+the project is now distressed with probability $0.02468/0.0296 = \mathbf{0.83}$ ---
+the \emph{filtered} state estimate, which is what a portfolio dashboard wants.
 \end{worked}
 
 \section{Decoding: The Viterbi Algorithm}
@@ -200,20 +200,20 @@ in state $j$ at time $t$ (with the observations so far).
 \end{tight}
 \end{definitionbox}
 
-\begin{worked}[When Did the Server Degrade?]
-The same observations: fast, slow, timeout.
+\begin{worked}[When Did the Project Slip?]
+The same reports: on plan, behind, blocked.
 
 \smallskip
 \textbf{$t = 1$:} $\delta_1(H) = 0.49$, $\delta_1(D) = 0.03$.
 
-\textbf{$t = 2$ (slow):}
+\textbf{$t = 2$ (behind):}
 \begin{tight}
   \item into H: from H $0.49 \times 0.8 = 0.392$, from D $0.03 \times 0.3 = 0.009$;
         best from H. $\delta_2(H) = 0.392 \times 0.25 = 0.098$.
   \item into D: from H $0.49 \times 0.2 = 0.098$, from D $0.03 \times 0.7 = 0.021$;
         best from H. $\delta_2(D) = 0.098 \times 0.5 = 0.049$.
 \end{tight}
-\textbf{$t = 3$ (timeout):}
+\textbf{$t = 3$ (blocked):}
 \begin{tight}
   \item into H: from H $0.098 \times 0.8 = 0.0784$, from D $0.049 \times 0.3 = 0.0147$;
         best from H. $\delta_3(H) = 0.0784 \times 0.05 = 0.00392$.
@@ -222,8 +222,8 @@ The same observations: fast, slow, timeout.
 \end{tight}
 \textbf{Backtrack.} The best final state is D (0.01372). Its backpointer is D at
 $t = 2$, whose backpointer is H at $t = 1$. \textbf{Most likely states: H, D, D} ---
-the server degraded between the first and second minute, when the first slow
-response appeared, not when the timeout did.
+the project slipped between the first and second week, when the first ``behind''
+report appeared, not when it became blocked.
 \end{worked}
 
 \dsfig{%
@@ -232,10 +232,10 @@ response appeared, not when the timeout did.
              font=\tiny},
   e/.style={gray!40, line width=0.7pt},
   best/.style={-{Stealth[length=2.2mm]}, primary, line width=2pt}]
-\foreach \t/\o in {0/fast,1/slow,2/timeout}{
+\foreach \t/\o in {0/on plan,1/behind,2/blocked}{
   \node[font=\scriptsize\bfseries, text=gray!55!black] at (\t*3.6,1.5) {$t = \the\numexpr\t+1\relax$: \o};}
 \node[font=\scriptsize\bfseries, text=greenhl!45!black, anchor=east] at (-1.0,0.5) {Healthy};
-\node[font=\scriptsize\bfseries, text=accent, anchor=east] at (-1.0,-1.1) {Degraded};
+\node[font=\scriptsize\bfseries, text=accent, anchor=east] at (-1.0,-1.1) {Distressed};
 \node[nd=greenhl!70!black] (h1) at (0,0.5) {0.49};
 \node[nd=accent] (d1) at (0,-1.1) {0.03};
 \node[nd=greenhl!70!black] (h2) at (3.6,0.5) {0.098};
@@ -256,7 +256,7 @@ the trellis; Viterbi keeps only the best path into each node.}{viterbi}
 \section{Learning: Baum--Welch}
 
 Where do $\pi$, $A$ and $B$ come from? If the hidden states had been recorded, they
-would be counts: how often H followed H, how often D emitted a timeout. They were not
+would be counts: how often H followed H, how often D reported ``blocked''. They were not
 --- so the \term{Baum--Welch} algorithm applies EM (\chref{semisup}). The
 \textbf{E-step} runs the forward algorithm and its mirror image, the backward
 algorithm, to compute for every time step the probability of each hidden state and of
@@ -264,7 +264,7 @@ each transition, given the whole observed sequence. The \textbf{M-step} re-estim
 $A$ and $B$ as expected counts: the expected number of H$\to$D transitions divided by
 the expected number of visits to H, and so on. As with every EM, the likelihood never
 decreases and the answer is a local maximum. This chapter's lab generates 3{,}000
-response times from the model, forgets the parameters, and from a vague start recovers
+weekly reports from the model, forgets the parameters, and from a vague start recovers
 \[
 A \approx \begin{pmatrix} 0.78 & 0.22 \\ 0.31 & 0.69 \end{pmatrix},
 \]
@@ -293,11 +293,12 @@ foundation of Monte Carlo reinforcement learning.
 
 \begin{alertbox}[Why HMMs Were Largely Replaced --- and Where They Remain]
 An HMM's hidden state is one symbol from a small set, and each observation depends on
-the current state alone. Language and speech have longer dependencies than that, and
-recurrent networks and transformers (the Deep Learning course) now dominate both.
-HMMs remain the right tool when the data is small, the states are meaningful and must
-be interpretable --- a machine's health, a user's session phase, the regime of a
-market --- and when an exact probability is needed rather than a score.
+the current state alone. Long texts, such as a ticket's whole discussion thread, have
+longer dependencies than that, and recurrent networks and transformers (the Deep
+Learning course) now dominate text. HMMs remain the right tool when the data is
+small, the states are meaningful and must be interpretable --- a project's health, a
+ticket's stage, the phase of a release --- and when an exact probability is needed
+rather than a score.
 \end{alertbox}
 
 \begin{pitfall}
@@ -318,38 +319,17 @@ market --- and when an exact probability is needed rather than a score.
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Hidden Markov Models}
-\lensLA{A student's hidden state --- engaged, struggling, disengaged --- produces
-observable behaviour: logins, quiz scores, forum posts. An HMM trained on past
-cohorts decodes when a student moved from struggling to disengaged, which is when an
-intervention would have helped most.}
-
-\lensPM{A project's hidden health (on track, at risk, in trouble) emits weekly
-signals: velocity, defect counts, missed stand-ups. The filtered probability of ``in
-trouble'' is a more stable early warning than any single metric.}
-
-\lensIOT{The worked example is realistic: equipment degrades through hidden stages
-that show up only through noisy sensor readings. HMM-based condition monitoring and
-remaining-useful-life estimation are standard in predictive maintenance.}
-
-\lensSEC{The sequence of system calls made by a program was one of the first
-intrusion-detection signals: an HMM of a normal program's calls gives an
-attacked program's call sequence a very low forward probability. Session-level user
-behaviour can be modelled the same way.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[Forward, Viterbi, Monte Carlo and Baum-Welch]
 \begin{lstlisting}[language=Python]
 import numpy as np
 
-# --- the worked example: a server that is Healthy (0) or Degraded (1) ----
+# --- the worked example: a project, Healthy (0) or Distressed (1) --------
 pi = np.array([0.7, 0.3])                        # initial state
 A = np.array([[0.8, 0.2],                        # transitions, row = from
               [0.3, 0.7]])
-B = np.array([[0.70, 0.25, 0.05],                # emissions: fast, slow,
-              [0.10, 0.50, 0.40]])               #            timeout
-obs = [0, 1, 2]                                  # fast, slow, timeout
+B = np.array([[0.70, 0.25, 0.05],                # reports: on plan, behind,
+              [0.10, 0.50, 0.40]])               #          blocked
+obs = [0, 1, 2]                                  # on plan, behind, blocked
 
 
 def forward(obs, pi, A, B):
@@ -372,7 +352,7 @@ def viterbi(obs, pi, A, B):
 
 
 alpha = forward(obs, pi, A, B)
-print("P(fast, slow, timeout) =", round(alpha.sum(), 6))
+print("P(on plan, behind, blocked) =", round(alpha.sum(), 6))
 print("P(state at t=3 | obs)  =", (alpha / alpha.sum()).round(3))
 path, p = viterbi(obs, pi, A, B)
 print("most likely states:", ["HD"[s] for s in path], "prob", round(p, 5))
@@ -432,8 +412,8 @@ the other way round. Why is that not an error?
 %---------------------------------------------------------------------
 \begin{checkpoint}
 \begin{tightnum}
-  \item In the Markov chain of this chapter, a server is degraded now. What is the
-        probability it is healthy two minutes later?
+  \item In the Markov chain of this chapter, a project is distressed now. What is
+        the probability it is healthy two weeks later?
   \item What does $\alpha_t(i)$ represent, and how does $\delta_t(i)$ differ from it?
   \item Why does the direct sum over all hidden sequences become impractical, and
         how does the forward algorithm avoid it?
@@ -470,9 +450,9 @@ the other way round. Why is that not an error?
         separately give a worse answer than Viterbi?
   \item \textbf{(Short)} When is Monte Carlo estimation preferable to an exact
         algorithm?
-  \item \textbf{(Applied)} Compute $P(\text{slow, slow})$ for the model of this
+  \item \textbf{(Applied)} Compute $P(\text{behind, behind})$ for the model of this
         chapter with the forward algorithm, and the filtered probability that the
-        server is degraded after the second observation.
-  \item \textbf{(Applied)} Run Viterbi on the observations (timeout, fast, fast) and
+        project is distressed after the second report.
+  \item \textbf{(Applied)} Run Viterbi on the reports (blocked, on plan, on plan) and
         interpret the decoded state sequence.
 \end{reviewq}

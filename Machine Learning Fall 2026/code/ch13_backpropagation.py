@@ -1,6 +1,5 @@
 # Chapter 13 lab -- extracted from parts/ by sync_labs.py. Edit the chapter, not this file.
 import numpy as np
-from sklearn.datasets import load_digits
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPClassifier
@@ -28,16 +27,23 @@ for epoch in range(5001):
         print(f"epoch {epoch:4d}: error {err:.4f}  "
               f"outputs {o.ravel().round(2)}")
 
-# --- 2. handwritten digits: a network against a linear model -------------
-Xd, yd = load_digits(return_X_y=True)             # 1,797 images, 8x8 pixels
-X_tr, X_te, y_tr, y_te = train_test_split(Xd, yd, test_size=0.3,
-                                          random_state=0, stratify=yd)
+# --- 2. staffing: too few people is late, and so is too many -------------
+rng = np.random.default_rng(0)
+n = 800
+scope = rng.uniform(100, 1000, n)                 # story points
+team = rng.uniform(2, 20, n)                      # people
+Xs = np.column_stack([scope, team])
+ys = (np.abs(team - scope / 60) > 5).astype(int)  # 1 = late
+flip = rng.random(n) < 0.05                       # 5% recorded wrongly
+ys[flip] = 1 - ys[flip]
+X_tr, X_te, y_tr, y_te = train_test_split(Xs, ys, test_size=0.3,
+                                          random_state=0, stratify=ys)
 sc = StandardScaler().fit(X_tr)
 X_tr, X_te = sc.transform(X_tr), sc.transform(X_te)
-lin = LogisticRegression(max_iter=2000).fit(X_tr, y_tr)
+lin = LogisticRegression().fit(X_tr, y_tr)
 print("logistic regression test accuracy:", round(lin.score(X_te, y_te), 3))
 for alpha in (0.0001, 1.0):                        # weight decay
-    net = MLPClassifier(hidden_layer_sizes=(64,), alpha=alpha,
-                        max_iter=1000, random_state=0).fit(X_tr, y_tr)
+    net = MLPClassifier(hidden_layer_sizes=(16,), alpha=alpha,
+                        max_iter=3000, random_state=0).fit(X_tr, y_tr)
     print(f"network, weight decay {alpha:g}: {net.n_iter_} epochs, "
           f"test accuracy {net.score(X_te, y_te):.3f}")

@@ -1,20 +1,24 @@
 # Chapter 10 lab -- extracted from parts/ by sync_labs.py. Edit the chapter, not this file.
-from sklearn.datasets import load_breast_cancer
-from sklearn.model_selection import cross_val_score
+import numpy as np
 from sklearn.naive_bayes import GaussianNB, MultinomialNB
 from sklearn.feature_extraction.text import CountVectorizer
 
-# --- 1. naive Bayes on PlayTennis, by counting ---------------------------
-days = [("Sunny Hot High Weak", "No"), ("Sunny Hot High Strong", "No"),
-        ("Overcast Hot High Weak", "Yes"), ("Rain Mild High Weak", "Yes"),
-        ("Rain Cool Normal Weak", "Yes"), ("Rain Cool Normal Strong", "No"),
-        ("Overcast Cool Normal Strong", "Yes"),
-        ("Sunny Mild High Weak", "No"), ("Sunny Cool Normal Weak", "Yes"),
-        ("Rain Mild Normal Weak", "Yes"), ("Sunny Mild Normal Strong", "Yes"),
-        ("Overcast Mild High Strong", "Yes"),
-        ("Overcast Hot Normal Weak", "Yes"), ("Rain Mild High Strong", "No")]
-X = [d.split() for d, _ in days]
-y = [c for _, c in days]
+# --- 1. naive Bayes on the sprint data, by counting ----------------------
+sprints = [("Changing High High Few", "No"),
+           ("Changing High High Many", "No"),
+           ("Frozen High High Few", "Yes"),
+           ("Vague Medium High Few", "Yes"),
+           ("Vague Low Normal Few", "Yes"), ("Vague Low Normal Many", "No"),
+           ("Frozen Low Normal Many", "Yes"),
+           ("Changing Medium High Few", "No"),
+           ("Changing Low Normal Few", "Yes"),
+           ("Vague Medium Normal Few", "Yes"),
+           ("Changing Medium Normal Many", "Yes"),
+           ("Frozen Medium High Many", "Yes"),
+           ("Frozen High Normal Few", "Yes"),
+           ("Vague Medium High Many", "No")]
+X = [s.split() for s, _ in sprints]
+y = [c for _, c in sprints]
 n_values = [3, 3, 2, 2]                  # values per attribute
 
 
@@ -31,28 +35,34 @@ def naive_bayes(x, laplace=0):
     return {c: round(s / total, 3) for c, s in scores.items()}, scores
 
 
-post, raw = naive_bayes(["Sunny", "Cool", "High", "Strong"])
+post, raw = naive_bayes(["Changing", "Low", "High", "Many"])
 print("unnormalised:", {c: round(s, 5) for c, s in raw.items()})
 print("posterior:   ", post)
-day = ["Overcast", "Hot", "High", "Strong"]
-print("Overcast day, no smoothing:", naive_bayes(day)[1])
-print("Overcast day, Laplace     :", naive_bayes(day, laplace=1)[0])
+frozen = ["Frozen", "High", "High", "Many"]
+print("Frozen sprint, no smoothing:", naive_bayes(frozen)[1])
+print("Frozen sprint, Laplace     :", naive_bayes(frozen, laplace=1)[0])
 
-# --- 2. Gaussian naive Bayes on 30 continuous measurements ---------------
-Xb, yb = load_breast_cancer(return_X_y=True)
-print("GaussianNB 5-fold accuracy:",
-      cross_val_score(GaussianNB(), Xb, yb, cv=5).mean().round(3))
+# --- 2. Gaussian naive Bayes on the code-churn example -------------------
+rng = np.random.default_rng(0)
+churn = np.r_[rng.normal(500, 100, 1900),       # modules that pass QA
+              rng.normal(900, 150, 100)]         # the 5% that fail
+fails = np.r_[np.zeros(1900), np.ones(100)]
+gnb = GaussianNB().fit(churn.reshape(-1, 1), fails)
+print("learned means:", gnb.theta_.ravel().round(0))
+print("P(fail | 750 lines):", gnb.predict_proba([[750]])[0, 1].round(2))
+grid = np.arange(600, 1000).reshape(-1, 1)
+print("boundary near", int(grid[gnb.predict(grid) == 1][0, 0]), "lines")
 
-# --- 3. a spam filter from twelve messages -------------------------------
-msgs = ["win a free prize now", "free money win cash", "claim your free gift",
-        "cheap loans win now", "free entry win big",
-        "urgent cash prize claim",
-        "meeting moved to monday", "please review the report",
-        "lunch meeting tomorrow", "report due friday please",
-        "project meeting notes", "draft report for review"]
-labels = [1] * 6 + [0] * 6                         # 1 = spam
+# --- 3. a ticket router from twelve tickets ------------------------------
+tickets = ["app crashes when saving", "error on the export page",
+           "crash after the update", "null pointer error in upload",
+           "report page crashes on load", "error message on checkout",
+           "add an option to export pdf", "please add a dark mode",
+           "option to filter by date", "add support for csv import",
+           "add a bulk edit option", "please add weekly summary"]
+labels = [1] * 6 + [0] * 6                         # 1 = bug
 vec = CountVectorizer()
-nb = MultinomialNB(alpha=1.0).fit(vec.fit_transform(msgs), labels)
-for m in ["free meeting free", "report on the prize", "win win win"]:
-    p = nb.predict_proba(vec.transform([m]))[0, 1]
-    print(f"{m!r:24s} P(spam) = {p:.3f}")
+nb = MultinomialNB(alpha=1.0).fit(vec.fit_transform(tickets), labels)
+for t in ["crash after export", "add export option", "crash option crash"]:
+    p = nb.predict_proba(vec.transform([t]))[0, 1]
+    print(f"{t!r:22s} P(bug) = {p:.3f}")

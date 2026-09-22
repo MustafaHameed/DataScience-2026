@@ -42,11 +42,12 @@ and passing it through a simple function, connected so that the outputs of some 
 the inputs of others. Everything the network knows is in the connection weights,
 and learning means adjusting them.
 
-Networks are the right tool when the input is high-dimensional and raw --- pixels,
-audio samples, sensor streams --- when the target function is complex and unknown,
-when some noise is acceptable, when long training times are acceptable, and when
-nobody needs to read the learned function. Mitchell's examples were steering a car
-from camera images and recognising faces; today's are the whole of deep learning.
+Networks are the right tool when the input is high-dimensional and raw --- in
+project work, the full text of tickets and commit messages, or the complete event
+history of every task in a tracker --- when the target function is complex and
+unknown, when some noise is acceptable, when long training times are acceptable,
+and when nobody needs to read the learned function. Networks of this kind, made
+deep, are the whole of deep learning.
 
 \section{The Perceptron}
 
@@ -351,7 +352,7 @@ so no unit can rely on another & $p \approx 0.2$--$0.5$; standard in deep learni
 frameworks \\
 Fewer units & A smaller network has less capacity to memorise & Tune the width by CV \\
 More data, augmented & Real or synthetic variations of the training examples &
-Flips, crops and noise for images and signals \\
+Paraphrased ticket text; small random jitter on numeric features \\
 \bottomrule
 \end{longtable}
 
@@ -382,33 +383,9 @@ subject of the Deep Learning course; this chapter is their foundation.
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Neural Networks}
-\lensLA{Clickstream sequences from a learning platform --- which video, which
-quiz, how long --- are raw, high-dimensional input where networks can find patterns
-hand-built features miss. They need thousands of students, not hundreds; with one
-course's data, the regularised linear model usually wins.}
-
-\lensPM{Tabular project data is small and structured, the setting where networks
-have the least advantage over trees and linear models. Where they help is text:
-embedding ticket descriptions or commit messages before any other model sees
-them.}
-
-\lensIOT{Networks trained on raw vibration or audio windows detect faults that
-summary statistics miss, and small networks can be compressed to run on
-microcontrollers. The training cost is paid once, in the cloud; inference is a few
-matrix multiplications on the device.}
-
-\lensSEC{Networks classify malware from raw bytes and traffic from packet
-sequences. They are also the most vulnerable to adversarial examples: tiny,
-deliberately crafted input changes that flip the output. A security model is
-judged by how it fails under attack, not only by its accuracy.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[Backpropagation From Scratch, Then a Real Network]
 \begin{lstlisting}[language=Python]
 import numpy as np
-from sklearn.datasets import load_digits
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPClassifier
@@ -436,23 +413,34 @@ for epoch in range(5001):
         print(f"epoch {epoch:4d}: error {err:.4f}  "
               f"outputs {o.ravel().round(2)}")
 
-# --- 2. handwritten digits: a network against a linear model -------------
-Xd, yd = load_digits(return_X_y=True)             # 1,797 images, 8x8 pixels
-X_tr, X_te, y_tr, y_te = train_test_split(Xd, yd, test_size=0.3,
-                                          random_state=0, stratify=yd)
+# --- 2. staffing: too few people is late, and so is too many -------------
+rng = np.random.default_rng(0)
+n = 800
+scope = rng.uniform(100, 1000, n)                 # story points
+team = rng.uniform(2, 20, n)                      # people
+Xs = np.column_stack([scope, team])
+ys = (np.abs(team - scope / 60) > 5).astype(int)  # 1 = late
+flip = rng.random(n) < 0.05                       # 5% recorded wrongly
+ys[flip] = 1 - ys[flip]
+X_tr, X_te, y_tr, y_te = train_test_split(Xs, ys, test_size=0.3,
+                                          random_state=0, stratify=ys)
 sc = StandardScaler().fit(X_tr)
 X_tr, X_te = sc.transform(X_tr), sc.transform(X_te)
-lin = LogisticRegression(max_iter=2000).fit(X_tr, y_tr)
+lin = LogisticRegression().fit(X_tr, y_tr)
 print("logistic regression test accuracy:", round(lin.score(X_te, y_te), 3))
 for alpha in (0.0001, 1.0):                        # weight decay
-    net = MLPClassifier(hidden_layer_sizes=(64,), alpha=alpha,
-                        max_iter=1000, random_state=0).fit(X_tr, y_tr)
+    net = MLPClassifier(hidden_layer_sizes=(16,), alpha=alpha,
+                        max_iter=3000, random_state=0).fit(X_tr, y_tr)
     print(f"network, weight decay {alpha:g}: {net.n_iter_} epochs, "
           f"test accuracy {net.score(X_te, y_te):.3f}")
 \end{lstlisting}
-The network learns XOR, and on the digits it beats logistic regression by less than a
-point --- more with stronger weight decay. Now add \texttt{early\_stopping=True} to the
-network and explain why accuracy \emph{falls} on this small dataset.
+In part 2 a project runs late when its team is far from the size its scope needs
+--- understaffed, or so overstaffed that coordination swamps the work (Brooks's
+law). The late projects lie on \emph{both} sides of a diagonal band, so no single
+line separates them: logistic regression manages 0.56, barely better than a coin,
+while the network finds the band and scores 0.90. Now add
+\texttt{early\_stopping=True} to the network and explain why accuracy
+\emph{falls} so sharply.
 \end{lab}
 
 %---------------------------------------------------------------------

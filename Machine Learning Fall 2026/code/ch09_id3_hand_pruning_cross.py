@@ -6,15 +6,15 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.tree import DecisionTreeClassifier, export_text
 
 # --- 1. ID3's first choice, computed by hand -----------------------------
-rows = ["Sunny Hot High Weak No", "Sunny Hot High Strong No",
-        "Overcast Hot High Weak Yes", "Rain Mild High Weak Yes",
-        "Rain Cool Normal Weak Yes", "Rain Cool Normal Strong No",
-        "Overcast Cool Normal Strong Yes", "Sunny Mild High Weak No",
-        "Sunny Cool Normal Weak Yes", "Rain Mild Normal Weak Yes",
-        "Sunny Mild Normal Strong Yes", "Overcast Mild High Strong Yes",
-        "Overcast Hot Normal Weak Yes", "Rain Mild High Strong No"]
+rows = ["Changing High High Few No", "Changing High High Many No",
+        "Frozen High High Few Yes", "Vague Medium High Few Yes",
+        "Vague Low Normal Few Yes", "Vague Low Normal Many No",
+        "Frozen Low Normal Many Yes", "Changing Medium High Few No",
+        "Changing Low Normal Few Yes", "Vague Medium Normal Few Yes",
+        "Changing Medium Normal Many Yes", "Frozen Medium High Many Yes",
+        "Frozen High Normal Few Yes", "Vague Medium High Many No"]
 df = pd.DataFrame([r.split() for r in rows],
-                  columns=["Outlook", "Temp", "Humidity", "Wind", "Play"])
+                  columns=["Reqs", "Pressure", "Load", "Deps", "Met"])
 
 
 def entropy(labels):
@@ -23,16 +23,16 @@ def entropy(labels):
 
 
 def gain(data, attr):
-    rest = sum(len(g) / len(data) * entropy(g.Play)
+    rest = sum(len(g) / len(data) * entropy(g.Met)
                for _, g in data.groupby(attr))
-    return entropy(data.Play) - rest
+    return entropy(data.Met) - rest
 
 
-for a in ["Outlook", "Temp", "Humidity", "Wind"]:
+for a in ["Reqs", "Pressure", "Load", "Deps"]:
     print(f"Gain(S, {a:8s}) = {gain(df, a):.3f}")
-sunny = df[df.Outlook == "Sunny"]
-print("inside Sunny:", {a: round(gain(sunny, a), 3)
-                        for a in ["Temp", "Humidity", "Wind"]})
+changing = df[df.Reqs == "Changing"]
+print("inside Changing:", {a: round(gain(changing, a), 3)
+                           for a in ["Pressure", "Load", "Deps"]})
 
 # --- 2. noisy data: a tree grown without limit, then pruned -------------
 X, y = make_classification(n_samples=1500, n_features=10, n_informative=4,

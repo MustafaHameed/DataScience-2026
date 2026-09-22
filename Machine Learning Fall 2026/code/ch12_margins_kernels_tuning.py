@@ -1,7 +1,7 @@
 # Chapter 12 lab -- extracted from parts/ by sync_labs.py. Edit the chapter, not this file.
 import numpy as np
 from sklearn.svm import SVC
-from sklearn.datasets import make_circles, load_breast_cancer
+from sklearn.datasets import make_circles
 from sklearn.model_selection import cross_val_score, GridSearchCV
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -23,7 +23,15 @@ for kernel in ("linear", "poly", "rbf"):
     print(f"circles, {kernel:6s} kernel: accuracy {acc:.3f}")
 
 # --- 3. tune C and gamma together, features scaled -----------------------
-Xb, yb = load_breast_cancer(return_X_y=True)
+rng = np.random.default_rng(11)            # the projects of Chapter 11
+n = 600
+Xb = np.column_stack([rng.uniform(20, 100, n),   # requirement stability
+                      rng.uniform(20, 100, n),   # team experience
+                      rng.uniform(50, 2000, n),  # budget, thousand USD
+                      rng.uniform(4, 52, n)])    # planned weeks
+yb = (Xb[:, 0] * Xb[:, 1] < 2500).astype(int)    # 1 = late
+flip = rng.random(n) < 0.05
+yb[flip] = 1 - yb[flip]
 pipe = make_pipeline(StandardScaler(), SVC(kernel="rbf"))
 grid = GridSearchCV(pipe, {"svc__C": [0.1, 1, 10, 100],
                            "svc__gamma": [0.001, 0.01, 0.1, 1]}, cv=5)

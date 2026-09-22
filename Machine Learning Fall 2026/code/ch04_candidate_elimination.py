@@ -1,13 +1,14 @@
 # Chapter 4 lab -- extracted from parts/ by sync_labs.py. Edit the chapter, not this file.
 from itertools import product
 
-# EnjoySport. "?" = any value, "0" = no value (the empty constraint)
-VALUES = [("Sunny", "Cloudy", "Rainy"), ("Warm", "Cold"), ("Normal", "High"),
-          ("Strong", "Weak"), ("Warm", "Cool"), ("Same", "Change")]
-D = [(("Sunny", "Warm", "Normal", "Strong", "Warm", "Same"), True),
-     (("Sunny", "Warm", "High", "Strong", "Warm", "Same"), True),
-     (("Rainy", "Cold", "High", "Strong", "Warm", "Change"), False),
-     (("Sunny", "Warm", "High", "Strong", "Cool", "Change"), True)]
+# Release decisions. "?" = any value, "0" = no value (empty constraint)
+VALUES = [("Pass", "Flaky", "Fail"), ("Done", "Pending"),
+          ("Complete", "Partial"), ("Ready", "None"), ("Quiet", "Peak"),
+          ("Same", "Changed")]
+D = [(("Pass", "Done", "Complete", "Ready", "Quiet", "Same"), True),
+     (("Pass", "Done", "Partial", "Ready", "Quiet", "Same"), True),
+     (("Fail", "Pending", "Partial", "Ready", "Quiet", "Changed"), False),
+     (("Pass", "Done", "Partial", "Ready", "Peak", "Changed"), True)]
 show = lambda hs: "  ".join("<" + ", ".join(h) + ">" for h in sorted(hs))
 
 
@@ -51,13 +52,13 @@ for k, (x, positive) in enumerate(D, 1):
                     if any(more_general(h, s) for s in S)}
         G = {g for g in new
              if not any(o != g and more_general(o, g) for o in new)}
-    print(f"day {k}  S: {show(S)}\n       G: {show(G)}")
+    print(f"release {k}  S: {show(S)}\n           G: {show(G)}")
 
 # --- brute force: list every hypothesis, keep the consistent ones ---------
 H = list(product(*[v + ("?",) for v in VALUES]))
 VS = [h for h in H if all(covers(h, x) == p for x, p in D)]
 print(len(VS), "hypotheses in the version space:")
 print(show(VS))
-day = ("Sunny", "Warm", "Normal", "Weak", "Warm", "Same")
-yes = sum(covers(h, day) for h in VS)
-print(f"vote on {day}: {yes} yes, {len(VS) - yes} no")
+new_release = ("Pass", "Done", "Complete", "None", "Quiet", "Same")
+yes = sum(covers(h, new_release) for h in VS)
+print(f"vote on {new_release}: {yes} yes, {len(VS) - yes} no")

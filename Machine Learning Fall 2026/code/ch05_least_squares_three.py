@@ -1,6 +1,5 @@
 # Chapter 5 lab -- extracted from parts/ by sync_labs.py. Edit the chapter, not this file.
 import numpy as np
-from sklearn.datasets import load_diabetes
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
@@ -21,8 +20,18 @@ for step in range(2000):
     bg -= alpha * 2 * err.mean()
 print(f"gradient descent: w = {wg:.2f}, b = {bg:.2f}")
 
-# --- 3. a real dataset, against the mean baseline ------------------------
-X, t = load_diabetes(return_X_y=True)
+# --- 3. 400 completed stories, against the mean baseline -----------------
+rng = np.random.default_rng(5)
+n = 400
+points = rng.choice([1, 2, 3, 5, 8, 13], n)
+files = rng.poisson(2 + 0.5 * points)            # files touched
+changes = rng.poisson(1.0, n)                    # requirement changes
+years = rng.integers(0, 11, n)                   # developer experience
+db = (rng.random(n) < 0.3).astype(int)           # touches the database
+t = (2 + 2.2 * points + 0.8 * files + 1.5 * changes - 0.3 * years
+     + 3 * db + rng.normal(0, 4, n)).clip(min=1)  # actual hours
+X = np.column_stack([points, files, changes, years, db])
+names = ["points", "files", "changes", "years", "db"]
 X_tr, X_te, t_tr, t_te = train_test_split(X, t, test_size=0.25,
                                           random_state=0)
 scaler = StandardScaler().fit(X_tr)
@@ -33,6 +42,5 @@ for name, p in [("baseline (mean)", base), ("linear regression", pred)]:
     print(f"{name:18s} MAE {mean_absolute_error(t_te, p):5.1f}  "
           f"RMSE {mean_squared_error(t_te, p) ** 0.5:5.1f}  "
           f"R2 {r2_score(t_te, p):5.2f}")
-names = load_diabetes().feature_names
 for i in np.argsort(-np.abs(model.coef_))[:3]:
-    print(f"  weight on {names[i]:4s}: {float(model.coef_[i]):6.1f}")
+    print(f"  weight on {names[i]:7s}: {float(model.coef_[i]):6.1f}")

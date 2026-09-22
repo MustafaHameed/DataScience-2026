@@ -8,7 +8,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import (confusion_matrix, precision_score, recall_score,
                              f1_score, roc_auc_score, average_precision_score)
 
-# --- an imbalanced problem: 5% positives ---------------------------------
+# --- an imbalanced problem: 5% of changes are defective ------------------
 X, y = make_classification(n_samples=6000, n_features=12, n_informative=5,
                            weights=[0.95], flip_y=0.01, random_state=1)
 X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.4,

@@ -50,35 +50,60 @@ with the prediction; \textbf{data} you can legally obtain, with labels, preferab
 least a thousand examples; a \textbf{baseline} that is easy to compute; and a
 \textbf{scope} that fits five weeks. Sources of data:
 \begin{tight}
-  \item the UCI Machine Learning Repository, OpenML and Kaggle, each with thousands of
-        documented datasets;
-  \item the datasets bundled with scikit-learn, for rehearsing the pipeline;
-  \item data from your own institution or employer --- only with written
+  \item the issue trackers of open-source projects (the Apache Software Foundation's
+        public Jira, GitHub issues), which record tickets, their text, their history
+        and how long they took;
+  \item public software-engineering datasets --- effort-estimation and defect data
+        such as those of the PROMISE repository --- and the general collections of the
+        UCI Machine Learning Repository, OpenML and Kaggle;
+  \item data from your own employer's project tracker --- only with written
         permission, and never with personal identifiers (\chref{ethics}).
 \end{tight}
 
+\begin{conceptbox}[Project Ideas]
+\begin{tight}
+  \item \textbf{Resolution time.} Predict how long a ticket will take to resolve
+        from its text and metadata (\chref{linreg}, with the word features of
+        \chref{bayes}), and compare with the team's own estimates.
+  \item \textbf{Ticket routing.} Send each ticket to the right component or team
+        from its text; report macro-averaged metrics, because the rare queues matter
+        (\chref{evaluation}).
+  \item \textbf{Effort estimation.} Predict story hours from story points and task
+        features (\chref{linreg}, \chref{knn}), and test whether the model beats
+        ``hours per point'' from last quarter.
+  \item \textbf{Projects at risk.} Classify projects likely to overrun from their
+        early metrics --- the worked example below.
+  \item \textbf{Defect prediction.} Flag code changes likely to introduce a defect;
+        the classes are imbalanced, so report the precision--recall curve.
+  \item \textbf{Duplicate reports.} Find earlier tickets that describe the same
+        fault (cosine similarity and nearest neighbours, \chref{knn}).
+\end{tight}
+\end{conceptbox}
+
 \begin{worked}[From a Vague Idea to a Project]
-\textbf{Idea:} ``Use machine learning to improve student results.''
+\textbf{Idea:} ``Use machine learning to deliver more projects on time.''
 
 \smallskip
-\textbf{Decision.} Who acts on the prediction? The department's advisers, who can
-contact about 50 students each term.
+\textbf{Decision.} Who acts on the prediction? The project office, which can review
+about 15 projects in depth each quarter.
 
-\textbf{Task $T$.} In Week~4, rank enrolled students by their risk of failing the
-course.
+\textbf{Task $T$.} One month into each project, rank the projects that started this
+quarter by their risk of overrunning their deadline by more than 20\%.
 
-\textbf{Experience $E$.} Three past cohorts (about 900 students) with Week-4 attendance,
-quiz marks and LMS activity, and final results --- obtained anonymised, with the
-department's written permission.
+\textbf{Experience $E$.} Four years of completed projects (about 900) with their
+month-one metrics --- change requests, staffing, velocity, open defects --- and whether
+they overran, exported from the company's project tracker with written permission and
+without personal identifiers.
 
-\textbf{Performance $P$.} Recall among the top 50 ranked students (how many eventual
-failures the advisers would reach), with precision reported beside it.
+\textbf{Performance $P$.} Recall among the top 15 ranked projects (how many eventual
+overruns the office would review), with precision reported beside it.
 
-\textbf{Baseline.} Rank by attendance alone --- the rule advisers already use.
+\textbf{Baseline.} Rank by the number of change requests alone --- the rule the office
+already uses.
 
-\textbf{Success criterion.} Beat the attendance rule's recall at 50 by at least five
-students on the held-out cohort, with no group of students (by programme) whose recall
-is below 60\% of the others'.
+\textbf{Success criterion.} Beat the change-request rule's recall at 15 by at least
+three projects on the held-out year, with no project type (web, mobile, data) whose
+recall is below 60\% of the others'.
 
 \smallskip
 Every later choice --- features, model, threshold, fairness check --- now has
@@ -144,8 +169,8 @@ after experiments are frozen in Week~14.}{project-plan}
 \end{definitionbox}
 
 \begin{worked}[Reading an Experiment Log]
-The lab's template writes this log for a tumour classifier whose metric is recall on
-the malignant class:
+The lab's template writes this log for the projects-at-risk example, whose metric is
+recall on the overrun class:
 
 \smallskip
 \begin{center}
@@ -154,21 +179,22 @@ the malignant class:
 \textbf{Model} & \textbf{CV recall (mean)} & \textbf{(sd)} \\
 \midrule
 baseline (majority class) & 0.000 & 0.000 \\
-logistic regression & 0.944 & 0.036 \\
-random forest & 0.937 & 0.034 \\
+logistic regression & 0.799 & 0.047 \\
+random forest & 0.804 & 0.061 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \smallskip
-\textbf{The baseline scores zero}: it predicts ``benign'' for everyone, so it never
-catches a malignant case --- the accuracy paradox of \chref{evaluation} expressed in the
+\textbf{The baseline scores zero}: it predicts ``on time'' for every project, so it
+never catches an overrun --- the accuracy paradox of \chref{evaluation} expressed in the
 metric that matters. \textbf{The two models} --- logistic regression (\chref{logreg})
-and a random forest (\chref{ensembles}) --- \textbf{are indistinguishable}: 0.944 and 0.937
-differ by far less than one fold-to-fold standard deviation. Choose the simpler, more
-explainable one --- logistic regression --- tune it (the template finds $C = 0.1$ with
-balanced class weights), and only then open the test set, once: recall 0.962 on 53
-malignant cases, which is 51 of 53 caught.
+and a random forest (\chref{ensembles}) --- \textbf{are indistinguishable}: 0.799 and
+0.804 differ by far less than one fold-to-fold standard deviation. Choose the simpler,
+more explainable one --- logistic regression, whose odds ratios the project office can
+read --- tune it (the template finds $C = 0.1$ with balanced class weights, which lifts
+cross-validated recall to 0.881), and only then open the test set, once: recall 0.857,
+which is 48 of the 56 overruns caught.
 \end{worked}
 
 \textbf{Error analysis} is the step most projects skip and the one that teaches most:
@@ -240,27 +266,6 @@ Presentation and defence & 10 & Both members answer confidently & 6 \\
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Project Ideas}
-\lensLA{Predict course failure from early-term engagement (the worked example); cluster
-students by study behaviour and describe each group; or run a bandit over reminder
-messages and report which works best. Obtain anonymised data with written permission,
-and include the fairness check across programmes.}
-
-\lensPM{Estimate issue resolution time from ticket text and metadata (regression plus
-naive Bayes features); or classify projects at risk from their weekly metrics. Open
-issue trackers from public software projects are an accessible, legal source.}
-
-\lensIOT{Detect machine faults from a public vibration or predictive-maintenance
-dataset; compare an anomaly detector trained on normal data with a supervised
-classifier, and report the cost of each kind of error.}
-
-\lensSEC{Classify network connections as benign or malicious on a public
-intrusion-detection dataset, or phishing URLs from their features. Report precision at
-fixed recall, compare with a signature-style rule, and test how easily the model can be
-evaded by changing one feature.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[A Project Template, End to End]
 Copy this script as the skeleton of your project and replace the data and the
 candidate models. It writes an experiment log, the saved model and a model card into
@@ -274,7 +279,7 @@ import os
 
 import joblib
 import sklearn
-from sklearn.datasets import load_breast_cancer
+from sklearn.datasets import make_classification
 from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -289,8 +294,10 @@ OUT = "project_output"
 os.makedirs(OUT, exist_ok=True)
 
 # --- 1. data, and a split made once and never changed --------------------
-data = load_breast_cancer()
-X, y = data.data, 1 - data.target           # 1 = malignant: must not miss
+# a stand-in for your tracker export: 900 projects, 8 month-one metrics
+X, y = make_classification(n_samples=900, n_features=8, n_informative=5,
+                           n_redundant=1, weights=[0.75], flip_y=0.02,
+                           random_state=5)  # y: 1 = overran, must not miss
 X_tr, X_te, y_tr, y_te = train_test_split(
     X, y, test_size=0.25, stratify=y, random_state=SEED)
 cv = StratifiedKFold(5, shuffle=True, random_state=SEED)
@@ -299,8 +306,7 @@ metric = "recall"                           # chosen in the proposal
 # --- 2. baseline, then candidates, all by cross-validation ---------------
 candidates = {
     "baseline": DummyClassifier(strategy="most_frequent"),
-    "logistic": make_pipeline(StandardScaler(),
-                              LogisticRegression(max_iter=2000)),
+    "logistic": make_pipeline(StandardScaler(), LogisticRegression()),
     "forest": RandomForestClassifier(n_estimators=300, random_state=SEED),
 }
 with open(os.path.join(OUT, "experiments.csv"), "w", newline="") as fh:
@@ -322,18 +328,20 @@ print("chosen settings:", grid.best_params_)
 pred = grid.predict(X_te)
 test_recall = recall_score(y_te, pred)
 print(classification_report(y_te, pred,
-                            target_names=["benign", "malignant"], digits=3))
+                            target_names=["on time", "overran"], digits=3))
 
 # --- 5. save the model and write its model card --------------------------
 joblib.dump(grid.best_estimator_, os.path.join(OUT, "model.joblib"))
 card = {
     "model": "logistic regression, standardised features",
-    "intended use": "second reader for tumour measurements; never alone",
-    "data": f"Wisconsin breast cancer, {len(y)} cases, 30 features",
+    "intended use": "rank projects for a project-office review; never to "
+                    "judge a team or a manager",
+    "data": f"{len(y)} past projects, 8 month-one metrics",
     "split": f"75/25 stratified, seed {SEED}; 5-fold CV for selection",
     "settings": grid.best_params_,
     f"test {metric}": round(float(test_recall), 3),
-    "limitations": "one hospital's data; not validated on other scanners",
+    "limitations": "one company's projects; re-validate after any change "
+                   "to how projects are run",
     "date": datetime.date.today().isoformat(),
     "library": f"scikit-learn {sklearn.__version__}",
 }
@@ -348,7 +356,8 @@ change \texttt{metric} to \texttt{"precision"} and rerun: does the chosen model 
 %---------------------------------------------------------------------
 \begin{checkpoint}
 \begin{tightnum}
-  \item Write a success criterion for a spam filter that a manager could check.
+  \item Write a success criterion for the late-task warning of \chref{introduction}
+        that a project manager could check.
   \item Two models score 0.912 $\pm$ 0.030 and 0.905 $\pm$ 0.028 in cross-validation.
         Which do you choose, and on what grounds?
   \item Name three things that must be recorded for an experiment to be reproducible.
@@ -386,9 +395,9 @@ change \texttt{metric} to \texttt{"precision"} and rerun: does the chosen model 
         metric cannot?
   \item \textbf{(Short)} Explain why the worked example chose logistic regression over
         the random forest.
-  \item \textbf{(Applied)} Write the one-page proposal for a project in a domain of your
-        choice, using the template of this chapter.
-  \item \textbf{(Applied)} For the worked example's test result (51 of 53 malignant
-        cases caught), compute a 95\% confidence interval for the recall and discuss
-        what it means for the claim ``the model catches 96\% of cancers''.
+  \item \textbf{(Applied)} Write the one-page proposal for an IT project-management
+        problem of your choice, using the template of this chapter.
+  \item \textbf{(Applied)} For the worked example's test result (48 of 56 overruns
+        caught), compute a 95\% confidence interval for the recall and discuss what
+        it means for the claim ``the model catches 86\% of overruns''.
 \end{reviewq}

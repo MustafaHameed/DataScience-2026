@@ -32,13 +32,13 @@ separability $\bullet$ one-vs-rest $\bullet$ softmax
 
 \section{Why Not Just Use Linear Regression?}
 
-Code a binary label as $y = 1$ (fail) or $y = 0$ (pass), fit a least-squares line,
-and call anything above 0.5 a fail. It half works --- and it breaks in two ways,
-both visible on the left of \dsref{linear-vs-logistic}. The line predicts values
-below 0 and above 1, which cannot be probabilities. And a few examples far from
-the boundary --- a student with perfect attendance, who of course passed ---
-drag the line towards them and move the 0.5 crossing, misclassifying students
-near the boundary who were previously correct. The model is being penalised for
+Code a binary label as $y = 1$ (late) or $y = 0$ (on time), fit a least-squares
+line, and call anything above 0.5 late. It half works --- and it breaks in two
+ways, both visible on the left of \dsref{linear-vs-logistic}. The line predicts
+values below 0 and above 1, which cannot be probabilities. And a few examples far
+from the boundary --- a small, well-specified project, which of course finished on
+time --- drag the line towards them and move the 0.5 crossing, misclassifying
+projects near the boundary that were previously correct. The model is being penalised for
 being \emph{too} right about easy cases.
 
 \dsfig{%
@@ -48,7 +48,7 @@ being \emph{too} right about easy cases.
   width=6.8cm, height=4.8cm, axis lines=left,
   tick label style={font=\tiny}, label style={font=\tiny},
   title style={font=\scriptsize\bfseries},
-  xlabel={risk score $x$}, ylabel={$P(\text{fail})$ or prediction},
+  xlabel={risk score $x$}, ylabel={$P(\text{late})$ or prediction},
   xmin=0, xmax=10, ymin=-0.35, ymax=1.35]
 \nextgroupplot[title={Least-squares line}]
 \addplot[only marks, mark=*, mark size=1.5pt, greenhl!70!black] coordinates
@@ -74,7 +74,7 @@ being \emph{too} right about easy cases.
 \node[font=\tiny, primary, anchor=west] at (axis cs:5.0,0.3) {$P = 0.5$ here};
 \end{groupplot}
 \end{tikzpicture}}%
-{The same pass (green) and fail (red) students modelled two ways. The straight line
+{The same on-time (green) and late (red) projects modelled two ways. The straight line
 leaves $[0,1]$ and is pulled by easy cases; the sigmoid stays between 0 and 1 and
 flattens out where the answer is already clear.}{linear-vs-logistic}
 
@@ -102,26 +102,27 @@ regression is a linear model \emph{of the log-odds}. Each weight is the change i
 log-odds for a one-unit increase in its feature, and $e^{w_j}$ is the
 \term{odds ratio}: the factor by which the odds are multiplied.
 
-\begin{worked}[Probabilities and Odds for Two Students]
-A fitted model of failing: $z = 4 - 5\,a - 3\,q$, where $a$ is attendance and $q$
-the quiz average, both on a 0--1 scale.
+\begin{worked}[Probabilities and Odds for Two Projects]
+A fitted model of finishing late: $z = 4 - 5\,c - 3\,s$, where $c$ is requirement
+clarity (the fraction of requirements signed off) and $s$ the skill match (the
+fraction of the needed skills the team already has), both on a 0--1 scale.
 
 \smallskip
-\textbf{Student A} ($a = 0.9$, $q = 0.8$):
+\textbf{Project A} ($c = 0.9$, $s = 0.8$):
 $z = 4 - 4.5 - 2.4 = -2.9$, so
-$P(\text{fail}) = \dfrac{1}{1 + e^{2.9}} = \dfrac{1}{1 + 18.17} = \mathbf{0.052}$.
+$P(\text{late}) = \dfrac{1}{1 + e^{2.9}} = \dfrac{1}{1 + 18.17} = \mathbf{0.052}$.
 
-\textbf{Student B} ($a = 0.5$, $q = 0.4$):
+\textbf{Project B} ($c = 0.5$, $s = 0.4$):
 $z = 4 - 2.5 - 1.2 = 0.3$, so
-$P(\text{fail}) = \dfrac{1}{1 + e^{-0.3}} = \dfrac{1}{1 + 0.741} = \mathbf{0.574}$.
+$P(\text{late}) = \dfrac{1}{1 + e^{-0.3}} = \dfrac{1}{1 + 0.741} = \mathbf{0.574}$.
 
 \smallskip
-\textbf{Reading the attendance weight.} $w_a = -5$ per unit of attendance, so ten
-percentage points more attendance ($+0.1$) changes the log-odds by $-0.5$ and
-multiplies the odds of failing by $e^{-0.5} = \mathbf{0.61}$ --- a 39\% reduction in
-the odds, whatever the student's starting point. Note: the \emph{odds}, not the
-probability. For Student A the probability barely moves; for Student B, near the
-middle of the curve, it moves a lot.
+\textbf{Reading the clarity weight.} $w_c = -5$ per unit of clarity, so ten
+percentage points more clarity ($+0.1$) changes the log-odds by $-0.5$ and
+multiplies the odds of finishing late by $e^{-0.5} = \mathbf{0.61}$ --- a 39\%
+reduction in the odds, whatever the project's starting point. Note: the
+\emph{odds}, not the probability. For Project A the probability barely moves; for
+Project B, near the middle of the curve, it moves a lot.
 \end{worked}
 
 \section{The Decision Boundary}
@@ -135,7 +136,7 @@ classifier}; it can separate classes only with a flat boundary.
 \dsfig{%
 \begin{tikzpicture}
 \begin{axis}[width=8.2cm, height=6.4cm, axis lines=left,
-  xlabel={attendance $a$}, ylabel={quiz average $q$},
+  xlabel={requirement clarity $c$}, ylabel={skill match $s$},
   tick label style={font=\tiny}, label style={font=\scriptsize},
   xmin=0.2, xmax=1.0, ymin=0, ymax=1.0]
 \addplot[name path=b, primary, line width=1.3pt, domain=0.2:1.0] {(4-5*x)/3};
@@ -146,18 +147,18 @@ classifier}; it can separate classes only with a flat boundary.
 \addplot[only marks, mark=*, mark size=1.5pt, greenhl!70!black] coordinates
   {(0.70,0.55)(0.85,0.40)(0.92,0.75)(0.78,0.85)(0.66,0.95)(0.95,0.20)(0.88,0.62)(0.74,0.30)};
 \node[font=\tiny, primary, fill=white, inner sep=1pt, rotate=-44] at (axis cs:0.62,0.30)
-     {$z = 0$: $P(\text{fail}) = 0.5$};
+     {$z = 0$: $P(\text{late}) = 0.5$};
 \node[font=\tiny, primary!70, anchor=west, fill=white, inner sep=1pt] at (axis cs:0.43,0.96)
-     {$P(\text{fail}) = 0.25$};
+     {$P(\text{late}) = 0.25$};
 \node[font=\tiny, primary!70, anchor=west, fill=white, inner sep=1pt] at (axis cs:0.21,0.66)
-     {$P(\text{fail}) = 0.75$};
-\node[font=\tiny\bfseries, accent, anchor=west] at (axis cs:0.22,0.08) {predicted fail};
-\node[font=\tiny\bfseries, greenhl!55!black, anchor=east] at (axis cs:0.99,0.95) {predicted pass};
+     {$P(\text{late}) = 0.75$};
+\node[font=\tiny\bfseries, accent, anchor=west] at (axis cs:0.22,0.08) {predicted late};
+\node[font=\tiny\bfseries, greenhl!55!black, anchor=east] at (axis cs:0.99,0.95) {predicted on time};
 \end{axis}
 \end{tikzpicture}}%
-{The decision boundary of the model $z = 4 - 5a - 3q$ is the line $5a + 3q = 4$. The
-dashed lines, where $z = \pm\ln 3$, are where the probability of failing is 0.75 and
-0.25: probability changes gradually across the boundary.}{logreg-boundary}
+{The decision boundary of the model $z = 4 - 5c - 3s$ is the line $5c + 3s = 4$. The
+dashed lines, where $z = \pm\ln 3$, are where the probability of finishing late is 0.75
+and 0.25: probability changes gradually across the boundary.}{logreg-boundary}
 
 \section{The Loss: Cross-Entropy}
 
@@ -266,8 +267,8 @@ P(y = k \mid \mathbf{x}) = \frac{e^{z_k}}{\sum_{j} e^{z_j}},
 \]
 
 \begin{worked}[Softmax on Three Scores]
-A network-traffic classifier gives scores $z = (2.0,\ 1.0,\ 0.1)$ for the classes
-\emph{web}, \emph{e-mail} and \emph{streaming}.
+A ticket classifier gives scores $z = (2.0,\ 1.0,\ 0.1)$ for the classes
+\emph{bug}, \emph{feature request} and \emph{question}.
 \[
 e^{2.0} = 7.389,\quad e^{1.0} = 2.718,\quad e^{0.1} = 1.105,\qquad \text{sum} = 11.212
 \]
@@ -298,33 +299,9 @@ of almost every neural network classifier (\chref{ann}).
 \end{pitfall}
 
 %---------------------------------------------------------------------
-\begin{fourlenses}{Logistic Regression}
-\lensLA{The standard early-warning model. The probability ranks students for
-outreach, and the odds ratios --- ``each missed quiz multiplies the odds of
-failing by 1.4'' --- are something an academic committee will accept, which a
-more accurate but opaque model may not be.}
-
-\lensPM{Predict whether a project will overrun its deadline from team size,
-requirement changes and dependencies. With a few hundred projects, logistic
-regression is often as accurate as anything more complex, and its odds ratios
-tell a portfolio manager which risk factor to act on first.}
-
-\lensIOT{Predict whether a component fails within 30 days from its sensor
-summaries. On a microcontroller, a trained logistic model is one dot product and
-one exponential --- a few microseconds and a few hundred bytes, which is why it
-is a favourite for on-device inference.}
-
-\lensSEC{Phishing and spam filters were logistic regression over word and URL
-features for years, and many still are. Its weakness is its linearity: an
-attacker who learns which words carry negative weight can add them to a phishing
-e-mail until the score drops below the threshold.}
-\end{fourlenses}
-
-%---------------------------------------------------------------------
 \begin{lab}[Logistic Regression by Hand and by Library]
 \begin{lstlisting}[language=Python]
 import numpy as np
-from sklearn.datasets import load_breast_cancer, load_iris
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -350,26 +327,37 @@ print(f"after 5000 steps: w = {w:.2f}, b = {b:.2f}, "
       f"boundary at x = {-b / w:.2f}")
 
 # --- 2. a real classifier, read as odds ratios ---------------------------
-data = load_breast_cancer()
+rng = np.random.default_rng(3)
+n = 500                                  # past projects
+names = ["team_size", "changes", "dependencies", "clarity"]
+X = np.column_stack([rng.integers(3, 16, n),          # people
+                     rng.poisson(5, n),                # change requests
+                     rng.integers(0, 7, n),            # external teams
+                     rng.uniform(0.3, 1.0, n)])        # clarity, 0-1
+z = -1.5 + 0.05 * X[:, 0] + 0.3 * X[:, 1] + 0.4 * X[:, 2] - 3.5 * X[:, 3]
+y = (rng.random(n) < 1 / (1 + np.exp(-z))).astype(int)   # 1 = late
 X_tr, X_te, y_tr, y_te = train_test_split(
-    data.data, data.target, test_size=0.25, random_state=0,
-    stratify=data.target)
-clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
+    X, y, test_size=0.25, random_state=0, stratify=y)
+clf = make_pipeline(StandardScaler(), LogisticRegression())
 clf.fit(X_tr, y_tr)
 print("test accuracy:", round(clf.score(X_te, y_te), 3))
 coef = clf[-1].coef_[0]
-for i in np.argsort(coef)[:3]:           # most negative = most malignant
-    print(f"  {data.feature_names[i]:22s} w = {coef[i]:5.2f}  "
+for i in np.argsort(-np.abs(coef)):      # strongest risk factors first
+    print(f"  {names[i]:13s} w = {coef[i]:5.2f}  "
           f"odds x {np.exp(coef[i]):.2f} per standard deviation")
-print("P(benign) for 3 test tumours:",
+print("P(late) for 3 test projects:",
       clf.predict_proba(X_te[:3])[:, 1].round(3))
 
 # --- 3. three classes: softmax -------------------------------------------
-iris = load_iris()
-soft = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
-soft.fit(iris.data, iris.target)
-print("softmax probabilities for flower 60:",
-      soft.predict_proba(iris.data[[60]]).round(3))
+m = 300                                  # support tickets
+T = np.column_stack([rng.uniform(0, 4, m),            # log10 users hit
+                     rng.integers(0, 2, m)])           # 1 = workaround
+score = T[:, 0] - 1.2 * T[:, 1] + rng.normal(0, 0.4, m)
+level = np.digitize(score, [1.0, 2.5])   # 0 low, 1 medium, 2 high
+soft = make_pipeline(StandardScaler(), LogisticRegression())
+soft.fit(T, level)
+print("P(low, medium, high) for ticket 60:",
+      soft.predict_proba(T[[60]]).round(3))
 \end{lstlisting}
 In part 1, change the range to 50{,}000 steps. Does the boundary move? Do the
 weights? Explain both answers.
@@ -378,8 +366,8 @@ weights? Explain both answers.
 %---------------------------------------------------------------------
 \begin{checkpoint}
 \begin{tightnum}
-  \item A model gives $z = 1.2$ for an e-mail. What is the probability that it is
-        phishing, and what are the odds?
+  \item A model gives $z = 1.2$ for a task. What is the probability that it
+        finishes late, and what are the odds?
   \item A weight is $+0.7$. By what factor does a one-unit increase in its feature
         multiply the odds?
   \item Which costs more under cross-entropy: predicting 0.4 for a positive

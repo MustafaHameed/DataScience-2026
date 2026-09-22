@@ -22,12 +22,13 @@ for alpha in (0.1, 0.5, 1.1):
         path.append(round(wt, 3))
     print(f"alpha={alpha}: {path}")
 
-# --- Bayes by simulation: how many alarms are real? ----------------------
+# --- Bayes by simulation: how many blocked builds are broken? ------------
 rng = np.random.default_rng(0)
 n = 1_000_000
-attack = rng.random(n) < 0.001
-alarm = np.where(attack, rng.random(n) < 0.99, rng.random(n) < 0.01)
-print("P(attack | alarm), simulated:", attack[alarm].mean())   # about 0.09
+broken = rng.random(n) < 0.001
+blocked = np.where(broken, rng.random(n) < 0.99, rng.random(n) < 0.01)
+print("P(broken | blocked), simulated:",
+      round(broken[blocked].mean(), 3))                      # about 0.09
 
 # --- entropy -------------------------------------------------------------
 def entropy(counts):

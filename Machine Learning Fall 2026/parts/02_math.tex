@@ -79,8 +79,9 @@ The dot product is the most important operation in this course. A linear model
 dot product and adds a bias: $\hat{y} = \mathbf{w}\cdot\mathbf{x} + b$. Each
 weight says how much its feature pushes the prediction up or down.
 
-\begin{worked}[One Student as a Vector]
-A student has attendance $0.9$, quiz average $0.6$ and $4$ logins per week:
+\begin{worked}[One Task as a Vector]
+A task has requirement clarity $0.9$ (the fraction of its acceptance criteria
+written down), test coverage $0.6$ and $4$ open dependencies:
 $\mathbf{x} = (0.9,\ 0.6,\ 4)$. A model has weights $\mathbf{w} = (2,\ 3,\ 0.25)$
 and bias $b = -3$.
 
@@ -89,22 +90,22 @@ and bias $b = -3$.
 = 1.8 + 1.8 + 1.0 - 3 = \mathbf{1.6}$.
 
 \smallskip
-\textbf{Distance to a second student} $\mathbf{z} = (0.5,\ 0.4,\ 1)$:
+\textbf{Distance to a second task} $\mathbf{z} = (0.5,\ 0.4,\ 1)$:
 \[
 \|\mathbf{x}-\mathbf{z}\| = \sqrt{0.4^2 + 0.2^2 + 3^2} = \sqrt{0.16 + 0.04 + 9}
 = \sqrt{9.2} \approx \mathbf{3.03}
 \]
 \textbf{Look at where the distance came from.} Of the $9.2$ under the root, $9$
-is logins. Attendance and quiz marks --- arguably the more important differences
+is dependencies. Clarity and coverage --- arguably the more important differences
 --- contribute almost nothing, simply because they are measured on a scale of 0
-to 1 and logins are not. Any method built on distance (\chref{knn},
+to 1 and dependencies are not. Any method built on distance (\chref{knn},
 \chref{clustering}) needs the features put on a common scale first
 (\chref{workflow}).
 \end{worked}
 
 \begin{conceptbox}[Cosine Similarity: Direction Without Length]
-Sometimes length is a nuisance. Two documents on the same topic, one ten times
-longer, have word-count vectors pointing the same way but of very different
+Sometimes length is a nuisance. Two tickets reporting the same fault, one ten
+times longer, have word-count vectors pointing the same way but of very different
 lengths. \term{Cosine similarity} compares directions only:
 $\cos\theta = \dfrac{\mathbf{x}\cdot\mathbf{z}}{\|\mathbf{x}\|\,\|\mathbf{z}\|}$,
 which is $1$ for vectors pointing the same way, $0$ for perpendicular ones and
@@ -136,9 +137,9 @@ $X^{\top}$ swaps rows and columns.
 \fill[accent!15] (-0.45,0.25) rectangle (2.25,-0.25);
 \foreach \a/\x in {0.9/0,0.6/0.9,4/1.8}{\node[cell, fill=accent!12, draw=accent] at (\x,0) {\a};}
 \node[font=\scriptsize\bfseries, text=primary] at (0.9,0.65) {$X$ \quad ($3 \times 3$)};
-\node[font=\tiny, text=gray!55!black, anchor=east] at (-0.55,0) {student 1};
-\node[font=\tiny, text=gray!55!black, anchor=east] at (-0.55,-0.5) {student 2};
-\node[font=\tiny, text=gray!55!black, anchor=east] at (-0.55,-1.0) {student 3};
+\node[font=\tiny, text=gray!55!black, anchor=east] at (-0.55,0) {task 1};
+\node[font=\tiny, text=gray!55!black, anchor=east] at (-0.55,-0.5) {task 2};
+\node[font=\tiny, text=gray!55!black, anchor=east] at (-0.55,-1.0) {task 3};
 \node[font=\large] at (2.75,-0.5) {$\times$};
 % w
 \foreach \r/\a in {0/2, 1/3, 2/0.25}{\node[wcell] at (3.5,-\r*0.5) {\a};}
@@ -277,13 +278,13 @@ $P(A)$ is the \term{prior}, $P(B\mid A)$ the \term{likelihood} and $P(A \mid B)$
 P(A)\,P(B)$.
 \end{definitionbox}
 
-\begin{worked}[An Alarm You Should Not Panic About]
-An intrusion detector catches 99\% of attacks and raises a false alarm on 1\% of
-benign connections. One connection in a thousand is an attack. An alarm sounds.
-What is the probability of an attack?
+\begin{worked}[A Blocked Release You Should Not Panic About]
+An automated release check catches 99\% of builds that would break production,
+and wrongly blocks 1\% of good builds. One build in a thousand is broken. The
+check blocks a build. What is the probability that it really is broken?
 
 \smallskip
-Let $A$ = attack, $B$ = alarm. $P(A) = 0.001$, $P(B\mid A) = 0.99$,
+Let $A$ = broken build, $B$ = blocked. $P(A) = 0.001$, $P(B\mid A) = 0.99$,
 $P(B \mid \text{not }A) = 0.01$.
 \[
 P(B) = (0.99)(0.001) + (0.01)(0.999) = 0.00099 + 0.00999 = 0.01098
@@ -291,9 +292,9 @@ P(B) = (0.99)(0.001) + (0.01)(0.999) = 0.00099 + 0.00999 = 0.01098
 \[
 P(A \mid B) = \frac{0.00099}{0.01098} \approx \mathbf{0.090}
 \]
-\textbf{Only 9\% of alarms are attacks}, from a detector that is ``99\%
-accurate''. There are so many more benign connections that their 1\% of false
-alarms outnumbers the real attacks ten to one. This is the \term{base-rate}
+\textbf{Only 9\% of blocked builds are broken}, from a check that is ``99\%
+accurate''. There are so many more good builds that their 1\% of false blocks
+outnumbers the real failures ten to one. This is the \term{base-rate}
 effect, and it is why \chref{evaluation} insists on precision rather than
 accuracy. Naive Bayes (\chref{bayes}) is this calculation, done for every class.
 \end{worked}
@@ -334,7 +335,7 @@ products into sums and has the same maximum.
 \dsfig{%
 \begin{tikzpicture}
 \begin{axis}[width=8.4cm, height=4.6cm, axis lines=left,
-  xlabel={$p$, the probability of heads}, ylabel={likelihood $p^7(1-p)^3$},
+  xlabel={$p$, the probability that a sprint delivers}, ylabel={likelihood $p^7(1-p)^3$},
   tick label style={font=\tiny}, label style={font=\tiny},
   xmin=0, xmax=1, ymin=0, ymax=0.0025, scaled y ticks=false,
   yticklabel style={/pgf/number format/fixed, /pgf/number format/precision=4}]
@@ -342,16 +343,17 @@ products into sums and has the same maximum.
 \draw[accent, dashed, line width=0.9pt] (axis cs:0.7,0) -- (axis cs:0.7,0.002224);
 \node[font=\tiny, accent, anchor=west] at (axis cs:0.72,0.00228) {$\hat{p}_{ML}=0.7$};
 \node[font=\tiny, gray!55!black, anchor=west, align=left] at (axis cs:0.03,0.0019)
-     {7 heads, 3 tails:\\$p=0.5$ explains the data\\less well than $p=0.7$};
+     {7 delivered, 3 missed:\\$p=0.5$ explains the data\\less well than $p=0.7$};
 \end{axis}
 \end{tikzpicture}}%
-{The likelihood of seven heads in ten tosses, as a function of the coin's bias. It is
-largest at $p=0.7$ --- the observed proportion, which is what maximum likelihood gives for
-any coin.}{likelihood}
+{The likelihood of seven delivered sprints in ten, as a function of $p$. It is largest
+at $p=0.7$ --- the observed proportion, which is what maximum likelihood gives for any
+such count.}{likelihood}
 
-\begin{worked}[The Maximum Likelihood Coin]
-A coin gives 7 heads in 10 tosses. The likelihood of that sequence is
-$\mathcal{L}(p) = p^7(1-p)^3$, and the log-likelihood is
+\begin{worked}[How Often Does the Team Deliver?]
+A team delivered everything it committed to in 7 of its last 10 sprints. Let $p$
+be the probability that a sprint delivers, and treat sprints as independent. The
+likelihood of that record is $\mathcal{L}(p) = p^7(1-p)^3$, and the log-likelihood is
 $\ell(p) = 7\ln p + 3\ln(1-p)$. Set its derivative to zero:
 \[
 \frac{d\ell}{dp} = \frac{7}{p} - \frac{3}{1-p} = 0
@@ -364,9 +366,9 @@ the cross-entropy loss of \chref{logreg}, and the EM algorithm of
 \end{worked}
 
 \begin{alertbox}[Maximum Likelihood Trusts Small Samples Too Much]
-One toss, one head: $\hat{p}_{ML} = 1$, a coin that can never land tails. A
-word that never appeared in the training e-mails gets probability zero, and a
-single zero makes a whole product zero. \chref{bayes} fixes this with
+One sprint, one success: $\hat{p}_{ML} = 1$, a team that can never miss. A word
+that never appeared in the training tickets gets probability zero, and a single
+zero makes a whole product zero. \chref{bayes} fixes this with
 \term{Laplace smoothing}: add one imaginary observation of every outcome.
 \end{alertbox}
 
@@ -383,7 +385,7 @@ $k$ outcomes are equally likely.
 \end{definitionbox}
 
 \begin{worked}[Entropy of a Set of Examples]
-Fourteen days, of which 9 were suitable for tennis and 5 were not:
+Fourteen past sprints, of which 9 met their sprint goal and 5 did not:
 \[
 H = -\tfrac{9}{14}\log_2\tfrac{9}{14} - \tfrac{5}{14}\log_2\tfrac{5}{14}
   = 0.410 + 0.531 = \mathbf{0.940} \text{ bits}
@@ -399,38 +401,16 @@ is, the question whose answer leaves the least uncertainty behind.
         \alpha\nabla L$ climbs the loss. The update subtracts.
   \item \textbf{Reading a diverging loss as ``needs more steps''.} If the loss
         grows, the learning rate is too large; more steps make it worse.
-  \item \textbf{Confusing $P(A\mid B)$ with $P(B \mid A)$.} ``The detector
-        catches 99\% of attacks'' is $P(\text{alarm}\mid\text{attack})$; the
-        analyst wants $P(\text{attack}\mid\text{alarm})$, which was 9\%.
+  \item \textbf{Confusing $P(A\mid B)$ with $P(B \mid A)$.} ``The check
+        catches 99\% of broken builds'' is $P(\text{blocked}\mid\text{broken})$;
+        the release manager wants $P(\text{broken}\mid\text{blocked})$, which was
+        9\%.
   \item \textbf{Computing distances on unscaled features.} The feature with the
         largest units decides the answer.
   \item \textbf{Multiplying many small probabilities.} The product underflows
         to zero on a computer; add log-probabilities instead.
 \end{tight}
 \end{pitfall}
-
-%---------------------------------------------------------------------
-\begin{fourlenses}{The Mathematics at Work}
-\lensLA{A student is a vector of engagement features, and ``students like this
-one'' means ``students at a small distance'' --- once attendance, marks and
-logins have been put on the same scale. Without that, the student who logs in
-most is automatically the most different from everyone.}
-
-\lensPM{Fitting an effort model to past stories is gradient descent on the mean
-squared error of the estimates. With forty completed stories the loss surface
-is bumpy and the learning rate matters: too large and the fitted
-hours-per-point swings wildly from one run to the next.}
-
-\lensIOT{Sensor noise is usually close to Gaussian, so a reading three standard
-deviations from its recent mean has a likelihood below one in three hundred
-under ``normal operation''. That is the simplest anomaly detector there is, and
-it is a likelihood calculation.}
-
-\lensSEC{The base-rate calculation is the most important piece of arithmetic in
-security analytics. Before deploying any detector, multiply its false-positive
-rate by the daily volume of benign events: that number of alerts, not the
-detection rate, decides whether the analysts will trust it.}
-\end{fourlenses}
 
 %---------------------------------------------------------------------
 \begin{lab}[The Chapter in NumPy]
@@ -458,12 +438,13 @@ for alpha in (0.1, 0.5, 1.1):
         path.append(round(wt, 3))
     print(f"alpha={alpha}: {path}")
 
-# --- Bayes by simulation: how many alarms are real? ----------------------
+# --- Bayes by simulation: how many blocked builds are broken? ------------
 rng = np.random.default_rng(0)
 n = 1_000_000
-attack = rng.random(n) < 0.001
-alarm = np.where(attack, rng.random(n) < 0.99, rng.random(n) < 0.01)
-print("P(attack | alarm), simulated:", attack[alarm].mean())   # about 0.09
+broken = rng.random(n) < 0.001
+blocked = np.where(broken, rng.random(n) < 0.99, rng.random(n) < 0.01)
+print("P(broken | blocked), simulated:",
+      round(broken[blocked].mean(), 3))                      # about 0.09
 
 # --- entropy -------------------------------------------------------------
 def entropy(counts):
@@ -473,8 +454,8 @@ def entropy(counts):
 print("H(9 yes, 5 no) :", round(entropy([9, 5]), 3))       # 0.94
 print("H(7 yes, 7 no) :", round(entropy([7, 7]), 3))       # 1.0
 \end{lstlisting}
-Change \texttt{0.001} in the simulation to \texttt{0.05} --- an environment where
-attacks are common --- and predict the new answer before you run it.
+Change \texttt{0.001} in the simulation to \texttt{0.05} --- a codebase where
+broken builds are common --- and predict the new answer before you run it.
 \end{lab}
 
 %---------------------------------------------------------------------
@@ -511,7 +492,8 @@ attacks are common --- and predict the new answer before you run it.
   \item \textbf{(MCQ)} If the loss increases after every gradient descent step,
         the most likely cause is: (a)~too few steps (b)~a learning rate that is
         too large (c)~too much data (d)~a learning rate that is too small.
-  \item \textbf{(MCQ)} The entropy of a fair six-sided die is: (a)~1 bit
+  \item \textbf{(MCQ)} A new ticket is equally likely to belong to any of six
+        categories. The entropy of its category is: (a)~1 bit
         (b)~$\log_2 6 \approx 2.58$ bits (c)~6 bits (d)~0 bits.
   \item \textbf{(Short)} Explain in words what the gradient of a loss function
         tells you, and why gradient descent subtracts it.
@@ -519,10 +501,10 @@ attacks are common --- and predict the new answer before you run it.
         likelihood?
   \item \textbf{(Short)} Give an example, not from this chapter, where
         $P(A\mid B)$ and $P(B \mid A)$ are very different.
-  \item \textbf{(Applied)} A fraud model flags 2\% of legitimate transactions
-        and 95\% of fraudulent ones; 0.2\% of transactions are fraudulent.
-        Compute the probability that a flagged transaction is fraud, and state
-        what this means for the team reviewing flags.
+  \item \textbf{(Applied)} A code-review bot flags 2\% of clean pull requests
+        and 95\% of those that contain a critical defect; 0.2\% of pull requests
+        contain one. Compute the probability that a flagged pull request contains
+        a critical defect, and state what this means for the reviewers.
   \item \textbf{(Applied)} Perform three gradient descent steps on
         $L(w) = 2(w-5)^2$ from $w = 1$ with $\alpha = 0.1$. Find the factor by
         which the gap to the minimum shrinks each step, and the largest
