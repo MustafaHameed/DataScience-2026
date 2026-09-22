@@ -1,0 +1,418 @@
+%=====================================================================
+\chapter{Linear Regression}\label{ch:linreg}
+%=====================================================================
+\locator{2}{Part II --- Linear Models and Generalization}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Write} the linear regression model and its mean squared error
+        loss, and \textbf{interpret} each weight.
+  \item \textbf{Fit} a simple linear regression by hand with the least-squares
+        formulas, and \textbf{state} the normal equation for many features.
+  \item \textbf{Derive} the gradient descent update for linear regression and
+        \textbf{perform} a step by hand.
+  \item \textbf{Extend} the model with multiple and polynomial features.
+  \item \textbf{Evaluate} a regression model with MAE, RMSE and $R^2$ against a
+        baseline, and \textbf{read} a residual plot.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (dot products, derivatives, gradient descent, maximum likelihood)
+and \chref{workflow} (splits, scaling, baselines).
+\end{prereq}
+
+\begin{keyterms}
+regression $\bullet$ linear model $\bullet$ weight $\bullet$ bias (intercept)
+$\bullet$ residual $\bullet$ mean squared error $\bullet$ least squares
+$\bullet$ normal equation $\bullet$ batch, stochastic and mini-batch gradient
+descent $\bullet$ multiple regression $\bullet$ polynomial features $\bullet$
+MAE $\bullet$ RMSE $\bullet$ $R^2$ $\bullet$ residual plot
+\end{keyterms}
+
+\section{The Model}
+
+Linear regression predicts a number as a weighted sum of the features plus a
+constant:
+\[
+\hat{y} = w_1 x_1 + w_2 x_2 + \dots + w_d x_d + b = \mathbf{w}\cdot\mathbf{x} + b
+\]
+With one feature this is the straight line $\hat{y} = wx + b$ of school algebra.
+The \term{weight} $w_j$ is the change in the prediction for a one-unit increase in
+feature $j$ with the other features held fixed; the \term{bias} (or intercept)
+$b$ is the prediction when every feature is zero.
+
+Linear regression is the first model in the course because every later model
+either extends it (logistic regression, the perceptron, the SVM, a neural
+network's output layer) or is compared against it. It is also, very often, the
+right answer: fast, stable, and explainable in one sentence per feature.
+
+\section{The Loss: Mean Squared Error}
+
+\begin{definitionbox}[Residual and Mean Squared Error]
+The \term{residual} of example $i$ is $e_i = y_i - \hat{y}_i$, the vertical gap
+between the observed value and the prediction. The \term{mean squared error} of
+the model on $n$ examples is
+\[
+\text{MSE}(\mathbf{w}, b) = \frac{1}{n}\sum_{i=1}^{n}\left(y_i - \hat{y}_i\right)^2
+\]
+Fitting a linear regression means choosing $\mathbf{w}$ and $b$ to make the MSE
+as small as possible --- the method of \term{least squares}.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=8.6cm, height=5.6cm, axis lines=left,
+  xlabel={story points $x$}, ylabel={hours $y$},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=0, xmax=6, ymin=0, ymax=14, xtick={1,...,5}]
+\addplot[primary, line width=1.3pt, domain=0.3:5.7] {2.2*x+0.4};
+\foreach \xx/\yy in {1/3,2/5,3/6,4/9,5/12}{
+  \edef\tmp{\noexpand\draw[accent, line width=0.9pt]
+    (axis cs:\xx,\yy) -- (axis cs:\xx,{2.2*\xx+0.4});}\tmp}
+\addplot[only marks, mark=*, mark size=2.2pt, secondary] coordinates
+  {(1,3)(2,5)(3,6)(4,9)(5,12)};
+\node[font=\tiny, primary, anchor=west] at (axis cs:4.2,12.6) {$\hat{y} = 2.2x + 0.4$};
+\node[font=\tiny, accent, anchor=west] at (axis cs:3.1,5.6) {residual $e_3=-1.0$};
+\end{axis}
+\end{tikzpicture}}%
+{The least-squares line through five user stories. Each red segment is a residual; the
+line is the one that makes the sum of their squares smallest.}{least-squares}
+
+\begin{conceptbox}[Why Square the Residuals?]
+Three reasons. Squaring makes every error positive, so over- and under-predictions
+cannot cancel. It makes the loss smooth, so it has a derivative everywhere and a
+single minimum that a formula can find. And it is what maximum likelihood gives
+(\chref{math}): if the noise around the true line is Gaussian, the most likely
+line is exactly the least-squares line. The price is that one large error
+counts a great deal --- an error of 10 costs a hundred times an error of 1 ---
+so least squares is pulled hard by outliers.
+\end{conceptbox}
+
+\section{Least Squares by Formula}
+
+For one feature, setting the derivatives of the MSE with respect to $w$ and $b$
+to zero gives a closed-form answer:
+\[
+w = \frac{\sum_i (x_i - \bar{x})(y_i - \bar{y})}{\sum_i (x_i - \bar{x})^2},
+\qquad b = \bar{y} - w\bar{x}
+\]
+The line always passes through the point of means $(\bar{x}, \bar{y})$.
+
+\begin{worked}[Fitting Hours to Story Points]
+Five completed user stories: story points $x = 1, 2, 3, 4, 5$ took
+$y = 3, 5, 6, 9, 12$ hours.
+
+\smallskip
+\textbf{Means:} $\bar{x} = 3$, $\bar{y} = 35/5 = 7$.
+
+\textbf{Deviations:} $x - \bar{x} = -2, -1, 0, 1, 2$ and $y - \bar{y} = -4, -2, -1,
+2, 5$.
+
+\textbf{Slope:}
+\[
+w = \frac{(-2)(-4) + (-1)(-2) + (0)(-1) + (1)(2) + (2)(5)}{4 + 1 + 0 + 1 + 4}
+  = \frac{8 + 2 + 0 + 2 + 10}{10} = \mathbf{2.2}
+\]
+\textbf{Intercept:} $b = 7 - 2.2 \times 3 = \mathbf{0.4}$.
+
+\smallskip
+\textbf{Reading it:} each extra story point adds 2.2 hours; the intercept, 0.4
+hours, is the fixed overhead of any story. A new 6-point story is predicted to
+take $2.2 \times 6 + 0.4 = 13.6$ hours.
+
+\textbf{Residuals:} predictions $2.6, 4.8, 7.0, 9.2, 11.4$ give residuals
+$0.4, 0.2, -1.0, -0.2, 0.6$, which sum to zero --- they always do for a
+least-squares line with an intercept. The sum of squares is
+$0.16 + 0.04 + 1 + 0.04 + 0.36 = 1.6$, so $\text{MSE} = 0.32$.
+\end{worked}
+
+\begin{definitionbox}[The Normal Equation]
+With $d$ features, put a column of ones in front of $X$ to absorb the bias, so the
+model is $\hat{\mathbf{y}} = X\boldsymbol{\theta}$. The least-squares parameters
+solve the \term{normal equation}
+\[
+X^{\top}X\,\boldsymbol{\theta} = X^{\top}\mathbf{y}
+\quad\Longrightarrow\quad
+\boldsymbol{\theta} = (X^{\top}X)^{-1}X^{\top}\mathbf{y}
+\]
+For the five stories,
+\[
+X^{\top}X = \begin{pmatrix} 5 & 15 \\ 15 & 55\end{pmatrix}, \qquad
+X^{\top}\mathbf{y} = \begin{pmatrix} 35 \\ 127 \end{pmatrix},
+\]
+whose solution is $b = 0.4$, $w = 2.2$ as before.
+\end{definitionbox}
+
+The normal equation is exact and needs no learning rate, but inverting a
+$d \times d$ matrix costs roughly $d^3$ operations, and it fails outright when
+two features are perfect copies of each other ($X^{\top}X$ has no inverse). For
+many features, or data that does not fit in memory, gradient descent is used
+instead.
+
+\section{Fitting by Gradient Descent}
+
+Differentiating the MSE with the chain rule gives the gradient:
+\[
+\frac{\partial\,\text{MSE}}{\partial w_j} = \frac{2}{n}\sum_{i=1}^{n}(\hat{y}_i - y_i)\,x_{ij},
+\qquad
+\frac{\partial\,\text{MSE}}{\partial b} = \frac{2}{n}\sum_{i=1}^{n}(\hat{y}_i - y_i)
+\]
+Read it in words: each weight moves in proportion to the average of
+\emph{(error) $\times$ (its feature)}. A feature that is large exactly when the
+model under-predicts has its weight pushed up.
+
+\begin{worked}[One Gradient Descent Step]
+Start from $w = 0$, $b = 0$ on the five stories, with $\alpha = 0.05$. Every
+prediction is 0, so the errors $\hat{y} - y$ are $-3, -5, -6, -9, -12$ and the
+MSE is $(9 + 25 + 36 + 81 + 144)/5 = 59$.
+\[
+\frac{\partial}{\partial w} = \frac{2}{5}\big[(-3)(1) + (-5)(2) + (-6)(3) + (-9)(4) + (-12)(5)\big]
+= \frac{2}{5}(-127) = -50.8
+\]
+\[
+\frac{\partial}{\partial b} = \frac{2}{5}(-3 - 5 - 6 - 9 - 12) = \frac{2}{5}(-35) = -14
+\]
+\textbf{Update:} $w \leftarrow 0 - 0.05(-50.8) = 2.54$, $\;b \leftarrow 0 - 0.05(-14)
+= 0.70$.
+
+The new predictions $3.24, 5.78, 8.32, 10.86, 13.40$ give an MSE of $2.29$ --- down
+from 59 in one step. Repeating the update converges to $w = 2.2$, $b = 0.4$, the
+same answer as the formula.
+\end{worked}
+
+\Needspace{9\baselineskip}
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.3cm}L{5.4cm}L{6.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Variant} & \textbf{Each step uses} & \textbf{Trade-off} \\
+\midrule
+\endhead
+Batch & All $n$ examples & Smooth, exact steps; slow when $n$ is large \\
+Stochastic (SGD) & One example, chosen at random & Very cheap steps; noisy path
+that jitters around the minimum \\
+Mini-batch & A batch of, say, 32--256 examples & The practical default; what
+neural networks use (\chref{ann}) \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Scale the Features Before Gradient Descent]
+If one feature is measured in thousands and another in fractions, the MSE surface
+is a long narrow valley: a learning rate small enough for the steep direction
+crawls along the shallow one. Standardising the features (\chref{workflow})
+makes the valley round and gradient descent converge in far fewer steps. The
+normal equation does not care.
+\end{alertbox}
+
+\section{Multiple and Polynomial Features}
+
+With several features each weight is a \emph{partial} effect: the change in
+$\hat{y}$ for one more unit of $x_j$ \emph{with the other features held fixed}.
+That is why the weight of a feature can change sign when another, correlated
+feature is added.
+
+A linear model can also fit curves. Add powers of a feature as new features ---
+$x$, $x^2$, $x^3$ --- and fit
+$\hat{y} = w_1 x + w_2 x^2 + w_3 x^3 + b$. The model is still \emph{linear in the
+weights}, so everything in this chapter applies unchanged; only the features are
+new. The danger is obvious as soon as it is said: with enough powers, the curve
+can pass through every training point. \chref{generalization} begins exactly there.
+
+\section{Measuring a Regression Model}
+
+\begin{definitionbox}[MAE, RMSE and $R^2$]
+\term{Mean absolute error}: $\text{MAE} = \frac{1}{n}\sum|y_i - \hat{y}_i|$ --- the
+typical size of an error, in the units of $y$.\\[3pt]
+\term{Root mean squared error}: $\text{RMSE} = \sqrt{\text{MSE}}$ --- also in the
+units of $y$, but weighting large errors more.\\[3pt]
+\term{Coefficient of determination}:
+$R^2 = 1 - \dfrac{\sum(y_i - \hat{y}_i)^2}{\sum(y_i - \bar{y})^2}$ --- the fraction
+of the variance in $y$ the model explains. 1 is perfect; 0 is no better than
+always predicting the mean; on test data it can be negative.
+\end{definitionbox}
+
+\begin{worked}[Scoring the Story-Point Model]
+Residuals $0.4, 0.2, -1.0, -0.2, 0.6$.
+\begin{tight}
+  \item $\text{MAE} = (0.4 + 0.2 + 1.0 + 0.2 + 0.6)/5 = \mathbf{0.48}$ hours.
+  \item $\text{RMSE} = \sqrt{1.6/5} = \sqrt{0.32} = \mathbf{0.57}$ hours.
+  \item $\sum(y - \bar{y})^2 = 16 + 4 + 1 + 4 + 25 = 50$, so
+        $R^2 = 1 - 1.6/50 = \mathbf{0.968}$.
+\end{tight}
+\smallskip
+\textbf{Caution.} These are \emph{training} scores on five points fitted by two
+parameters. They say the line describes these five stories well. Whether it
+predicts the next story well can only be answered on stories it has not seen.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.3cm},
+  width=6.7cm, height=4.6cm, axis lines=left,
+  tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+  xlabel={prediction $\hat{y}$}, ylabel={residual $y-\hat{y}$},
+  xmin=0, xmax=10, ymin=-3, ymax=3]
+\nextgroupplot[title={Healthy: no pattern}]
+\addplot[gray!50, dashed] coordinates {(0,0)(10,0)};
+\addplot[only marks, mark=*, mark size=1.4pt, greenhl!70!black] coordinates {
+ (0.6,0.8)(1.1,-0.9)(1.7,0.3)(2.2,-0.4)(2.9,1.1)(3.3,-1.2)(3.8,0.2)(4.4,0.9)
+ (4.9,-0.6)(5.3,0.4)(5.9,-1.0)(6.4,1.3)(6.8,-0.2)(7.3,0.6)(7.9,-0.8)(8.4,0.1)
+ (8.8,1.0)(9.3,-0.5)};
+\nextgroupplot[title={A curve the line missed}]
+\addplot[gray!50, dashed] coordinates {(0,0)(10,0)};
+\addplot[only marks, mark=*, mark size=1.4pt, accent] coordinates {
+ (0.6,2.2)(1.1,1.6)(1.7,1.2)(2.2,0.4)(2.9,0.1)(3.3,-0.6)(3.8,-0.8)(4.4,-1.3)
+ (4.9,-1.1)(5.3,-1.4)(5.9,-1.0)(6.4,-0.9)(6.8,-0.5)(7.3,-0.1)(7.9,0.6)(8.4,1.0)
+ (8.8,1.7)(9.3,2.3)};
+\addplot[accent!50, line width=0.9pt, domain=0.4:9.5, samples=40] {0.105*(x-5)^2-1.35};
+\end{groupplot}
+\end{tikzpicture}}%
+{Residual plots. Left: residuals scattered evenly around zero, as they should be. Right:
+a U-shape, meaning the true relationship is curved; adding an $x^2$ feature would remove
+it.}{residual-plots}
+
+\begin{alertbox}[Always Compare With the Mean]
+The baseline for regression is ``predict the training mean for everyone'', which
+has $R^2 = 0$. On the diabetes data of this chapter's lab it has an RMSE of 70;
+linear regression brings that to 56. Whether that improvement is worth having is
+a question about the application, not the algorithm --- but without the baseline
+nobody could even ask it.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Reading a weight as a cause.} $w = 2.2$ hours per point describes
+        the data; it does not say that adding points to a story would add hours.
+        \chref{ethics} returns to this.
+  \item \textbf{Comparing raw weights across features.} A weight's size depends
+        on its feature's units. Standardise first, then compare.
+  \item \textbf{Extrapolating.} The line was fitted on 1--5 points; a 40-point
+        epic is outside anything it has seen.
+  \item \textbf{Ignoring the residual plot.} A good $R^2$ with a curved residual
+        pattern means a better model is available.
+  \item \textbf{Letting one outlier drive the fit.} Squared loss gives a single
+        wild point enormous influence. Look at the data first.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Linear Regression}
+\lensLA{Predict a final mark from coursework. The weights are the attraction:
+``each extra lab submitted is worth 1.8 marks'' is something an adviser can say to
+a student. The danger is reading it causally --- students who submit labs differ
+in many ways from those who do not.}
+
+\lensPM{Effort estimation is the textbook regression problem, and the
+story-point example is real practice. Report RMSE in hours, compare with ``hours
+per point'' from last quarter as the baseline, and refit every few sprints: teams
+change, and so does the slope.}
+
+\lensIOT{Predict energy use from outdoor temperature and occupancy. The residual
+plot matters: consumption is U-shaped in temperature (heating when cold, cooling
+when hot), so a straight line leaves exactly the pattern of
+\dsref{residual-plots}; a squared temperature feature removes it.}
+
+\lensSEC{Predict normal outbound traffic per host from time of day and number of
+users, then treat a large positive residual as suspicious. The regression is not
+the detector; its residuals are. This is regression used for anomaly detection,
+and it works only if the training period was clean.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Least Squares Three Ways]
+The worked example by formula, then by gradient descent, then a real dataset:
+disease progression in 442 diabetes patients from ten measurements.
+\begin{lstlisting}[language=Python]
+import numpy as np
+from sklearn.datasets import load_diabetes
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+# --- 1. the worked example, by formula -----------------------------------
+x = np.array([1, 2, 3, 4, 5.0])          # story points
+y = np.array([3, 5, 6, 9, 12.0])         # hours
+w = ((x - x.mean()) * (y - y.mean())).sum() / ((x - x.mean()) ** 2).sum()
+b = y.mean() - w * x.mean()
+print(f"least squares:    w = {w:.2f}, b = {b:.2f}")
+
+# --- 2. the same line by gradient descent --------------------------------
+wg, bg, alpha = 0.0, 0.0, 0.05
+for step in range(2000):
+    err = (wg * x + bg) - y              # y_hat - y
+    wg -= alpha * 2 * (err * x).mean()
+    bg -= alpha * 2 * err.mean()
+print(f"gradient descent: w = {wg:.2f}, b = {bg:.2f}")
+
+# --- 3. a real dataset, against the mean baseline ------------------------
+X, t = load_diabetes(return_X_y=True)
+X_tr, X_te, t_tr, t_te = train_test_split(X, t, test_size=0.25,
+                                          random_state=0)
+scaler = StandardScaler().fit(X_tr)
+model = LinearRegression().fit(scaler.transform(X_tr), t_tr)
+pred = model.predict(scaler.transform(X_te))
+base = np.full_like(t_te, t_tr.mean())   # always predict the mean
+for name, p in [("baseline (mean)", base), ("linear regression", pred)]:
+    print(f"{name:18s} MAE {mean_absolute_error(t_te, p):5.1f}  "
+          f"RMSE {mean_squared_error(t_te, p) ** 0.5:5.1f}  "
+          f"R2 {r2_score(t_te, p):5.2f}")
+names = load_diabetes().feature_names
+for i in np.argsort(-np.abs(model.coef_))[:3]:
+    print(f"  weight on {names[i]:4s}: {float(model.coef_[i]):6.1f}")
+\end{lstlisting}
+Change \texttt{alpha} to \texttt{0.2} in part 2 and run it again. Explain what you
+see using the worked example of \chref{math}.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Fit $\hat{y} = wx + b$ to the points $(0, 1)$, $(1, 3)$, $(2, 5)$ by
+        the least-squares formulas.
+  \item A model has $R^2 = -0.2$ on the test set. What does that mean?
+  \item Why is $\hat{y} = w_1 x + w_2 x^2 + b$ still called a \emph{linear} model?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Linear regression predicts $\hat{y} = \mathbf{w}\cdot\mathbf{x} + b$; each
+        weight is the effect of one more unit of its feature, others held fixed.
+  \item Least squares minimises the mean squared error; it is the maximum
+        likelihood fit under Gaussian noise, and it is sensitive to outliers.
+  \item One feature: $w = \sum(x-\bar{x})(y-\bar{y}) / \sum(x-\bar{x})^2$,
+        $b = \bar{y} - w\bar{x}$. Many: the normal equation.
+  \item Gradient descent moves each weight by the average of error times feature;
+        scale features first. Mini-batch is the practical default.
+  \item Polynomial features let a linear model fit curves --- and overfit.
+  \item Report MAE or RMSE in the units of $y$, and $R^2$, beside the
+        mean baseline; check the residual plot for patterns.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The least-squares line always passes through:
+        (a)~the origin (b)~$(\bar{x}, \bar{y})$ (c)~the first data point (d)~the
+        largest residual.
+  \item \textbf{(MCQ)} Which metric is most affected by one very large error?
+        (a)~MAE (b)~RMSE (c)~the median absolute error (d)~all equally.
+  \item \textbf{(MCQ)} $R^2 = 0$ means the model: (a)~is perfect (b)~does no better
+        than predicting the mean (c)~has no bias (d)~is overfitted.
+  \item \textbf{(Short)} Explain in words the gradient of the MSE with respect to
+        one weight.
+  \item \textbf{(Short)} Give two situations where you would use gradient descent
+        rather than the normal equation.
+  \item \textbf{(Short)} Why can the weight of a feature change sign when another
+        feature is added to the model?
+  \item \textbf{(Applied)} For the points $(1, 2)$, $(2, 2)$, $(3, 5)$, $(4, 6)$,
+        compute the least-squares line, the residuals, the MAE, the RMSE and $R^2$.
+  \item \textbf{(Applied)} Starting from $w = 0$, $b = 0$ with $\alpha = 0.1$,
+        perform one gradient descent step on the data of the previous question
+        and compute the MSE before and after.
+\end{reviewq}

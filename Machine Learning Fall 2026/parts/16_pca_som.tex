@@ -1,0 +1,431 @@
+%=====================================================================
+\chapter{Dimensionality Reduction and Self-Organizing Maps}\label{ch:pcasom}
+%=====================================================================
+\locator{4}{Part IV --- Learning Without Full Labels}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why reducing the number of features helps, with reference to
+        the curse of dimensionality.
+  \item \textbf{Compute} principal components by hand for a small two-dimensional
+        dataset, and the variance each explains.
+  \item \textbf{Choose} how many components to keep, and \textbf{use} PCA inside a
+        pipeline.
+  \item \textbf{Describe} the self-organizing map, and \textbf{perform} one training
+        step by hand: best-matching unit, neighbourhood and update.
+  \item \textbf{Contrast} PCA and SOM as ways of seeing high-dimensional data.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (vectors, variance, matrices), \chref{knn} (the curse of
+dimensionality), \chref{clustering} (centroids and competitive assignment) and
+\chref{ann} (units, weights and a learning rate: a self-organizing map is a neural
+network, trained without backpropagation).
+\end{prereq}
+
+\begin{keyterms}
+dimensionality reduction $\bullet$ feature selection vs.\ extraction $\bullet$
+covariance matrix $\bullet$ principal component $\bullet$ eigenvector and
+eigenvalue $\bullet$ explained variance $\bullet$ scree plot $\bullet$ projection
+$\bullet$ reconstruction $\bullet$ self-organizing map (Kohonen map) $\bullet$
+competitive learning $\bullet$ best-matching unit $\bullet$ neighbourhood function
+$\bullet$ topology preservation $\bullet$ U-matrix
+\end{keyterms}
+
+\section{Why Fewer Dimensions}
+
+\chref{knn} showed what happens when there are too many features: distances
+concentrate, neighbours stop being meaningful, and every method that relies on
+distance degrades. High-dimensional data is also slow to process, impossible to
+look at, and often redundant --- the 64 pixels of a handwritten digit are strongly
+correlated with their neighbours. Two responses exist. \term{Feature selection}
+keeps a subset of the original features (a tree's splits, lasso's non-zero weights).
+\term{Feature extraction} builds a smaller set of new features from all the old
+ones. This chapter covers the two extraction methods in the HEC outline: principal
+component analysis, which is linear and has an exact solution, and the
+self-organizing map, a neural network that produces a two-dimensional map.
+
+\section{Principal Component Analysis}
+
+\begin{definitionbox}[Principal Components]
+The first \term{principal component} of a dataset is the direction along which the
+data varies most. The second is the direction of greatest remaining variance at right
+angles to the first, and so on. Computationally: centre the data, form its
+\term{covariance matrix} $S$ ($d \times d$), and find its \term{eigenvectors} ---
+directions $\mathbf{v}$ with $S\mathbf{v} = \lambda\mathbf{v}$. Sorted by
+\term{eigenvalue} $\lambda$, the eigenvectors are the principal components, and each
+$\lambda$ is the variance of the data along its component. The fraction
+$\lambda_j / \sum_i \lambda_i$ is the \term{explained variance} of component $j$.
+\end{definitionbox}
+
+Keeping the first $m$ components and \term{projecting} each example onto them ---
+$z_j = \mathbf{v}_j \cdot (\mathbf{x} - \bar{\mathbf{x}})$ --- replaces $d$ features by
+$m$ while losing as little variance as any linear projection can. Equivalently, it is
+the projection with the smallest \term{reconstruction} error: mapping the $m$ scores
+back into the original space loses the least.
+
+\begin{worked}[PCA by Hand in Two Dimensions]
+Five examples: $(1, 2)$, $(2, 1)$, $(3, 3)$, $(4, 5)$, $(5, 4)$.
+
+\smallskip
+\textbf{Centre.} The mean is $(3, 3)$; centred data: $(-2, -1)$, $(-1, -2)$, $(0, 0)$,
+$(1, 2)$, $(2, 1)$.
+
+\textbf{Covariance} (dividing by $n - 1 = 4$):
+\[
+\operatorname{var}(x_1) = \tfrac{4 + 1 + 0 + 1 + 4}{4} = 2.5,\qquad
+\operatorname{var}(x_2) = 2.5,\qquad
+\operatorname{cov}(x_1, x_2) = \tfrac{2 + 2 + 0 + 2 + 2}{4} = 2
+\]
+\[
+S = \begin{pmatrix} 2.5 & 2 \\ 2 & 2.5 \end{pmatrix}
+\]
+\textbf{Eigenvectors.} For this symmetric pattern they are $(1, 1)/\sqrt{2}$ and
+$(1, -1)/\sqrt{2}$. Check: $S(1,1)^{\top} = (4.5, 4.5)^{\top} = 4.5\,(1,1)^{\top}$, and
+$S(1,-1)^{\top} = (0.5, -0.5)^{\top} = 0.5\,(1,-1)^{\top}$. So
+$\lambda_1 = \mathbf{4.5}$, $\lambda_2 = \mathbf{0.5}$.
+
+\textbf{Explained variance:} PC1 carries $4.5/5 = \mathbf{90\%}$, PC2 the remaining 10\%.
+
+\textbf{Scores on PC1:} $z = (x_1 + x_2)/\sqrt{2}$ for each centred point:
+$-2.12, -2.12, 0, 2.12, 2.12$.
+
+\smallskip
+One number per example now keeps 90\% of the variation. The discarded direction,
+$x_1 - x_2$, only records which of the two coordinates is slightly larger --- if that
+is noise, PCA has removed it.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize, scale=0.95]
+\draw[gray!50, -{Stealth[length=1.6mm]}] (0,0) -- (6.3,0) node[right, font=\tiny] {$x_1$};
+\draw[gray!50, -{Stealth[length=1.6mm]}] (0,0) -- (0,6.3) node[above, font=\tiny] {$x_2$};
+\foreach \t in {1,...,5}{\draw[gray!40] (\t,0.06) -- (\t,-0.06) node[below, font=\tiny] {\t};
+                         \draw[gray!40] (0.06,\t) -- (-0.06,\t) node[left, font=\tiny] {\t};}
+% PC axes through the mean (3,3)
+\draw[greenhl!70!black, line width=1.3pt, -{Stealth[length=2.4mm]}] (3,3) -- (5.12,5.12);
+\draw[greenhl!70!black, line width=0.6pt, dashed] (0.6,0.6) -- (3,3);
+\node[font=\tiny\bfseries, greenhl!45!black, anchor=south east] at (5.1,5.2) {PC1: $\lambda = 4.5$ (90\%)};
+\draw[purplehl, line width=1.3pt, -{Stealth[length=2.4mm]}] (3,3) -- (3.71,2.29);
+\draw[purplehl, line width=0.6pt, dashed] (3,3) -- (2.1,3.9);
+\node[font=\tiny\bfseries, purplehl, anchor=north west] at (3.75,2.3) {PC2: $\lambda = 0.5$ (10\%)};
+% projections
+\foreach \x/\y in {1/2,2/1,4/5,5/4}{
+  \pgfmathsetmacro{\p}{(\x+\y)/2}
+  \draw[accent!60, line width=0.6pt] (\x,\y) -- (\p,\p);
+  \fill[accent!60] (\p,\p) circle (1.3pt);}
+\foreach \x/\y in {1/2,2/1,3/3,4/5,5/4}{\fill[secondary] (\x,\y) circle (2.2pt);}
+\fill[primary] (3,3) circle (1.5pt) node[below right, font=\tiny] {mean};
+\node[anchor=north west, align=left, text width=5.6cm, font=\scriptsize, text=gray!55!black]
+     at (7.0,5.8)
+     {\textbf{Blue:} the five examples.\\[3pt]
+      \textbf{Green arrow:} the first principal component, the direction of greatest
+      spread; its eigenvalue is the variance along it.\\[3pt]
+      \textbf{Red segments:} each example's projection onto PC1. Keeping only the
+      projected position (the score) loses the short red distance --- 10\% of the
+      variance.\\[3pt]
+      \textbf{Purple:} the second component, at right angles.};
+\end{tikzpicture}}%
+{The worked example. PCA rotates the axes to line up with the directions of greatest
+variance; dropping PC2 projects every point onto the green line.}{pca-2d}
+
+\section{How Many Components?}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=9.8cm, height=5.0cm, axis lines=left,
+  xlabel={number of components kept}, ylabel={cumulative explained variance},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=0, xmax=65, ymin=0, ymax=1.03]
+\addplot[secondary, line width=1.3pt] coordinates
+  {(1,0.120) (2,0.216) (3,0.300) (4,0.365) (5,0.414) (6,0.456) (7,0.496) (8,0.529) (9,0.559) (10,0.589) (11,0.617) (12,0.642) (13,0.665) (14,0.687) (15,0.709) (16,0.728) (17,0.746) (18,0.762) (19,0.778) (20,0.793) (21,0.807) (22,0.819) (23,0.831) (24,0.842) (25,0.851) (26,0.861) (27,0.869) (28,0.878) (29,0.886) (30,0.893) (31,0.900) (32,0.907) (33,0.914) (34,0.920) (35,0.926) (36,0.932) (37,0.937) (38,0.942) (39,0.947) (40,0.951) (44,0.966) (48,0.978) (52,0.987) (56,0.994) (60,0.999) (64,1.000)};
+\addplot[gray!55, dashed] coordinates {(0,0.9)(65,0.9)};
+\addplot[gray!55, dashed] coordinates {(31,0)(31,0.9)};
+\node[font=\tiny, accent, anchor=north west, align=left] at (axis cs:32,0.86)
+     {90\% of the variance\\in 31 of 64 components};
+\node[font=\tiny, gray!55!black, anchor=south west, align=left] at (axis cs:36,0.08)
+     {handwritten digits,\\64 standardised pixels};
+\end{axis}
+\end{tikzpicture}}%
+{Cumulative explained variance for the 8$\times$8 digit images. The curve rises steeply
+and flattens: a fraction of the components carries most of the information.}{scree}
+
+Three rules are in use: keep enough components to explain a target fraction of the
+variance (90\% or 95\% are common); keep the components before the \emph{elbow} of
+the eigenvalue plot (the \term{scree plot}); or --- when PCA is a step before a
+supervised model --- treat the number of components as a hyperparameter and choose it
+by cross-validation. On the digit images, logistic regression scores 53\% on two
+components, 84\% on ten, 90\% on twenty and 92\% on all 64: the first twenty carry
+almost all that matters for this task.
+
+\begin{alertbox}[Standardise First, and Remember What PCA Ignores]
+PCA finds directions of large \emph{variance}, so a feature measured in large units
+dominates the first component purely because of its units. Standardise first, unless
+the features share a scale that means something. And PCA is unsupervised: the
+direction of greatest variance need not be the direction that separates the classes.
+A small, discarded component can be the one that matters.
+\end{alertbox}
+
+\section{Self-Organizing Maps}
+
+A \term{self-organizing map} (SOM, or Kohonen map, after Teuvo Kohonen) is a neural
+network that learns to lay high-dimensional data out on a two-dimensional grid, so
+that similar examples land on nearby grid cells. It is unsupervised, and its output is
+a picture: a map of the data that people can read.
+
+\begin{definitionbox}[Self-Organizing Map]
+A grid of units (often $10 \times 10$), each holding a weight vector
+$\mathbf{w}_u$ of the same dimension as the data. Training repeats, for randomly chosen
+examples $\mathbf{x}$:
+\begin{tightnum}
+  \item \textbf{Compete:} find the \term{best-matching unit} (BMU), the unit whose
+        weight vector is closest to $\mathbf{x}$.
+  \item \textbf{Cooperate:} every unit $u$ gets a \term{neighbourhood} weight
+        $h(u)$, 1 at the BMU and falling with distance \emph{on the grid} ---
+        usually $h(u) = \exp\!\big(-\text{grid distance}^2 / 2\sigma^2\big)$.
+  \item \textbf{Adapt:} move every unit towards the example:
+        $\mathbf{w}_u \leftarrow \mathbf{w}_u + \eta\,h(u)\,(\mathbf{x} - \mathbf{w}_u)$.
+\end{tightnum}
+Both the learning rate $\eta$ and the neighbourhood width $\sigma$ shrink during
+training: first the map organises roughly, then each unit fine-tunes.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+% grid of units
+\foreach \r in {0,...,4}{\foreach \c in {0,...,4}{
+  \pgfmathsetmacro{\dd}{sqrt((\r-2)^2+(\c-3)^2)}
+  \pgfmathsetmacro{\sh}{max(0,75-28*\dd)}
+  \node[circle, draw=primary!60, fill=accent!\sh, minimum size=0.55cm] (u\r\c) at (\c*0.9,-\r*0.9) {};}}
+\node[circle, draw=accent, line width=1.4pt, fill=accent!80, minimum size=0.55cm] at (3*0.9,-2*0.9) {};
+\node[font=\tiny\bfseries, text=accent!80!black, anchor=west] at (4.35,-1.8) {BMU};
+\draw[accent!70, -{Stealth[length=1.6mm]}] (4.3,-1.8) -- (2.97,-1.8);
+\node[font=\scriptsize\bfseries, text=primary] at (1.8,0.8) {the map: a grid of units};
+% input vector
+\node[rounded corners=2pt, draw=secondary, fill=secondary!10, minimum width=0.5cm,
+      minimum height=2.4cm, align=center, font=\tiny] (x) at (-2.6,-1.8)
+      {$x_1$\\[2pt]$x_2$\\[2pt]$\vdots$\\[2pt]$x_d$};
+\node[font=\scriptsize\bfseries, text=secondary] at (-2.6,-0.25) {input $\mathbf{x}$};
+\foreach \r/\c in {0/0,2/0,4/0,1/1,3/1}{\draw[gray!35] (x.east) -- (u\r\c);}
+\node[anchor=north west, align=left, text width=5.6cm, font=\scriptsize, text=gray!55!black]
+     at (5.6,0.6)
+     {Every unit is connected to every input. The unit whose weights best match
+      $\mathbf{x}$ wins (the BMU), and it and its \emph{grid} neighbours --- shaded by
+      how strongly they are updated --- all move towards $\mathbf{x}$.\\[4pt]
+      Because neighbours are always updated together, neighbouring units end up with
+      similar weight vectors: nearby on the map means similar in the data. That is
+      \term{topology preservation}.};
+\end{tikzpicture}}%
+{A self-organizing map. Competition picks one winner; cooperation spreads the update
+over its neighbourhood on the grid, which is what makes the map smooth.}{som}
+
+\begin{worked}[One SOM Update]
+A one-dimensional map of three units with two-dimensional weights:
+$\mathbf{w}_1 = (0.2, 0.8)$, $\mathbf{w}_2 = (0.5, 0.5)$, $\mathbf{w}_3 = (0.9, 0.1)$.
+Input $\mathbf{x} = (0.8, 0.3)$; learning rate $\eta = 0.5$; neighbourhood $h = 1$ for
+the BMU, $0.5$ for its immediate neighbours, 0 beyond.
+
+\smallskip
+\textbf{Compete.} Distances: $\|\mathbf{x} - \mathbf{w}_1\| = \sqrt{0.6^2 + 0.5^2} = 0.781$;
+$\|\mathbf{x} - \mathbf{w}_2\| = \sqrt{0.3^2 + 0.2^2} = 0.361$;
+$\|\mathbf{x} - \mathbf{w}_3\| = \sqrt{0.1^2 + 0.2^2} = 0.224$. \textbf{BMU: unit 3.}
+
+\textbf{Adapt.}
+\begin{tight}
+  \item Unit 3 ($h = 1$): $\mathbf{w}_3 + 0.5 \times 1 \times \big((0.8, 0.3) - (0.9, 0.1)\big)
+        = (0.9, 0.1) + (-0.05, 0.10) = \mathbf{(0.85, 0.20)}$.
+  \item Unit 2 ($h = 0.5$, the BMU's neighbour):
+        $(0.5, 0.5) + 0.25 \times (0.3, -0.2) = \mathbf{(0.575, 0.45)}$.
+  \item Unit 1 ($h = 0$, two steps away on the map): unchanged.
+\end{tight}
+Unit 2 moved towards $\mathbf{x}$ although it did not win --- that is the cooperation.
+After many such steps, unit 3 represents inputs like $\mathbf{x}$, and unit 2 inputs
+somewhere between unit 1's and unit 3's.
+\end{worked}
+
+\begin{conceptbox}[Reading a Trained Map]
+Each unit becomes a prototype for the examples that map to it, so a SOM is also a
+clustering (and with $\sigma \to 0$ it is exactly on-line $k$-means). Colour each unit
+by the class of the examples it attracts and the classes appear as regions --- the
+lab's six-by-six map of the iris flowers puts setosa on one side and the two similar
+species next to each other on the other. The \term{U-matrix} colours each unit by the
+average distance to its neighbours' weights: high values mark the borders between
+groups, so cluster boundaries become visible walls on the map.
+\end{conceptbox}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.2cm}L{5.8cm}L{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{PCA} & \textbf{Self-organizing map} \\
+\midrule
+\endhead
+Mapping & Linear projection & Non-linear; follows curved structure \\
+Solution & Exact, unique (eigenvectors) & Iterative; depends on initialisation and
+schedule \\
+Output & $m$ new numeric features & A position on a 2-D grid, plus prototypes \\
+Best for & Compression, pre-processing, removing correlation & Visual exploration,
+clustering, prototype-based summaries \\
+New examples & Project with the same components & Map to the BMU \\
+\bottomrule
+\end{longtable}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Running PCA on unscaled features.} The component is then decided by
+        units.
+  \item \textbf{Fitting PCA on all the data before splitting.} It is a fitted
+        transformer: put it in the pipeline (\chref{workflow}).
+  \item \textbf{Assuming high variance means high relevance.} PCA does not look at
+        the labels.
+  \item \textbf{Interpreting components as causes.} A component is a weighted mix
+        of every feature; naming it takes care.
+  \item \textbf{Keeping the SOM neighbourhood wide to the end.} The map never
+        fine-tunes; shrink $\sigma$ and $\eta$ over training.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Dimensionality Reduction}
+\lensLA{A learning platform logs hundreds of engagement measures per student. PCA
+often shows that three or four components --- overall activity, timeliness, and
+video versus practice --- explain most of the variation, which gives advisers a
+handful of interpretable scores instead of a spreadsheet.}
+
+\lensPM{A SOM of past projects, trained on dozens of metrics, gives portfolio managers
+a map on which troubled projects occupy one region. A new project is placed on the
+map by its BMU, and its neighbours are the projects it most resembles.}
+
+\lensIOT{Hundreds of correlated sensor channels compress to a few principal
+components; the reconstruction error of a new reading --- how badly the kept
+components describe it --- is a sensitive, cheap anomaly score that runs on a
+gateway.}
+
+\lensSEC{SOMs were among the first unsupervised intrusion detectors: normal traffic
+occupies familiar regions of the map, and a connection whose BMU is still far from it
+does not resemble anything seen before. PCA-based residual detection works the same
+way for network flow statistics.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[PCA by Hand, PCA at Work, and a Map of the Iris Flowers]
+\begin{lstlisting}[language=Python]
+import numpy as np
+from sklearn.datasets import load_digits, load_iris
+from sklearn.decomposition import PCA
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
+
+# --- 1. the worked example: PCA by eigen-decomposition -------------------
+X = np.array([[1, 2], [2, 1], [3, 3], [4, 5], [5, 4]], dtype=float)
+Xc = X - X.mean(axis=0)                     # centre
+S = np.cov(Xc, rowvar=False)                # covariance, divides by n - 1
+vals, vecs = np.linalg.eigh(S)              # eigenvalues, ascending
+order = np.argsort(vals)[::-1]
+vals, vecs = vals[order], vecs[:, order]
+print("covariance:\n", S)
+print("eigenvalues:", vals, " explained:", (vals / vals.sum()).round(3))
+print("PC1 direction:", vecs[:, 0].round(3))
+print("scores on PC1:", (Xc @ vecs[:, 0]).round(3))
+
+# --- 2. 64 pixels: how many components? ----------------------------------
+Xd, yd = load_digits(return_X_y=True)
+pca = PCA().fit(StandardScaler().fit_transform(Xd))
+cum = np.cumsum(pca.explained_variance_ratio_)
+for target in (0.5, 0.8, 0.9, 0.95):
+    print(f"{target:.0%} of variance needs {np.argmax(cum >= target) + 1} "
+          f"of 64 components")
+for k in (2, 10, 20, 64):
+    pipe = make_pipeline(StandardScaler(), PCA(k),
+                         LogisticRegression(max_iter=3000))
+    acc = cross_val_score(pipe, Xd, yd, cv=5).mean()
+    print(f"logistic regression on {k:2d} components: accuracy {acc:.3f}")
+
+# --- 3. a self-organizing map in twenty lines ----------------------------
+Xi, yi = load_iris(return_X_y=True)
+Xi = StandardScaler().fit_transform(Xi)
+rows, cols = 6, 6
+grid = np.array([(r, c) for r in range(rows) for c in range(cols)])
+rng = np.random.default_rng(0)
+W = rng.normal(0, 0.5, (rows * cols, Xi.shape[1]))
+steps = 3000
+for t in range(steps):
+    x = Xi[rng.integers(len(Xi))]
+    bmu = np.argmin(((W - x) ** 2).sum(axis=1))   # best-matching unit
+    eta = 0.5 * (1 - t / steps)                   # learning rate decays
+    sigma = 3.0 * (1 - t / steps) + 0.5           # neighbourhood shrinks
+    d2 = ((grid - grid[bmu]) ** 2).sum(axis=1)    # distance on the map
+    h = np.exp(-d2 / (2 * sigma ** 2))            # neighbourhood weight
+    W += eta * h[:, None] * (x - W)
+# label each unit with the species that most often maps to it
+hits = {}
+for x, y in zip(Xi, yi):
+    u = np.argmin(((W - x) ** 2).sum(axis=1))
+    hits.setdefault(u, []).append(y)
+names = "sve"                       # setosa, versicolor, virginica
+for r in range(rows):
+    print(" ".join(names[np.bincount(hits[r * cols + c]).argmax()]
+                   if r * cols + c in hits else "." for c in range(cols)))
+\end{lstlisting}
+The last block prints the map: \texttt{s}, \texttt{v} and \texttt{e} mark units that
+setosa, versicolor and virginica flowers map to, and \texttt{.} an unused unit. Rerun
+it with \texttt{sigma = 0.5} throughout (no shrinking neighbourhood): is the map still
+organised?
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A covariance matrix has eigenvalues 6, 3 and 1. What fraction of the variance
+        do the first two components explain?
+  \item Why must features usually be standardised before PCA?
+  \item In a SOM, what is the difference between the best-matching unit and its
+        neighbourhood, and why are both updated?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Reducing dimensions fights the curse of dimensionality, removes redundancy
+        and makes data visible; selection keeps features, extraction builds new
+        ones.
+  \item PCA's components are the eigenvectors of the covariance matrix; each
+        eigenvalue is the variance along its component. Keep enough to explain a
+        target fraction, or tune the number by cross-validation.
+  \item Standardise before PCA, fit it inside the pipeline, and remember it ignores
+        the labels.
+  \item A SOM finds the best-matching unit for each input and moves it and its grid
+        neighbours towards the input; with a shrinking neighbourhood it produces a
+        smooth, topology-preserving 2-D map.
+  \item PCA is linear, exact and for compression; the SOM is non-linear, iterative
+        and for visual exploration.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The first principal component is the direction of:
+        (a)~greatest class separation (b)~greatest variance (c)~smallest variance
+        (d)~the first feature.
+  \item \textbf{(MCQ)} In a SOM, the neighbourhood function is measured by distance:
+        (a)~in the input space (b)~on the grid of units (c)~between classes
+        (d)~between eigenvalues.
+  \item \textbf{(MCQ)} Principal components are: (a)~correlated (b)~at right angles
+        to each other (c)~always three in number (d)~the original features.
+  \item \textbf{(Short)} Explain the difference between feature selection and feature
+        extraction, with one method of each.
+  \item \textbf{(Short)} Why might a discarded low-variance component matter for
+        classification?
+  \item \textbf{(Short)} What does a U-matrix show?
+  \item \textbf{(Applied)} For the points $(1, 3)$, $(3, 1)$, $(4, 4)$, $(5, 7)$ and
+        $(7, 5)$, compute the covariance matrix, verify that $(1, 1)$ is an
+        eigenvector, and find the fraction of the variance the first principal
+        component explains.
+  \item \textbf{(Applied)} Continue the SOM worked example with the next input
+        $(0.3, 0.7)$, using the updated weights. Which unit wins, and what are the
+        three weight vectors afterwards?
+\end{reviewq}

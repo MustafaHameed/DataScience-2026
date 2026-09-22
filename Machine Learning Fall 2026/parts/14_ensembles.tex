@@ -1,0 +1,426 @@
+%=====================================================================
+\chapter{Ensemble Learning}\label{ch:ensembles}
+%=====================================================================
+\locator{3}{Part III --- Supervised Learning Algorithms}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why a committee of hypotheses can be more accurate than
+        its members, and \textbf{compute} the accuracy of a majority vote.
+  \item \textbf{Describe} bagging and random forests, and \textbf{explain} which
+        part of the error they reduce.
+  \item \textbf{Perform} one round of AdaBoost by hand: weighted error, learner
+        weight and example reweighting.
+  \item \textbf{Describe} gradient boosting and stacking.
+  \item \textbf{Choose} between bagging and boosting for a given problem.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{trees} (decision trees and their instability), \chref{generalization}
+(bias and variance) and \chref{bayes} (the Bayes optimal classifier as a weighted
+vote of hypotheses).
+\end{prereq}
+
+\begin{keyterms}
+ensemble $\bullet$ committee $\bullet$ majority (hard) vote $\bullet$ soft vote
+$\bullet$ independent errors $\bullet$ bootstrap sample $\bullet$ bagging
+$\bullet$ out-of-bag estimate $\bullet$ random forest $\bullet$ feature importance
+$\bullet$ boosting $\bullet$ weak learner $\bullet$ AdaBoost $\bullet$ decision
+stump $\bullet$ gradient boosting $\bullet$ stacking
+\end{keyterms}
+
+\section{Committees of Hypotheses}
+
+The Bayes optimal classifier of \chref{bayes} lets every hypothesis vote, and no
+single hypothesis can beat it. Ensemble methods are the practical version of that
+idea: train several models, and combine their predictions. They are, in practice,
+the most accurate off-the-shelf learners for tabular data --- the random forests
+and gradient-boosted trees of this chapter win most such competitions.
+
+\begin{conceptbox}[Why a Committee Can Beat Its Members]
+If each member of a committee is right more often than not, and their mistakes are
+\emph{independent}, the majority is right more often than any member: for the
+majority to be wrong, most members must be wrong on the same example at once.
+Everything in this chapter is a way of producing members that are individually
+decent and whose errors are as uncorrelated as possible.
+\end{conceptbox}
+
+\begin{worked}[The Arithmetic of a Majority Vote]
+Five classifiers, each 70\% accurate, with independent errors. The majority is right
+when at least three are right:
+\[
+P(\ge 3 \text{ right}) = \binom{5}{3}0.7^3\,0.3^2 + \binom{5}{4}0.7^4\,0.3 + \binom{5}{5}0.7^5
+= 0.309 + 0.360 + 0.168 = \mathbf{0.837}
+\]
+Twenty-one such classifiers give 0.974; a hundred and one classifiers that are each
+only 60\% accurate give 0.979.
+
+\smallskip
+\textbf{The catch is ``independent''.} Five copies of the same classifier make the
+same mistakes and vote as one: 70\%. Real ensemble members are correlated, so the
+gains are smaller than this --- and the whole craft is in reducing the correlation.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=9.4cm, height=5.0cm, axis lines=left,
+  xlabel={number of voters (independent errors)}, ylabel={accuracy of the majority},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=0, xmax=105, ymin=0.5, ymax=1.02,
+  legend style={font=\tiny, draw=gray!40, at={(0.98,0.03)}, anchor=south east}]
+\addplot[greenhl!70!black, line width=1.2pt, mark=*, mark size=1.2pt] coordinates
+  {(1,0.700) (3,0.784) (5,0.837) (7,0.874) (11,0.922) (15,0.950) (21,0.974) (31,0.990) (51,0.999) (75,1.000) (101,1.000)};
+\addlegendentry{each voter 70\% accurate}
+\addplot[secondary, line width=1.2pt, mark=*, mark size=1.2pt] coordinates
+  {(1,0.600) (3,0.648) (5,0.683) (7,0.710) (11,0.753) (15,0.787) (21,0.826) (31,0.872) (51,0.926) (75,0.960) (101,0.979)};
+\addlegendentry{each voter 60\% accurate}
+\addplot[goldhl, line width=1.2pt, mark=*, mark size=1.2pt] coordinates
+  {(1,0.550) (3,0.575) (5,0.593) (7,0.608) (11,0.633) (15,0.654) (21,0.679) (31,0.713) (51,0.764) (75,0.808) (101,0.844)};
+\addlegendentry{each voter 55\% accurate}
+\end{axis}
+\end{tikzpicture}}%
+{How majority voting amplifies weak but independent voters. Even 55\%-accurate members
+reach 84\% with a hundred voters --- if, and only if, their mistakes are
+independent.}{majority}
+
+Voting comes in two forms. A \term{hard vote} counts class predictions. A
+\term{soft vote} averages predicted probabilities and picks the largest, which lets
+a confident member outweigh several unsure ones and is usually a little better.
+
+\section{Bagging}
+
+\begin{definitionbox}[Bagging (Bootstrap Aggregating)]
+From a training set of $n$ examples, draw $B$ \term{bootstrap samples}, each of $n$
+examples drawn \emph{with replacement}. Train one model on each sample. Predict by
+majority vote (classification) or by averaging (regression).
+\end{definitionbox}
+
+Each bootstrap sample leaves some examples out and repeats others: the chance that a
+given example is never drawn in $n$ draws is $(1 - 1/n)^n \approx e^{-1} = 0.368$, so
+each sample contains about 63.2\% of the distinct examples. The models therefore
+differ, and their errors are partly decorrelated.
+
+Bagging helps exactly when the base learner is \emph{unstable}: when small changes
+in the training data produce very different models. That describes a fully grown
+decision tree (\chref{trees}) precisely --- high variance, low bias --- and bagging
+averages the variance away while keeping the low bias. It does little for a stable
+learner such as linear regression or $k$-NN with large $k$.
+
+\begin{conceptbox}[A Free Validation Set: the Out-of-Bag Estimate]
+Each example is left out of about 37\% of the bootstrap samples. Predict it using
+only the models that did not see it, and the resulting \term{out-of-bag} error is an
+honest estimate of test error --- computed during training, with no data held back.
+\end{conceptbox}
+
+\section{Random Forests}
+
+Bagged trees are still correlated: if one feature is very strong, every tree puts it
+at the root and the trees look alike. A \term{random forest} (Breiman, 2001)
+decorrelates them further.
+
+\begin{definitionbox}[Random Forest]
+Bag fully grown decision trees, with one change: at each split, choose the best test
+from a random subset of the features only --- typically $\sqrt{d}$ of the $d$
+features for classification. Different trees are forced to use different features,
+so their errors are less correlated and the average is better. A forest also
+reports each feature's \term{importance}: the total reduction in impurity from splits
+on that feature, averaged over the trees.
+\end{definitionbox}
+
+Random forests are the safest default for tabular data: few hyperparameters (the
+number of trees, which only needs to be large enough, and the feature-subset size),
+no scaling, robust to irrelevant features, and hard to overfit by adding trees.
+
+\section{Boosting}
+
+Bagging trains its members independently and in parallel. Boosting trains them in
+sequence, each one concentrating on the examples its predecessors got wrong. Its
+members are \term{weak learners} --- barely better than chance, typically
+\term{decision stumps} (one-split trees) or very shallow trees --- and it is bias,
+not variance, that boosting mainly reduces.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  data/.style={rounded corners=2pt, draw=gray!55, fill=gray!8, minimum width=1.5cm,
+               minimum height=0.6cm, font=\tiny},
+  mdl/.style={rounded corners=3pt, draw=#1, fill=#1!12, text=#1!55!black,
+              minimum width=1.2cm, minimum height=0.6cm, font=\tiny\bfseries},
+  a/.style={-{Stealth[length=1.8mm]}, gray!60, line width=0.8pt}]
+\node[font=\small\bfseries, text=primary, anchor=west] at (-0.6,2.6) {Bagging: in parallel};
+\node[data] (d) at (0,1.2) {training data};
+\foreach \i/\y in {1/2.0,2/1.2,3/0.4}{
+  \node[data] (b\i) at (2.5,\y) {bootstrap \i};
+  \node[mdl=secondary] (m\i) at (4.6,\y) {tree \i};
+  \draw[a] (d) -- (b\i); \draw[a] (b\i) -- (m\i);}
+\node[rounded corners=3pt, draw=greenhl!70!black, fill=greenhl!14, font=\tiny\bfseries,
+      minimum width=1.3cm, minimum height=0.8cm, align=center] (v) at (6.6,1.2) {vote /\\average};
+\foreach \i in {1,2,3}{\draw[a] (m\i) -- (v);}
+\node[font=\tiny, text=gray!55!black, align=center] at (3.5,-0.35) {independent members; reduces variance};
+% boosting
+\node[font=\small\bfseries, text=accent, anchor=west] at (8.1,2.6) {Boosting: in sequence};
+\node[data] (e1) at (8.7,1.2) {weights 1};
+\node[mdl=accent] (s1) at (8.7,0.2) {stump 1};
+\node[data] (e2) at (10.7,1.2) {weights 2};
+\node[mdl=accent] (s2) at (10.7,0.2) {stump 2};
+\node[data] (e3) at (12.7,1.2) {weights 3};
+\node[mdl=accent] (s3) at (12.7,0.2) {stump 3};
+\draw[a] (e1) -- (s1); \draw[a] (e2) -- (s2); \draw[a] (e3) -- (s3);
+\draw[a, accent] (s1.east) -- (e2.south west);
+\draw[a, accent] (s2.east) -- (e3.south west);
+\node[rounded corners=3pt, draw=greenhl!70!black, fill=greenhl!14, font=\tiny\bfseries,
+      minimum width=1.3cm, minimum height=0.8cm, align=center] (wv) at (14.7,0.7) {weighted\\vote};
+\draw[a] (s3) -- (wv);
+\node[font=\tiny, text=gray!55!black, align=center] at (11.6,-0.55) {each member's errors are up-weighted for the next; reduces bias};
+\end{tikzpicture}}%
+{Bagging trains independent models on resampled data and averages them. Boosting trains
+models one after another, re-weighting the data towards the examples still being
+misclassified, and combines them with a weighted vote.}{bag-boost}
+
+\begin{definitionbox}[AdaBoost]
+Give every training example the weight $1/n$. For rounds $t = 1, \dots, T$:
+\begin{tightnum}
+  \item Train a weak learner $h_t$ on the weighted data.
+  \item Compute its weighted error $\varepsilon_t$ (the total weight of the examples it
+        misclassifies) and its say in the final vote,
+        $\alpha_t = \tfrac{1}{2}\ln\dfrac{1 - \varepsilon_t}{\varepsilon_t}$.
+  \item Multiply the weight of each misclassified example by $e^{\alpha_t}$ and of each
+        correct one by $e^{-\alpha_t}$; renormalise to sum to 1.
+\end{tightnum}
+Predict with the weighted vote $\operatorname{sign}\big(\sum_t \alpha_t h_t(\mathbf{x})\big)$.
+\end{definitionbox}
+
+\begin{worked}[One Round of AdaBoost]
+Ten examples, each of weight 0.1. The first stump misclassifies three of them.
+
+\smallskip
+\textbf{Weighted error:} $\varepsilon_1 = 3 \times 0.1 = 0.3$.
+
+\textbf{Say of the stump:} $\alpha_1 = \tfrac{1}{2}\ln\dfrac{0.7}{0.3} = \tfrac{1}{2}\ln 2.333 = \mathbf{0.424}$.
+
+\textbf{Reweight:} $e^{0.424} = 1.528$ and $e^{-0.424} = 0.655$.
+\begin{tight}
+  \item three mistakes: $0.1 \times 1.528 = 0.1528$ each (total 0.458);
+  \item seven correct: $0.1 \times 0.655 = 0.0655$ each (total 0.458).
+\end{tight}
+\textbf{Normalise} by the total 0.917: mistakes $\to$ \textbf{0.167} each, correct
+$\to$ \textbf{0.071} each.
+
+\smallskip
+\textbf{After the update the three mistakes carry exactly half the total weight}
+--- always true in AdaBoost. The next stump, trained on these weights, cannot score
+better than chance by repeating the first stump's errors, so it is forced to attend
+to them. A stump with $\varepsilon = 0.5$ would get $\alpha = 0$: no say at all.
+\end{worked}
+
+\textbf{Gradient boosting} generalises the idea to any differentiable loss. Start
+with a constant prediction; at each round, fit a small tree to the current
+\emph{residuals} (more generally, to the negative gradient of the loss), and add a
+fraction $\eta$ --- the learning rate, typically 0.05--0.1 --- of its predictions to
+the model. Each tree corrects what the ensemble so far gets wrong. Libraries such as
+XGBoost and LightGBM are highly engineered versions, and are the first thing most
+practitioners try on a tabular problem.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=9.8cm, height=5.2cm, axis lines=left, xmode=log, log basis x=10,
+  xlabel={number of trees (log scale)}, ylabel={test error},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=0.9, xmax=450, ymin=0.05, ymax=0.2,
+  xtick={1,5,10,25,50,100,200,400}, xticklabels={1,5,10,25,50,100,200,400},
+  yticklabel style={/pgf/number format/fixed}, scaled y ticks=false,
+  legend style={font=\tiny, draw=gray!40}, legend pos=outer north east]
+\addplot[gray!60, dashed, line width=1pt] coordinates {(0.9,0.129)(450,0.129)};
+\addlegendentry{single full tree}
+\addplot[secondary, line width=1.2pt, mark=*, mark size=1.2pt] coordinates
+  {(1,0.119) (5,0.093) (10,0.083) (25,0.078) (50,0.073) (100,0.073) (200,0.073) (400,0.071)};
+\addlegendentry{bagging}
+\addplot[greenhl!70!black, line width=1.2pt, mark=square*, mark size=1.2pt] coordinates
+  {(1,0.194) (5,0.102) (10,0.077) (25,0.069) (50,0.068) (100,0.071) (200,0.073) (400,0.071)};
+\addlegendentry{random forest}
+\addplot[accent, line width=1.2pt, mark=triangle*, mark size=1.5pt] coordinates
+  {(1,0.157) (5,0.128) (10,0.117) (25,0.097) (50,0.094) (100,0.091) (200,0.089) (400,0.079)};
+\addlegendentry{AdaBoost (depth-2 trees)}
+\addplot[purplehl, line width=1.2pt, mark=diamond*, mark size=1.5pt] coordinates
+  {(1,0.135) (5,0.128) (10,0.114) (25,0.099) (50,0.083) (100,0.081) (200,0.078) (400,0.071)};
+\addlegendentry{gradient boosting}
+\end{axis}
+\end{tikzpicture}}%
+{Test error against ensemble size on a 3{,}000-example problem with 5\% label noise.
+Every ensemble roughly halves the error of a single tree. Averaging methods level off
+quickly; boosting keeps improving for longer.}{ensemble-curves}
+
+\section{Stacking}
+
+\textbf{Stacking} combines \emph{different kinds} of model. Train several base models
+--- say logistic regression, an SVM (\chref{svm}) and a random forest --- then train a second-level
+model (often logistic regression) whose inputs are the base models' predictions and
+whose target is the true label. To avoid leakage, the second-level training data must
+be the base models' predictions on examples they did not train on, produced by
+cross-validation. Stacking learns how much to trust each base model, and when.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.8cm}L{3.8cm}L{3.8cm}L{4.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Method} & \textbf{Members} & \textbf{Mainly reduces} & \textbf{Watch out for} \\
+\midrule
+\endhead
+Bagging & Deep trees on bootstrap samples, in parallel & Variance & Little gain
+with stable learners \\
+Random forest & Bagged trees with random feature subsets & Variance & Importances
+biased towards many-valued features \\
+AdaBoost & Stumps or shallow trees, in sequence & Bias (and variance) & Label noise:
+mislabelled points get ever larger weights \\
+Gradient boosting & Shallow trees fitted to residuals & Bias (and variance) &
+Overfits with too many trees at a high learning rate; tune both \\
+Stacking & Different model types plus a combiner & Whatever the base models miss &
+Leakage if the combiner is trained on in-sample predictions \\
+\bottomrule
+\end{longtable}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Ensembling copies of the same model.} Correlated members vote as
+        one; diversity is the whole point.
+  \item \textbf{Boosting noisy labels without limit.} AdaBoost's weights chase
+        mislabelled points; use fewer rounds, a lower learning rate, or bagging.
+  \item \textbf{Reading impurity importances as causal.} They say what the forest
+        used, not what drives the outcome, and they favour many-valued features.
+  \item \textbf{Training a stacking combiner on in-sample predictions.} Use
+        cross-validated predictions.
+  \item \textbf{Forgetting the cost.} Hundreds of trees are slower to run and harder
+        to explain than one; check that the gain is worth it.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Ensembles}
+\lensLA{A random forest over engagement features is a strong at-risk model, and
+its feature importances give advisers a ranked list of warning signs to discuss.
+Present them as ``what the model relies on'', never as ``what causes failure''.}
+
+\lensPM{Gradient-boosted trees are the usual winner for predicting project overrun
+or ticket resolution time from mixed tabular data. With a few hundred projects,
+keep the trees shallow and the learning rate low, and check with cross-validation
+that the ensemble beats a single pruned tree by enough to justify it.}
+
+\lensIOT{Isolation forests --- ensembles of random trees in which anomalies are
+isolated in fewer splits --- are a standard unsupervised detector for sensor data.
+Forests also parallelise naturally across the cores of an edge gateway.}
+
+\lensSEC{Malware and intrusion classifiers in production are very often
+gradient-boosted trees. Ensembles are harder to evade than a single model, because
+an attacker must fool many decision paths at once --- harder, not impossible.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[One Tree Against Five Ensembles]
+\begin{lstlisting}[language=Python]
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import cross_val_score
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import (BaggingClassifier, RandomForestClassifier,
+                              AdaBoostClassifier, GradientBoostingClassifier,
+                              VotingClassifier)
+
+# --- 1. one round of AdaBoost, by hand -----------------------------------
+w = np.full(10, 0.1)                            # ten examples, equal weight
+wrong = np.array([1, 1, 1, 0, 0, 0, 0, 0, 0, 0], dtype=bool)
+eps = w[wrong].sum()                            # weighted error = 0.3
+alpha = 0.5 * np.log((1 - eps) / eps)           # say of this learner
+w = np.where(wrong, w * np.exp(alpha), w * np.exp(-alpha))
+w = w / w.sum()
+print(f"alpha = {alpha:.3f}; new weights: wrong {w[0]:.4f}, "
+      f"right {w[-1]:.4f}; weight on the mistakes = {w[wrong].sum():.2f}")
+
+# --- 2. one tree against five ensembles ----------------------------------
+X, y = make_classification(n_samples=3000, n_features=20, n_informative=8,
+                           n_redundant=4, flip_y=0.05, random_state=7)
+tree = DecisionTreeClassifier
+models = {
+    "single tree": tree(random_state=0),
+    "bagging (100 trees)": BaggingClassifier(tree(), n_estimators=100,
+                                             random_state=0),
+    "random forest (100)": RandomForestClassifier(n_estimators=100,
+                                                  random_state=0),
+    "AdaBoost (depth 2)": AdaBoostClassifier(tree(max_depth=2),
+                                             n_estimators=200,
+                                             random_state=0),
+    "gradient boosting": GradientBoostingClassifier(n_estimators=200,
+                                                    random_state=0),
+    "vote: LR + tree + RF": VotingClassifier([
+        ("lr", LogisticRegression(max_iter=1000)),
+        ("dt", tree(max_depth=6, random_state=0)),
+        ("rf", RandomForestClassifier(n_estimators=100, random_state=0))],
+        voting="soft"),
+}
+for name, m in models.items():
+    s = cross_val_score(m, X, y, cv=5)
+    print(f"{name:24s} accuracy {s.mean():.3f} +/- {s.std():.3f}")
+
+# --- 3. a free validation estimate, and what the forest looked at --------
+rf = RandomForestClassifier(n_estimators=300, oob_score=True,
+                            random_state=0).fit(X, y)
+print("random forest out-of-bag accuracy:", round(rf.oob_score_, 3))
+top = np.argsort(-rf.feature_importances_)[:5]
+print("most used features:", top.tolist(),
+      rf.feature_importances_[top].round(3).tolist())
+\end{lstlisting}
+Every ensemble beats the single tree by four to six points. Now set
+\texttt{flip\_y=0.3} (30\% label noise) and compare bagging with AdaBoost again:
+which suffers more, and why?
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Three independent classifiers are each 80\% accurate. What is the accuracy
+        of their majority vote?
+  \item A stump has weighted error 0.2. Compute its $\alpha$ and the factors by
+        which misclassified and correct examples are re-weighted.
+  \item Why does bagging help a decision tree much more than it helps logistic
+        regression?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item A majority of individually decent, independent voters beats every voter;
+        the work of ensemble learning is making members diverse.
+  \item Bagging trains unstable learners on bootstrap samples and averages them,
+        reducing variance; out-of-bag examples give a free error estimate.
+  \item Random forests add random feature subsets at each split to decorrelate the
+        trees; they are the safest default for tabular data.
+  \item Boosting trains weak learners in sequence on re-weighted data; AdaBoost
+        gives each learner a say $\alpha = \tfrac{1}{2}\ln\frac{1-\varepsilon}{\varepsilon}$
+        and moves half the weight onto its mistakes. It reduces bias but is
+        sensitive to label noise.
+  \item Gradient boosting fits each new tree to the current residuals; stacking
+        learns how to combine different model types.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A bootstrap sample of $n$ examples contains about what
+        fraction of the distinct examples? (a)~50\% (b)~63\% (c)~90\% (d)~100\%.
+  \item \textbf{(MCQ)} Random forests differ from bagged trees by: (a)~using stumps
+        (b)~re-weighting examples (c)~considering a random subset of features at
+        each split (d)~pruning every tree.
+  \item \textbf{(MCQ)} In AdaBoost, a weak learner with weighted error 0.5 receives
+        a weight $\alpha$ of: (a)~1 (b)~0.5 (c)~0 (d)~$-1$.
+  \item \textbf{(Short)} Contrast bagging and boosting in terms of how members are
+        trained and which error component each reduces.
+  \item \textbf{(Short)} Explain the out-of-bag estimate and why it is honest.
+  \item \textbf{(Short)} Why is AdaBoost sensitive to mislabelled training examples?
+  \item \textbf{(Applied)} Compute the accuracy of a majority vote of seven
+        independent classifiers that are each 65\% accurate.
+  \item \textbf{(Applied)} Continue the AdaBoost worked example: the second stump
+        misclassifies two of the seven previously correct examples and none of the
+        three previous mistakes. Compute $\varepsilon_2$, $\alpha_2$ and the new
+        weights.
+\end{reviewq}

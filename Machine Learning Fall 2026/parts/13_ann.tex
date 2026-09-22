@@ -1,0 +1,505 @@
+%=====================================================================
+\chapter{Artificial Neural Networks}\label{ch:ann}
+%=====================================================================
+\locator{3}{Part III --- Supervised Learning Algorithms}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Compute} the output of a perceptron and \textbf{train} one with the
+        perceptron rule.
+  \item \textbf{Explain} linear separability and why a single perceptron cannot
+        learn XOR.
+  \item \textbf{Derive} the delta rule as gradient descent on squared error.
+  \item \textbf{Perform} one forward and backward pass of backpropagation through a
+        small multilayer network by hand.
+  \item \textbf{Choose} activation functions and \textbf{apply} early stopping,
+        weight decay and dropout against overfitting.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (the chain rule, gradient descent), \chref{logreg} (the sigmoid, the
+softmax, cross-entropy) and \chref{generalization} (overfitting, regularisation).
+\end{prereq}
+
+\begin{keyterms}
+artificial neuron $\bullet$ perceptron $\bullet$ threshold unit $\bullet$
+perceptron training rule $\bullet$ linear separability $\bullet$ XOR $\bullet$
+delta rule $\bullet$ sigmoid unit $\bullet$ multilayer perceptron $\bullet$ hidden
+layer $\bullet$ forward pass $\bullet$ backpropagation $\bullet$ epoch $\bullet$
+activation function $\bullet$ ReLU $\bullet$ early stopping $\bullet$ weight decay
+$\bullet$ dropout
+\end{keyterms}
+
+\section{From Neurons to Units}
+
+A biological neuron receives signals from thousands of others, and fires if their
+combined stimulation exceeds a threshold. Learning, roughly, changes the strength
+of the connections. An \term{artificial neural network} keeps just that much of
+the biology: many simple \emph{units}, each computing a weighted sum of its inputs
+and passing it through a simple function, connected so that the outputs of some are
+the inputs of others. Everything the network knows is in the connection weights,
+and learning means adjusting them.
+
+Networks are the right tool when the input is high-dimensional and raw --- pixels,
+audio samples, sensor streams --- when the target function is complex and unknown,
+when some noise is acceptable, when long training times are acceptable, and when
+nobody needs to read the learned function. Mitchell's examples were steering a car
+from camera images and recognising faces; today's are the whole of deep learning.
+
+\section{The Perceptron}
+
+\begin{definitionbox}[Perceptron]
+A \term{perceptron} computes a weighted sum of its inputs and thresholds it:
+\[
+o(\mathbf{x}) =
+\begin{cases} 1 & \text{if } w_0 + w_1 x_1 + \dots + w_d x_d > 0 \\ 0 & \text{otherwise} \end{cases}
+\]
+With a constant input $x_0 = 1$ the bias $w_0$ is just another weight, and the unit
+computes $\operatorname{step}(\mathbf{w}\cdot\mathbf{x})$. Its decision boundary is the
+hyperplane $\mathbf{w}\cdot\mathbf{x} = 0$ --- the same family as logistic regression
+and the linear SVM.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  inp/.style={circle, draw=secondary, fill=secondary!10, minimum size=0.75cm, font=\scriptsize},
+  a/.style={-{Stealth[length=2mm]}, gray!60, line width=0.9pt}]
+\node[inp] (x0) at (0,1.8)  {$1$};
+\node[inp] (x1) at (0,0.6)  {$x_1$};
+\node[inp] (x2) at (0,-0.6) {$x_2$};
+\node[font=\small] at (0,-1.45) {$\vdots$};
+\node[inp] (xd) at (0,-2.2) {$x_d$};
+\node[circle, draw=primary, line width=1.2pt, fill=primary!10, minimum size=1.3cm,
+      font=\large] (sum) at (3.4,0) {$\sum$};
+\node[rounded corners=3pt, draw=accent, line width=1.1pt, fill=accent!8, minimum width=1.5cm,
+      minimum height=1.1cm] (act) at (6.0,0) {};
+\draw[accent, line width=1.1pt] (5.45,-0.3) -- (6.0,-0.3) -- (6.0,0.3) -- (6.55,0.3);
+\node[font=\tiny, accent, anchor=north] at (6.0,-0.6) {step (or sigmoid)};
+\draw[a] (x0) -- node[above, font=\tiny, sloped] {$w_0$} (sum);
+\draw[a] (x1) -- node[above, font=\tiny, sloped] {$w_1$} (sum);
+\draw[a] (x2) -- node[above, font=\tiny, sloped] {$w_2$} (sum);
+\draw[a] (xd) -- node[above, font=\tiny, sloped] {$w_d$} (sum);
+\draw[a] (sum) -- node[above, font=\tiny] {$\mathbf{w}\cdot\mathbf{x}$} (act);
+\draw[a] (act) -- (8.2,0) node[right, font=\scriptsize] {$o$};
+\node[anchor=north west, align=left, text width=4.6cm, font=\scriptsize, text=gray!55!black]
+     at (9.0,1.9)
+     {\textbf{AND} with $w_0 = -0.8$, $w_1 = w_2 = 0.5$:\\[2pt]
+      $(0,0) \to -0.8 \to 0$\\
+      $(0,1) \to -0.3 \to 0$\\
+      $(1,0) \to -0.3 \to 0$\\
+      $(1,1) \to +0.2 \to 1$\\[4pt]
+      Change $w_0$ to $-0.3$ and the same unit computes \textbf{OR}.};
+\end{tikzpicture}}%
+{A perceptron: a weighted sum of the inputs, then a threshold. The bias is a weight on a
+constant input of 1. With the weights shown on the right it computes logical AND.}{perceptron}
+
+\begin{definitionbox}[The Perceptron Training Rule]
+Start from small (or zero) weights. For each training example with target $t$ and
+current output $o$, update every weight:
+\[
+w_i \leftarrow w_i + \eta\,(t - o)\,x_i
+\]
+Correct outputs change nothing; a missed positive pushes the weights towards the
+input, a false positive pushes them away. If the training examples are
+\term{linearly separable} --- some hyperplane separates the classes perfectly ---
+this procedure is guaranteed to find one in a finite number of steps, for any
+sufficiently small learning rate $\eta$.
+\end{definitionbox}
+
+\begin{worked}[Training a Perceptron to Compute AND]
+Inputs with bias $x_0 = 1$; weights $(w_0, w_1, w_2)$ start at $(0, 0, 0)$; $\eta = 0.5$.
+The output is 1 only if $\mathbf{w}\cdot\mathbf{x} > 0$.
+
+\smallskip
+\textbf{Epoch 1.} $(0,0)$, $(0,1)$, $(1,0)$: net $= 0$, output 0, target 0 --- no change.
+$(1,1)$: net $0$, output 0, target 1 --- update by $0.5 \times (1 - 0) \times (1, 1, 1)$:
+$\mathbf{w} = (0.5,\ 0.5,\ 0.5)$.
+
+\textbf{Epoch 2.} $(0,0)$: net $0.5$, output 1, target 0 --- subtract $0.5 \times (1,0,0)$:
+$\mathbf{w} = (0,\ 0.5,\ 0.5)$. $(0,1)$: net $0.5$, output 1 --- subtract
+$0.5 \times (1,0,1)$: $\mathbf{w} = (-0.5,\ 0.5,\ 0)$. $(1,0)$: net $0$, correct.
+$(1,1)$: net $0$, output 0 --- add $0.5 \times (1,1,1)$: $\mathbf{w} = (0,\ 1,\ 0.5)$.
+
+\textbf{Epochs 3--5} continue the same way, and at the end of epoch 5 the weights are
+$\mathbf{w} = (-1,\ 1,\ 0.5)$. \textbf{Check:} $(0,0) \to -1$, $(0,1) \to -0.5$,
+$(1,0) \to 0$, all output 0; $(1,1) \to +0.5$, output 1. Epoch 6 makes no changes:
+converged. (Trace epochs 3 to 5 yourself: it is standard examination practice.)
+\end{worked}
+
+\section{Linear Separability and XOR}
+
+A single perceptron draws one straight line. AND and OR can be separated by a line;
+XOR --- true when exactly one input is true --- cannot: its two positive points
+$(0,1)$ and $(1,0)$ sit on one diagonal and its two negatives on the other. No
+perceptron, however trained, can represent XOR. Minsky and Papert's 1969 book made
+this point so forcefully that neural network research stalled for over a decade.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  one/.style={circle, fill=secondary, inner sep=2.3pt},
+  zero/.style={circle, draw=accent, line width=1.1pt, fill=white, inner sep=2.1pt}]
+\foreach \ox/\ttl in {0/AND, 4.2/OR, 8.4/XOR}{
+  \begin{scope}[shift={(\ox,0)}]
+  \draw[gray!55, -{Stealth[length=1.6mm]}] (-0.3,0) -- (2.3,0) node[right, font=\tiny] {$x_1$};
+  \draw[gray!55, -{Stealth[length=1.6mm]}] (0,-0.3) -- (0,2.3) node[above, font=\tiny] {$x_2$};
+  \node[font=\scriptsize\bfseries, text=primary] at (1.0,-0.7) {\ttl};
+  \end{scope}}
+% AND
+\node[zero] at (0,0) {}; \node[zero] at (0,1.6) {}; \node[zero] at (1.6,0) {}; \node[one] at (1.6,1.6) {};
+\draw[greenhl!70!black, line width=1.2pt] (0.5,2.2) -- (2.2,0.5);
+% OR
+\node[zero] at (4.2,0) {}; \node[one] at (4.2,1.6) {}; \node[one] at (5.8,0) {}; \node[one] at (5.8,1.6) {};
+\draw[greenhl!70!black, line width=1.2pt] (3.8,1.0) -- (5.2,-0.4);
+% XOR
+\node[zero] at (8.4,0) {}; \node[one] at (8.4,1.6) {}; \node[one] at (10.0,0) {}; \node[zero] at (10.0,1.6) {};
+\draw[accent, line width=1.1pt, dashed] (8.0,0.9) -- (10.4,0.7);
+\node[font=\tiny, accent, align=center] at (11.6,0.8) {no single line\\separates them};
+\end{tikzpicture}}%
+{AND and OR are linearly separable; XOR is not. A second layer of units, each drawing its
+own line, is needed to represent it.}{xor}
+
+The cure is a second layer. XOR is ``OR but not AND'': one hidden unit computes OR,
+another computes NAND (not-AND), and an output unit computes AND of the two. Each
+unit draws one line; together they carve out the diagonal. This is why networks have
+hidden layers --- and the only problem is how to train them, since the perceptron
+rule needs a target for every unit and the hidden units have none.
+
+\section{Gradient Descent and the Delta Rule}
+
+The perceptron rule cannot be extended to hidden units because the step function
+has no useful derivative. The fix is to replace hard thresholds with smooth units
+and train by gradient descent on an error measure.
+
+\begin{definitionbox}[The Delta Rule]
+For a \emph{linear} unit $o = \mathbf{w}\cdot\mathbf{x}$ and squared error
+$E = \tfrac{1}{2}\sum_{d}(t_d - o_d)^2$ over the training examples, the gradient is
+$\partial E/\partial w_i = -\sum_d (t_d - o_d)\,x_{id}$, so gradient descent updates
+\[
+w_i \leftarrow w_i + \eta\sum_d (t_d - o_d)\,x_{id}
+\]
+the \term{delta rule} (or LMS rule). It looks like the perceptron rule, but it is
+gradient descent: it converges towards the minimum-error weights even when the data
+is \emph{not} separable, which the perceptron rule does not. It is exactly the
+gradient descent for linear regression of \chref{linreg}.
+\end{definitionbox}
+
+For a \term{sigmoid unit}, $o = \sigma(\mathbf{w}\cdot\mathbf{x})$, the chain rule adds
+one factor, the derivative of the sigmoid, which has the convenient form
+$\sigma'(z) = \sigma(z)\,(1 - \sigma(z)) = o(1 - o)$.
+
+\section{Multilayer Networks and Backpropagation}
+
+\begin{definitionbox}[Multilayer Perceptron]
+A \term{multilayer perceptron} (MLP) arranges sigmoid (or other smooth) units in
+layers: an input layer, one or more \term{hidden layers}, and an output layer. Each
+unit takes the outputs of the previous layer, forms a weighted sum and applies its
+activation. A network with one hidden layer of enough units can approximate any
+continuous function to any accuracy; two hidden layers, any function at all.
+\end{definitionbox}
+
+\begin{definitionbox}[Backpropagation (for sigmoid units and squared error)]
+For each training example:
+\begin{tightnum}
+  \item \textbf{Forward pass:} compute every unit's output $o$, layer by layer.
+  \item \textbf{Output units:} $\delta_k = o_k(1 - o_k)(t_k - o_k)$.
+  \item \textbf{Hidden units} (backwards, layer by layer):
+        $\delta_h = o_h(1 - o_h)\sum_{k} w_{kh}\,\delta_k$ --- each hidden unit's share
+        of the blame is the output deltas, weighted by its connections to them.
+  \item \textbf{Update every weight} $w_{ji}$ from unit $i$ to unit $j$:
+        $w_{ji} \leftarrow w_{ji} + \eta\,\delta_j\,x_{ji}$, where $x_{ji}$ is the input
+        arriving along that connection.
+\end{tightnum}
+One sweep through the whole training set is an \term{epoch}.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  inp/.style={circle, draw=secondary, fill=secondary!10, minimum size=0.95cm},
+  hid/.style={circle, draw=purplehl, fill=purplehl!10, minimum size=1.05cm, align=center},
+  outu/.style={circle, draw=greenhl!70!black, fill=greenhl!12, minimum size=1.05cm, align=center},
+  w/.style={font=\tiny, fill=white, inner sep=0.8pt},
+  a/.style={-{Stealth[length=2mm]}, gray!60, line width=0.8pt}]
+\node[inp] (x1) at (0,1.2) {$x_1 = 1$};
+\node[inp] (x2) at (0,-1.2) {$x_2 = 0$};
+\node[hid] (h1) at (4.2,1.4) {$h_1$\\[-1pt]{\tiny 0.622}};
+\node[hid] (h2) at (4.2,-1.4) {$h_2$\\[-1pt]{\tiny 0.475}};
+\node[outu] (o) at (8.2,0) {$o$\\[-1pt]{\tiny 0.658}};
+\draw[a] (x1) -- node[w, pos=0.35] {0.4} (h1);
+\draw[a] (x1) -- node[w, pos=0.25] {$-0.3$} (h2);
+\draw[a] (x2) -- node[w, pos=0.25] {$-0.2$} (h1);
+\draw[a] (x2) -- node[w, pos=0.35] {0.5} (h2);
+\draw[a] (h1) -- node[w] {0.6} (o);
+\draw[a] (h2) -- node[w] {0.8} (o);
+\node[font=\tiny, purplehl, anchor=south] at (4.2,2.0) {bias 0.1};
+\node[font=\tiny, purplehl, anchor=north] at (4.2,-2.0) {bias 0.2};
+\node[font=\tiny, greenhl!45!black, anchor=south] at (8.2,0.6) {bias $-0.1$};
+\draw[-{Stealth[length=2mm]}, accent, line width=1pt] (8.9,-0.3) -- (10.1,-0.3);
+\node[font=\tiny, accent, anchor=west, align=left] at (10.2,-0.3) {target $t = 1$\\error $0.342$};
+\draw[-{Stealth[length=2mm]}, accent!70, dashed, line width=1pt]
+     (7.6,-0.9) .. controls (6.5,-2.4) and (5.2,-2.6) .. (4.7,-2.0);
+\node[font=\tiny, accent!80!black, align=center] at (6.5,-2.75)
+     {deltas flow backwards: $\delta_o = 0.0770$, $\delta_{h_1} = 0.0109$, $\delta_{h_2} = 0.0154$};
+\end{tikzpicture}}%
+{The network of the worked example, with the unit outputs of the forward pass written in
+each unit. Errors computed at the output are passed backwards along the same connections
+to assign blame to the hidden units.}{backprop-net}
+
+\begin{worked}[One Step of Backpropagation]
+The 2--2--1 network of \dsref{backprop-net}, all sigmoid units, input $(1, 0)$, target
+$t = 1$, learning rate $\eta = 0.5$.
+
+\smallskip
+\textbf{Forward.}
+\begin{tight}
+  \item $h_1$: net $= 0.1 + 0.4(1) - 0.2(0) = 0.5$, output $\sigma(0.5) = 0.6225$.
+  \item $h_2$: net $= 0.2 - 0.3(1) + 0.5(0) = -0.1$, output $\sigma(-0.1) = 0.4750$.
+  \item $o$: net $= -0.1 + 0.6(0.6225) + 0.8(0.4750) = 0.6535$, output $\mathbf{0.6578}$.
+        Error $t - o = 0.3422$.
+\end{tight}
+\textbf{Backward.}
+\begin{tight}
+  \item $\delta_o = 0.6578 \times (1 - 0.6578) \times 0.3422 = \mathbf{0.0770}$.
+  \item $\delta_{h_1} = 0.6225 \times 0.3775 \times (0.6 \times 0.0770) = \mathbf{0.0109}$.
+  \item $\delta_{h_2} = 0.4750 \times 0.5250 \times (0.8 \times 0.0770) = \mathbf{0.0154}$.
+\end{tight}
+\textbf{Update} ($\Delta w = \eta\,\delta\,x$).
+\begin{tight}
+  \item Output weights: from $h_1$: $0.6 + 0.5(0.0770)(0.6225) = 0.6240$; from $h_2$:
+        $0.8 + 0.5(0.0770)(0.4750) = 0.8183$; bias: $-0.1 + 0.5(0.0770) = -0.0615$.
+  \item $h_1$: weight from $x_1$ $0.4 \to 0.4054$, bias $0.1 \to 0.1054$; from $x_2$
+        unchanged, because $x_2 = 0$.
+  \item $h_2$: weight from $x_1$ $-0.3 \to -0.2923$, bias $0.2 \to 0.2077$.
+\end{tight}
+\textbf{Check.} A new forward pass gives $o = 0.6727$: closer to 1. The squared error
+$\tfrac{1}{2}(t - o)^2$ falls from 0.0586 to 0.0536. Thousands of such small steps
+are what training a network means.
+\end{worked}
+
+\section{Activation Functions and Outputs}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=9.0cm, height=5.0cm, axis lines=middle,
+  xlabel={$z$}, ylabel={activation},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=-4, xmax=4, ymin=-1.2, ymax=2.2,
+  legend style={font=\tiny, draw=gray!40, at={(0.02,0.97)}, anchor=north west}]
+\addplot[secondary, line width=1.3pt, domain=-4:4, samples=100] {1/(1+exp(-x))};
+\addlegendentry{sigmoid $\sigma(z)$: $(0, 1)$}
+\addplot[purplehl, line width=1.3pt, domain=-4:4, samples=100] {tanh(x)};
+\addlegendentry{tanh: $(-1, 1)$}
+\addplot[accent, line width=1.3pt, domain=-4:2.2, samples=60] {max(0,x)};
+\addlegendentry{ReLU $\max(0, z)$}
+\end{axis}
+\end{tikzpicture}}%
+{Three activation functions. The sigmoid and tanh flatten out for large $|z|$, where their
+gradients vanish; ReLU does not saturate for positive inputs, which is why it trains deep
+networks faster.}{activations}
+
+Mitchell's networks use sigmoids throughout. Modern practice differs in two ways.
+Hidden layers use \term{ReLU}, $\max(0, z)$: its gradient is 1 for any positive
+input, so it does not shrink the error signal the way a saturated sigmoid does
+(the \emph{vanishing gradient} that made deep sigmoid networks hard to train). And
+the output layer matches the task: a single sigmoid with cross-entropy for two
+classes (exactly logistic regression, \chref{logreg}), a softmax with cross-entropy
+for several, a linear unit with squared error for regression.
+
+\section{Training Well: Overfitting and Its Cures}
+
+A network with enough hidden units can memorise any training set, and it will if
+allowed to. \dsref{early-stopping} shows the typical course: training error falls
+steadily, validation error falls for a while and then rises as the network begins
+fitting the noise.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=9.6cm, height=5.0cm, axis lines=left,
+  xlabel={epoch}, ylabel={cross-entropy loss},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=0, xmax=150, ymin=0, ymax=1.9,
+  legend style={font=\tiny, draw=gray!40, at={(0.98,0.5)}, anchor=east}]
+\addplot[primary, line width=1.2pt] coordinates
+  {(1,0.632) (2,0.565) (3,0.517) (4,0.482) (5,0.454) (6,0.430) (7,0.408) (8,0.387) (9,0.367) (10,0.348) (20,0.214) (30,0.110) (40,0.043) (50,0.014) (60,0.006) (70,0.003) (80,0.002) (90,0.001) (100,0.001) (110,0.001) (120,0.001) (130,0.001) (140,0.001) (150,0.001)};
+\addlegendentry{training}
+\addplot[accent, line width=1.2pt] coordinates
+  {(1,0.669) (2,0.636) (3,0.618) (4,0.611) (5,0.610) (6,0.613) (7,0.617) (8,0.620) (9,0.621) (10,0.621) (20,0.666) (30,0.773) (40,0.922) (50,1.122) (60,1.313) (70,1.442) (80,1.537) (90,1.602) (100,1.648) (110,1.686) (120,1.718) (130,1.747) (140,1.773) (150,1.798)};
+\addlegendentry{validation}
+\draw[greenhl!70!black, dashed, line width=0.9pt] (axis cs:5,0) -- (axis cs:5,1.0);
+\node[font=\tiny, greenhl!45!black, anchor=south west, align=left] at (axis cs:5,1.0)
+     {stop here: epoch 5};
+\end{axis}
+\end{tikzpicture}}%
+{Training and validation loss of a two-hidden-layer network on data with 20\% label noise.
+Training loss goes to zero; validation loss is lowest after five epochs and rises
+thereafter. Early stopping keeps the epoch-5 weights.}{early-stopping}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.2cm}L{6.0cm}L{5.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Technique} & \textbf{What it does} & \textbf{Setting} \\
+\midrule
+\endhead
+Early stopping & Keep the weights from the epoch with the lowest validation error &
+Needs a validation set; patience of a few epochs \\
+Weight decay (L2) & Add $\lambda\sum w^2$ to the loss --- ridge regression for networks
+(\chref{generalization}) & \texttt{alpha} in scikit-learn; tune by CV \\
+Dropout & During training, switch off each hidden unit at random with probability $p$,
+so no unit can rely on another & $p \approx 0.2$--$0.5$; standard in deep learning
+frameworks \\
+Fewer units & A smaller network has less capacity to memorise & Tune the width by CV \\
+More data, augmented & Real or synthetic variations of the training examples &
+Flips, crops and noise for images and signals \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[What the Hidden Units Learn, and What Comes Next]
+Backpropagation lets the hidden layer invent its own features. Mitchell's famous
+demonstration trains an 8--3--8 network to copy an 8-bit input to its output
+through only 3 hidden units; the hidden units discover a 3-bit binary code for the
+eight inputs, a representation nobody programmed. Deep learning is this idea
+scaled up: many layers, each building features from the one below, with
+architectures designed for the data --- convolutional networks for images,
+recurrent networks and transformers for sequences. Those architectures are the
+subject of the Deep Learning course; this chapter is their foundation.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Not scaling inputs.} Unscaled inputs saturate sigmoid units and
+        make gradient descent crawl.
+  \item \textbf{Initialising all weights to zero.} Every hidden unit then computes
+        the same thing and receives the same update forever; initialise randomly.
+  \item \textbf{Training until the training error is zero.} Watch the validation
+        error and stop when it turns.
+  \item \textbf{Assuming a network beats a linear model.} On small tabular data it
+        often does not; in this chapter's lab it gains less than one point.
+  \item \textbf{Judging from one run.} Random initialisation makes results vary;
+        repeat with several seeds.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Neural Networks}
+\lensLA{Clickstream sequences from a learning platform --- which video, which
+quiz, how long --- are raw, high-dimensional input where networks can find patterns
+hand-built features miss. They need thousands of students, not hundreds; with one
+course's data, the regularised linear model usually wins.}
+
+\lensPM{Tabular project data is small and structured, the setting where networks
+have the least advantage over trees and linear models. Where they help is text:
+embedding ticket descriptions or commit messages before any other model sees
+them.}
+
+\lensIOT{Networks trained on raw vibration or audio windows detect faults that
+summary statistics miss, and small networks can be compressed to run on
+microcontrollers. The training cost is paid once, in the cloud; inference is a few
+matrix multiplications on the device.}
+
+\lensSEC{Networks classify malware from raw bytes and traffic from packet
+sequences. They are also the most vulnerable to adversarial examples: tiny,
+deliberately crafted input changes that flip the output. A security model is
+judged by how it fails under attack, not only by its accuracy.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Backpropagation From Scratch, Then a Real Network]
+\begin{lstlisting}[language=Python]
+import numpy as np
+from sklearn.datasets import load_digits
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.neural_network import MLPClassifier
+from sklearn.linear_model import LogisticRegression
+
+# --- 1. XOR: no perceptron can learn it; a 2-3-1 network can -------------
+X = np.array([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=float)
+t = np.array([[0], [1], [1], [0]], dtype=float)
+sig = lambda z: 1 / (1 + np.exp(-z))
+rng = np.random.default_rng(1)
+W1, b1 = rng.normal(0, 1, (2, 3)), np.zeros(3)     # input -> hidden
+W2, b2 = rng.normal(0, 1, (3, 1)), np.zeros(1)     # hidden -> output
+eta = 1.0
+for epoch in range(5001):
+    h = sig(X @ W1 + b1)                           # forward pass
+    o = sig(h @ W2 + b2)
+    d_out = o * (1 - o) * (t - o)                  # output deltas
+    d_hid = h * (1 - h) * (d_out @ W2.T)           # hidden deltas
+    W2 += eta * h.T @ d_out                        # weight updates
+    b2 += eta * d_out.sum(0)
+    W1 += eta * X.T @ d_hid
+    b1 += eta * d_hid.sum(0)
+    if epoch in (0, 500, 5000):
+        err = 0.5 * np.sum((t - o) ** 2)
+        print(f"epoch {epoch:4d}: error {err:.4f}  "
+              f"outputs {o.ravel().round(2)}")
+
+# --- 2. handwritten digits: a network against a linear model -------------
+Xd, yd = load_digits(return_X_y=True)             # 1,797 images, 8x8 pixels
+X_tr, X_te, y_tr, y_te = train_test_split(Xd, yd, test_size=0.3,
+                                          random_state=0, stratify=yd)
+sc = StandardScaler().fit(X_tr)
+X_tr, X_te = sc.transform(X_tr), sc.transform(X_te)
+lin = LogisticRegression(max_iter=2000).fit(X_tr, y_tr)
+print("logistic regression test accuracy:", round(lin.score(X_te, y_te), 3))
+for alpha in (0.0001, 1.0):                        # weight decay
+    net = MLPClassifier(hidden_layer_sizes=(64,), alpha=alpha,
+                        max_iter=1000, random_state=0).fit(X_tr, y_tr)
+    print(f"network, weight decay {alpha:g}: {net.n_iter_} epochs, "
+          f"test accuracy {net.score(X_te, y_te):.3f}")
+\end{lstlisting}
+The network learns XOR, and on the digits it beats logistic regression by less than a
+point --- more with stronger weight decay. Now add \texttt{early\_stopping=True} to the
+network and explain why accuracy \emph{falls} on this small dataset.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A perceptron has $w_0 = -1$, $w_1 = 2$, $w_2 = 1$. What does it output for
+        $(0, 1)$ and $(1, 0)$?
+  \item Why can a single perceptron not learn XOR, and how does one hidden layer
+        fix it?
+  \item In backpropagation, why does the hidden unit's delta contain the output
+        unit's delta?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item A perceptron thresholds a weighted sum; the perceptron rule finds a
+        separating hyperplane whenever one exists.
+  \item A single unit cannot represent XOR or any function that is not linearly
+        separable; hidden layers can.
+  \item The delta rule is gradient descent on squared error and converges even on
+        non-separable data; sigmoid units make it differentiable.
+  \item Backpropagation computes output deltas, passes them backwards through the
+        weights to the hidden units, and updates every weight by
+        $\eta\,\delta\,x$ --- the chain rule applied layer by layer.
+  \item Modern networks use ReLU hidden units and task-matched outputs
+        (sigmoid, softmax, linear).
+  \item Control overfitting with early stopping, weight decay, dropout, smaller
+        networks and more data.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which function can a single perceptron \emph{not} represent?
+        (a)~AND (b)~OR (c)~NAND (d)~XOR.
+  \item \textbf{(MCQ)} The derivative of the sigmoid output $o$ with respect to its
+        input is: (a)~$o$ (b)~$1 - o$ (c)~$o(1 - o)$ (d)~$e^{-o}$.
+  \item \textbf{(MCQ)} Early stopping chooses the weights from the epoch with the
+        lowest: (a)~training error (b)~validation error (c)~test error (d)~learning
+        rate.
+  \item \textbf{(Short)} Contrast the perceptron training rule with the delta rule.
+  \item \textbf{(Short)} Why must a network's weights be initialised randomly?
+  \item \textbf{(Short)} Explain why ReLU helps train deep networks.
+  \item \textbf{(Applied)} Give weights for a two-layer network of threshold units
+        that computes XOR, and verify it on all four inputs.
+  \item \textbf{(Applied)} Repeat the backpropagation worked example for the input
+        $(0, 1)$ with target $t = 0$, starting from the original weights. Report the
+        output before and after the update.
+\end{reviewq}

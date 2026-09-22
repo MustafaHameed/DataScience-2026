@@ -1,0 +1,392 @@
+%=====================================================================
+\chapter{Responsible and Ethical Machine Learning}\label{ch:ethics}
+%=====================================================================
+\locator{6}{Part VI --- Responsible Practice}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Identify} where bias can enter a machine learning system, from data
+        collection to deployment.
+  \item \textbf{Compute} and \textbf{compare} group fairness measures --- selection
+        rate, equal opportunity and predictive parity --- from confusion matrices.
+  \item \textbf{Explain} why the common fairness criteria cannot all be satisfied at
+        once when base rates differ.
+  \item \textbf{Discuss} privacy, transparency, accountability and security as
+        obligations of anyone who deploys a model.
+  \item \textbf{Apply} a responsible-ML checklist to a project, and \textbf{write} a
+        model card.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{evaluation} (confusion matrices, precision, recall, thresholds) and
+\chref{workflow} (data and features). This chapter delivers the HEC 2025 outcome
+``discuss ethical considerations while applying ML to societal problems''; every
+Four Lenses panel in the handout has been practice for it.
+\end{prereq}
+
+\begin{keyterms}
+algorithmic bias $\bullet$ historical, representation and measurement bias
+$\bullet$ proxy variable $\bullet$ feedback loop $\bullet$ protected attribute
+$\bullet$ demographic parity $\bullet$ disparate impact (four-fifths rule)
+$\bullet$ equal opportunity $\bullet$ equalised odds $\bullet$ predictive parity
+$\bullet$ impossibility of fairness $\bullet$ privacy $\bullet$ re-identification
+$\bullet$ explainability $\bullet$ model card $\bullet$ accountability $\bullet$
+adversarial example $\bullet$ data poisoning
+\end{keyterms}
+
+\section{Why a Machine Learning Course Has an Ethics Chapter}
+
+A model is a decision procedure applied at scale. A biased admissions officer affects
+the applicants they meet; a biased admissions model affects every applicant, the same
+way, every year, and looks objective while doing it. The earlier chapters taught how
+to make a model accurate. This one asks the questions an accurate model does not
+answer: accurate for whom, measured how, used to decide what, and with what recourse
+for the people it gets wrong? None of these questions is a matter of opinion to be
+left to someone else. Each has technical content, and the engineer who built the model
+is often the only person who can answer it.
+
+\section{Where Bias Enters}
+
+\dsfigh{%
+\begin{tikzpicture}[font=\scriptsize,
+  st/.style={rounded corners=3pt, draw=primary, line width=0.9pt, fill=primary!8,
+             text=primary!80!black, font=\scriptsize\bfseries, minimum width=2.3cm,
+             minimum height=0.8cm, align=center},
+  bi/.style={rounded corners=2pt, draw=accent!70, fill=accent!6, text=accent!80!black,
+             font=\tiny, text width=2.3cm, align=center, inner sep=3pt},
+  a/.style={-{Stealth[length=2mm]}, gray!60, line width=0.9pt}]
+\node[st] (s1) at (0,0) {World};
+\node[st] (s2) at (2.8,0) {Data collected};
+\node[st] (s3) at (5.6,0) {Labels \&\\features};
+\node[st] (s4) at (8.4,0) {Model \&\\objective};
+\node[st] (s5) at (11.2,0) {Deployment};
+\foreach \a/\b in {s1/s2,s2/s3,s3/s4,s4/s5}{\draw[a] (\a) -- (\b);}
+\draw[a, accent!70, dashed] (s5.north) .. controls +(0,1.2) and +(0,1.2) ..
+     node[above, font=\tiny, text=accent!80!black] {feedback loop: decisions change the world, which becomes next year's data} (s1.north);
+\node[bi, anchor=north] at (0,-0.6) {\textbf{historical}: the past was unfair, and the data records it};
+\node[bi, anchor=north] at (2.8,-0.6) {\textbf{representation}: some groups barely appear};
+\node[bi, anchor=north] at (5.6,-0.6) {\textbf{measurement}: the label is a proxy (arrests for crime, clicks for interest)};
+\node[bi, anchor=north] at (8.4,-0.6) {\textbf{aggregation}: one model, one threshold for groups that differ};
+\node[bi, anchor=north] at (11.2,-0.6) {\textbf{use}: a score built for one purpose applied to another};
+\end{tikzpicture}}%
+{Five places bias enters a machine learning system. Removing a protected attribute
+addresses none of them.}{bias-sources}
+
+Two points from \dsref{bias-sources} catch almost every team. First, a model does not
+need to see a \term{protected attribute} (gender, religion, ethnicity, region) to
+discriminate on it. Other features act as \term{proxy variables}: home district,
+school, name, even the time of day someone applies. In this chapter's lab, three
+ordinary features recover group membership with 97\% accuracy. Second,
+\term{feedback loops}: a model that sends more patrols to one district records more
+incidents there, which becomes next year's training data, which sends more patrols.
+The model's prediction makes itself come true.
+
+\section{Measuring Fairness}
+
+Fairness cannot be measured without choosing what to compare. Four group criteria
+are in common use, each a comparison of confusion-matrix quantities between groups:
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.3cm}L{4.6cm}L{7.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Criterion} & \textbf{Equal across groups} & \textbf{Meaning} \\
+\midrule
+\endhead
+Demographic parity & Selection rate $P(\hat{y} = 1)$ & Each group is selected in the same
+proportion. The \term{four-fifths rule} of US employment law flags a ratio below 0.8 as
+\term{disparate impact} \\
+Equal opportunity & True positive rate (recall) & Qualified people are selected at the
+same rate in every group \\
+Equalised odds & TPR and FPR & As above, and unqualified people are wrongly selected at
+the same rate \\
+Predictive parity & Precision $P(y = 1 \mid \hat{y} = 1)$ & A positive prediction means
+the same in every group \\
+\bottomrule
+\end{longtable}
+
+\begin{worked}[Auditing an Admissions Model]
+A model screens 1{,}000 applicants from each of two groups. Group A has 400 truly
+qualified applicants; group B, whose members had fewer chances to build a strong record,
+has 200.
+
+\smallskip
+\begin{center}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+\textbf{Group} & \textbf{TP} & \textbf{FN} & \textbf{FP} & \textbf{TN} & \textbf{Selected} \\
+\midrule
+A & 320 & 80 & 60 & 540 & 380 \\
+B & 120 & 80 & 40 & 760 & 160 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\smallskip
+\begin{tight}
+  \item \textbf{Selection rate:} A $380/1000 = 38\%$; B $160/1000 = 16\%$. Ratio
+        $0.16/0.38 = \mathbf{0.42}$ --- far below 0.8: disparate impact.
+  \item \textbf{True positive rate:} A $320/400 = 0.80$; B $120/200 = \mathbf{0.60}$. A
+        qualified B applicant is rejected 40\% of the time, twice as often as a
+        qualified A applicant (20\%). Equal opportunity fails.
+  \item \textbf{False positive rate:} A $60/600 = 0.10$; B $40/800 = 0.05$.
+  \item \textbf{Precision:} A $320/380 = 0.84$; B $120/160 = 0.75$.
+\end{tight}
+\textbf{Reading it.} Part of the gap in selection reflects a real difference in base
+rates (40\% against 20\% qualified); but the gap in \emph{true positive rate} does not ---
+it is the model treating equally qualified people differently. That is the finding to
+act on first.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=10.4cm, height=5.0cm, ybar, bar width=0.42cm, axis lines=left,
+  ymin=0, ymax=1.0, ylabel={rate}, symbolic x coords={selection,TPR,FPR,precision},
+  xtick=data, tick label style={font=\tiny}, label style={font=\scriptsize},
+  enlarge x limits=0.18, nodes near coords, nodes near coords style={font=\tiny},
+  legend style={font=\tiny, draw=gray!40, at={(0.02,0.97)}, anchor=north west},
+  point meta=explicit symbolic]
+\addplot[fill=secondary!55, draw=secondary] coordinates
+  {(selection,0.38)[0.38] (TPR,0.80)[0.80] (FPR,0.10)[0.10] (precision,0.84)[0.84]};
+\addlegendentry{group A}
+\addplot[fill=accent!50, draw=accent] coordinates
+  {(selection,0.16)[0.16] (TPR,0.60)[0.60] (FPR,0.05)[0.05] (precision,0.75)[0.75]};
+\addlegendentry{group B}
+\end{axis}
+\end{tikzpicture}}%
+{The worked audit. Every criterion shows a gap, but they mean different things: the
+selection gap partly reflects different base rates; the TPR gap is unequal treatment of
+equally qualified applicants.}{fairness-bars}
+
+\begin{alertbox}[The Impossibility of Fairness]
+When two groups have different base rates, no classifier that makes any errors can
+satisfy equal TPR, equal FPR and equal precision at the same time (Chouldechova, 2017;
+Kleinberg, Mullainathan and Raghavan, 2016). Choosing a fairness criterion is
+therefore a \emph{decision}, not a calculation: equal opportunity protects qualified
+applicants; predictive parity protects the meaning of a positive score. In the lab,
+lowering group B's threshold to 0.26 equalises the TPR at 0.93 --- and B's precision
+falls from 0.83 to 0.63. Say which criterion you chose, why, and who pays for it.
+\end{alertbox}
+
+\section{Privacy}
+
+Training data often describes people, and a model can leak it. Removing names is not
+anonymisation: a small number of attributes --- postcode, date of birth and gender ---
+identifies most individuals in a population, and linking a ``de-identified'' dataset to a
+public one \term{re-identifies} them. Models themselves can memorise and reveal rare
+training examples. Good practice: collect only what the task needs; keep identifiers
+out of features; aggregate or add noise where exact values are not needed
+(\emph{differential privacy} makes that noise mathematically rigorous); and control
+who can query a model trained on sensitive data. Legal duties vary by jurisdiction ---
+Pakistan's Prevention of Electronic Crimes Act 2016, the Personal Data Protection Bill
+drafted by the Ministry of IT and Telecommunication, the EU's GDPR for data about
+European residents --- and a project handling personal data should identify which apply
+before collecting anything.
+
+\section{Transparency and Explainability}
+
+People affected by a decision are entitled to an explanation they can act on, and the
+people deploying a model need to know when it is relying on something it should not.
+Three levels help:
+\begin{tight}
+  \item \textbf{Interpretable models} where the stakes justify the accuracy cost:
+        logistic regression's odds ratios (\chref{logreg}), a shallow tree's rules
+        (\chref{trees}).
+  \item \textbf{Global explanations} of complex models: permutation importance ---
+        how much does performance drop when one feature is shuffled? --- and partial
+        dependence.
+  \item \textbf{Local explanations} of a single prediction: which features pushed
+        \emph{this} applicant's score down (SHAP values and LIME are the common tools).
+\end{tight}
+An explanation of what the model \emph{uses} is not an explanation of what
+\emph{causes} the outcome (\chref{linreg}); say which one you are giving.
+
+\begin{definitionbox}[Model Card]
+A \term{model card} is a short document published with a model: what it is for, and
+what it must not be used for; the data it was trained on; its performance overall
+\emph{and for each relevant group}; the fairness criterion chosen and the result; known
+limitations; and who is responsible for it. The project of \chref{project} must include
+one.
+\end{definitionbox}
+
+\section{Accountability and Security}
+
+\textbf{Accountability} means that a person, not ``the algorithm'', is responsible for
+a decision, and that the people affected can contest it. Keep a human in the loop for
+consequential decisions; log what the model predicted and why; and provide a route for
+appeal that can actually overturn the prediction.
+
+\textbf{Security} is an ethical issue too, because a model that can be manipulated will
+be. \term{Adversarial examples} --- inputs changed slightly and deliberately --- flip a
+model's output (\chref{ann}). \term{Data poisoning} inserts crafted examples into the
+training data, a particular risk for models retrained on user-supplied data and for
+self-training (\chref{semisup}). A model deployed where someone benefits from fooling
+it must be tested against someone trying.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.6cm}L{11.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Stage} & \textbf{Questions to answer before deployment} \\
+\midrule
+\endhead
+Purpose & What decision will this support? Who is affected? Would a simpler rule, or no
+model, be better? \\
+Data & Who is missing or under-represented? What is the label really measuring? Was it
+collected with consent, and may it be used this way? \\
+Features & Could any feature be a proxy for a protected attribute? Does any exist only
+because of the outcome (\chref{workflow})? \\
+Evaluation & Performance for each group, not only overall. Which fairness criterion,
+and why? \\
+Deployment & Who reviews the model's decisions? How can they be contested? How will
+drift and feedback loops be detected? \\
+Security & Who benefits from fooling it? Has it been tested against them? \\
+\bottomrule
+\end{longtable}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{``We removed the protected attribute, so the model is fair.''}
+        Proxies carry it back in.
+  \item \textbf{Reporting only overall accuracy.} A model can be accurate on
+        average and poor for a minority group; report per group.
+  \item \textbf{Picking the fairness metric the model happens to pass.} Choose it
+        from the harm you want to prevent, before looking.
+  \item \textbf{Treating anonymised data as safe.} Linking attributes re-identifies
+        people.
+  \item \textbf{Deploying without a way to be wrong.} Every model errs; the question is
+        what happens to the person it errs about.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Responsible Machine Learning}
+\lensLA{An early-warning model that flags students from one region more often may be
+measuring unequal preparation, not ability; and a flag seen by a teacher can lower
+expectations and cause the failure it predicted. Use flags to offer support, never to
+restrict opportunity, and audit TPR by group every term.}
+
+\lensPM{Models that score employees' productivity from commit counts or ticket
+throughput measure what is easy to count. They reward gaming, and penalise the people
+doing the unglamorous work --- reviews, mentoring, documentation --- that keeps a team
+functioning.}
+
+\lensIOT{Sensor data from homes and vehicles reveals when people are in, asleep or
+travelling. Process on the device where possible, send aggregates rather than raw
+streams, and treat a smart-meter dataset as the personal data it is.}
+
+\lensSEC{Security models are the most adversarial setting of all: the people they
+classify are actively trying to defeat them. Test against evasion and poisoning, and
+remember that a false positive may lock an innocent user out of an account --- give
+them a fast route back in.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Auditing a Model for Fairness]
+A synthetic admissions dataset in which group B had fewer chances to build a strong
+record. The group is never given to the model as a feature.
+\begin{lstlisting}[language=Python]
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split, cross_val_score
+
+# --- a synthetic admissions dataset with a protected group ---------------
+rng = np.random.default_rng(0)
+n = 6000
+group = rng.integers(0, 2, n)                     # 0 = group A, 1 = group B
+# group B had fewer chances to build a strong record (historical bias)
+record = rng.normal(0.6 - 0.25 * group, 0.15, n)
+aptitude = rng.normal(0.5, 0.15, n)               # equal in both groups
+district = group + rng.normal(0, 0.3, n)          # a proxy for the group
+qualified = (0.5 * record + 0.5 * aptitude
+             + rng.normal(0, 0.05, n) > 0.5).astype(int)
+X = np.column_stack([record, aptitude, district])
+X_tr, X_te, y_tr, y_te, g_tr, g_te = train_test_split(
+    X, qualified, group, test_size=0.5, random_state=0)
+
+
+def report(name, pred):
+    print(name)
+    for g, label in ((0, "A"), (1, "B")):
+        m = g_te == g
+        sel = pred[m].mean()                               # selection rate
+        tpr = pred[m][y_te[m] == 1].mean()                 # recall
+        fpr = pred[m][y_te[m] == 0].mean()
+        prec = y_te[m][pred[m] == 1].mean()
+        print(f"  group {label}: base rate {y_te[m].mean():.2f}  "
+              f"selected {sel:.2f}  TPR {tpr:.2f}  FPR {fpr:.2f}  "
+              f"precision {prec:.2f}")
+
+
+# --- 1. the model, group column excluded (it was never a feature) --------
+model = LogisticRegression().fit(X_tr, y_tr)
+p = model.predict_proba(X_te)[:, 1]
+report("threshold 0.5 for everyone:", (p > 0.5).astype(int))
+
+# --- 2. removing the group column does not remove the group --------------
+acc = cross_val_score(LogisticRegression(), X, group, cv=5).mean()
+print(f"the features recover group membership with accuracy {acc:.2f}")
+
+# --- 3. equalise the true positive rate with a group-specific threshold --
+t_b = 0.5
+tpr_a = (p[(g_te == 0) & (y_te == 1)] > 0.5).mean()
+while (p[(g_te == 1) & (y_te == 1)] > t_b).mean() < tpr_a:
+    t_b -= 0.01
+pred = np.where(g_te == 1, p > t_b, p > 0.5).astype(int)
+report(f"threshold 0.5 for A, {t_b:.2f} for B (equal opportunity):", pred)
+\end{lstlisting}
+Equalising the TPR costs group B precision and raises its false positive rate --- the
+impossibility result in action. Write two sentences, as if for the admissions committee,
+explaining the trade-off you would recommend.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A hiring model selects 45\% of one group and 30\% of another. Does it pass the
+        four-fifths rule?
+  \item Why does removing a protected attribute from the features not guarantee a fair
+        model?
+  \item Which fairness criterion protects qualified applicants from being rejected,
+        and which confusion-matrix quantity does it compare?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Bias enters through history, representation, measurement, aggregation and
+        use, and feedback loops can amplify it; proxies reintroduce removed
+        attributes.
+  \item Group fairness compares confusion-matrix rates across groups: selection
+        (demographic parity), TPR (equal opportunity), TPR and FPR (equalised odds),
+        precision (predictive parity).
+  \item With different base rates these criteria conflict; choosing one is a
+        decision to be justified, not computed.
+  \item Protect privacy by minimising and aggregating data; explain models at the
+        right level; keep a human accountable and a route to contest.
+  \item Document every deployed model with a model card, including per-group
+        performance, and test it against people with a reason to fool it.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Equal opportunity requires equal: (a)~selection rates
+        (b)~true positive rates (c)~precision (d)~accuracy.
+  \item \textbf{(MCQ)} Using arrest records as the label for ``committed a crime'' is an
+        example of: (a)~representation bias (b)~measurement bias (c)~a feedback loop
+        only (d)~data poisoning.
+  \item \textbf{(MCQ)} A selection-rate ratio of 0.42 between two groups: (a)~passes the
+        four-fifths rule (b)~fails it (c)~proves intent to discriminate (d)~says nothing.
+  \item \textbf{(Short)} Explain a feedback loop with an example from a domain of your
+        choice.
+  \item \textbf{(Short)} Why can equal opportunity and predictive parity not both hold
+        when base rates differ?
+  \item \textbf{(Short)} List the sections of a model card and justify one of them.
+  \item \textbf{(Applied)} For the worked audit, find how many more group-B qualified
+        applicants must be selected to equalise the TPR at 0.80, and compute B's new
+        selection rate if no additional false positives are admitted.
+  \item \textbf{(Applied)} Choose one model from Chapters 5--20 and write its model
+        card for a realistic deployment, using the checklist of this chapter.
+\end{reviewq}

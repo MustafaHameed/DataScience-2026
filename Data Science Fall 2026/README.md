@@ -31,6 +31,22 @@ Figure conventions worth knowing before you edit one:
   figures use the normal `chapter.n`. `\locator` restores chapter numbering, so
   every chapter file is unaffected.
 
+## Content changes — Fall 2026 slide pass
+
+The lecture decks in `slides/` are generated from this handout, so every
+correction found while building them was made here first. Rendering each
+figure alone at 300 dpi for the slides exposed faults that the page-by-page
+review of the PDF had not.
+
+| Ch | Change | Why |
+| --- | --- | --- |
+| 14 | "Setting a Threshold with Money" table: rows now in threshold order (0.05 first) | The minimum sat below the default row, out of sequence |
+| 14 | Figure 14.1: column heads raised clear of the cells; formula panel widened | "Positive"/"Negative" touched the boxes; three descriptions wrapped under their formulas |
+| 14 | Figure 14.2: ROC curves redrawn as $y=x^{1/9}$ and $y=x^{3/7}$ | The curves labelled AUC 0.90 and 0.70 actually had AUC 0.82 and 0.66 |
+| 14 | Figure 14.2: "default 0.5" label re-anchored; "worked example" label moved off the curve | The label was clipped to "ault 0.5" |
+| 14 | Figure 14.3: fold labels moved out from under the first column; score labels clear of the last | "fold 1–5" were hidden behind the boxes; "score" overlapped the fifth column |
+| 14 | Lab: `confusion_matrix(...).ravel()[[0,1,2,3]]` → `.ravel()` | The fancy index was a no-op |
+
 ## Build
 
 ```powershell

@@ -1,0 +1,494 @@
+%=====================================================================
+\chapter{Measuring Classifier Performance}\label{ch:evaluation}
+%=====================================================================
+\locator{2}{Part II --- Linear Models and Generalization}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Build} a confusion matrix and \textbf{compute} accuracy,
+        precision, recall, specificity and $F_1$ from it.
+  \item \textbf{Explain} why accuracy misleads on imbalanced classes, and
+        \textbf{choose} a metric that matches the cost of each error.
+  \item \textbf{Read} ROC and precision--recall curves, and \textbf{choose} a
+        decision threshold from costs.
+  \item \textbf{Compute} macro- and micro-averaged metrics for several classes.
+  \item \textbf{Construct} a confidence interval for an error rate, and
+        \textbf{test} whether two classifiers genuinely differ.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (the base-rate calculation), \chref{logreg} (probabilities and
+thresholds) and \chref{generalization} (cross-validation; the test set used
+once).
+\end{prereq}
+
+\begin{keyterms}
+confusion matrix $\bullet$ true/false positive/negative $\bullet$ accuracy
+$\bullet$ precision $\bullet$ recall (sensitivity) $\bullet$ specificity
+$\bullet$ $F_1$ score $\bullet$ class imbalance $\bullet$ ROC curve $\bullet$
+AUC $\bullet$ precision--recall curve $\bullet$ operating threshold $\bullet$
+macro and micro averaging $\bullet$ sample error $\bullet$ true error
+$\bullet$ confidence interval $\bullet$ McNemar's test
+\end{keyterms}
+
+\section{Measuring Classifier Accuracy Is Not One Number}
+
+The HEC outline calls this topic \emph{measuring classifier accuracy}, and the
+first lesson is that accuracy is usually the wrong measure. A classifier makes
+two kinds of mistake, and in almost every real problem one costs far more than
+the other: a missed intrusion against a wasted analyst hour, an undetected
+failing student against an unnecessary phone call. A single number that adds the
+two together hides exactly the information needed to decide whether the
+classifier is any use.
+
+\section{The Confusion Matrix}
+
+\begin{definitionbox}[Confusion Matrix]
+For two classes, cross-tabulate the predictions against the truth:
+\begin{tight}
+  \item \term{true positive} (TP): positive, predicted positive;
+  \item \term{false positive} (FP): negative, predicted positive --- a false alarm;
+  \item \term{false negative} (FN): positive, predicted negative --- a miss;
+  \item \term{true negative} (TN): negative, predicted negative.
+\end{tight}
+Every metric in this chapter is a ratio of these four counts.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  cell/.style={rounded corners=3pt, minimum width=2.9cm, minimum height=1.5cm,
+               align=center, line width=0.9pt}]
+\node[font=\scriptsize\bfseries, text=primary] at (1.55,2.0) {truly malicious};
+\node[font=\scriptsize\bfseries, text=primary] at (4.65,2.0) {truly clean};
+\node[font=\scriptsize\bfseries, text=primary, rotate=90] at (-0.35,0.8) {flagged};
+\node[font=\scriptsize\bfseries, text=primary, rotate=90] at (-0.35,-0.8) {not flagged};
+\node[cell, draw=greenhl, fill=greenhl!14] at (1.55,0.8)
+     {{\color{greenhl!45!black}\bfseries TP = 225}\\[2pt]{\tiny caught}};
+\node[cell, draw=accent, fill=accent!10] at (4.65,0.8)
+     {{\color{accent}\bfseries FP = 75}\\[2pt]{\tiny false alarm}};
+\node[cell, draw=accent, fill=accent!10] at (1.55,-0.8)
+     {{\color{accent}\bfseries FN = 25}\\[2pt]{\tiny missed}};
+\node[cell, draw=greenhl, fill=greenhl!14] at (4.65,-0.8)
+     {{\color{greenhl!45!black}\bfseries TN = 4{,}675}\\[2pt]{\tiny left alone}};
+\node[font=\tiny, text=gray!55!black] at (1.55,-1.8) {250 malicious};
+\node[font=\tiny, text=gray!55!black] at (4.65,-1.8) {4{,}750 clean};
+\node[font=\tiny, text=gray!55!black, anchor=west] at (6.2,0.8) {300 flagged};
+\node[font=\tiny, text=gray!55!black, anchor=west] at (6.2,-0.8) {4{,}700 not};
+% the metrics
+\node[anchor=north west] at (7.9,2.2) {%
+  \renewcommand{\arraystretch}{2.1}%
+  \begin{tabular}{@{}l@{\quad}l@{\quad}l@{}}
+  {\color{primary}\bfseries Accuracy} & $=\dfrac{\text{TP}+\text{TN}}{\text{all}}$ &
+    {\tiny right overall} \\
+  {\color{greenhl!45!black}\bfseries Precision} & $=\dfrac{\text{TP}}{\text{TP}+\text{FP}}$ &
+    {\tiny of the flags, how many real} \\
+  {\color{secondary}\bfseries Recall} & $=\dfrac{\text{TP}}{\text{TP}+\text{FN}}$ &
+    {\tiny of the real ones, how many flagged} \\
+  {\color{goldhl!50!black}\bfseries Specificity} & $=\dfrac{\text{TN}}{\text{TN}+\text{FP}}$ &
+    {\tiny of the clean, how many left alone} \\
+  {\color{purplehl}\bfseries $F_1$} & $=\dfrac{2\cdot\text{prec}\cdot\text{rec}}{\text{prec}+\text{rec}}$ &
+    {\tiny harmonic mean of the two}
+  \end{tabular}};
+\end{tikzpicture}}%
+{A malware scanner's confusion matrix on 5{,}000 files, and the five metrics
+computed from it. Precision reads along the ``flagged'' row; recall reads down the
+``truly malicious'' column.}{confusion}
+
+\begin{worked}[One Scanner, Five Metrics]
+The scanner of \dsref{confusion} examined 5{,}000 files, of which 250 were
+malicious. It flagged 300, of which 225 were malicious.
+
+\smallskip
+\textbf{Cells:} TP $= 225$, FP $= 300 - 225 = 75$, FN $= 250 - 225 = 25$,
+TN $= 5000 - 225 - 75 - 25 = 4675$.
+
+\smallskip
+\begin{tight}
+  \item \textbf{Accuracy} $= (225 + 4675)/5000 = \mathbf{98.0\%}$
+  \item \textbf{Precision} $= 225/300 = \mathbf{75.0\%}$
+  \item \textbf{Recall} $= 225/250 = \mathbf{90.0\%}$
+  \item \textbf{Specificity} $= 4675/4750 = \mathbf{98.4\%}$
+  \item $\mathbf{F_1} = \dfrac{2(0.75)(0.90)}{0.75 + 0.90} = \dfrac{1.35}{1.65} = \mathbf{0.818}$
+\end{tight}
+
+\smallskip
+\textbf{Against the baseline.} ``Flag nothing'' is right on the 4{,}750 clean
+files: 95.0\% accuracy. The scanner's 98.0\% is three points better than
+doing nothing, which sounds small; its recall of 90\% --- nine malicious files in
+ten caught, at the cost of one false alarm for every three real detections --- is
+what actually describes it.
+\end{worked}
+
+\begin{alertbox}[The Accuracy Paradox]
+When one class is rare, accuracy is dominated by the common class. A detector
+for an event that occurs in 1\% of cases can be 99\% accurate by never detecting
+anything. Compute the majority-class baseline before looking at any accuracy
+figure, and report precision and recall instead.
+\end{alertbox}
+
+\section{Precision, Recall and the Threshold}
+
+A probabilistic classifier (\chref{logreg}) does not flag or clear anything by
+itself; it outputs a score, and a \term{threshold} turns scores into decisions.
+Lower the threshold and more cases are flagged: recall rises and precision falls.
+Raise it and the reverse happens. Neither can be maximised without sacrificing
+the other, so the threshold must be chosen from the costs of the two errors ---
+which is a decision about the application, not about the algorithm.
+
+\begin{worked}[Choosing an Operating Threshold From Costs]
+For the malware scanner, a missed malicious file (FN) is estimated to cost 50
+times as much as a false alarm (FP) --- an infection against ten minutes of an
+analyst's time. The scanner's precision and recall at four thresholds, with 250
+malicious files:
+
+\smallskip
+\begin{center}
+\begin{tabular}{@{}rrrrrrr@{}}
+\toprule
+\textbf{Threshold} & \textbf{Precision} & \textbf{Recall} & \textbf{TP} & \textbf{FN} & \textbf{FP} & \textbf{Cost} $= 50\,\text{FN} + \text{FP}$ \\
+\midrule
+0.3 & 0.55 & 0.96 & 240 & 10 & 196 & \textbf{696} \\
+0.5 & 0.75 & 0.90 & 225 & 25 & 75 & 1{,}325 \\
+0.7 & 0.86 & 0.78 & 195 & 55 & 32 & 2{,}782 \\
+0.9 & 0.95 & 0.52 & 130 & 120 & 7 & 6{,}007 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\smallskip
+(TP $=$ recall $\times$ 250; FP $=$ TP $\times (1 - \text{precision})/\text{precision}$.)
+
+\smallskip
+\textbf{The cheapest threshold is 0.3}, which almost halves the cost of the
+default 0.5 by accepting 121 more false alarms to catch 15 more infections. With
+a cost ratio of 1:1 the answer would be different. The threshold is where the
+business decision enters the model.
+\end{worked}
+
+\section{Threshold-Free Summaries: ROC and PR Curves}
+
+\begin{definitionbox}[ROC Curve and AUC]
+The \term{ROC curve} plots the true positive rate (recall) against the false
+positive rate ($1 -$ specificity) at every possible threshold. The \term{area
+under the curve} (AUC) summarises it: the probability that the classifier scores
+a randomly chosen positive above a randomly chosen negative. A random classifier
+has AUC 0.5; a perfect one, 1.0.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.5cm},
+  width=6.6cm, height=5.4cm, axis lines=left,
+  tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+  xmin=0, xmax=1, ymin=0, ymax=1.03]
+\nextgroupplot[title={ROC curves}, xlabel={false positive rate},
+  ylabel={true positive rate (recall)},
+  legend style={font=\tiny, draw=gray!40, at={(0.98,0.03)}, anchor=south east}]
+% y = x^k has area 1/(1+k)
+\addplot[name path=a, greenhl!70!black, line width=1.3pt, domain=0:1, samples=160] {x^(1/19)};
+\addlegendentry{model A, AUC 0.95}
+\addplot[goldhl, line width=1.2pt, domain=0:1, samples=160] {x^(1/3)};
+\addlegendentry{model B, AUC 0.75}
+\addplot[gray!55, dashed] coordinates {(0,0)(1,1)};
+\addlegendentry{random, AUC 0.50}
+\addplot[name path=z, draw=none, domain=0:1] {0};
+\addplot[greenhl!8] fill between[of=a and z];
+\node[font=\tiny, text=gray!55!black, anchor=north west] at (axis cs:0.03,0.99)
+     {perfect corner};
+\nextgroupplot[title={Precision--recall at 5\% positives}, xlabel={recall},
+  ylabel={precision}]
+\addplot[greenhl!70!black, line width=1.3pt, domain=0:1, samples=80] {0.95-0.55*x^3};
+\addplot[goldhl, line width=1.2pt, domain=0:1, samples=80] {0.62-0.5*x^1.4};
+\addplot[gray!55, dashed] coordinates {(0,0.05)(1,0.05)};
+\node[font=\tiny, text=gray!55!black, anchor=south east] at (axis cs:0.98,0.06)
+     {random: precision $=$ 5\%};
+\node[font=\tiny, text=greenhl!45!black, anchor=south west] at (axis cs:0.05,0.95) {model A};
+\node[font=\tiny, text=goldhl!45!black, anchor=south west] at (axis cs:0.05,0.63) {model B};
+\end{groupplot}
+\end{tikzpicture}}%
+{Left: ROC curves sweep every threshold; the shaded area is model A's AUC. Right: the
+same two models on precision and recall. With rare positives the PR plot shows how many
+alerts are false, which the ROC plot hides.}{roc-pr}
+
+\begin{alertbox}[Prefer Precision--Recall When Positives Are Rare]
+The ROC false positive rate divides false alarms by the (huge) number of
+negatives, so hundreds of false alarms can look like a rate of 0.01. A
+precision--recall curve uses precision directly and does not flatter a
+rare-event detector. For intrusion, fraud and failure detection, report the PR
+curve or its area (average precision), and quote precision at the recall the
+application needs.
+\end{alertbox}
+
+\section{More Than Two Classes}
+
+With $k$ classes the confusion matrix is $k \times k$, and precision and recall
+are computed for each class in turn, treating it as positive and the rest as
+negative. They are then combined in one of two ways. \term{Macro averaging} takes
+the plain mean of the per-class values, so every class counts equally.
+\term{Micro averaging} pools the counts first, so every \emph{example} counts
+equally --- and micro-averaged recall equals accuracy.
+
+\begin{worked}[Macro Against Micro]
+A traffic classifier is tested on 100 flows: 80 web, 15 e-mail, 5 streaming. It
+labels 76 web, 9 e-mail and 1 streaming flow correctly.
+
+\smallskip
+\textbf{Per-class recall:} web $76/80 = 0.95$; e-mail $9/15 = 0.60$;
+streaming $1/5 = 0.20$.
+
+\textbf{Micro (accuracy):} $(76 + 9 + 1)/100 = \mathbf{0.86}$.
+
+\textbf{Macro:} $(0.95 + 0.60 + 0.20)/3 = \mathbf{0.58}$.
+
+\smallskip
+The micro figure is carried by the web class; the macro figure reveals that the
+classifier almost never recognises streaming. If the rare classes matter --- and
+in security they usually are the ones that matter --- report the macro figure
+and the per-class table.
+\end{worked}
+
+\section{How Sure Is the Number? Confidence Intervals for Error}
+
+A test set is a sample, so the error measured on it is an estimate. Mitchell
+distinguishes the \term{sample error} $\text{error}_S(h)$, the fraction of the $n$
+test examples misclassified, from the \term{true error} $\text{error}_{\mathcal{D}}(h)$
+over the whole population. Because each test example is an independent yes/no
+trial, the number of mistakes is binomial, and for $n \ge 30$ an approximate 95\%
+confidence interval for the true error is
+\[
+\text{error}_S(h) \;\pm\; 1.96\,\sqrt{\frac{\text{error}_S(h)\,\big(1 - \text{error}_S(h)\big)}{n}}
+\]
+
+\begin{worked}[How Wide Is 12\% Error?]
+A classifier misclassifies 24 of $n = 200$ test examples: $\text{error}_S = 0.12$.
+\[
+\sqrt{\frac{0.12 \times 0.88}{200}} = \sqrt{0.000528} = 0.0230,
+\qquad 1.96 \times 0.0230 = 0.045
+\]
+\textbf{95\% interval:} $0.12 \pm 0.045$, that is \textbf{7.5\% to 16.5\%}.
+
+\smallskip
+With $n = 2000$ and the same 12\% error, the half-width shrinks to
+$1.96\sqrt{0.12 \times 0.88/2000} = 0.014$: \textbf{10.6\% to 13.4\%}. Ten times
+the data gives an interval about $\sqrt{10} \approx 3.2$ times narrower. On 200
+examples, a competitor at 10\% error is not demonstrably better.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=9.4cm, height=4.8cm, axis lines=left, xmode=log,
+  xlabel={test set size $n$}, ylabel={95\% interval for error},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=40, xmax=12000, ymin=0, ymax=0.25, log basis x=10,
+  yticklabel style={/pgf/number format/fixed}]
+\addplot[name path=up, secondary, line width=1.1pt, domain=40:12000, samples=80]
+  {0.12+1.96*sqrt(0.12*0.88/x)};
+\addplot[name path=lo, secondary, line width=1.1pt, domain=40:12000, samples=80]
+  {0.12-1.96*sqrt(0.12*0.88/x)};
+\addplot[secondary!12] fill between[of=up and lo];
+\addplot[primary, dashed, line width=0.9pt] coordinates {(40,0.12)(12000,0.12)};
+\addplot[only marks, mark=*, mark size=1.8pt, accent] coordinates {(200,0.075)(200,0.165)(2000,0.106)(2000,0.134)};
+\node[font=\tiny, accent, anchor=north west] at (axis cs:215,0.068) {$n = 200$: 7.5--16.5\%};
+\node[font=\tiny, accent, anchor=south east] at (axis cs:1900,0.168) {$n = 2000$: 10.6--13.4\%};
+\draw[accent, line width=0.4pt] (axis cs:1900,0.17) -- (axis cs:2000,0.136);
+\node[font=\tiny, primary, anchor=south west] at (axis cs:45,0.121) {measured error 12\%};
+\end{axis}
+\end{tikzpicture}}%
+{How the uncertainty in a measured 12\% error rate shrinks with test-set size. The width
+falls as $1/\sqrt{n}$: four times the data halves it.}{error-ci}
+
+\section{Is One Classifier Really Better? McNemar's Test}
+
+Two classifiers are tested on the same examples and one scores a little higher.
+Is it better, or luckier? Only the examples on which they \emph{disagree} carry
+information. Let $b$ be the number that classifier A gets wrong and B gets
+right, and $c$ the number A gets right and B wrong. If the two are equally good,
+$b$ and $c$ should be similar. \term{McNemar's test} statistic
+\[
+\chi^2 = \frac{(|b - c| - 1)^2}{b + c}
+\]
+is compared with 3.84, the 95\% point of the chi-squared distribution with one
+degree of freedom; a larger value means the difference is unlikely to be chance.
+
+\begin{worked}[McNemar on 500 Test Emails]
+A spam classifier A and a new classifier B are run on the same 500 e-mails. They
+disagree on 40: B is right and A wrong on $b = 12$; A is right and B wrong on
+$c = 28$.
+\[
+\chi^2 = \frac{(|12 - 28| - 1)^2}{12 + 28} = \frac{15^2}{40} = 5.63 \;>\; 3.84
+\]
+\textbf{A is significantly better} at the 5\% level ($p \approx 0.018$): it is right on
+16 more e-mails, 3.2 points of accuracy. The 460 e-mails on which they agree play
+no part --- which is why the test is sensitive even when the accuracies look
+close. When the comparison is across cross-validation folds instead of one test
+set, the equivalent tool is a paired $t$-test on the per-fold scores.
+\end{worked}
+
+\section{Handling Class Imbalance}
+
+Imbalance is a problem for training as well as evaluation: a learner minimising
+average loss can do very well by ignoring the rare class. Three remedies, in
+order of preference:
+\begin{tightnum}
+  \item \textbf{Move the threshold.} Train normally, then choose the threshold from
+        costs, as above. It changes nothing about the model and is easy to
+        revisit.
+  \item \textbf{Weight the classes.} Make each error on the rare class cost more in
+        the loss (\texttt{class\_weight="balanced"} in scikit-learn).
+  \item \textbf{Resample the training data.} Undersample the common class, or
+        oversample the rare one (by duplication, or by synthesising new examples
+        with SMOTE). Resample only the training folds --- never the validation or
+        test data, whose class balance must stay real.
+\end{tightnum}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Reporting accuracy on imbalanced data} without the majority
+        baseline beside it.
+  \item \textbf{Quoting precision without recall,} or either without the
+        threshold at which it was measured.
+  \item \textbf{Using ROC-AUC alone for rare events.} Report the PR curve.
+  \item \textbf{Declaring a winner from a one-point difference} on a few hundred
+        test examples. Compute the interval or run McNemar's test.
+  \item \textbf{Resampling before splitting,} which puts copies of the same rare
+        example into both training and test sets.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Choosing the Metric}
+\lensLA{Recall at a fixed outreach budget: the advisers can call 50 students, so
+report how many of the eventual failures are among the top 50 scores. Precision
+matters too --- if most calls reach students who were fine, the advisers stop
+trusting the list.}
+
+\lensPM{Over- and under-predicting a project overrun cost roughly the same, so
+$F_1$ or balanced accuracy is reasonable. With 40 projects in the test set, the
+confidence interval on any rate is about $\pm 15$ points; say so, rather than
+reporting three significant figures.}
+
+\lensIOT{Failures are rare and a miss can stop a production line, so optimise
+recall and then cap false alarms at what the maintenance team can inspect. Use
+the PR curve; ROC-AUC will look excellent on a detector the technicians
+quickly learn to ignore.}
+
+\lensSEC{Report precision at a fixed recall --- ``62\% precision at 90\%
+recall'' --- and alerts per analyst per hour. Choose the threshold from the cost
+ratio, as in the malware example; and compare a new detector with the old on the
+same traffic with McNemar's test, not on two different weeks.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Evaluate an Imbalanced Classifier Properly]
+\begin{lstlisting}[language=Python]
+import numpy as np
+from scipy.stats import chi2
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import (confusion_matrix, precision_score, recall_score,
+                             f1_score, roc_auc_score, average_precision_score)
+
+# --- an imbalanced problem: 5% positives ---------------------------------
+X, y = make_classification(n_samples=6000, n_features=12, n_informative=5,
+                           weights=[0.95], flip_y=0.01, random_state=1)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.4,
+                                          stratify=y, random_state=1)
+print("baseline accuracy (always 0):", round(1 - y_te.mean(), 3))
+lr = LogisticRegression(max_iter=1000).fit(X_tr, y_tr)
+p = lr.predict_proba(X_te)[:, 1]
+
+# --- 1. the four cells and the metrics built from them -------------------
+pred = (p > 0.5).astype(int)
+tn, fp, fn, tp = confusion_matrix(y_te, pred).ravel()
+print(f"TP={tp} FP={fp} FN={fn} TN={tn}")
+print(f"accuracy {np.mean(pred == y_te):.3f}  "
+      f"precision {precision_score(y_te, pred):.3f}  "
+      f"recall {recall_score(y_te, pred):.3f}  F1 {f1_score(y_te, pred):.3f}")
+print(f"ROC-AUC {roc_auc_score(y_te, p):.3f}   "
+      f"PR-AUC {average_precision_score(y_te, p):.3f}")
+
+# --- 2. the threshold is a choice: sweep it ------------------------------
+for t in (0.1, 0.3, 0.5, 0.7):
+    pr = (p > t).astype(int)
+    print(f"threshold {t}: precision {precision_score(y_te, pr):.2f}  "
+          f"recall {recall_score(y_te, pr):.2f}")
+
+# --- 3. a 95% confidence interval for the error rate ---------------------
+n, e = len(y_te), np.mean(pred != y_te)
+half = 1.96 * np.sqrt(e * (1 - e) / n)
+print(f"error {e:.3f}, 95% interval [{e - half:.3f}, {e + half:.3f}]")
+
+# --- 4. is a decision tree really different? McNemar's test --------------
+tree = DecisionTreeClassifier(max_depth=5, random_state=0).fit(X_tr, y_tr)
+a_right = pred == y_te
+b_right = tree.predict(X_te) == y_te
+b = np.sum(~a_right & b_right)          # logistic wrong, tree right
+c = np.sum(a_right & ~b_right)          # logistic right, tree wrong
+stat = (abs(b - c) - 1) ** 2 / (b + c)
+print(f"disagreements b={b}, c={c}; McNemar chi2 = {stat:.2f}, "
+      f"p = {chi2.sf(stat, 1):.3f}")
+\end{lstlisting}
+The model is 96\% accurate against a 95\% baseline, and at the default threshold it
+finds only a third of the positives. Add \texttt{class\_weight="balanced"} to
+\texttt{LogisticRegression} and compare the recall, precision and PR-AUC.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Of 400 flagged logins, 100 were attacks; 20 attacks were not flagged.
+        Compute precision and recall.
+  \item A classifier's ROC-AUC is 0.97 on data with 0.1\% positives. What should
+        you ask for before believing it is useful?
+  \item A model makes 15 errors on 100 test examples. Give an approximate 95\%
+        interval for its true error.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Every classification metric is a ratio of the four confusion-matrix
+        cells; always compute the majority baseline first.
+  \item Precision asks ``when I flag, am I right?''; recall asks ``of the real
+        cases, how many did I flag?'' The threshold trades one for the other,
+        and should be chosen from the costs of the two errors.
+  \item ROC-AUC summarises ranking quality across thresholds but flatters
+        rare-event detectors; prefer precision--recall curves there.
+  \item Macro averaging treats classes equally and exposes weak rare classes;
+        micro averaging equals accuracy.
+  \item A measured error is an estimate: its 95\% interval is
+        $e \pm 1.96\sqrt{e(1-e)/n}$. Compare two classifiers on the same test set
+        with McNemar's test.
+  \item Handle imbalance by moving the threshold, weighting classes, or
+        resampling the training folds only.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Recall is: (a)~TP/(TP+FP) (b)~TP/(TP+FN) (c)~TN/(TN+FP)
+        (d)~(TP+TN)/all.
+  \item \textbf{(MCQ)} Lowering the decision threshold usually: (a)~raises
+        precision and recall (b)~raises recall, lowers precision (c)~raises
+        precision, lowers recall (d)~changes neither.
+  \item \textbf{(MCQ)} Micro-averaged recall over all classes equals:
+        (a)~macro recall (b)~accuracy (c)~precision (d)~$F_1$.
+  \item \textbf{(Short)} Explain the accuracy paradox with a numeric example of
+        your own.
+  \item \textbf{(Short)} Why do only the disagreements matter in McNemar's test?
+  \item \textbf{(Short)} Give a situation where you would choose a threshold that
+        makes precision 0.2, and justify it.
+  \item \textbf{(Applied)} A model tested on 10{,}000 connections, 200 of them
+        attacks, flags 500, of which 160 are attacks. Build the confusion matrix
+        and compute accuracy, precision, recall, specificity and $F_1$. Which two
+        numbers would you put in a report to the security manager?
+  \item \textbf{(Applied)} Classifier A has 18\% error and classifier B 15\% on the
+        same 300 test examples. Compute a 95\% interval for each. On the
+        disagreements, A is wrong and B right 25 times, and the reverse 16
+        times. Is B significantly better?
+\end{reviewq}

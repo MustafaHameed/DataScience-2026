@@ -1,0 +1,469 @@
+%=====================================================================
+\chapter{The Machine Learning Workflow and Toolkit}\label{ch:workflow}
+%=====================================================================
+\locator{1}{Part I --- Foundations}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} the stages of a machine learning experiment, from
+        framing the problem to reporting the result.
+  \item \textbf{Split} data into training, validation and test sets, and
+        \textbf{explain} what each one is for.
+  \item \textbf{Prepare} features: impute missing values, encode categories and
+        scale numbers.
+  \item \textbf{Use} the scikit-learn estimator interface and \textbf{combine}
+        preparation and model in a pipeline.
+  \item \textbf{Recognise} and \textbf{prevent} data leakage, and
+        \textbf{establish} a baseline before building any model.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{introduction} (examples, features, labels, the paradigms) and
+\chref{math} (vectors, distance, and why feature scale matters). Basic Python;
+Appendix~A is a reference for every library call used in the labs.
+\end{prereq}
+
+\begin{keyterms}
+workflow $\bullet$ feature types $\bullet$ training set $\bullet$ validation set
+$\bullet$ test set $\bullet$ stratified split $\bullet$ imputation $\bullet$
+one-hot encoding $\bullet$ standardisation $\bullet$ min--max scaling $\bullet$
+estimator $\bullet$ transformer $\bullet$ \texttt{fit} / \texttt{predict} /
+\texttt{transform} $\bullet$ pipeline $\bullet$ data leakage $\bullet$ baseline
+\end{keyterms}
+
+\section{One Experiment, Start to Finish}
+
+Every chapter from here on teaches a new algorithm, and every lab runs it inside
+the same sequence of steps. Learn the sequence once, here, and the algorithms
+become interchangeable parts. \dsref{workflow} shows it.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  st/.style={rounded corners=3pt, draw=#1, line width=0.9pt, fill=#1!8,
+             text=#1!55!black, font=\scriptsize\bfseries, minimum width=2.75cm,
+             minimum height=0.95cm, align=center},
+  a/.style={-{Stealth[length=2mm]}, gray!60, line width=0.9pt}]
+\node[st=primary]   (s1) at (0,0)    {1. Frame\\{\tiny T, P, E}};
+\node[st=primary]   (s2) at (3.1,0)  {2. Collect\\{\tiny and inspect}};
+\node[st=accent]    (s3) at (6.2,0)  {3. Split\\{\tiny lock the test set}};
+\node[st=secondary] (s4) at (9.3,0)  {4. Prepare\\{\tiny impute, encode, scale}};
+\node[st=secondary] (s5) at (12.4,0) {5. Baseline\\{\tiny the number to beat}};
+\node[st=greenhl]   (s6) at (12.4,-2.3) {6. Train\\{\tiny on training data}};
+\node[st=greenhl]   (s7) at (9.3,-2.3)  {7. Validate\\{\tiny compare, tune}};
+\node[st=goldhl]    (s8) at (6.2,-2.3)  {8. Test once\\{\tiny the final number}};
+\node[st=goldhl]    (s9) at (3.1,-2.3)  {9. Report\\{\tiny with the baseline}};
+\draw[a] (s1) -- (s2); \draw[a] (s2) -- (s3); \draw[a] (s3) -- (s4);
+\draw[a] (s4) -- (s5); \draw[a] (s5) -- (s6); \draw[a] (s6) -- (s7);
+\draw[a] (s7) -- (s8); \draw[a] (s8) -- (s9);
+\draw[a, greenhl!70!black, line width=1pt] (s7.south) .. controls +(0,-0.8) and +(0,-0.8)
+     .. node[below, font=\tiny, text=greenhl!45!black] {iterate: new features, new model}
+     (s6.south);
+\draw[accent, line width=1pt, dashed] (s3.south) -- (s8.north);
+\node[font=\tiny, text=accent, anchor=east, align=right] at (6.05,-1.15)
+     {test data waits here,\\untouched, until step 8};
+\end{tikzpicture}}%
+{The workflow every lab follows. The loop between training and validation may run
+dozens of times; the test set, split off in step 3, is used exactly once, in step
+8.}{workflow}
+
+\begin{conceptbox}[Why the Order Matters]
+Steps 3 and 8 are the only two that touch the test set, and they are placed as
+far apart as possible on purpose. Everything between them --- every choice of
+feature, algorithm and setting --- is made while looking only at training and
+validation data. If any of those choices is made while looking at the test set,
+the final number measures how well you fitted the test set, not how well the
+model will do on the next student, e-mail or sensor reading.
+\end{conceptbox}
+
+\section{Examples, Features and Labels}
+
+A dataset for supervised learning is a table: one row per \term{example}, one
+column per \term{feature}, and one column for the \term{label}. Before choosing
+any algorithm, decide what type each feature is, because the type decides how
+it must be prepared.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.0cm}L{5.0cm}L{7.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Feature type} & \textbf{Examples} & \textbf{Preparation} \\
+\midrule
+\endhead
+Numeric, continuous & Attendance rate, CPU load, bytes sent & Impute gaps; scale
+for distance- and gradient-based models \\
+Numeric, count & Logins per week, failed login attempts & As above; a log
+transform often helps with long tails \\
+Categorical, nominal & Programme, protocol, device type & One-hot encode; never
+treat the codes as numbers \\
+Categorical, ordinal & Grade band, severity level & Map to ordered integers, or
+one-hot if the gaps are not equal \\
+Text & E-mail body, commit message & Turn into counts or weights of words
+(\chref{bayes}) \\
+Identifier & Student ID, IP address, serial number & Usually drop. An ID that
+predicts the label is a leak, not a pattern \\
+\bottomrule
+\end{longtable}
+
+\section{Splitting the Data}
+
+\begin{definitionbox}[Training, Validation and Test Sets]
+The \term{training set} is what the algorithm learns from. The \term{validation
+set} is used to compare models and choose settings. The \term{test set} is held
+back and used once, at the end, to estimate performance on new data. A typical
+split is 60/20/20; with little data, the training and validation roles are
+combined by cross-validation (\chref{generalization}).
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+\fill[greenhl!18, draw=greenhl] (0,0) rectangle (9.0,0.8);
+\fill[secondary!18, draw=secondary] (9.0,0) rectangle (12.0,0.8);
+\fill[goldhl!22, draw=goldhl] (12.0,0) rectangle (15.0,0.8);
+\node[font=\scriptsize\bfseries, text=greenhl!45!black] at (4.5,0.4) {TRAINING \quad 60\%};
+\node[font=\scriptsize\bfseries, text=secondary!55!black] at (10.5,0.4) {VALIDATION 20\%};
+\node[font=\scriptsize\bfseries, text=goldhl!45!black] at (13.5,0.4) {TEST 20\%};
+\node[font=\scriptsize, text=greenhl!45!black, align=center] at (4.5,-0.45)
+     {fit the model's parameters};
+\node[font=\scriptsize, text=secondary!55!black, align=center] at (10.5,-0.5)
+     {choose between models\\and settings};
+\node[font=\scriptsize, text=goldhl!45!black, align=center] at (13.5,-0.5)
+     {estimate, once,\\how it will do};
+\draw[decorate, decoration={brace, amplitude=4pt, mirror}, gray!60]
+     (0,-1.1) -- (11.95,-1.1) node[midway, below=5pt, font=\scriptsize, text=gray!55!black]
+     {looked at many times, so its scores are optimistic};
+\draw[decorate, decoration={brace, amplitude=4pt, mirror}, gray!60]
+     (12.05,-1.1) -- (15.0,-1.1) node[midway, below=5pt, font=\scriptsize, text=gray!55!black]
+     {looked at once};
+\end{tikzpicture}}%
+{The three-way split. Only the test score is an honest estimate of performance on new
+data, and it stays honest only if it is looked at once.}{split}
+
+\begin{alertbox}[Split Before You Do Anything Else]
+Split first, and stratify: \texttt{train\_test\_split(..., stratify=y)} keeps the
+proportion of each class the same in every part, which matters when one class is
+rare. Two further rules apply to data with structure. If there are several rows
+per person, machine or account, keep all of an entity's rows on the same side of
+the split. If the data is ordered in time, train on the past and test on the
+future --- a random split lets the model peek at tomorrow.
+\end{alertbox}
+
+\section{Preparing Features}
+
+\textbf{Missing values.} Most algorithms cannot accept a blank. Either drop the
+rows (wasteful, and biased if the gaps are not random) or \term{impute}: fill
+each gap with the median of that feature in the training data. When a value is
+missing \emph{for a reason} --- a sensor that fails when it overheats, a student
+who never opened the quiz --- add a yes/no column recording that it was missing;
+the absence is itself informative.
+
+\textbf{Categories.} \term{One-hot encoding} replaces a categorical feature with
+one 0/1 column per category. \texttt{programme} $\in \{$BSIT, BSCS, BSSE$\}$
+becomes three columns, exactly one of which is 1 in each row. Coding the
+programmes as 1, 2 and 3 instead would tell the model that BSSE is ``three times''
+BSIT, which is nonsense that a linear model will happily use.
+
+\textbf{Scaling.} \chref{math} showed a distance dominated by the feature with the
+largest units. \term{Standardisation} rescales each feature to mean 0 and
+standard deviation 1:
+\[
+z = \frac{x - \mu_{\text{train}}}{\sigma_{\text{train}}}
+\]
+\term{Min--max scaling} maps each feature onto $[0, 1]$ instead:
+$x' = (x - \min)/(\max - \min)$. Tree-based models (\chref{trees},
+\chref{ensembles}) do not need scaling; nearest neighbours, SVMs, neural networks,
+$k$-means, PCA and anything trained by gradient descent do.
+
+\begin{worked}[Standardising with Training Statistics]
+Four training students have attendance $0.6, 0.8, 0.9, 0.7$ and logins
+$2, 4, 6, 8$.
+
+\smallskip
+\textbf{Attendance:} $\mu = 0.75$;
+$\sigma = \sqrt{\tfrac{0.15^2 + 0.05^2 + 0.15^2 + 0.05^2}{4}}
+= \sqrt{0.0125} = 0.112$.\\
+\textbf{Logins:} $\mu = 5$;
+$\sigma = \sqrt{\tfrac{9 + 1 + 1 + 9}{4}} = \sqrt{5} = 2.236$.
+
+\smallskip
+A new student arrives with attendance $0.5$ and 10 logins:
+\[
+z_{\text{att}} = \frac{0.5 - 0.75}{0.112} = -2.24, \qquad
+z_{\text{log}} = \frac{10 - 5}{2.236} = +2.24
+\]
+\textbf{Both are now equally unusual} --- 2.24 standard deviations from the
+training mean, in opposite directions --- where before the logins difference
+(5) was twenty times the attendance difference (0.25). Note that $\mu$ and
+$\sigma$ came from the \emph{training} students only. The new student is
+transformed with the training statistics, never with statistics that include
+the new student.
+\end{worked}
+
+\section{The scikit-learn Interface}
+
+Every algorithm in this course is available in \texttt{scikit-learn}, and every
+one of them is used in the same way. That uniformity is the reason the labs can
+swap a decision tree for an SVM by changing one line.
+
+\begin{definitionbox}[Estimator and Transformer]
+An \term{estimator} learns from data with \texttt{fit(X, y)} and then makes
+predictions with \texttt{predict(X)} (and, for classifiers,
+\texttt{predict\_proba(X)} for probabilities). A \term{transformer} learns with
+\texttt{fit(X)} and changes data with \texttt{transform(X)}; a scaler learns
+$\mu$ and $\sigma$ in \texttt{fit} and applies them in \texttt{transform}. Anything
+learned during \texttt{fit} is stored in attributes ending in an underscore, such
+as \texttt{coef\_} or \texttt{mean\_}.
+\end{definitionbox}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{5.9cm}L{1.9cm}L{7.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Class} & \textbf{Chapter} & \textbf{What it is} \\
+\midrule
+\endhead
+\texttt{LinearRegression}, \texttt{Ridge}, \texttt{Lasso} & 5, 7 & Least-squares
+regression, with and without a penalty \\
+\texttt{LogisticRegression} & 6 & Linear classifier with probabilities \\
+\texttt{DecisionTreeClassifier} & 9 & ID3/CART-style tree \\
+\texttt{GaussianNB}, \texttt{MultinomialNB} & 10 & Naive Bayes \\
+\texttt{KNeighborsClassifier} & 11 & $k$-nearest neighbours \\
+\texttt{SVC} & 12 & Support vector machine \\
+\texttt{MLPClassifier} & 13 & Multilayer neural network \\
+\texttt{RandomForestClassifier},\newline \texttt{AdaBoostClassifier} & 14 & Ensembles \\
+\texttt{KMeans},\newline \texttt{AgglomerativeClustering} & 15 & Clustering \\
+\texttt{PCA} & 16 & Principal component analysis \\
+\texttt{GaussianMixture},\newline \texttt{SelfTrainingClassifier} & 17 & EM mixtures;
+semi-supervised wrapper \\
+\bottomrule
+\end{longtable}
+
+\section{Pipelines and Data Leakage}
+
+\begin{definitionbox}[Data Leakage]
+\term{Data leakage} is any route by which information that will not be available
+at prediction time reaches the model during training or evaluation. Leakage
+makes evaluation scores optimistic, sometimes spectacularly so, and the model
+then fails in use.
+\end{definitionbox}
+
+Leakage comes in two forms. \term{Target leakage} is a feature that is recorded
+after, or because of, the outcome: \texttt{days\_until\_account\_closed} in a model
+of which customers will leave. \term{Train--test contamination} is subtler:
+preparing the data using statistics that include the test rows. Fit a scaler on
+the full dataset and then split, and the training data has been shifted by the
+test data's mean --- the model has seen a summary of the exam.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  bx/.style={rounded corners=2pt, draw=#1, fill=#1!10, text=#1!50!black,
+             font=\scriptsize\bfseries, minimum width=2.3cm, minimum height=0.7cm,
+             align=center},
+  a/.style={-{Stealth[length=2mm]}, gray!60, line width=0.9pt}]
+\node[font=\small\bfseries, text=accent, anchor=west] at (-1.2,1.0) {Leaky};
+\node[bx=neutral] (a1) at (0,0) {All data};
+\node[bx=accent] (a2) at (3.0,0) {Fit scaler\\on all rows};
+\node[bx=neutral] (a3) at (6.0,0) {Split};
+\node[bx=greenhl] (a4) at (9.0,0.45) {Train};
+\node[bx=goldhl] (a5) at (9.0,-0.45) {Test};
+\draw[a] (a1) -- (a2); \draw[a] (a2) -- (a3); \draw[a] (a3) -- (a4.west);
+\draw[a] (a3) -- (a5.west);
+\draw[accent, -{Stealth[length=2mm]}, dashed, line width=0.9pt]
+     (a5.south) .. controls +(0,-0.9) and +(0,-0.9) .. node[below, font=\tiny]
+     {test rows shaped $\mu$ and $\sigma$} (a2.south);
+\node[font=\small\bfseries, text=greenhl!55!black, anchor=west] at (-1.2,-2.3) {Correct};
+\node[bx=neutral] (b1) at (0,-3.3) {All data};
+\node[bx=neutral] (b2) at (3.0,-3.3) {Split};
+\node[bx=greenhl] (b3) at (6.0,-2.85) {Train};
+\node[bx=goldhl] (b4) at (6.0,-3.75) {Test};
+\node[bx=secondary] (b5) at (9.0,-2.85) {Fit scaler\\on train only};
+\node[bx=secondary] (b6) at (9.0,-3.75) {Apply same\\$\mu$, $\sigma$};
+\draw[a] (b1) -- (b2); \draw[a] (b2) -- (b3.west); \draw[a] (b2) -- (b4.west);
+\draw[a] (b3) -- (b5); \draw[a] (b4) -- (b6); \draw[a] (b5) -- (b6);
+\node[anchor=north west, align=left, text width=4.2cm, font=\tiny, text=gray!55!black]
+     at (10.6,0.9)
+     {A \texttt{Pipeline} makes the correct order automatic: calling
+      \texttt{fit} on the pipeline fits every step on the training data only, and
+      \texttt{predict} applies the stored statistics to new data.};
+\end{tikzpicture}}%
+{Train--test contamination. Fitting any preparation step before the split lets the test
+rows influence training; a pipeline fitted on the training data alone cannot make this
+mistake.}{leakage}
+
+\begin{definitionbox}[Pipeline]
+A scikit-learn \term{pipeline} chains transformers and a final estimator into one
+object with a single \texttt{fit} and \texttt{predict}. Because every step is fitted
+only when the pipeline is fitted, and only on the data passed to it, a pipeline
+used inside a split or a cross-validation loop cannot leak. A
+\texttt{ColumnTransformer} applies different preparation to different columns
+--- scaling to the numbers, one-hot encoding to the categories.
+\end{definitionbox}
+
+\section{Baselines}
+
+\begin{definitionbox}[Baseline]
+A \term{baseline} is the score of the simplest possible predictor: always predict
+the most common class (classification) or always predict the training mean
+(regression). Every model must be compared with it, and a model that does not
+beat it clearly has learned nothing useful.
+\end{definitionbox}
+
+Baselines are humbling. On the breast-cancer data of \chref{introduction}'s lab,
+``always benign'' already scores 63\%. On intrusion data where 99\% of connections
+are benign, ``always benign'' scores 99\% --- which is why a detector's accuracy
+means nothing until it is set beside the baseline (\chref{evaluation}).
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Preparing before splitting.} Imputing, scaling or selecting
+        features on the full dataset leaks the test set into training. Put every
+        step in a pipeline.
+  \item \textbf{Using the test set to choose.} Every look at the test set that
+        changes a decision turns it into a validation set. Use it once.
+  \item \textbf{Label-encoding a nominal feature.} Programme codes 1, 2, 3 impose an
+        order that does not exist. One-hot encode.
+  \item \textbf{Keeping an identifier.} If \texttt{student\_id} improves accuracy,
+        IDs were assigned in a way that encodes the outcome --- a leak.
+  \item \textbf{Reporting a score without the baseline.} ``92\% accurate'' is
+        meaningless until you know that ``always no'' scores 90\%.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Preparing the Data}
+\lensLA{Missing quiz marks are not random: the students who skip quizzes are the
+ones at risk. Impute, but add a \texttt{quiz\_missing} column, and it will often
+be one of the strongest features in the model. Split by student, never by row,
+if a student has several records.}
+
+\lensPM{Project data is small and full of categories --- team, project type,
+technology stack. One-hot encoding thirty technologies across two hundred
+projects gives most columns only a handful of ones; group the rare categories
+into ``other'' before encoding.}
+
+\lensIOT{Sensor data is ordered in time, so split by time: train on January to
+September, validate on October, test on November. A random split puts readings
+from the same minute on both sides, and the test score measures interpolation,
+not forecasting.}
+
+\lensSEC{The classic security leak is a feature derived from the analyst's
+verdict --- a ``ticket escalated'' flag, a signature name --- that exists only
+because the event was already known to be malicious. Ask of every feature: would
+this value exist, with this value, at the moment the model has to decide?}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[A Leak-Proof Pipeline]
+A synthetic cohort of 600 students with a missing-value problem and one
+categorical feature. The whole workflow, in the order of \dsref{workflow}.
+\begin{lstlisting}[language=Python]
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.dummy import DummyClassifier
+
+# --- a synthetic cohort of 600 students, with gaps ----------------------
+rng = np.random.default_rng(0)
+n = 600
+df = pd.DataFrame({
+    "attendance": rng.uniform(0.3, 1.0, n),
+    "quiz_avg": rng.uniform(0.0, 1.0, n),
+    "logins": rng.poisson(5, n).astype(float),
+    "programme": rng.choice(["BSIT", "BSCS", "BSSE"], n),
+})
+risk = 3.6 - 4 * df.attendance - 2 * df.quiz_avg - 0.1 * df.logins
+df["fail"] = (risk + rng.normal(0, 0.5, n) > 0).astype(int)
+df.loc[rng.random(n) < 0.1, "quiz_avg"] = np.nan        # 10% missing
+print("fail rate:", df.fail.mean().round(3))
+
+X, y = df.drop(columns="fail"), df["fail"]
+
+# --- 1. split FIRST; the test set is locked away ------------------------
+X_tr, X_te, y_tr, y_te = train_test_split(
+    X, y, test_size=0.2, stratify=y, random_state=0)
+
+# --- 2. every preparation step lives inside the pipeline ----------------
+num = ["attendance", "quiz_avg", "logins"]
+prep = ColumnTransformer([
+    ("num", make_pipeline(SimpleImputer(strategy="median"),
+                          StandardScaler()), num),
+    ("cat", OneHotEncoder(handle_unknown="ignore"), ["programme"]),
+])
+model = Pipeline([("prep", prep), ("clf", LogisticRegression())])
+
+# --- 3. a baseline first, then the model --------------------------------
+base = DummyClassifier(strategy="most_frequent").fit(X_tr, y_tr)
+print("baseline accuracy:", round(base.score(X_te, y_te), 3))
+model.fit(X_tr, y_tr)
+print("model accuracy   :", round(model.score(X_te, y_te), 3))
+
+# --- 4. look inside: the scaler learned from training rows only ---------
+scaler = model.named_steps["prep"].named_transformers_["num"][-1]
+print("scaler means:", scaler.mean_.round(2))
+\end{lstlisting}
+The baseline scores about 0.68 and the model about 0.84. Now swap the model:
+import \texttt{DecisionTreeClassifier} from \texttt{sklearn.tree} and put it where
+\texttt{LogisticRegression()} was. Nothing else changes --- that is the point of
+the interface.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why must the scaler's mean and standard deviation be computed from the
+        training set only?
+  \item A dataset has a column \texttt{protocol} with values TCP, UDP and ICMP.
+        How should it be encoded, and why not as 1, 2, 3?
+  \item A model predicting equipment failure scores 97\% accuracy. What single
+        number do you ask for before you are impressed?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Every experiment follows the same workflow: frame, collect, split,
+        prepare, baseline, train, validate, test once, report.
+  \item The training set fits the model, the validation set chooses between
+        models, and the test set --- used once --- estimates performance on new
+        data.
+  \item Impute gaps (and record that they were gaps), one-hot encode nominal
+        categories, and scale numbers for any method based on distance or
+        gradients.
+  \item Every scikit-learn estimator has \texttt{fit} and \texttt{predict}; every
+        transformer has \texttt{fit} and \texttt{transform}. Pipelines chain them.
+  \item Leakage --- through a feature recorded after the outcome or through
+        preparation fitted on test rows --- produces scores the model cannot
+        reproduce in use. Pipelines prevent the second kind.
+  \item Always report the baseline beside the model.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which set is used to choose between a decision tree and an
+        SVM? (a)~training (b)~validation (c)~test (d)~all three.
+  \item \textbf{(MCQ)} Which model does \emph{not} need its features scaled?
+        (a)~$k$-nearest neighbours (b)~SVM (c)~decision tree (d)~$k$-means.
+  \item \textbf{(MCQ)} A column recording the date a loan was written off, in a
+        model predicting default, is an example of: (a)~target leakage
+        (b)~stratification (c)~imputation (d)~a baseline.
+  \item \textbf{(Short)} Explain the difference between \texttt{fit},
+        \texttt{transform} and \texttt{predict}.
+  \item \textbf{(Short)} Why should a time-ordered dataset not be split at random?
+  \item \textbf{(Short)} When is it worth adding a ``value was missing'' column
+        alongside an imputed feature?
+  \item \textbf{(Applied)} Training values of a feature are $10, 20, 30, 40$. Compute
+        the standardised value of a new observation of $45$, showing $\mu$ and
+        $\sigma$. Then compute its min--max scaled value, and say what is unusual
+        about the result.
+  \item \textbf{(Applied)} A colleague scales the whole dataset, selects the ten
+        features most correlated with the label, then runs 5-fold
+        cross-validation and reports 94\%. Identify every leak in this procedure
+        and rewrite it so that it cannot leak.
+\end{reviewq}

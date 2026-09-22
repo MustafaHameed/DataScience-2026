@@ -1,0 +1,409 @@
+%=====================================================================
+\chapter{Clustering}\label{ch:clustering}
+%=====================================================================
+\locator{4}{Part IV --- Learning Without Full Labels}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what clustering is for, and why its answer depends on
+        choices the analyst makes.
+  \item \textbf{Trace} $k$-means by hand through assignment and update steps to
+        convergence.
+  \item \textbf{Build} a dendrogram by hierarchical agglomerative clustering under
+        single, complete and average linkage.
+  \item \textbf{Choose} the number of clusters with the elbow method and the
+        silhouette coefficient.
+  \item \textbf{Evaluate} a clustering internally and, when labels exist,
+        externally.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (distance), \chref{workflow} (scaling) and \chref{knn} (distance
+measures and the curse of dimensionality, which clustering inherits in full).
+\end{prereq}
+
+\begin{keyterms}
+clustering $\bullet$ partitional vs.\ hierarchical $\bullet$ centroid $\bullet$
+$k$-means (Lloyd's algorithm) $\bullet$ within-cluster sum of squares (WCSS)
+$\bullet$ local minimum $\bullet$ $k$-means++ $\bullet$ agglomerative clustering
+$\bullet$ dendrogram $\bullet$ single, complete, average and Ward linkage
+$\bullet$ chaining $\bullet$ elbow method $\bullet$ silhouette coefficient
+$\bullet$ adjusted Rand index
+\end{keyterms}
+
+\section{Finding Groups Without Labels}
+
+\term{Clustering} divides examples into groups --- \term{clusters} --- so that
+examples in the same group are similar and examples in different groups are not.
+There are no labels to learn from and no right answer to check against. What
+counts as ``similar'' is a choice (of features, their scaling and a distance), and
+so is the number of groups; change either and the clusters change.
+
+That makes clustering exploratory: a way of proposing structure for a person to
+examine. Customer segments, kinds of network traffic, families of malware, modes
+in which a machine operates --- each is a clustering that someone then named and
+decided was useful. Two families of algorithm cover the HEC outline:
+\term{partitional} methods such as $k$-means divide the data into a fixed number of
+groups; \term{hierarchical} methods build a whole tree of nested groupings.
+
+\section{$k$-Means}
+
+\begin{definitionbox}[$k$-Means (Lloyd's Algorithm)]
+Choose $k$ and place $k$ initial \term{centroids}. Repeat until nothing changes:
+\begin{tightnum}
+  \item \textbf{Assign} each example to its nearest centroid.
+  \item \textbf{Update} each centroid to the mean of the examples assigned to it.
+\end{tightnum}
+Each step can only lower the \term{within-cluster sum of squares}
+\[
+\text{WCSS} = \sum_{j=1}^{k}\ \sum_{\mathbf{x} \in C_j} \|\mathbf{x} - \boldsymbol{\mu}_j\|^2
+\]
+so the algorithm always converges --- but to a \term{local} minimum that depends
+on where it started.
+\end{definitionbox}
+
+\begin{worked}[$k$-Means by Hand]
+Seven points: A1 $(1, 1)$, A2 $(1.5, 2)$, A3 $(3, 4)$, A4 $(5, 7)$, A5 $(3.5, 5)$,
+A6 $(4.5, 5)$, A7 $(3.5, 4.5)$. $k = 2$, with initial centroids A2 and A4.
+
+\smallskip
+\textbf{Iteration 1 --- assign.} Distances to $\mu_1 = (1.5, 2)$ and $\mu_2 = (5, 7)$:
+A1 1.12 / 7.21; A2 0 / 6.10; A3 2.50 / 3.61; A4 6.10 / 0; A5 3.61 / 2.50;
+A6 4.24 / 2.06; A7 3.20 / 2.92. So $C_1 = \{$A1, A2, A3$\}$, $C_2 = \{$A4, A5, A6, A7$\}$.
+
+\textbf{Update.} $\mu_1 = \big(\tfrac{1+1.5+3}{3}, \tfrac{1+2+4}{3}\big) = (1.83, 2.33)$;
+$\mu_2 = \big(\tfrac{5+3.5+4.5+3.5}{4}, \tfrac{7+5+5+4.5}{4}\big) = (4.13, 5.38)$.
+WCSS $= 12.21$.
+
+\smallskip
+\textbf{Iteration 2 --- assign.} A3 is now 2.03 from $\mu_1$ and \textbf{1.78} from
+$\mu_2$: it moves to $C_2$. Every other point stays.
+
+\textbf{Update.} $\mu_1 = (1.25, 1.5)$, $\mu_2 = (3.9, 5.1)$. WCSS $= 8.53$.
+
+\smallskip
+\textbf{Iteration 3.} No point changes cluster, so the centroids stop moving:
+\textbf{converged}, with $C_1 = \{$A1, A2$\}$ and $C_2 = \{$A3, \dots, A7$\}$.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize, scale=0.62,
+  c1/.style={circle, fill=secondary, inner sep=1.7pt},
+  c2/.style={circle, fill=accent, inner sep=1.7pt},
+  cen/.style={cross out, draw=#1, line width=1.6pt, minimum size=7pt, inner sep=0pt}]
+\foreach \ox/\ttl in {0/{Start: centroids at A2, A4}, 7.2/{After iteration 1}, 14.4/{Converged (iteration 2)}}{
+  \begin{scope}[shift={(\ox,0)}]
+  \draw[gray!50, -{Stealth[length=1.5mm]}] (0,0) -- (6.2,0);
+  \draw[gray!50, -{Stealth[length=1.5mm]}] (0,0) -- (0,7.8);
+  \node[font=\scriptsize\bfseries, text=primary] at (3.1,-0.8) {\ttl};
+  \end{scope}}
+% panel 1: initial assignment
+\foreach \x/\y/\s in {1/1/c1, 1.5/2/c1, 3/4/c1, 5/7/c2, 3.5/5/c2, 4.5/5/c2, 3.5/4.5/c2}{\node[\s] at (\x,\y) {};}
+\node[cen=primary] at (1.5,2) {}; \node[cen=primary] at (5,7) {};
+% panel 2
+\begin{scope}[shift={(7.2,0)}]
+\foreach \x/\y/\s in {1/1/c1, 1.5/2/c1, 3/4/c2, 5/7/c2, 3.5/5/c2, 4.5/5/c2, 3.5/4.5/c2}{\node[\s] at (\x,\y) {};}
+\node[cen=primary] at (1.833,2.333) {}; \node[cen=primary] at (4.125,5.375) {};
+\draw[goldhl, line width=1pt] (3,4) circle (0.32);
+\node[font=\tiny, goldhl!45!black, anchor=west] at (3.35,3.55) {A3 switches};
+\end{scope}
+% panel 3
+\begin{scope}[shift={(14.4,0)}]
+\foreach \x/\y/\s in {1/1/c1, 1.5/2/c1, 3/4/c2, 5/7/c2, 3.5/5/c2, 4.5/5/c2, 3.5/4.5/c2}{\node[\s] at (\x,\y) {};}
+\node[cen=primary] at (1.25,1.5) {}; \node[cen=primary] at (3.9,5.1) {};
+\draw[secondary!60, dashed] (1.25,1.5) circle (0.9);
+\draw[accent!60, dashed] (3.9,5.1) circle (2.1);
+\end{scope}
+\node[anchor=west, font=\tiny, text=gray!55!black] at (0,-1.6)
+     {colour = current cluster; $\times$ = centroid. Panel 2 shows the assignment made with the
+      updated centroids, in which A3 changes cluster.};
+\end{tikzpicture}}%
+{Three snapshots of $k$-means on the worked example. Assignment and update alternate until
+no point changes cluster.}{kmeans-steps}
+
+\begin{alertbox}[Where $k$-Means Goes Wrong]
+\begin{tight}
+  \item \textbf{Bad starts.} Different initial centroids can converge to different,
+        worse clusterings. Run it many times and keep the lowest WCSS
+        (\texttt{n\_init}), and start with \term{$k$-means++}, which spreads the
+        initial centroids out.
+  \item \textbf{Its shape bias.} Every cluster is the set of points nearest a
+        centroid, so $k$-means assumes round, similar-sized clusters. Long,
+        curved or very unequal clusters are cut badly.
+  \item \textbf{Scale.} It is built on Euclidean distance; unscaled features
+        decide everything (\chref{knn}).
+  \item \textbf{Outliers.} A mean is pulled by extreme values; one wild point can
+        capture a centroid of its own.
+\end{tight}
+\end{alertbox}
+
+\section{Hierarchical Agglomerative Clustering}
+
+\begin{definitionbox}[Agglomerative Clustering and Linkage]
+Start with every example in a cluster of its own. Repeatedly merge the two
+\emph{closest} clusters until one remains. The record of merges, drawn as a tree
+whose heights are the merge distances, is a \term{dendrogram}. The distance between
+two clusters is defined by the \term{linkage}:
+\begin{tight}
+  \item \term{single}: the distance between their \emph{closest} members;
+  \item \term{complete}: the distance between their \emph{farthest} members;
+  \item \term{average}: the average distance over all pairs of members;
+  \item \term{Ward}: the increase in WCSS that merging them would cause --- the
+        $k$-means criterion, applied hierarchically.
+\end{tight}
+\end{definitionbox}
+
+\begin{worked}[Single and Complete Linkage on Five Numbers]
+Points on a line: 1, 2, 4, 9, 11.
+
+\smallskip
+\textbf{Single linkage.} Closest pair: \{1, 2\} at distance 1. Next, \{1, 2\} to 4 is
+$|2 - 4| = 2$ and 9 to 11 is also 2: merge \{1, 2, 4\} and \{9, 11\}, both at height
+2. Last, the two groups are $|4 - 9| = 5$ apart. \textbf{Heights: 1, 2, 2, 5.}
+
+\textbf{Complete linkage.} \{1, 2\} at 1. Now \{1, 2\} to 4 is $|1 - 4| = 3$ (the
+farthest pair), while 9 to 11 is 2, so \{9, 11\} merges first, at 2; then
+\{1, 2, 4\} at 3. Last, the farthest pair across the groups is $|1 - 11| = 10$.
+\textbf{Heights: 1, 2, 3, 10.}
+
+\smallskip
+Both find the same two groups, but complete linkage separates them by a much taller
+final merge. Average linkage gives a final height of $(8 + 10 + 7 + 9 + 5 + 7)/6 =
+7.67$. \textbf{Cutting} a dendrogram at any height yields a flat clustering: cut
+complete linkage anywhere between 3 and 10 and you get \{1, 2, 4\} and \{9, 11\}.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize, yscale=0.32, xscale=0.9]
+\foreach \ox/\ttl/\h/\hh/\top in {0/{Single linkage}/2/2/5, 7.2/{Complete linkage}/3/2/10}{
+  \begin{scope}[shift={(\ox,0)}]
+  \draw[gray!55, -{Stealth[length=1.5mm]}] (-0.5,0) -- (-0.5,11) node[above, font=\tiny] {height};
+  \foreach \t in {0,2,4,6,8,10}{\draw[gray!40] (-0.6,\t) -- (-0.4,\t) node[left, font=\tiny] at (-0.6,\t) {\t};}
+  \foreach \i/\v in {0/1,1/2,2/4,3/9,4/11}{\node[font=\scriptsize] at (\i,-0.9) {\v};}
+  % {1,2} at 1
+  \draw[primary, line width=1pt] (0,0) -- (0,1) -- (1,1) -- (1,0);
+  % {1,2}+4 at \h
+  \draw[primary, line width=1pt] (0.5,1) -- (0.5,\h) -- (2,\h) -- (2,0);
+  % {9,11} at \hh
+  \draw[accent, line width=1pt] (3,0) -- (3,\hh) -- (4,\hh) -- (4,0);
+  % final
+  \draw[gray!60!black, line width=1pt] (1.25,\h) -- (1.25,\top) -- (3.5,\top) -- (3.5,\hh);
+  \node[font=\scriptsize\bfseries, text=primary] at (1.75,12.3) {\ttl};
+  \end{scope}}
+\draw[goldhl, dashed, line width=0.9pt] (6.4,6) -- (11.6,6);
+\node[font=\tiny, goldhl!45!black, anchor=west] at (11.6,6) {cut: 2 clusters};
+\end{tikzpicture}}%
+{Dendrograms for the points 1, 2, 4, 9, 11. The merges happen in almost the same order, but
+at different heights: complete linkage keeps groups compact and makes the gap between them
+obvious.}{dendrogram}
+
+\begin{conceptbox}[Chaining, and Which Linkage to Use]
+Single linkage merges two clusters as soon as \emph{any} pair of their members is close,
+so a thin line of points can join two genuinely separate groups into one long
+``chain''. That lets it find elongated or curved clusters, and also makes it fragile
+with noise. Complete linkage does the opposite: it favours compact, roughly equal
+clusters and is pulled by outliers. Average linkage sits between them. Ward's method
+behaves like $k$-means and is a good default. Unlike $k$-means, hierarchical
+clustering needs no $k$ in advance and gives the same answer every run --- but it
+must compute all $n^2$ pairwise distances, which limits it to tens of thousands of
+examples.
+\end{conceptbox}
+
+\section{How Many Clusters?}
+
+\textbf{The elbow method.} Plot WCSS against $k$. WCSS always falls as $k$ rises ---
+with $k = n$ it is zero --- so look for the \emph{elbow}, the $k$ after which extra
+clusters buy little.
+
+\textbf{The silhouette.} For each example, let $a$ be its mean distance to the other
+members of its own cluster and $b$ its mean distance to the members of the nearest
+other cluster. Its \term{silhouette} is
+\[
+s = \frac{b - a}{\max(a, b)} \qquad (-1 \le s \le 1)
+\]
+Near 1: well inside its cluster. Near 0: on a boundary. Negative: probably in the
+wrong cluster. The mean silhouette over all examples scores a whole clustering; pick
+the $k$ that maximises it. A point with $a = 2$ and $b = 6$ has $s = (6 - 2)/6 = 0.67$.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.5cm},
+  width=6.8cm, height=4.8cm, axis lines=left,
+  tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries}, xlabel={number of clusters $k$},
+  xmin=0.5, xmax=8.5, xtick={1,...,8}]
+\nextgroupplot[title={Elbow: WCSS}, ylabel={WCSS (thousands)}, ymin=0, ymax=40]
+\addplot[secondary, line width=1.2pt, mark=*, mark size=1.5pt] coordinates
+  {(1,37.23) (2,9.25) (3,4.37) (4,1.21) (5,1.09) (6,0.98) (7,0.87) (8,0.77)};
+\draw[accent, line width=0.9pt] (axis cs:4,1.21) circle (4pt);
+\node[font=\tiny, accent, anchor=south west] at (axis cs:4.2,4) {elbow at $k = 4$};
+\nextgroupplot[title={Mean silhouette}, ylabel={silhouette}, ymin=0.25, ymax=0.8]
+\addplot[greenhl!70!black, line width=1.2pt, mark=*, mark size=1.5pt] coordinates
+  {(2,0.636) (3,0.608) (4,0.728) (5,0.624) (6,0.521) (7,0.432) (8,0.325)};
+\draw[accent, line width=0.9pt] (axis cs:4,0.728) circle (4pt);
+\node[font=\tiny, accent, anchor=west] at (axis cs:4.3,0.745) {maximum at $k = 4$};
+\end{groupplot}
+\end{tikzpicture}}%
+{Choosing $k$ for 600 points generated from four clusters. The WCSS curve bends sharply at
+$k = 4$ and the silhouette peaks there: both agree with the truth.}{choose-k}
+
+\begin{alertbox}[Judging a Clustering]
+\textbf{Internal} measures (WCSS, silhouette) use only the data, and reward whatever
+shape the measure assumes. \textbf{External} measures such as the \term{adjusted Rand
+index} compare the clusters with known labels, when some exist: 1 for perfect
+agreement, about 0 for chance. The most important test is neither: can a domain
+expert name the clusters, and do the names lead to a different decision for each?
+A clustering nobody can use is not a result.
+\end{alertbox}
+
+\section{Beyond the HEC Outline}
+
+Two methods complete the picture. \textbf{DBSCAN} grows clusters from dense regions
+and labels isolated points as noise, so it finds clusters of any shape without being
+told $k$ --- it belongs to the Data Mining course, with outlier detection.
+\textbf{Gaussian mixture models} replace $k$-means's hard assignments by
+probabilities; they are fitted with the EM algorithm of \chref{semisup}, of which
+$k$-means turns out to be a special case.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Clustering unscaled features.} The feature with the largest units
+        decides the clusters.
+  \item \textbf{Running $k$-means once.} Use many starts and $k$-means++.
+  \item \textbf{Choosing $k$ by WCSS alone.} It always falls; look for the elbow and
+        check the silhouette.
+  \item \textbf{Treating clusters as discovered facts.} They reflect the features,
+        scaling, distance and $k$ chosen; a different choice gives different
+        clusters.
+  \item \textbf{Forcing $k$-means onto non-round clusters.} Use single linkage,
+        DBSCAN or a mixture model instead.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Clustering}
+\lensLA{Cluster students by how they study --- when they log in, how they use
+videos and quizzes --- and advisers can tailor support to ``last-minute crammers''
+or ``steady early starters''. The names come from people looking at the clusters,
+and the clusters change if you add or remove a behavioural feature.}
+
+\lensPM{Clustering past projects on size, duration, team and technology yields
+project archetypes, each with its own typical overrun. A new project is estimated
+from its archetype --- nearest-centroid classification built from an unsupervised
+start.}
+
+\lensIOT{Clustering a machine's sensor readings recovers its operating modes ---
+idle, normal load, heavy load --- without anyone labelling them. A reading far from
+every centroid is a candidate anomaly; one that drifts from its mode's centroid over
+weeks is wear.}
+
+\lensSEC{Clustering malware by behaviour groups new samples into families, so
+analysts examine one sample per cluster instead of thousands. Network traffic
+clusters separate normal services; a small, tight new cluster appearing overnight
+deserves attention.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[k-Means, a Dendrogram and the Choice of k]
+\begin{lstlisting}[language=Python]
+import warnings
+import numpy as np
+from scipy.cluster.hierarchy import linkage, fcluster
+from sklearn.datasets import make_blobs
+from sklearn.cluster import KMeans, AgglomerativeClustering
+from sklearn.metrics import silhouette_score, adjusted_rand_score
+from sklearn.preprocessing import StandardScaler
+
+warnings.filterwarnings("ignore", message="KMeans is known to have a memory")
+
+# --- 1. the worked example: k-means from A2 and A4 -----------------------
+P = np.array([[1, 1], [1.5, 2], [3, 4], [5, 7], [3.5, 5], [4.5, 5],
+              [3.5, 4.5]])
+km = KMeans(n_clusters=2, init=P[[1, 3]], n_init=1).fit(P)
+print("centroids:", km.cluster_centers_.round(3).tolist(),
+      " WCSS:", round(km.inertia_, 3), " iterations:", km.n_iter_)
+
+# --- 2. choosing k: the elbow and the silhouette -------------------------
+X, truth = make_blobs(n_samples=600, centers=4, cluster_std=1.0,
+                      random_state=3)
+for k in range(2, 8):
+    m = KMeans(n_clusters=k, n_init=10, random_state=0).fit(X)
+    print(f"k={k}: WCSS {m.inertia_:8.1f}   "
+          f"silhouette {silhouette_score(X, m.labels_):.3f}")
+
+# --- 3. hierarchical clustering: linkage heights on five numbers ---------
+x = np.array([[1.0], [2.0], [4.0], [9.0], [11.0]])
+for method in ("single", "complete", "average"):
+    Z = linkage(x, method)
+    print(f"{method:8s} merge heights: {Z[:, 2].round(2).tolist()}")
+print("complete linkage cut into 2 groups:",
+      fcluster(linkage(x, "complete"), 2, criterion="maxclust").tolist())
+
+# --- 4. against the truth, and why scale matters -------------------------
+km4 = KMeans(4, n_init=10, random_state=0).fit_predict(X)
+hac = AgglomerativeClustering(n_clusters=4, linkage="ward").fit(X)
+print("adjusted Rand, k-means:", round(adjusted_rand_score(truth, km4), 3),
+      " ward HAC:", round(adjusted_rand_score(truth, hac.labels_), 3))
+Xs = X.copy()
+Xs[:, 1] *= 100                                   # one feature in other units
+raw = KMeans(4, n_init=10, random_state=0).fit_predict(Xs)
+fix = KMeans(4, n_init=10, random_state=0).fit_predict(
+    StandardScaler().fit_transform(Xs))
+print("rescaled feature, adjusted Rand: raw",
+      round(adjusted_rand_score(truth, raw), 3), " standardised",
+      round(adjusted_rand_score(truth, fix), 3))
+\end{lstlisting}
+The warning filter hides a harmless message scikit-learn prints on some Windows
+installations. Change \texttt{cluster\_std} to 2.5 in part 2: do the elbow and the
+silhouette still agree?
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Two centroids are at 2 and 8 on a line. Assign the points 1, 4, 6, 7, 9 and
+        compute the new centroids.
+  \item Why does $k$-means always converge, and why might it converge to a poor
+        answer?
+  \item A point has $a = 3$ and $b = 2$. Compute its silhouette and say what it
+        means.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Clustering proposes groups without labels; the result depends on features,
+        scaling, distance and the number of clusters.
+  \item $k$-means alternates assignment to the nearest centroid with moving each
+        centroid to its cluster's mean, lowering WCSS until it converges to a local
+        minimum; use many starts and $k$-means++.
+  \item Agglomerative clustering merges the closest clusters step by step into a
+        dendrogram; the linkage (single, complete, average, Ward) defines
+        ``closest''. Single linkage chains; complete linkage keeps groups compact.
+  \item Choose $k$ with the elbow of the WCSS curve and the maximum mean
+        silhouette; judge the result by whether it can be named and used.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The $k$-means update step moves each centroid to:
+        (a)~the median of its cluster (b)~the mean of its cluster (c)~the farthest
+        point (d)~a random point.
+  \item \textbf{(MCQ)} Which linkage is most prone to chaining? (a)~single
+        (b)~complete (c)~average (d)~Ward.
+  \item \textbf{(MCQ)} A silhouette close to $-1$ suggests the point is:
+        (a)~well clustered (b)~on a boundary (c)~probably in the wrong cluster
+        (d)~an outlier with no cluster.
+  \item \textbf{(Short)} Why can the WCSS alone not be used to choose $k$?
+  \item \textbf{(Short)} Give two situations where hierarchical clustering is
+        preferable to $k$-means.
+  \item \textbf{(Short)} Explain the role of $k$-means++.
+  \item \textbf{(Applied)} Run $k$-means by hand on the worked example with initial
+        centroids A1 and A7. Does it reach the same final clusters?
+  \item \textbf{(Applied)} Build single- and complete-linkage dendrograms for the
+        points 0, 3, 4, 10, 12, 20 and state the two-cluster cut of each.
+\end{reviewq}

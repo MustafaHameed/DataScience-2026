@@ -1,0 +1,532 @@
+%=====================================================================
+\chapter{What Machine Learning Is}\label{ch:introduction}
+%=====================================================================
+\locator{1}{Part I --- Foundations}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} machine learning precisely, and name the task,
+        performance measure and experience of a given learning problem.
+  \item \textbf{Distinguish} learning a program from writing one, and machine
+        learning from the wider field of artificial intelligence.
+  \item \textbf{Classify} a problem as supervised (regression or
+        classification), unsupervised, semi-supervised or reinforcement learning.
+  \item \textbf{Describe} the four design decisions in building a learning system.
+  \item \textbf{Explain} why a learner must assume something the data does not
+        say in order to generalise at all.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+The course \emph{Artificial Intelligence}, in which you met agents, search and
+reasoning under uncertainty. Nothing in this handout is assumed yet.
+\end{prereq}
+
+\begin{keyterms}
+machine learning $\bullet$ task, performance measure, experience $\bullet$
+training data $\bullet$ feature $\bullet$ label $\bullet$ model $\bullet$
+supervised learning $\bullet$ classification $\bullet$ regression $\bullet$
+unsupervised learning $\bullet$ semi-supervised learning $\bullet$
+reinforcement learning $\bullet$ target function $\bullet$ hypothesis
+$\bullet$ hypothesis space $\bullet$ generalisation $\bullet$ inductive bias
+\end{keyterms}
+
+\section{Why Learn a Program Instead of Writing One?}
+
+Suppose you are asked to write a program that flags phishing e-mails. You could
+sit down and write rules: \emph{if the sender's domain does not match the display
+name, and the message contains a link, and it mentions a password, flag it.}
+The first version catches some phishing. Then the attackers read your rules ---
+or simply vary their wording --- and the rules stop working. You add more. After
+a year you have four hundred rules that contradict one another, nobody
+understands, and that still miss the attack that arrived this morning.
+
+Now suppose instead that you collect fifty thousand e-mails that people have
+already marked as phishing or legitimate, and hand them to a program whose job
+is to \emph{find} the rules. When the attackers change tactics, you do not
+rewrite anything: you collect new examples and let the program find new rules.
+That is the whole idea of machine learning, and \dsref{program-vs-learn} shows
+it in one picture.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  io/.style={rounded corners=3pt, draw=#1, line width=0.9pt, fill=#1!8,
+             text=#1!55!black, font=\scriptsize\bfseries, minimum width=1.9cm,
+             minimum height=0.7cm, align=center},
+  engine/.style={rounded corners=4pt, fill=#1, text=white, font=\scriptsize\bfseries,
+                 minimum width=2.7cm, minimum height=1.25cm, align=center},
+  a/.style={-{Stealth[length=2.2mm]}, gray!60, line width=0.9pt}]
+% --- traditional programming
+\node[font=\small\bfseries, text=primary, anchor=west] at (-1.1,2.35) {Traditional programming};
+\node[io=primary] (d1) at (0,1.5)  {Data};
+\node[io=accent]  (r1) at (0,0.55) {Rules\\{\tiny written by you}};
+\node[engine=primary] (c1) at (3.6,1.02) {Computer\\runs the rules};
+\node[io=greenhl] (a1) at (7.1,1.02) {Answers};
+\draw[a] (d1) -- (c1);
+\draw[a] (r1) -- (c1);
+\draw[a] (c1) -- (a1);
+% --- machine learning
+\node[font=\small\bfseries, text=greenhl!55!black, anchor=west] at (-1.1,-0.55) {Machine learning};
+\node[io=primary] (d2) at (0,-1.4)  {Data};
+\node[io=greenhl] (a2) at (0,-2.35) {Answers\\{\tiny (labels)}};
+\node[engine=greenhl!70!black] (c2) at (3.6,-1.88) {Learning\\algorithm};
+\node[io=accent]  (r2) at (7.1,-1.88) {Rules\\{\tiny = the model}};
+\draw[a] (d2) -- (c2);
+\draw[a] (a2) -- (c2);
+\draw[a] (c2) -- (r2);
+% --- then the model is used like a program
+\node[io=primary] (d3) at (9.9,-0.55) {New data};
+\node[io=greenhl] (a3) at (9.9,-3.2) {Predicted\\answers};
+\draw[a] (d3) -- (r2);
+\draw[a] (r2) -- (a3);
+\node[anchor=north west, align=left, text width=4.6cm, font=\scriptsize, text=gray!55!black]
+     at (8.3,2.45)
+     {\textbf{The swap.} In traditional programming the rules are an \emph{input};
+      in machine learning they are the \emph{output}. You supply examples of the
+      answers you want, and the algorithm writes the rules.};
+\end{tikzpicture}}%
+{Traditional programming against machine learning. The learned model is then used
+exactly like a program: new data in, answers out.}{program-vs-learn}
+
+\begin{conceptbox}[When Learning Beats Writing]
+Machine learning earns its cost in four situations: when the rules are too
+numerous to write (recognising handwriting); when nobody can articulate them
+(judging whether a machine sounds unhealthy); when they change faster than a
+person can rewrite them (phishing, fraud); and when they must be different for
+every user (recommendations). If you can write the rule down in an afternoon and
+it will not change, write it --- a rule is cheaper, faster and easier to explain
+than any model.
+\end{conceptbox}
+
+\section{A Precise Definition}
+
+The definition used throughout this course is Tom Mitchell's, from the set text.
+It is worth memorising because it forces you to say exactly what you mean before
+you start.
+
+\begin{definitionbox}[Machine Learning (Mitchell, 1997)]
+A computer program is said to \term{learn} from experience $E$ with respect to
+some class of tasks $T$ and performance measure $P$, if its performance at tasks
+in $T$, as measured by $P$, improves with experience $E$.
+\end{definitionbox}
+
+The three letters are not decoration. A project that cannot name its $P$ cannot
+tell whether it is making progress; a project that cannot name its $E$ does not
+know what data to collect. Most failed machine learning projects failed here,
+before any algorithm was chosen.
+
+\begin{worked}[Naming T, P and E]
+State the task, performance measure and experience for three problems.
+
+\smallskip
+\textbf{1. Phishing filter.}
+\begin{tight}
+  \item $T$: classify each incoming e-mail as phishing or legitimate.
+  \item $P$: the fraction of phishing e-mails caught, subject to fewer than one
+        legitimate e-mail in a thousand being blocked.
+  \item $E$: a corpus of e-mails already labelled by users and analysts.
+\end{tight}
+
+\textbf{2. Sprint effort estimation.}
+\begin{tight}
+  \item $T$: predict the hours a user story will take.
+  \item $P$: average absolute error, in hours, on stories not yet estimated.
+  \item $E$: past stories with their descriptions, story points and actual hours.
+\end{tight}
+
+\textbf{3. A robot learning to balance.}
+\begin{tight}
+  \item $T$: choose motor commands that keep the robot upright.
+  \item $P$: average time before it falls.
+  \item $E$: the robot's own attempts --- no labelled examples at all, only the
+        consequences of what it tried.
+\end{tight}
+
+\smallskip
+\textbf{Notice the choice of $P$ in problem 1.} ``Accuracy'' would have been the
+obvious answer and the wrong one: if 2\% of e-mail is phishing, a filter that lets
+everything through is 98\% accurate. Choosing $P$ is a design decision with
+consequences, and \chref{evaluation} is devoted to it.
+\end{worked}
+
+\section{The Four Paradigms}
+
+What varies most between learning problems is the \emph{experience} --- in
+particular, what the data tells you about the right answer. That gives four
+paradigms, sketched in \dsref{paradigms}.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  panel/.style={rounded corners=4pt, draw=#1, line width=0.9pt, fill=#1!4,
+                minimum width=6.6cm, minimum height=4.0cm},
+  ttl/.style={font=\small\bfseries, text=#1!65!black, anchor=north west},
+  sub/.style={font=\scriptsize, text=gray!55!black, anchor=north west, align=left,
+              text width=6.2cm},
+  ptp/.style={circle, fill=secondary, inner sep=1.5pt},
+  ptn/.style={rectangle, fill=accent, inner sep=1.7pt},
+  unl/.style={circle, fill=gray!45, inner sep=1.4pt}]
+% ---------- supervised
+\node[panel=primary] at (0,0) {};
+\node[ttl=primary] at (-3.2,1.9) {Supervised};
+\node[sub] at (-3.2,1.45) {every example comes with its answer};
+\foreach \x/\y in {-2.3/-0.2,-1.8/0.4,-1.3/-0.5,-2.0/-1.0,-1.1/0.1,-2.6/0.6}{
+  \node[ptp] at (\x,\y) {};}
+\foreach \x/\y in {0.4/-0.3,0.9/0.5,1.3/-0.8,0.6/-1.2,1.7/0.1,2.2/-0.4}{
+  \node[ptn] at (\x,\y) {};}
+\draw[primary, line width=1.1pt, dashed] (-0.55,0.8) -- (-0.15,-1.6);
+\node[font=\tiny, text=primary, anchor=west] at (-0.05,-1.55) {learned boundary};
+% ---------- unsupervised
+\node[panel=purplehl] at (7.0,0) {};
+\node[ttl=purplehl] at (3.8,1.9) {Unsupervised};
+\node[sub] at (3.8,1.45) {no answers at all --- find the structure};
+\foreach \x/\y in {5.0/-0.1,5.4/0.4,5.7/-0.4,5.2/-0.8}{\node[unl] at (\x,\y) {};}
+\foreach \x/\y in {8.2/0.5,8.7/0.2,8.4/-0.2,8.9/0.7}{\node[unl] at (\x,\y) {};}
+\foreach \x/\y in {7.4/-1.3,7.9/-1.1,7.6/-0.9}{\node[unl] at (\x,\y) {};}
+\draw[purplehl, line width=0.9pt] (5.35,-0.22) ellipse (0.7cm and 0.85cm);
+\draw[purplehl, line width=0.9pt] (8.55,0.3) ellipse (0.72cm and 0.6cm);
+\draw[purplehl, line width=0.9pt] (7.63,-1.1) ellipse (0.55cm and 0.4cm);
+% ---------- semi-supervised
+\node[panel=tealhl] at (0,-4.4) {};
+\node[ttl=tealhl] at (-3.2,-2.5) {Semi-supervised};
+\node[sub] at (-3.2,-2.95) {a few answers, many examples without};
+\foreach \x/\y in {-2.5/-4.3,-2.1/-3.8,-1.7/-4.7,-2.3/-5.3,-1.4/-4.2,-2.8/-4.8,
+                   -1.9/-5.0,-1.2/-3.6}{\node[unl] at (\x,\y) {};}
+\foreach \x/\y in {0.6/-4.1,1.0/-4.9,1.5/-3.8,0.8/-5.4,1.9/-4.5,2.3/-5.1,1.3/-4.4,
+                   2.1/-3.7}{\node[unl] at (\x,\y) {};}
+\node[ptp, minimum size=5pt] at (-2.1,-4.5) {};
+\node[ptn, minimum size=5pt] at (1.5,-4.8) {};
+\draw[tealhl, line width=1.1pt, dashed] (-0.4,-3.5) -- (-0.3,-5.9);
+\node[font=\tiny, text=tealhl!70!black, anchor=north west, align=left] at (-0.2,-5.35)
+     {two labels, and the gap\\between the groups};
+% ---------- reinforcement
+\node[panel=goldhl] at (7.0,-4.4) {};
+\node[ttl=goldhl] at (3.8,-2.5) {Reinforcement};
+\node[sub] at (3.8,-2.95) {no answers --- only rewards for what was tried};
+\node[rounded corners=3pt, fill=goldhl, text=white, font=\scriptsize\bfseries,
+      minimum width=1.6cm, minimum height=0.7cm] (ag) at (5.3,-4.8) {Agent};
+\node[rounded corners=3pt, fill=goldhl!25, draw=goldhl, text=goldhl!40!black,
+      font=\scriptsize\bfseries, minimum width=1.9cm, minimum height=0.7cm] (en)
+      at (8.7,-4.8) {Environment};
+\draw[-{Stealth[length=2mm]}, goldhl!70!black, line width=0.9pt]
+     (ag.north) .. controls +(0,0.75) and +(0,0.75) .. node[above, font=\tiny] {action} (en.north);
+\draw[-{Stealth[length=2mm]}, goldhl!70!black, line width=0.9pt]
+     (en.south) .. controls +(0,-0.75) and +(0,-0.75) .. node[below, font=\tiny]
+     {new state, reward} (ag.south);
+\end{tikzpicture}}%
+{The four paradigms, distinguished by what the experience tells the learner about the
+right answer: all of it, none of it, a little of it, or only whether what it did turned
+out well.}{paradigms}
+
+\begin{definitionbox}[The Four Paradigms]
+\term{Supervised learning}: every training example is a pair $(\mathbf{x}, y)$ of
+features and the correct answer (\term{label}). If $y$ is a category the task is
+\term{classification}; if $y$ is a number it is \term{regression}.\\[3pt]
+\term{Unsupervised learning}: examples $\mathbf{x}$ with no labels. The task is
+to find structure --- groups, directions of variation, a compact
+representation.\\[3pt]
+\term{Semi-supervised learning}: a few labelled examples and many unlabelled
+ones, used together.\\[3pt]
+\term{Reinforcement learning}: an agent acts in an environment and receives a
+reward. Nobody says what the right action was; the agent must discover which
+actions lead, eventually, to high reward.
+\end{definitionbox}
+
+\Needspace{14\baselineskip}
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.6cm}L{3.0cm}L{2.9cm}L{3.9cm}L{1.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Paradigm} & \textbf{Experience} & \textbf{Learns} & \textbf{Example} & \textbf{Chapters} \\
+\midrule
+\endhead
+Supervised, regression & Features and a numeric target & A function to a number &
+Hours a user story will take & 5, 7, 11, 13, 14 \\
+Supervised, classification & Features and a category & A function to a class &
+Phishing or legitimate & 6, 8--14 \\
+Unsupervised & Features only & Groups, directions, maps & Kinds of network
+traffic & 15, 16 \\
+Semi-supervised & Few labels, many unlabelled & A classifier using both &
+Malware families from a handful of analysed samples & 17 \\
+Reinforcement & States, actions, rewards & A policy: what to do in each state &
+A thermostat learning to save energy & 19, 20 \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Classification or Regression? Look at the Target, Not the Features]
+The paradigm is decided by what $y$ is. ``Predict a student's final mark'' is
+regression; ``predict whether the student will pass'' is classification ---
+same students, same features, different $y$. Numbers used as category codes
+(port 22, grade 3 on a 1--5 scale) are a common trap: ask whether averaging two
+values of $y$ would mean anything.
+\end{alertbox}
+
+\section{Designing a Learning System}
+
+Mitchell's set text frames the construction of any learner as four decisions,
+made in order. They are shown here for a problem this course returns to
+repeatedly: predicting in Week~4 which students will fail a course.
+
+\begin{worked}[The Four Design Decisions]
+\textbf{1. Choose the training experience.} Records of past students with their
+Week~4 data and their final result. Is it representative? Only if past cohorts
+resemble this one --- a change of syllabus or of intake breaks that.
+
+\textbf{2. Choose the target function.} What exactly should be learned?
+\begin{tight}
+  \item Option A: $V:\ \text{student} \to \{\text{pass}, \text{fail}\}$.
+  \item Option B: $V:\ \text{student} \to [0,1]$, the probability of failing.
+\end{tight}
+Option B is more useful: it lets staff call the riskiest students first.
+
+\textbf{3. Choose a representation} for the approximation $\hat{V}$ of the
+target. For example, a weighted sum of features:
+\[
+\hat{V}(\mathbf{x}) = \sigma(w_0 + w_1\, \text{attendance} + w_2\,
+\text{quiz average} + w_3\, \text{logins per week})
+\]
+where $\sigma$ squashes any number into $[0,1]$ (\chref{logreg}). Choosing this
+form rules out, for good or ill, every pattern it cannot express.
+
+\textbf{4. Choose a learning algorithm} that sets the weights $w_0, \dots, w_3$
+from the training experience --- here, gradient descent on a loss
+(\chref{math}).
+
+\smallskip
+\textbf{The first three decisions matter more than the fourth.} A poor choice
+of experience or target cannot be rescued by a better algorithm.
+\end{worked}
+
+\section{Learning as Search Through a Hypothesis Space}
+
+Decision 3 deserves a closer look. Once you fix a representation, you have fixed
+the set of all functions the learner could possibly produce.
+
+\begin{definitionbox}[Hypothesis and Hypothesis Space]
+A \term{hypothesis} $h$ is one candidate function from inputs to outputs --- one
+particular setting of the weights, one particular decision tree. The
+\term{hypothesis space} $H$ is the set of all hypotheses the representation
+allows. The unknown true function the data came from is the \term{target
+function} $c$ (or $f$). \term{Learning} is a search through $H$ for a
+hypothesis that agrees with $c$ --- not just on the training data, but on data
+not yet seen.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+\draw[rounded corners=8pt, draw=primary, line width=1pt, fill=primary!4]
+     (0,0) rectangle (7.2,4.0);
+\node[font=\small\bfseries, text=primary, anchor=north west] at (0.15,3.9)
+     {Hypothesis space $H$};
+\foreach \x/\y in {0.7/0.6,1.4/2.9,2.3/1.1,3.1/3.2,4.6/0.5,5.9/3.1,6.5/1.2,
+                   1.0/1.8,2.8/0.4,6.1/2.2,5.1/3.5,0.6/3.2}{
+  \fill[gray!45] (\x,\y) circle (2pt);}
+\draw[greenhl!70!black, line width=1pt, fill=greenhl!12]
+     (4.2,2.05) ellipse (1.5cm and 0.95cm);
+\foreach \x/\y in {3.4/2.2,3.9/1.6,4.3/2.6,4.8/1.9,5.2/2.4,3.8/2.8}{
+  \fill[greenhl!70!black] (\x,\y) circle (2pt);}
+\node[font=\tiny, text=greenhl!45!black, align=center] at (4.2,1.25)
+     {consistent with\\the training data};
+\node[star, star points=5, fill=accent, inner sep=1.6pt] at (4.45,2.25) {};
+\node[font=\tiny\bfseries, text=accent, anchor=west] at (4.6,2.25) {$c$?};
+% right side notes
+\node[anchor=north west, align=left, text width=6.0cm] at (7.7,3.9)
+     {\textbf{\color{primary}Grey dots:} hypotheses the representation allows but
+      the data rules out.\\[4pt]
+      \textbf{\color{greenhl!55!black}Green region:} every hypothesis that fits the
+      training data. Usually there are many.\\[4pt]
+      \textbf{\color{accent}Star:} the true target, if it is in $H$ at all.\\[6pt]
+      \textbf{Which green hypothesis to return?} The data cannot say --- they all fit
+      it equally well. The learner's \emph{preference} among them is its
+      \term{inductive bias}.};
+\end{tikzpicture}}%
+{Learning as search. The data narrows the hypothesis space to those hypotheses consistent
+with it; something other than the data must choose among the survivors.}{hypothesis-space}
+
+\begin{conceptbox}[Why a Learner Must Assume Something]
+Show a learner the examples $(1 \to 2)$, $(2 \to 4)$, $(3 \to 6)$ and ask for the
+output at 4. ``8'' is the natural answer, but the function that returns $2x$ for
+$x \le 3$ and $0$ otherwise fits the three examples just as perfectly. Nothing in
+the data prefers one to the other. You prefer $2x$ because you assume the simpler
+pattern continues. That assumption --- the \term{inductive bias} --- is not a
+defect to be removed: a learner with no bias at all cannot generalise beyond the
+examples it has seen. \chref{concept} proves this, and every later chapter names
+the bias of its algorithm.
+\end{conceptbox}
+
+\section{A Short History}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  ev/.style={anchor=north, align=center, text width=1.68cm, font=\tiny},
+  yr/.style={font=\scriptsize\bfseries, text=primary}]
+\draw[primary!50, line width=1.6pt, -{Stealth[length=3mm]}] (-0.3,0) -- (15.6,0);
+\foreach \x/\y/\t/\c in {
+   0.3/1958/Rosenblatt's perceptron learns from examples (Ch 13)/primary,
+   2.1/1959/Samuel's checkers player; the term ``machine learning''/primary,
+   3.9/1986/ID3 decision trees (Ch 9); backpropagation (Ch 13)/greenhl,
+   5.7/1989/Q-learning (Ch 20)/tealhl,
+   7.5/1995/Support vector machines (Ch 12)/greenhl,
+   9.3/1997/Boosting analysed; Mitchell's set text/greenhl,
+  11.1/2001/Random forests (Ch 14)/greenhl,
+  12.9/2012/Deep networks win ImageNet/purplehl,
+  14.7/2016/AlphaGo: deep RL beats a world champion/tealhl}{
+  \fill[\c] (\x,0) circle (3pt);
+  \node[yr] at (\x,0.35) {\y};
+  \node[ev] at (\x,-0.2) {\t};}
+\end{tikzpicture}}%
+{Selected milestones. Most of what this course teaches was in place by 2001; what changed
+after 2012 was mainly scale --- data, computation, and the depth of the networks.}{history}
+
+The ideas in this course are older than most students expect. Frank Rosenblatt's
+perceptron learned from examples in 1958; Arthur Samuel's checkers program, which
+improved by playing against itself, gave the field its name in 1959. Decision
+trees, backpropagation, reinforcement learning, support vector machines and
+ensembles were all in place by 2001. What changed after 2012 was mostly
+\emph{scale} --- data, computing power, and the depth of the neural networks
+that both made practical. That is why a course built on a 1997 set text is not
+out of date: the deep learning course that follows this one is built on exactly
+these foundations.
+
+\section{Where Machine Learning Sits}
+
+In the \emph{Artificial Intelligence} course you built agents that search,
+reason and plan using knowledge someone supplied. Machine learning is the part
+of AI in which the knowledge is \emph{acquired from data} instead. Deep learning
+is, in turn, the part of machine learning that uses neural networks with many
+layers. A chess engine searching with a hand-written evaluation function is AI
+but not ML; the same engine with an evaluation function learned from games is
+both.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Choosing the algorithm first.} ``Let's use a neural network''
+        before $T$, $P$ and $E$ are written down. Decide what success means, and
+        what data exists, before anything else.
+  \item \textbf{Judging a model on the data it learned from.} Any sufficiently
+        flexible model can memorise its training data. Performance means
+        performance on examples it has not seen (\chref{generalization}).
+  \item \textbf{Treating a category code as a number.} Port 443 is not ``more''
+        than port 80; averaging them means nothing.
+  \item \textbf{Believing unsupervised means objective.} Every clustering
+        reflects choices --- of features, distance and number of groups --- made
+        by a person (\chref{clustering}).
+  \item \textbf{Calling any automation ``machine learning''.} A threshold
+        written by a person is a rule, not a model, however useful it is.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Framing a Learning Problem}
+\lensLA{$T$: rank this term's students by risk of failing. $P$: of the students
+who go on to fail, the fraction in the top 20\% of the ranking. $E$: three past
+cohorts with their Week~4 records. The trap is $E$: a model trained on cohorts
+who received no intervention learns a world that the intervention itself will
+change.}
+
+\lensPM{$T$: predict the actual hours for a user story. $P$: mean absolute error
+in hours. $E$: the team's completed stories. The trap is volume --- a single
+team completes perhaps two hundred stories a year, which is small data, and the
+estimates the team gave were themselves influenced by earlier predictions.}
+
+\lensIOT{$T$: classify one second of motor vibration as healthy or failing.
+$P$: failures caught at least a day before breakdown, with at most one false
+alarm per machine per month. $E$: vibration logs joined to maintenance records.
+The trap is that failures are rare, so there may be only a dozen labelled
+failures in years of data.}
+
+\lensSEC{$T$: classify each network connection as benign or malicious. $P$:
+detection rate at a fixed, tolerable number of alerts per analyst per hour.
+$E$: labelled traffic from past incidents. The trap is the adversary: $E$
+describes last year's attacks, and the attacker's whole aim is for this year's
+not to resemble them.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[A Rule Against a Learned Model]
+Write a rule by hand, then let an algorithm learn one, and compare them on data
+neither has seen. The Wisconsin breast cancer data ships with scikit-learn: 569
+tumours, 30 measurements each, labelled malignant or benign.
+\begin{lstlisting}[language=Python]
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score
+
+data = load_breast_cancer()
+X, y = data.data, data.target            # y: 0 = malignant, 1 = benign
+X_tr, X_te, y_tr, y_te = train_test_split(
+    X, y, test_size=0.25, random_state=0, stratify=y)
+
+# --- 1. a rule written by a person: large tumours are malignant ---------
+radius = list(data.feature_names).index("mean radius")
+rule = (X_te[:, radius] < 15).astype(int)     # small -> benign (1)
+print("hand-written rule :", accuracy_score(y_te, rule))
+
+# --- 2. a rule found by a learning algorithm ----------------------------
+tree = DecisionTreeClassifier(max_depth=3, random_state=0).fit(X_tr, y_tr)
+print("learned tree      :", accuracy_score(y_te, tree.predict(X_te)))
+
+# --- 3. the baseline every result must beat -----------------------------
+majority = int(y_tr.mean() > 0.5)
+print("always 'majority' :", accuracy_score(y_te, [majority] * len(y_te)))
+\end{lstlisting}
+Then change the threshold 15 in the hand-written rule, and the depth 3 of the
+tree, and watch both numbers. Which one is easier to improve by hand?
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A thermostat switches on the heating whenever the temperature drops below
+        a value the owner set. Is this machine learning? Use the definition.
+  \item Classify each as regression, classification, clustering or reinforcement
+        learning: (a)~predicting tomorrow's server load in requests per second;
+        (b)~grouping customers with no labels; (c)~deciding whether a login is
+        fraudulent; (d)~a program learning to play a video game from its score.
+  \item Why can a learner with no inductive bias not classify an example it has
+        never seen?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Machine learning reverses traditional programming: you supply examples
+        of the answers and the algorithm produces the rules.
+  \item A program learns if its performance $P$ at task $T$ improves with
+        experience $E$. Name all three before choosing an algorithm.
+  \item The paradigm is set by the experience: labelled (supervised), unlabelled
+        (unsupervised), partly labelled (semi-supervised) or rewarded
+        (reinforcement). Regression and classification differ only in $y$.
+  \item Designing a learner means choosing the experience, the target function,
+        its representation and a learning algorithm --- in that order of
+        importance.
+  \item Learning is search through a hypothesis space. The data narrows it; the
+        inductive bias chooses among what is left, and without one no
+        generalisation is possible.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Predicting the number of help-desk tickets tomorrow is:
+        (a)~classification (b)~regression (c)~clustering (d)~reinforcement
+        learning.
+  \item \textbf{(MCQ)} In Mitchell's definition, $E$ stands for: (a)~error
+        (b)~experience (c)~expectation (d)~evaluation.
+  \item \textbf{(MCQ)} A dataset of 10{,}000 photographs of which 200 are labelled
+        suits: (a)~supervised (b)~unsupervised (c)~semi-supervised
+        (d)~reinforcement learning.
+  \item \textbf{(Short)} Give one problem for which you would write rules rather
+        than learn a model, and explain why.
+  \item \textbf{(Short)} Explain, with an example, the difference between the
+        target function and a hypothesis.
+  \item \textbf{(Short)} Why is ``accuracy'' often the wrong performance measure?
+        Give a numeric example.
+  \item \textbf{(Applied)} A university wants to recommend elective courses to
+        students. Specify $T$, $P$ and $E$; state which paradigm applies; and
+        describe the four design decisions you would make.
+  \item \textbf{(Applied)} For the phishing filter in the first worked example,
+        describe what could make the training experience unrepresentative of the
+        e-mail the filter will face next year, and what you would do about it.
+\end{reviewq}

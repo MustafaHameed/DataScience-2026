@@ -1,0 +1,478 @@
+%=====================================================================
+\chapter{Hidden Markov Models}\label{ch:hmm}
+%=====================================================================
+\locator{5}{Part V --- Sequences, Decisions and Reinforcement}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} the Markov property, and \textbf{compute} with a Markov
+        chain's transition matrix.
+  \item \textbf{Specify} a hidden Markov model by its states, observations, initial,
+        transition and emission probabilities.
+  \item \textbf{Compute} the probability of an observation sequence with the forward
+        algorithm, by hand.
+  \item \textbf{Find} the most likely hidden-state sequence with the Viterbi
+        algorithm, by hand.
+  \item \textbf{Explain} how Baum--Welch learns an HMM's parameters, and
+        \textbf{estimate} a probability by Monte Carlo sampling.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (conditional probability), \chref{bayes} (Bayes' theorem, posteriors)
+and \chref{semisup} (the EM algorithm, which trains HMMs). The HEC outline lists HMMs
+under reinforcement learning; they belong here, at the start of Part V, because the
+Markov machinery they introduce is what Markov decision processes (\chref{mdp}) build
+on.
+\end{prereq}
+
+\begin{keyterms}
+sequence $\bullet$ Markov property $\bullet$ Markov chain $\bullet$ transition
+matrix $\bullet$ stationary distribution $\bullet$ hidden state $\bullet$ observation
+(emission) $\bullet$ initial distribution $\pi$ $\bullet$ emission matrix $\bullet$
+evaluation, decoding and learning problems $\bullet$ forward algorithm $\bullet$
+Viterbi algorithm $\bullet$ backpointer $\bullet$ Baum--Welch $\bullet$ Monte Carlo
+estimation
+\end{keyterms}
+
+\section{When Order Matters}
+
+Every model so far has treated examples as independent: shuffling the training
+set changes nothing. Much real data is a \emph{sequence} in which the order carries
+the information --- the words of a sentence, the readings of a sensor, the actions
+of a user in a session, the calls a program makes to the operating system. Hidden
+Markov models were the standard tool for such data for thirty years, in speech
+recognition, part-of-speech tagging and gene finding, and they remain the clearest
+introduction to reasoning about sequences.
+
+\section{Markov Chains}
+
+\begin{definitionbox}[Markov Property and Markov Chain]
+A sequence of states $s_1, s_2, \dots$ has the \term{Markov property} if the next
+state depends only on the current one, not on the history:
+$P(s_{t+1} \mid s_t, s_{t-1}, \dots, s_1) = P(s_{t+1} \mid s_t)$. A \term{Markov
+chain} is such a sequence, described by an initial distribution $\pi$ and a
+\term{transition matrix} $A$ with $A_{ij} = P(s_{t+1} = j \mid s_t = i)$; each row
+of $A$ sums to 1.
+\end{definitionbox}
+
+A server is either Healthy (H) or Degraded (D). From one minute to the next it stays
+healthy with probability 0.8 and degrades with probability 0.2; once degraded, it
+recovers with probability 0.3 and stays degraded with 0.7:
+\[
+A = \begin{pmatrix} 0.8 & 0.2 \\ 0.3 & 0.7 \end{pmatrix}
+\]
+If it is healthy now, the probability it is degraded in two minutes sums over the
+two routes: H$\to$H$\to$D $= 0.8 \times 0.2 = 0.16$ and H$\to$D$\to$D $= 0.2 \times 0.7
+= 0.14$, total 0.30 --- which is the entry of $A^2$ in row H, column D. Run long
+enough, the chain forgets where it started and settles into a \term{stationary
+distribution}: here 60\% healthy, 40\% degraded (check: $0.6 \times 0.2 = 0.4 \times
+0.3$, so the flows between the states balance).
+
+\section{Hidden Markov Models}
+
+In practice the server's true state is not visible. What the monitoring sees is its
+\emph{response time}, which depends on the state but only probabilistically: a
+healthy server is usually fast, a degraded one usually slow or timing out, but either
+can produce any reading. The states are \emph{hidden}; the observations are what is
+recorded.
+
+\begin{definitionbox}[Hidden Markov Model]
+An HMM has hidden states $S$ and observable symbols $O$, and three sets of
+probabilities:
+\begin{tight}
+  \item the \term{initial distribution} $\pi_i = P(s_1 = i)$;
+  \item the \term{transition matrix} $A_{ij} = P(s_{t+1} = j \mid s_t = i)$;
+  \item the \term{emission matrix} $B_{ik} = P(o_t = k \mid s_t = i)$.
+\end{tight}
+The hidden states form a Markov chain, and each observation depends only on the
+hidden state at the same time.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  st/.style={circle, draw=#1, line width=1.1pt, fill=#1!12, text=#1!55!black,
+             minimum size=1.3cm, font=\scriptsize\bfseries, align=center},
+  ob/.style={rounded corners=3pt, draw=gray!55, fill=gray!8, minimum width=1.4cm,
+             minimum height=0.6cm, font=\tiny\bfseries},
+  a/.style={-{Stealth[length=2mm]}, line width=0.9pt}]
+\node[st=greenhl!70!black] (H) at (0,0) {Healthy};
+\node[st=accent] (D) at (4.6,0) {Degraded};
+\draw[a, greenhl!60!black] (H) to[out=130, in=50, looseness=6] node[above, font=\tiny] {0.8} (H);
+\draw[a, accent] (D) to[out=130, in=50, looseness=6] node[above, font=\tiny] {0.7} (D);
+\draw[a, gray!60!black] (H) to[bend left=25] node[above, font=\tiny] {0.2} (D);
+\draw[a, gray!60!black] (D) to[bend left=25] node[below, font=\tiny] {0.3} (H);
+\node[ob] (f) at (-0.6,-2.9) {fast};
+\node[ob] (s) at (2.3,-2.9) {slow};
+\node[ob] (t) at (5.2,-2.9) {timeout};
+\foreach \o in {f,s,t}{
+  \draw[a, greenhl!60!black, dashed, line width=0.6pt] (H) -- (\o);
+  \draw[a, accent, dashed, line width=0.6pt] (D) -- (\o);}
+\node[anchor=north west, font=\scriptsize] at (7.0,1.3) {%
+  \renewcommand{\arraystretch}{1.25}%
+  \begin{tabular}{@{}lccc@{}}
+  \multicolumn{4}{@{}l}{\textbf{Emissions} $B$: $P(\text{reading} \mid \text{state})$} \\[2pt]
+  & fast & slow & timeout \\
+  {\color{greenhl!45!black}\bfseries H} & 0.70 & 0.25 & 0.05 \\
+  {\color{accent}\bfseries D} & 0.10 & 0.50 & 0.40 \\[4pt]
+  \multicolumn{4}{@{}l}{\textbf{Start} $\pi$: H 0.7, D 0.3} \\[2pt]
+  \multicolumn{4}{@{}l}{\textbf{Transitions} $A$: solid arrows} \\
+  \end{tabular}};
+\node[font=\tiny, text=gray!55!black, anchor=west] at (7.0,-2.9)
+     {\textbf{hidden}: the state (top); \textbf{observed}: the reading (bottom)};
+\end{tikzpicture}}%
+{The hidden Markov model used throughout this chapter. The monitoring system never sees
+the state, only a response time whose probabilities depend on it.}{hmm-model}
+
+\begin{conceptbox}[Three Questions an HMM Answers]
+\begin{tight}
+  \item \textbf{Evaluation:} how probable is an observed sequence under this model?
+        (Is this pattern of response times normal?) --- the forward algorithm.
+  \item \textbf{Decoding:} which sequence of hidden states most probably produced
+        it? (When did the server actually degrade?) --- the Viterbi algorithm.
+  \item \textbf{Learning:} which parameters make the observed sequences most
+        probable? --- the Baum--Welch algorithm, an instance of EM.
+\end{tight}
+\end{conceptbox}
+
+\section{Evaluation: The Forward Algorithm}
+
+The direct way to find $P(o_1, \dots, o_T)$ sums over every possible hidden-state
+sequence --- $N^T$ of them, which for 2 states and 100 time steps is $2^{100}$. The
+forward algorithm avoids the explosion by reusing partial sums.
+
+\begin{definitionbox}[Forward Algorithm]
+Let $\alpha_t(i) = P(o_1, \dots, o_t,\ s_t = i)$: the probability of the observations
+so far \emph{and} being in state $i$ now.
+\begin{tight}
+  \item Start: $\alpha_1(i) = \pi_i\,B_i(o_1)$.
+  \item Step: $\alpha_{t+1}(j) = \Big[\sum_i \alpha_t(i)\,A_{ij}\Big]\,B_j(o_{t+1})$
+        --- every way of arriving in $j$, times the chance of emitting what was seen.
+  \item End: $P(o_1, \dots, o_T) = \sum_i \alpha_T(i)$.
+\end{tight}
+The cost is $N^2 T$ instead of $N^T$.
+\end{definitionbox}
+
+\begin{worked}[How Likely Is ``Fast, Slow, Timeout''?]
+Observations $o = $ (fast, slow, timeout), model of \dsref{hmm-model}.
+
+\smallskip
+\textbf{$t = 1$ (fast):} $\alpha_1(H) = 0.7 \times 0.70 = 0.49$;
+$\alpha_1(D) = 0.3 \times 0.10 = 0.03$.
+
+\textbf{$t = 2$ (slow):}
+\[
+\alpha_2(H) = (0.49 \times 0.8 + 0.03 \times 0.3) \times 0.25 = 0.401 \times 0.25 = 0.10025
+\]
+\[
+\alpha_2(D) = (0.49 \times 0.2 + 0.03 \times 0.7) \times 0.50 = 0.119 \times 0.5 = 0.0595
+\]
+\textbf{$t = 3$ (timeout):}
+\[
+\alpha_3(H) = (0.10025 \times 0.8 + 0.0595 \times 0.3) \times 0.05 = 0.09805 \times 0.05 = 0.00490
+\]
+\[
+\alpha_3(D) = (0.10025 \times 0.2 + 0.0595 \times 0.7) \times 0.40 = 0.0617 \times 0.4 = 0.02468
+\]
+\textbf{Answer:} $P(o) = 0.00490 + 0.02468 = \mathbf{0.0296}$.
+
+\smallskip
+The same numbers answer a second question for free: given everything seen so far,
+the server is now degraded with probability $0.02468/0.0296 = \mathbf{0.83}$ ---
+the \emph{filtered} state estimate, which is what a live monitoring dashboard wants.
+\end{worked}
+
+\section{Decoding: The Viterbi Algorithm}
+
+Viterbi has the same structure as the forward algorithm with one change: replace the
+sum over incoming paths by a \emph{maximum}, and remember which predecessor gave it.
+
+\begin{definitionbox}[Viterbi Algorithm]
+Let $\delta_t(j)$ be the probability of the single most likely state sequence ending
+in state $j$ at time $t$ (with the observations so far).
+\begin{tight}
+  \item Start: $\delta_1(i) = \pi_i\,B_i(o_1)$.
+  \item Step: $\delta_{t+1}(j) = \max_i\big[\delta_t(i)\,A_{ij}\big]\,B_j(o_{t+1})$,
+        and store the maximising $i$ as the \term{backpointer} for $(t+1, j)$.
+  \item End: take the state with the largest $\delta_T$, then follow the
+        backpointers back to $t = 1$.
+\end{tight}
+\end{definitionbox}
+
+\begin{worked}[When Did the Server Degrade?]
+The same observations: fast, slow, timeout.
+
+\smallskip
+\textbf{$t = 1$:} $\delta_1(H) = 0.49$, $\delta_1(D) = 0.03$.
+
+\textbf{$t = 2$ (slow):}
+\begin{tight}
+  \item into H: from H $0.49 \times 0.8 = 0.392$, from D $0.03 \times 0.3 = 0.009$;
+        best from H. $\delta_2(H) = 0.392 \times 0.25 = 0.098$.
+  \item into D: from H $0.49 \times 0.2 = 0.098$, from D $0.03 \times 0.7 = 0.021$;
+        best from H. $\delta_2(D) = 0.098 \times 0.5 = 0.049$.
+\end{tight}
+\textbf{$t = 3$ (timeout):}
+\begin{tight}
+  \item into H: from H $0.098 \times 0.8 = 0.0784$, from D $0.049 \times 0.3 = 0.0147$;
+        best from H. $\delta_3(H) = 0.0784 \times 0.05 = 0.00392$.
+  \item into D: from H $0.098 \times 0.2 = 0.0196$, from D $0.049 \times 0.7 = 0.0343$;
+        best from D. $\delta_3(D) = 0.0343 \times 0.4 = \mathbf{0.01372}$.
+\end{tight}
+\textbf{Backtrack.} The best final state is D (0.01372). Its backpointer is D at
+$t = 2$, whose backpointer is H at $t = 1$. \textbf{Most likely states: H, D, D} ---
+the server degraded between the first and second minute, when the first slow
+response appeared, not when the timeout did.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  nd/.style={circle, draw=#1, line width=1pt, fill=#1!10, minimum size=1.15cm, align=center,
+             font=\tiny},
+  e/.style={gray!40, line width=0.7pt},
+  best/.style={-{Stealth[length=2.2mm]}, primary, line width=2pt}]
+\foreach \t/\o in {0/fast,1/slow,2/timeout}{
+  \node[font=\scriptsize\bfseries, text=gray!55!black] at (\t*3.6,1.5) {$t = \the\numexpr\t+1\relax$: \o};}
+\node[font=\scriptsize\bfseries, text=greenhl!45!black, anchor=east] at (-1.0,0.5) {Healthy};
+\node[font=\scriptsize\bfseries, text=accent, anchor=east] at (-1.0,-1.1) {Degraded};
+\node[nd=greenhl!70!black] (h1) at (0,0.5) {0.49};
+\node[nd=accent] (d1) at (0,-1.1) {0.03};
+\node[nd=greenhl!70!black] (h2) at (3.6,0.5) {0.098};
+\node[nd=accent] (d2) at (3.6,-1.1) {0.049};
+\node[nd=greenhl!70!black] (h3) at (7.2,0.5) {0.00392};
+\node[nd=accent, line width=2pt] (d3) at (7.2,-1.1) {0.01372};
+\foreach \a/\b in {h1/h2,d1/h2,d1/d2,h2/h3,d2/h3,h2/d3}{\draw[e] (\a) -- (\b);}
+\draw[best] (h1) -- (d2);
+\draw[best] (d2) -- (d3);
+\draw[gray!60, -{Stealth[length=1.8mm]}, line width=0.9pt] (h1) -- (h2);
+\node[anchor=west, align=left, text width=4.6cm, font=\scriptsize, text=gray!55!black] at (8.6,-0.3)
+     {Each node shows $\delta_t$: the probability of the best path ending there. The
+      thick arrows are the backpointers of the winning path, H $\to$ D $\to$ D.};
+\end{tikzpicture}}%
+{The Viterbi trellis for the worked example. Every hidden-state sequence is a path through
+the trellis; Viterbi keeps only the best path into each node.}{viterbi}
+
+\section{Learning: Baum--Welch}
+
+Where do $\pi$, $A$ and $B$ come from? If the hidden states had been recorded, they
+would be counts: how often H followed H, how often D emitted a timeout. They were not
+--- so the \term{Baum--Welch} algorithm applies EM (\chref{semisup}). The
+\textbf{E-step} runs the forward algorithm and its mirror image, the backward
+algorithm, to compute for every time step the probability of each hidden state and of
+each transition, given the whole observed sequence. The \textbf{M-step} re-estimates
+$A$ and $B$ as expected counts: the expected number of H$\to$D transitions divided by
+the expected number of visits to H, and so on. As with every EM, the likelihood never
+decreases and the answer is a local maximum. This chapter's lab generates 3{,}000
+response times from the model, forgets the parameters, and from a vague start recovers
+\[
+A \approx \begin{pmatrix} 0.78 & 0.22 \\ 0.31 & 0.69 \end{pmatrix},
+\]
+close to the true values.
+
+\section{Monte Carlo Estimation}
+
+There is a completely different way to answer the evaluation question: \emph{simulate}.
+Generate many sequences from the model and count how often the observed one appears.
+
+\begin{definitionbox}[Monte Carlo Estimation]
+To estimate a probability or an expectation, draw many independent samples from the
+model and average: the fraction of samples in which an event occurs estimates its
+probability, and the average of a quantity over the samples estimates its expected
+value. The error shrinks like $1/\sqrt{\text{number of samples}}$ --- the same
+square-root law as the confidence intervals of \chref{evaluation}.
+\end{definitionbox}
+
+For three observations the forward algorithm is exact and instant, and simulation is
+pointless: with 1{,}000 samples the lab's estimate is 0.025, with 10{,}000 it is 0.032,
+and with 100{,}000 it is 0.0296, finally matching. Monte Carlo earns its place when no
+exact algorithm exists --- models too complex to sum over, or, as in \chref{rl}, an
+environment whose probabilities are unknown and can only be experienced. There,
+averaging the outcomes of many trials is the only estimate available, and it is the
+foundation of Monte Carlo reinforcement learning.
+
+\begin{alertbox}[Why HMMs Were Largely Replaced --- and Where They Remain]
+An HMM's hidden state is one symbol from a small set, and each observation depends on
+the current state alone. Language and speech have longer dependencies than that, and
+recurrent networks and transformers (the Deep Learning course) now dominate both.
+HMMs remain the right tool when the data is small, the states are meaningful and must
+be interpretable --- a machine's health, a user's session phase, the regime of a
+market --- and when an exact probability is needed rather than a score.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Multiplying probabilities along long sequences.} They underflow to
+        zero; scale at each step or work in logarithms (Viterbi is usually run in log
+        space, turning products into sums).
+  \item \textbf{Confusing the forward and Viterbi results.} Forward sums over all
+        paths (probability of the observations); Viterbi keeps the single best path.
+  \item \textbf{Taking the most likely state at each step as the best sequence.}
+        The individually likeliest states may form a sequence that is itself
+        unlikely, or even impossible; decode with Viterbi.
+  \item \textbf{Trusting Baum--Welch from one start.} It finds a local maximum;
+        restart from several initial guesses.
+  \item \textbf{Assuming the Markov property holds.} If the next state depends on a
+        long history, a first-order HMM is the wrong model.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Hidden Markov Models}
+\lensLA{A student's hidden state --- engaged, struggling, disengaged --- produces
+observable behaviour: logins, quiz scores, forum posts. An HMM trained on past
+cohorts decodes when a student moved from struggling to disengaged, which is when an
+intervention would have helped most.}
+
+\lensPM{A project's hidden health (on track, at risk, in trouble) emits weekly
+signals: velocity, defect counts, missed stand-ups. The filtered probability of ``in
+trouble'' is a more stable early warning than any single metric.}
+
+\lensIOT{The worked example is realistic: equipment degrades through hidden stages
+that show up only through noisy sensor readings. HMM-based condition monitoring and
+remaining-useful-life estimation are standard in predictive maintenance.}
+
+\lensSEC{The sequence of system calls made by a program was one of the first
+intrusion-detection signals: an HMM of a normal program's calls gives an
+attacked program's call sequence a very low forward probability. Session-level user
+behaviour can be modelled the same way.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Forward, Viterbi, Monte Carlo and Baum-Welch]
+\begin{lstlisting}[language=Python]
+import numpy as np
+
+# --- the worked example: a server that is Healthy (0) or Degraded (1) ----
+pi = np.array([0.7, 0.3])                        # initial state
+A = np.array([[0.8, 0.2],                        # transitions, row = from
+              [0.3, 0.7]])
+B = np.array([[0.70, 0.25, 0.05],                # emissions: fast, slow,
+              [0.10, 0.50, 0.40]])               #            timeout
+obs = [0, 1, 2]                                  # fast, slow, timeout
+
+
+def forward(obs, pi, A, B):
+    alpha = pi * B[:, obs[0]]
+    for o in obs[1:]:
+        alpha = (alpha @ A) * B[:, o]
+    return alpha                                 # sums to P(obs)
+
+
+def viterbi(obs, pi, A, B):
+    delta, back = pi * B[:, obs[0]], []
+    for o in obs[1:]:
+        cand = delta[:, None] * A                # cand[i, j]: from i to j
+        back.append(cand.argmax(axis=0))
+        delta = cand.max(axis=0) * B[:, o]
+    path = [int(delta.argmax())]
+    for b in reversed(back):
+        path.insert(0, int(b[path[0]]))
+    return path, delta.max()
+
+
+alpha = forward(obs, pi, A, B)
+print("P(fast, slow, timeout) =", round(alpha.sum(), 6))
+print("P(state at t=3 | obs)  =", (alpha / alpha.sum()).round(3))
+path, p = viterbi(obs, pi, A, B)
+print("most likely states:", ["HD"[s] for s in path], "prob", round(p, 5))
+
+# --- Monte Carlo: estimate the same probability by sampling --------------
+rng = np.random.default_rng(0)
+
+
+def sample(T):
+    s = rng.choice(2, p=pi)
+    out = []
+    for t in range(T):
+        out.append(rng.choice(3, p=B[s]))
+        s = rng.choice(2, p=A[s])
+    return out
+
+
+for n in (1_000, 10_000, 100_000):
+    hits = sum(sample(3) == obs for _ in range(n))
+    print(f"Monte Carlo, {n:6d} samples: {hits / n:.4f}")
+
+# --- Baum-Welch (EM): relearn A and B from one long sampled sequence -----
+seq = np.array(sample(3000))
+A_hat = np.array([[0.5, 0.5], [0.5, 0.5]])       # deliberately vague start
+B_hat = np.array([[0.5, 0.3, 0.2], [0.2, 0.3, 0.5]])
+p_hat = np.array([0.5, 0.5])
+T = len(seq)
+for it in range(60):
+    a, c = np.zeros((T, 2)), np.zeros(T)         # scaled forward pass
+    a[0] = p_hat * B_hat[:, seq[0]]
+    c[0] = a[0].sum()
+    a[0] /= c[0]
+    for t in range(1, T):
+        a[t] = (a[t - 1] @ A_hat) * B_hat[:, seq[t]]
+        c[t] = a[t].sum()
+        a[t] /= c[t]
+
+    b = np.ones((T, 2))                          # scaled backward pass
+    for t in range(T - 2, -1, -1):
+        b[t] = A_hat @ (B_hat[:, seq[t + 1]] * b[t + 1]) / c[t + 1]
+
+    g = a * b                                    # E-step: P(state_t | obs)
+    xi = (a[:-1, :, None] * A_hat[None] *
+          (B_hat[:, seq[1:]].T * b[1:])[:, None, :]) / c[1:, None, None]
+    A_hat = xi.sum(0) / g[:-1].sum(0)[:, None]   # M-step: expected counts
+    B_hat = np.array([g[seq == k].sum(0) for k in range(3)]).T
+    B_hat /= g.sum(0)[:, None]
+    p_hat = g[0]
+print("relearned A:\n", A_hat.round(2))
+print("relearned B:\n", B_hat.round(2))
+\end{lstlisting}
+The forward and Viterbi results reproduce both worked examples. Change the start of
+Baum--Welch to \texttt{B\_hat = [[0.2, 0.3, 0.5], [0.5, 0.3, 0.2]]}: the states come out
+the other way round. Why is that not an error?
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item In the Markov chain of this chapter, a server is degraded now. What is the
+        probability it is healthy two minutes later?
+  \item What does $\alpha_t(i)$ represent, and how does $\delta_t(i)$ differ from it?
+  \item Why does the direct sum over all hidden sequences become impractical, and
+        how does the forward algorithm avoid it?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item A Markov chain's next state depends only on the current one; its transition
+        matrix gives multi-step probabilities and a stationary distribution.
+  \item An HMM adds observations emitted from hidden states: $\pi$, $A$ and $B$
+        define it completely.
+  \item The forward algorithm computes the probability of an observation sequence in
+        $N^2 T$ steps, and yields the filtered state probabilities.
+  \item Viterbi replaces the forward sum by a maximum with backpointers, giving the
+        most likely hidden-state sequence.
+  \item Baum--Welch learns the parameters by EM; Monte Carlo sampling estimates any
+        probability by simulation, with error falling as $1/\sqrt{n}$.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} In an HMM, the emission matrix gives: (a)~$P(s_{t+1} \mid s_t)$
+        (b)~$P(o_t \mid s_t)$ (c)~$P(s_1)$ (d)~$P(s_t \mid o_t)$.
+  \item \textbf{(MCQ)} The Viterbi algorithm differs from the forward algorithm by
+        replacing a sum with: (a)~a product (b)~a maximum (c)~an average (d)~a
+        logarithm.
+  \item \textbf{(MCQ)} Baum--Welch is an instance of: (a)~gradient descent
+        (b)~the EM algorithm (c)~$k$-means (d)~Q-learning.
+  \item \textbf{(Short)} State the three problems an HMM can solve and the algorithm
+        for each.
+  \item \textbf{(Short)} Why can choosing the most likely state at each time step
+        separately give a worse answer than Viterbi?
+  \item \textbf{(Short)} When is Monte Carlo estimation preferable to an exact
+        algorithm?
+  \item \textbf{(Applied)} Compute $P(\text{slow, slow})$ for the model of this
+        chapter with the forward algorithm, and the filtered probability that the
+        server is degraded after the second observation.
+  \item \textbf{(Applied)} Run Viterbi on the observations (timeout, fast, fast) and
+        interpret the decoded state sequence.
+\end{reviewq}

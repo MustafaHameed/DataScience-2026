@@ -1,0 +1,423 @@
+%=====================================================================
+\chapter{Logistic Regression}\label{ch:logreg}
+%=====================================================================
+\locator{2}{Part II --- Linear Models and Generalization}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why linear regression is unsuitable for classification.
+  \item \textbf{Compute} a class probability with the sigmoid function, and
+        \textbf{interpret} a weight as a change in log-odds and an odds ratio.
+  \item \textbf{Find} and \textbf{draw} the decision boundary of a logistic
+        regression model.
+  \item \textbf{Compute} the cross-entropy loss and \textbf{perform} a gradient
+        descent step by hand.
+  \item \textbf{Extend} the model to several classes with one-vs-rest and
+        softmax.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{linreg} (the linear model, gradient descent on a loss) and \chref{math}
+(maximum likelihood, logarithms, the chain rule).
+\end{prereq}
+
+\begin{keyterms}
+binary classification $\bullet$ sigmoid (logistic) function $\bullet$ odds
+$\bullet$ log-odds (logit) $\bullet$ odds ratio $\bullet$ decision boundary
+$\bullet$ threshold $\bullet$ cross-entropy (log loss) $\bullet$ linear
+separability $\bullet$ one-vs-rest $\bullet$ softmax
+\end{keyterms}
+
+\section{Why Not Just Use Linear Regression?}
+
+Code a binary label as $y = 1$ (fail) or $y = 0$ (pass), fit a least-squares line,
+and call anything above 0.5 a fail. It half works --- and it breaks in two ways,
+both visible on the left of \dsref{linear-vs-logistic}. The line predicts values
+below 0 and above 1, which cannot be probabilities. And a few examples far from
+the boundary --- a student with perfect attendance, who of course passed ---
+drag the line towards them and move the 0.5 crossing, misclassifying students
+near the boundary who were previously correct. The model is being penalised for
+being \emph{too} right about easy cases.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.4cm},
+  width=6.8cm, height=4.8cm, axis lines=left,
+  tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+  xlabel={risk score $x$}, ylabel={$P(\text{fail})$ or prediction},
+  xmin=0, xmax=10, ymin=-0.35, ymax=1.35]
+\nextgroupplot[title={Least-squares line}]
+\addplot[only marks, mark=*, mark size=1.5pt, greenhl!70!black] coordinates
+  {(0.5,0)(1.2,0)(1.8,0)(2.5,0)(3.1,0)(3.8,0)(4.4,0)};
+\addplot[only marks, mark=*, mark size=1.5pt, accent] coordinates
+  {(5.2,1)(5.9,1)(6.6,1)(7.2,1)(7.9,1)(8.6,1)(9.4,1)};
+\addplot[primary, line width=1.2pt, domain=0:10] {0.155*x-0.27};
+\addplot[gray!50, dashed] coordinates {(0,0)(10,0)};
+\addplot[gray!50, dashed] coordinates {(0,1)(10,1)};
+\node[font=\tiny, accent, anchor=north west, align=left] at (axis cs:6.4,1.33)
+     {above 1: not a\\probability};
+\node[font=\tiny, accent, anchor=south west, align=left] at (axis cs:0.2,-0.33)
+     {below 0};
+\nextgroupplot[title={Logistic (sigmoid) curve}]
+\addplot[only marks, mark=*, mark size=1.5pt, greenhl!70!black] coordinates
+  {(0.5,0)(1.2,0)(1.8,0)(2.5,0)(3.1,0)(3.8,0)(4.4,0)};
+\addplot[only marks, mark=*, mark size=1.5pt, accent] coordinates
+  {(5.2,1)(5.9,1)(6.6,1)(7.2,1)(7.9,1)(8.6,1)(9.4,1)};
+\addplot[primary, line width=1.2pt, domain=0:10, samples=100] {1/(1+exp(-2.2*(x-4.8)))};
+\addplot[gray!50, dashed] coordinates {(0,0)(10,0)};
+\addplot[gray!50, dashed] coordinates {(0,1)(10,1)};
+\addplot[gray!50, dashed] coordinates {(4.8,-0.35)(4.8,0.5)};
+\node[font=\tiny, primary, anchor=west] at (axis cs:5.0,0.3) {$P = 0.5$ here};
+\end{groupplot}
+\end{tikzpicture}}%
+{The same pass (green) and fail (red) students modelled two ways. The straight line
+leaves $[0,1]$ and is pulled by easy cases; the sigmoid stays between 0 and 1 and
+flattens out where the answer is already clear.}{linear-vs-logistic}
+
+\section{The Sigmoid and the Log-Odds}
+
+\begin{definitionbox}[Logistic Regression]
+Compute a linear score $z = \mathbf{w}\cdot\mathbf{x} + b$ exactly as in linear
+regression, then squash it into $(0, 1)$ with the \term{sigmoid} (logistic)
+function:
+\[
+P(y = 1 \mid \mathbf{x}) = \sigma(z) = \frac{1}{1 + e^{-z}}
+\]
+$\sigma(0) = 0.5$; large positive $z$ gives a probability near 1 and large negative
+$z$ a probability near 0. Predict class 1 when the probability exceeds a
+\term{threshold}, by default 0.5.
+\end{definitionbox}
+
+Inverting the sigmoid shows what the linear score means. If $p = \sigma(z)$ then
+\[
+z = \ln\frac{p}{1-p}
+\]
+The ratio $p/(1-p)$ is the \term{odds} --- a probability of 0.8 is odds of 4 to 1
+--- and its logarithm is the \term{log-odds} or \term{logit}. So logistic
+regression is a linear model \emph{of the log-odds}. Each weight is the change in
+log-odds for a one-unit increase in its feature, and $e^{w_j}$ is the
+\term{odds ratio}: the factor by which the odds are multiplied.
+
+\begin{worked}[Probabilities and Odds for Two Students]
+A fitted model of failing: $z = 4 - 5\,a - 3\,q$, where $a$ is attendance and $q$
+the quiz average, both on a 0--1 scale.
+
+\smallskip
+\textbf{Student A} ($a = 0.9$, $q = 0.8$):
+$z = 4 - 4.5 - 2.4 = -2.9$, so
+$P(\text{fail}) = \dfrac{1}{1 + e^{2.9}} = \dfrac{1}{1 + 18.17} = \mathbf{0.052}$.
+
+\textbf{Student B} ($a = 0.5$, $q = 0.4$):
+$z = 4 - 2.5 - 1.2 = 0.3$, so
+$P(\text{fail}) = \dfrac{1}{1 + e^{-0.3}} = \dfrac{1}{1 + 0.741} = \mathbf{0.574}$.
+
+\smallskip
+\textbf{Reading the attendance weight.} $w_a = -5$ per unit of attendance, so ten
+percentage points more attendance ($+0.1$) changes the log-odds by $-0.5$ and
+multiplies the odds of failing by $e^{-0.5} = \mathbf{0.61}$ --- a 39\% reduction in
+the odds, whatever the student's starting point. Note: the \emph{odds}, not the
+probability. For Student A the probability barely moves; for Student B, near the
+middle of the curve, it moves a lot.
+\end{worked}
+
+\section{The Decision Boundary}
+
+The model predicts class 1 when $\sigma(z) > 0.5$, which happens exactly when
+$z > 0$. So the \term{decision boundary} is the set of points where
+$\mathbf{w}\cdot\mathbf{x} + b = 0$: a straight line in two dimensions, a plane in
+three, a hyperplane in general. Logistic regression is a \emph{linear
+classifier}; it can separate classes only with a flat boundary.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=8.2cm, height=6.4cm, axis lines=left,
+  xlabel={attendance $a$}, ylabel={quiz average $q$},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=0.2, xmax=1.0, ymin=0, ymax=1.0]
+\addplot[name path=b, primary, line width=1.3pt, domain=0.2:1.0] {(4-5*x)/3};
+\addplot[primary!60, dashed, line width=0.8pt, domain=0.2:1.0] {(4-1.0986-5*x)/3};
+\addplot[primary!60, dashed, line width=0.8pt, domain=0.2:1.0] {(4+1.0986-5*x)/3};
+\addplot[only marks, mark=*, mark size=1.5pt, accent] coordinates
+  {(0.30,0.35)(0.35,0.70)(0.42,0.20)(0.46,0.52)(0.55,0.30)(0.38,0.48)(0.60,0.12)(0.50,0.40)};
+\addplot[only marks, mark=*, mark size=1.5pt, greenhl!70!black] coordinates
+  {(0.70,0.55)(0.85,0.40)(0.92,0.75)(0.78,0.85)(0.66,0.95)(0.95,0.20)(0.88,0.62)(0.74,0.30)};
+\node[font=\tiny, primary, fill=white, inner sep=1pt, rotate=-44] at (axis cs:0.62,0.30)
+     {$z = 0$: $P(\text{fail}) = 0.5$};
+\node[font=\tiny, primary!70, anchor=west, fill=white, inner sep=1pt] at (axis cs:0.43,0.96)
+     {$P(\text{fail}) = 0.25$};
+\node[font=\tiny, primary!70, anchor=west, fill=white, inner sep=1pt] at (axis cs:0.21,0.66)
+     {$P(\text{fail}) = 0.75$};
+\node[font=\tiny\bfseries, accent, anchor=west] at (axis cs:0.22,0.08) {predicted fail};
+\node[font=\tiny\bfseries, greenhl!55!black, anchor=east] at (axis cs:0.99,0.95) {predicted pass};
+\end{axis}
+\end{tikzpicture}}%
+{The decision boundary of the model $z = 4 - 5a - 3q$ is the line $5a + 3q = 4$. The
+dashed lines, where $z = \pm\ln 3$, are where the probability of failing is 0.75 and
+0.25: probability changes gradually across the boundary.}{logreg-boundary}
+
+\section{The Loss: Cross-Entropy}
+
+Squared error is the wrong loss for probabilities: combined with the sigmoid it
+gives a bumpy surface with flat regions where gradient descent stalls. The right
+loss comes, again, from maximum likelihood. If the model gives probability $p_i$ to
+class 1, the likelihood of the observed label is $p_i$ when $y_i = 1$ and
+$1 - p_i$ when $y_i = 0$. Taking minus the average log of that gives:
+
+\begin{definitionbox}[Cross-Entropy (Log Loss)]
+\[
+L(\mathbf{w}, b) = -\frac{1}{n}\sum_{i=1}^{n}\Big[\,y_i \ln p_i + (1 - y_i)\ln(1 - p_i)\,\Big],
+\qquad p_i = \sigma(\mathbf{w}\cdot\mathbf{x}_i + b)
+\]
+For each example only one term survives: $-\ln p_i$ if the label is 1,
+$-\ln(1 - p_i)$ if it is 0. The loss is convex --- one bowl, one minimum ---
+so gradient descent finds the best weights from any start.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=8.0cm, height=4.8cm, axis lines=left,
+  xlabel={predicted probability of class 1, $p$}, ylabel={loss for one example},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=0, xmax=1, ymin=0, ymax=4.8,
+  legend style={font=\tiny, draw=gray!40, at={(0.5,0.98)}, anchor=north}]
+\addplot[greenhl!70!black, line width=1.3pt, domain=0.009:1, samples=120] {-ln(x)};
+\addlegendentry{true label 1: $-\ln p$}
+\addplot[accent, line width=1.3pt, domain=0:0.991, samples=120] {-ln(1-x)};
+\addlegendentry{true label 0: $-\ln(1-p)$}
+\node[font=\tiny, greenhl!45!black, anchor=west, align=left] at (axis cs:0.07,2.9)
+     {confidently wrong:\\$p = 0.01$ costs 4.6};
+\draw[gray!55, line width=0.4pt] (axis cs:0.5,0.74) -- (axis cs:0.5,1.75);
+\node[font=\tiny, gray!55!black, anchor=south] at (axis cs:0.5,1.75) {unsure: 0.69 either way};
+\end{axis}
+\end{tikzpicture}}%
+{Cross-entropy punishes confident mistakes without limit. Being right at 0.9 costs
+0.11; being wrong at 0.99 costs 4.6.}{log-loss}
+
+\begin{worked}[Cross-Entropy on Four Predictions]
+\begin{tight}
+  \item Label 1, predicted $p = 0.9$: loss $-\ln 0.9 = 0.105$.
+  \item Label 1, predicted $p = 0.6$: loss $-\ln 0.6 = 0.511$.
+  \item Label 0, predicted $p = 0.2$: loss $-\ln 0.8 = 0.223$.
+  \item Label 0, predicted $p = 0.7$: loss $-\ln 0.3 = 1.204$.
+\end{tight}
+\textbf{Average:} $(0.105 + 0.511 + 0.223 + 1.204)/4 = \mathbf{0.511}$.
+
+\smallskip
+The last example is the only one misclassified at a 0.5 threshold, and it
+contributes more than half the total. Replace it by a label-1 example predicted at
+$p = 0.01$ and that one example alone costs $-\ln 0.01 = 4.6$. Cross-entropy cares
+not just whether you are wrong, but how sure you were.
+\end{worked}
+
+\section{Fitting by Gradient Descent}
+
+Differentiating the cross-entropy through the sigmoid, most of the algebra
+cancels and leaves a result of exactly the same shape as linear regression's:
+\[
+\frac{\partial L}{\partial w_j} = \frac{1}{n}\sum_{i=1}^{n}(p_i - y_i)\,x_{ij},
+\qquad
+\frac{\partial L}{\partial b} = \frac{1}{n}\sum_{i=1}^{n}(p_i - y_i)
+\]
+Error times feature, averaged --- with the error now measured in probability.
+
+\begin{worked}[One Gradient Descent Step]
+Four examples with one feature: $x = 1, 2, 3, 4$ and labels $y = 0, 0, 1, 1$. Start at
+$w = 0$, $b = 0$ with learning rate $\alpha = 1$.
+
+\smallskip
+\textbf{Predictions:} $z = 0$ everywhere, so $p = 0.5$ for all four, and the loss is
+$-\ln 0.5 = 0.693$.
+
+\textbf{Errors} $p - y$: $0.5,\ 0.5,\ -0.5,\ -0.5$.
+\[
+\frac{\partial L}{\partial w} = \tfrac{1}{4}\big[(0.5)(1) + (0.5)(2) + (-0.5)(3) + (-0.5)(4)\big]
+= \tfrac{1}{4}(-2) = -0.5,
+\qquad \frac{\partial L}{\partial b} = 0
+\]
+\textbf{Update:} $w \leftarrow 0 - 1 \times (-0.5) = 0.5$; $b$ is unchanged.
+
+\textbf{New probabilities} $\sigma(0.5x)$: $0.62,\ 0.73,\ 0.82,\ 0.88$. The loss falls to
+$0.654$. The two class-1 examples are already right; the next steps will push $b$
+negative so that the first two fall below 0.5 as well.
+\end{worked}
+
+\begin{alertbox}[When the Classes Can Be Separated Perfectly]
+In the worked example a single threshold, $x = 2.5$, separates the classes with no
+errors. The loss can then always be reduced by making the sigmoid steeper, so the
+weights grow without limit: after 5{,}000 steps $w \approx 8.9$ and still rising,
+while the boundary settles at $x \approx 2.5$. The fix is regularisation
+(\chref{generalization}), which scikit-learn applies by default --- that is what
+its parameter \texttt{C} controls.
+\end{alertbox}
+
+\section{More Than Two Classes}
+
+\textbf{One-vs-rest} trains one binary classifier per class (``class $k$ or not?'')
+and predicts the class whose classifier is most confident. \textbf{Softmax}
+(multinomial) regression is the direct generalisation: one linear score per class,
+turned into probabilities that sum to 1:
+\[
+P(y = k \mid \mathbf{x}) = \frac{e^{z_k}}{\sum_{j} e^{z_j}},
+\qquad z_k = \mathbf{w}_k\cdot\mathbf{x} + b_k
+\]
+
+\begin{worked}[Softmax on Three Scores]
+A network-traffic classifier gives scores $z = (2.0,\ 1.0,\ 0.1)$ for the classes
+\emph{web}, \emph{e-mail} and \emph{streaming}.
+\[
+e^{2.0} = 7.389,\quad e^{1.0} = 2.718,\quad e^{0.1} = 1.105,\qquad \text{sum} = 11.212
+\]
+\[
+P = \left(\frac{7.389}{11.212},\ \frac{2.718}{11.212},\ \frac{1.105}{11.212}\right)
+  = (\mathbf{0.659},\ \mathbf{0.242},\ \mathbf{0.099})
+\]
+Adding the same constant to every score leaves the probabilities unchanged ---
+only the differences between scores matter. The same function is the output layer
+of almost every neural network classifier (\chref{ann}).
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Reading a weight as a change in probability.} It is a change in
+        log-odds. The effect on probability depends on where on the curve you
+        start.
+  \item \textbf{Assuming the 0.5 threshold is right.} It is a default. When the
+        two errors cost different amounts, move it (\chref{evaluation}).
+  \item \textbf{Forgetting that the boundary is linear.} If the classes are
+        separated by a curve, add features (squares, products) or use a
+        non-linear model (Part III).
+  \item \textbf{Comparing weights of unscaled features.} As in \chref{linreg},
+        standardise first.
+  \item \textbf{Trusting probabilities from an unregularised model on separable
+        data.} They will all be pushed to 0 or 1.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Logistic Regression}
+\lensLA{The standard early-warning model. The probability ranks students for
+outreach, and the odds ratios --- ``each missed quiz multiplies the odds of
+failing by 1.4'' --- are something an academic committee will accept, which a
+more accurate but opaque model may not be.}
+
+\lensPM{Predict whether a project will overrun its deadline from team size,
+requirement changes and dependencies. With a few hundred projects, logistic
+regression is often as accurate as anything more complex, and its odds ratios
+tell a portfolio manager which risk factor to act on first.}
+
+\lensIOT{Predict whether a component fails within 30 days from its sensor
+summaries. On a microcontroller, a trained logistic model is one dot product and
+one exponential --- a few microseconds and a few hundred bytes, which is why it
+is a favourite for on-device inference.}
+
+\lensSEC{Phishing and spam filters were logistic regression over word and URL
+features for years, and many still are. Its weakness is its linearity: an
+attacker who learns which words carry negative weight can add them to a phishing
+e-mail until the score drops below the threshold.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Logistic Regression by Hand and by Library]
+\begin{lstlisting}[language=Python]
+import numpy as np
+from sklearn.datasets import load_breast_cancer, load_iris
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+
+sigmoid = lambda z: 1 / (1 + np.exp(-z))
+
+# --- 1. the worked example: gradient descent by hand ---------------------
+x = np.array([1, 2, 3, 4.0])
+y = np.array([0, 0, 1, 1.0])
+logloss = lambda p: -np.mean(y * np.log(p) + (1 - y) * np.log(1 - p))
+w, b = 0.0, 0.0
+p = sigmoid(w * x + b)
+print("before: loss", round(logloss(p), 3))
+w -= 1.0 * np.mean((p - y) * x)          # gradient: mean of (p - y) * x
+b -= 1.0 * np.mean(p - y)
+print(f"after one step: w = {w}, b = {b}, "
+      f"loss {logloss(sigmoid(w * x + b)):.3f}")
+for step in range(5000):                 # ... and many more steps
+    p = sigmoid(w * x + b)
+    w, b = w - np.mean((p - y) * x), b - np.mean(p - y)
+print(f"after 5000 steps: w = {w:.2f}, b = {b:.2f}, "
+      f"boundary at x = {-b / w:.2f}")
+
+# --- 2. a real classifier, read as odds ratios ---------------------------
+data = load_breast_cancer()
+X_tr, X_te, y_tr, y_te = train_test_split(
+    data.data, data.target, test_size=0.25, random_state=0,
+    stratify=data.target)
+clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
+clf.fit(X_tr, y_tr)
+print("test accuracy:", round(clf.score(X_te, y_te), 3))
+coef = clf[-1].coef_[0]
+for i in np.argsort(coef)[:3]:           # most negative = most malignant
+    print(f"  {data.feature_names[i]:22s} w = {coef[i]:5.2f}  "
+          f"odds x {np.exp(coef[i]):.2f} per standard deviation")
+print("P(benign) for 3 test tumours:",
+      clf.predict_proba(X_te[:3])[:, 1].round(3))
+
+# --- 3. three classes: softmax -------------------------------------------
+iris = load_iris()
+soft = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
+soft.fit(iris.data, iris.target)
+print("softmax probabilities for flower 60:",
+      soft.predict_proba(iris.data[[60]]).round(3))
+\end{lstlisting}
+In part 1, change the range to 50{,}000 steps. Does the boundary move? Do the
+weights? Explain both answers.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A model gives $z = 1.2$ for an e-mail. What is the probability that it is
+        phishing, and what are the odds?
+  \item A weight is $+0.7$. By what factor does a one-unit increase in its feature
+        multiply the odds?
+  \item Which costs more under cross-entropy: predicting 0.4 for a positive
+        example, or 0.4 for a negative one? Compute both.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Linear regression is unsuitable for classification: its outputs leave
+        $[0,1]$ and easy cases distort its boundary.
+  \item Logistic regression passes a linear score through the sigmoid,
+        $p = 1/(1 + e^{-z})$; the score is the log-odds of class 1.
+  \item Each weight changes the log-odds by $w$ per unit; $e^w$ is the odds ratio.
+  \item The decision boundary $\mathbf{w}\cdot\mathbf{x} + b = 0$ is linear.
+  \item Cross-entropy is the maximum likelihood loss; it is convex and punishes
+        confident mistakes heavily. Its gradient is the mean of
+        $(p - y) \times$ feature.
+  \item Softmax extends the model to $k$ classes; on separable data the weights
+        grow without limit unless regularised.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} $\sigma(0)$ equals: (a)~0 (b)~0.5 (c)~1 (d)~$e$.
+  \item \textbf{(MCQ)} The decision boundary of logistic regression is:
+        (a)~a sigmoid curve (b)~a hyperplane (c)~a circle (d)~any shape.
+  \item \textbf{(MCQ)} A probability of 0.75 corresponds to odds of: (a)~0.75
+        (b)~1.33 (c)~3 (d)~4.
+  \item \textbf{(Short)} Explain why cross-entropy rather than squared error is
+        used to train logistic regression.
+  \item \textbf{(Short)} What happens to logistic regression's weights on data
+        that a straight line separates perfectly, and why?
+  \item \textbf{(Short)} Contrast one-vs-rest with softmax regression.
+  \item \textbf{(Applied)} With $z = -3 + 2x_1 + 0.5x_2$, compute the probability
+        of class 1 for $(x_1, x_2) = (1, 2)$ and $(2, 0)$. Write the equation of
+        the decision boundary and state which side each point lies on.
+  \item \textbf{(Applied)} Perform a second gradient descent step on the worked
+        example, starting from $w = 0.5$, $b = 0$, with $\alpha = 1$.
+\end{reviewq}

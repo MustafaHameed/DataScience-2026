@@ -1,0 +1,425 @@
+%=====================================================================
+\chapter{Support Vector Machines}\label{ch:svm}
+%=====================================================================
+\locator{3}{Part III --- Supervised Learning Algorithms}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why the maximum-margin hyperplane is preferred among all
+        separating hyperplanes, and \textbf{identify} its support vectors.
+  \item \textbf{Compute} the margin of a linear SVM and \textbf{classify} a point
+        with its decision function.
+  \item \textbf{Describe} the soft-margin SVM and the role of $C$, and
+        \textbf{compute} the hinge loss.
+  \item \textbf{Explain} the kernel trick, and \textbf{verify} a polynomial kernel
+        against its explicit feature map.
+  \item \textbf{Tune} $C$ and the RBF width $\gamma$ by cross-validation.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (dot products, norms), \chref{logreg} (linear decision boundaries,
+the loss view of classification) and \chref{generalization} (regularisation and
+tuning by cross-validation).
+\end{prereq}
+
+\begin{keyterms}
+separating hyperplane $\bullet$ margin $\bullet$ maximum-margin classifier
+$\bullet$ support vectors $\bullet$ hard margin $\bullet$ soft margin $\bullet$
+slack variable $\bullet$ $C$ $\bullet$ hinge loss $\bullet$ dual form $\bullet$
+feature map $\bullet$ kernel trick $\bullet$ polynomial kernel $\bullet$ RBF
+kernel $\bullet$ $\gamma$ $\bullet$ support vector regression
+\end{keyterms}
+
+\section{Which Line?}
+
+When two classes can be separated by a straight line, they can usually be
+separated by infinitely many. Logistic regression picks the one that maximises
+likelihood; the perceptron of \chref{ann} picks whichever it reaches first. A
+\term{support vector machine} picks the line that stays as far as possible from
+the nearest examples of both classes --- the one with the widest \term{margin}.
+The intuition is that a boundary with room to spare on both sides is the least
+likely to be crossed by small perturbations of new data, and the theory agrees:
+a wider margin gives a tighter bound on the error on unseen data, regardless of
+the number of features.
+
+\section{The Maximum-Margin Hyperplane}
+
+\begin{definitionbox}[Hyperplane, Margin and Support Vectors]
+A linear classifier predicts $\operatorname{sign}(\mathbf{w}\cdot\mathbf{x} + b)$
+with labels $y \in \{-1, +1\}$. The distance of a point $\mathbf{x}$ from the
+hyperplane $\mathbf{w}\cdot\mathbf{x} + b = 0$ is
+$|\mathbf{w}\cdot\mathbf{x} + b| / \|\mathbf{w}\|$. Scale $\mathbf{w}$ and $b$ so that
+the closest points satisfy $y_i(\mathbf{w}\cdot\mathbf{x}_i + b) = 1$; then the
+\term{margin} --- the width of the empty band between the classes --- is
+$2/\|\mathbf{w}\|$. The hard-margin SVM solves
+\[
+\min_{\mathbf{w}, b}\ \tfrac{1}{2}\|\mathbf{w}\|^2
+\quad\text{subject to}\quad y_i(\mathbf{w}\cdot\mathbf{x}_i + b) \ge 1 \ \text{ for every } i
+\]
+The training points that lie exactly on the edges of the band are the
+\term{support vectors}. They alone determine the solution: every other point could
+be moved or deleted, as long as it stayed outside the band, and the hyperplane
+would not change.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize, scale=0.9,
+  ps/.style={circle, fill=secondary, inner sep=2pt},
+  ng/.style={rectangle, fill=accent, inner sep=2.2pt}]
+% band between f = -1 (x1 + x2 = 0) and f = +1 (x1 + x2 = 4)
+\fill[primary!6] (-2,2) -- (2,-2) -- (4.5,-0.5) -- (-0.5,4.5) -- cycle;
+\draw[-{Stealth[length=2mm]}, gray!55] (-2.2,0) -- (5,0) node[right, font=\tiny] {$x_1$};
+\draw[-{Stealth[length=2mm]}, gray!55] (0,-2.4) -- (0,5) node[above, font=\tiny] {$x_2$};
+\draw[primary, line width=1.4pt] (-1.4,3.4) -- (3.4,-1.4);
+\draw[primary!70, dashed, line width=0.9pt] (-2,2) -- (2,-2);
+\draw[primary!70, dashed, line width=0.9pt] (-0.5,4.5) -- (4.5,-0.5);
+\node[ps] at (2,2) {}; \node[ps] at (3,2) {}; \node[ps] at (2,4) {};
+\node[ng] at (0,0) {}; \node[ng] at (-1,-1) {}; \node[ng] at (1,-2) {};
+\draw[greenhl!70!black, line width=1.2pt] (2,2) circle (0.26);
+\draw[greenhl!70!black, line width=1.2pt] (0,0) circle (0.26);
+\draw[{Stealth[length=2mm]}-{Stealth[length=2mm]}, goldhl!80!black, line width=0.9pt]
+     (0.2,0.2) -- (1.8,1.8);
+\node[font=\tiny, goldhl!45!black, anchor=west, fill=white, inner sep=1pt] at (1.25,0.55) {margin $= 2/\|\mathbf{w}\| = 2.83$};
+\node[font=\tiny, primary, anchor=west] at (3.45,-1.45) {$f = 0$};
+\node[font=\tiny, primary!80, anchor=west] at (4.55,-0.55) {$f = +1$};
+\node[font=\tiny, primary!80, anchor=west] at (2.05,-2.05) {$f = -1$};
+\node[anchor=north west, align=left, text width=5.4cm, font=\scriptsize, text=gray!55!black]
+     at (5.6,4.8)
+     {\textbf{The worked example.} Positives (blue) at $(2,2)$, $(3,2)$, $(2,4)$;
+      negatives (red) at $(0,0)$, $(-1,-1)$, $(1,-2)$.\\[4pt]
+      The widest band touches only $(2,2)$ and $(0,0)$ --- the two
+      \textbf{\color{greenhl!55!black}support vectors}, circled. The boundary is the
+      line $x_1 + x_2 = 2$, halfway between them.\\[4pt]
+      Delete any other point and the answer is unchanged.};
+\end{tikzpicture}}%
+{The maximum-margin hyperplane. The solid line separates the classes; the dashed lines
+bound the widest empty band; the points on the dashed lines are the support
+vectors.}{max-margin}
+
+\begin{worked}[A Maximum-Margin Line by Hand]
+The six points of \dsref{max-margin}. The closest opposite-class pair is $(2,2)$ and
+$(0,0)$, so the boundary is perpendicular to the segment between them:
+$\mathbf{w} = a\,(1, 1)$ for some $a > 0$.
+
+\smallskip
+\textbf{Canonical scaling.} Put the support vectors exactly on the margins:
+\[
+\mathbf{w}\cdot(2,2) + b = 4a + b = +1, \qquad \mathbf{w}\cdot(0,0) + b = b = -1
+\]
+So $b = -1$, $a = 0.5$: $\mathbf{w} = (0.5,\ 0.5)$. The boundary is
+$0.5x_1 + 0.5x_2 - 1 = 0$, i.e.\ $x_1 + x_2 = 2$.
+
+\textbf{Margin:} $\|\mathbf{w}\| = \sqrt{0.25 + 0.25} = 0.707$, so
+$2/\|\mathbf{w}\| = \mathbf{2.83}$ --- exactly the distance from $(0,0)$ to $(2,2)$.
+
+\textbf{Check the constraints:} $(3,2)$: $f = 1.5 \ge 1$; $(2,4)$: $f = 2 \ge 1$;
+$(-1,-1)$: $f = -2 \le -1$; $(1,-2)$: $f = -1.5 \le -1$. All satisfied.
+
+\smallskip
+\textbf{Classify} $(1.5,\ 1)$: $f = 0.75 + 0.5 - 1 = 0.25 > 0$, so \textbf{positive}, at
+distance $0.25/0.707 = 0.35$ from the boundary --- inside the margin band, so a
+point the SVM is not confident about. scikit-learn's \texttt{SVC} returns the same
+$\mathbf{w}$, $b$ and support vectors (this chapter's lab).
+\end{worked}
+
+\section{Soft Margins and the Hinge Loss}
+
+Real data is rarely separable, and even when it is, one mislabelled point can drag
+the hard-margin boundary into a bad place. The \term{soft-margin} SVM lets points
+violate the margin at a price. Each point gets a \term{slack variable}
+$\xi_i \ge 0$ measuring how far it is on the wrong side of its margin:
+\[
+\min_{\mathbf{w}, b, \boldsymbol{\xi}}\ \tfrac{1}{2}\|\mathbf{w}\|^2 + C\sum_i \xi_i
+\quad\text{subject to}\quad y_i(\mathbf{w}\cdot\mathbf{x}_i + b) \ge 1 - \xi_i
+\]
+The hyperparameter $C$ sets the price. A large $C$ punishes every violation
+heavily: narrow margin, few violations, high variance. A small $C$ tolerates
+violations to buy a wider margin: more bias, less variance. $C$ is the SVM's
+regularisation knob, and it is tuned by cross-validation.
+
+\begin{definitionbox}[The Hinge Loss]
+At the optimum each slack equals $\max(0,\ 1 - y_i f(\mathbf{x}_i))$, so the soft-margin
+SVM is equivalent to minimising
+\[
+\underbrace{\sum_i \max\big(0,\ 1 - y_i f(\mathbf{x}_i)\big)}_{\text{hinge loss}}
+\;+\; \frac{1}{2C}\|\mathbf{w}\|^2
+\]
+--- a loss plus an L2 penalty, the same shape as regularised logistic regression
+with the cross-entropy replaced by the \term{hinge}. Points beyond the margin on the
+correct side cost nothing.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=8.8cm, height=5.0cm, axis lines=middle,
+  xlabel={$y\,f(\mathbf{x})$ (margin of the example)}, ylabel={loss},
+  x label style={at={(axis description cs:0.5,-0.08)}, anchor=north},
+  y label style={at={(axis description cs:-0.02,0.5)}, rotate=90, anchor=south},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=-2.2, xmax=3.2, ymin=-0.1, ymax=3.3,
+  legend style={font=\tiny, draw=gray!40, at={(0.98,0.97)}, anchor=north east}]
+\addplot[gray!70, line width=1.1pt, const plot] coordinates {(-2.2,1)(0,1)(0,0)(3.2,0)};
+\addlegendentry{0--1 loss (the error count)}
+\addplot[accent, line width=1.4pt, domain=-2.2:3.2, samples=100] {max(0,1-x)};
+\addlegendentry{hinge (SVM)}
+\addplot[secondary, line width=1.2pt, dashed, domain=-2.2:3.2, samples=100] {ln(1+exp(-x))/ln(2)};
+\addlegendentry{logistic (scaled)}
+\node[font=\tiny, accent, anchor=south west, align=left] at (axis cs:1.2,0.85)
+     {zero beyond the margin:\\these points do not matter};
+\end{axis}
+\end{tikzpicture}}%
+{Three losses as a function of $y f(\mathbf{x})$, positive when the example is
+correctly classified. The hinge is exactly zero for points beyond the margin, which is
+why only support vectors affect the SVM; the logistic loss is never quite zero.}{hinge}
+
+\begin{worked}[Hinge Losses]
+Four training points have margins $y f(\mathbf{x}) = 2,\ 1,\ 0.5,\ -0.5$:
+\begin{tight}
+  \item $y f = 2$: $\max(0, 1 - 2) = \mathbf{0}$ --- well clear; irrelevant to the solution.
+  \item $y f = 1$: $\max(0, 0) = \mathbf{0}$ --- exactly on the margin; a support vector.
+  \item $y f = 0.5$: $\mathbf{0.5}$ --- correctly classified but inside the margin.
+  \item $y f = -0.5$: $\mathbf{1.5}$ --- misclassified.
+\end{tight}
+The last three all influence the boundary; the first does not. With $C$ large the
+optimiser will work hard to remove the last two losses; with $C$ small it will
+accept them for a wider margin.
+\end{worked}
+
+\section{The Kernel Trick}
+
+Some problems no straight line can solve --- one class surrounding another, say.
+The standard remedy (\chref{linreg}) is to add non-linear features, such as
+squares and products, and fit a linear model in the enlarged space. That works,
+but the enlarged space can be enormous: all products of pairs of 1{,}000 features
+is half a million features.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  ps/.style={circle, fill=secondary, inner sep=1.9pt},
+  ng/.style={rectangle, fill=accent, inner sep=2.1pt}]
+% 1-D
+\draw[-{Stealth[length=2mm]}, gray!60] (-3.3,0) -- (3.4,0) node[right, font=\tiny] {$x$};
+\foreach \x in {-2.6,-2.2,-1.8,1.8,2.2,2.7}{\node[ng] at (\x,0) {};}
+\foreach \x in {-1.0,-0.5,0.0,0.4,0.9}{\node[ps] at (\x,0) {};}
+\node[font=\scriptsize\bfseries, text=primary] at (0,-0.8) {In one dimension: no single threshold separates them};
+% 2-D lifted
+\begin{scope}[shift={(8.6,-1.0)}]
+\draw[-{Stealth[length=2mm]}, gray!60] (-3.3,0) -- (3.4,0) node[right, font=\tiny] {$x$};
+\draw[-{Stealth[length=2mm]}, gray!60] (0,-0.2) -- (0,3.6) node[above, font=\tiny] {$x^2$};
+\draw[gray!40, domain=-2.9:2.9, samples=40] plot (\x,{0.4*\x*\x});
+\foreach \x in {-2.6,-2.2,-1.8,1.8,2.2,2.7}{\node[ng] at (\x,{0.4*\x*\x}) {};}
+\foreach \x in {-1.0,-0.5,0.0,0.4,0.9}{\node[ps] at (\x,{0.4*\x*\x}) {};}
+\draw[greenhl!70!black, line width=1.3pt] (-3.1,0.85) -- (3.1,0.85);
+\node[font=\tiny, greenhl!45!black, anchor=south west] at (1.0,0.9) {a straight line now works};
+\node[font=\scriptsize\bfseries, text=primary] at (0,-0.6) {Add the feature $x^2$: separable};
+\end{scope}
+\draw[-{Stealth[length=3mm]}, gray!60, line width=1.2pt] (3.9,0.3) -- (5.0,0.3)
+     node[midway, above, font=\tiny] {$\phi(x) = (x, x^2)$};
+\end{tikzpicture}}%
+{Lifting data into more dimensions. The inner class (blue) and the outer class (red)
+cannot be separated on the line, but after adding $x^2$ as a second feature a horizontal
+line separates them; in the original space that line is two thresholds.}{kernel-lift}
+
+\begin{definitionbox}[Kernel]
+A \term{kernel} is a function $K(\mathbf{x}, \mathbf{z})$ that equals the dot product
+$\phi(\mathbf{x})\cdot\phi(\mathbf{z})$ in some \term{feature space} $\phi$, but is
+computed without ever constructing $\phi$. Because the SVM's optimisation and its
+decision function use the data only through dot products,
+\[
+f(\mathbf{x}) = \sum_{i \in \text{SV}} \alpha_i\, y_i\, K(\mathbf{x}_i, \mathbf{x}) + b
+\]
+replacing every dot product by a kernel fits a linear boundary in the feature space
+--- a non-linear boundary in the original one --- at the cost of computing $K$.
+This is the \term{kernel trick}. The sum runs over support vectors only: all other
+$\alpha_i$ are zero.
+\end{definitionbox}
+
+\begin{worked}[The Kernel Computes the Big Dot Product Cheaply]
+Take $K(\mathbf{x}, \mathbf{z}) = (\mathbf{x}\cdot\mathbf{z})^2$ in two dimensions, and
+$\mathbf{x} = (1, 2)$, $\mathbf{z} = (3, 1)$.
+
+\smallskip
+\textbf{The kernel:} $\mathbf{x}\cdot\mathbf{z} = 3 + 2 = 5$, so $K = 25$. One dot product
+and one squaring.
+
+\textbf{The long way:} this kernel corresponds to
+$\phi(\mathbf{x}) = (x_1^2,\ \sqrt{2}\,x_1 x_2,\ x_2^2)$:
+\[
+\phi(1,2) = (1,\ 2\sqrt{2},\ 4), \qquad \phi(3,1) = (9,\ 3\sqrt{2},\ 1)
+\]
+\[
+\phi(\mathbf{x})\cdot\phi(\mathbf{z}) = 9 + 2\sqrt{2}\cdot 3\sqrt{2} + 4 = 9 + 12 + 4 = \mathbf{25}
+\]
+The same number. For degree $p$ on $d$ features the feature space has on the order of
+$d^p$ dimensions; the kernel is still one dot product and one power.
+\end{worked}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.0cm}L{4.4cm}L{7.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Kernel} & \textbf{$K(\mathbf{x}, \mathbf{z})$} & \textbf{Use and settings} \\
+\midrule
+\endhead
+Linear & $\mathbf{x}\cdot\mathbf{z}$ & Many features, text; fast. Tune $C$ only \\
+Polynomial & $(\gamma\,\mathbf{x}\cdot\mathbf{z} + r)^p$ & Interactions of up to $p$
+features; tune $p$, $C$ \\
+RBF (Gaussian) & $\exp(-\gamma\|\mathbf{x} - \mathbf{z}\|^2)$ & The default for
+non-linear problems. Large $\gamma$: each point's influence is narrow, the boundary
+wiggles (variance). Small $\gamma$: smooth boundary (bias). Tune $C$ and $\gamma$
+together \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Scale the Features, Then Tune $C$ and $\gamma$ Together]
+The RBF kernel is a function of distance, so everything said about scaling in
+\chref{knn} applies. And $C$ and $\gamma$ interact --- a larger $\gamma$ often wants a
+smaller $C$ --- so search them as a grid, on a logarithmic scale
+(\texttt{C} in $\{0.1, 1, 10, 100\}$, \texttt{gamma} in $\{0.001, 0.01, 0.1, 1\}$),
+by cross-validation. On the breast cancer data this finds $C = 10$, $\gamma = 0.01$
+and 97.9\% accuracy using 64 of the 569 examples as support vectors.
+\end{alertbox}
+
+\section{Practicalities}
+
+\textbf{More than two classes.} The SVM is inherently binary. scikit-learn's
+\texttt{SVC} trains one classifier per pair of classes (one-vs-one) and lets them
+vote; \texttt{LinearSVC} uses one-vs-rest.
+
+\textbf{Probabilities.} The decision function $f(\mathbf{x})$ is a distance, not a
+probability. \texttt{SVC(probability=True)} fits a sigmoid to it afterwards
+(Platt scaling), at extra cost.
+
+\textbf{Scale of data.} Training cost grows between the square and the cube of the
+number of examples, so kernel SVMs suit datasets of up to tens of thousands of
+rows. Linear SVMs scale to millions.
+
+\textbf{Regression.} \term{Support vector regression} ignores errors smaller than a
+tube of width $\varepsilon$ around the prediction and charges linearly beyond it ---
+the regression counterpart of the hinge.
+
+\textbf{Inductive bias.} Among the hypotheses consistent with the data (up to the
+slack allowed), prefer the one with the largest margin.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Not scaling features.} The RBF kernel and the margin are both
+        distances.
+  \item \textbf{Tuning $C$ and $\gamma$ separately.} They interact; use a grid.
+  \item \textbf{Using a huge $C$ on noisy data.} The hard margin chases every
+        mislabelled point.
+  \item \textbf{Reading $f(\mathbf{x})$ as a probability.} It is a signed distance;
+        calibrate if probabilities are needed.
+  \item \textbf{Running a kernel SVM on a million rows.} Use a linear SVM, or a
+        different model.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Support Vector Machines}
+\lensLA{With a few hundred students and a dozen engagement features, an RBF SVM is
+often among the most accurate classifiers available --- and among the hardest to
+explain. The support vectors do give one explanation: the borderline students the
+model learned the boundary from, which advisers can examine directly.}
+
+\lensPM{Text classification of requirement statements (functional or not,
+ambiguous or not) with a linear SVM over word counts is a classic, strong
+baseline: high-dimensional, sparse data is where linear SVMs are at their best.}
+
+\lensIOT{A trained linear SVM is a single weight vector, so inference on a device
+is one dot product. Kernel SVMs must store their support vectors --- often
+thousands --- which may not fit; count them before choosing.}
+
+\lensSEC{SVMs were for years the standard malware and intrusion classifier over
+static file features. The margin gives some robustness to small changes an attacker
+makes, but only in the directions the features capture; an attacker who changes
+features the model ignores is not slowed at all.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Margins, Kernels and a Tuning Grid]
+\begin{lstlisting}[language=Python]
+import numpy as np
+from sklearn.svm import SVC
+from sklearn.datasets import make_circles, load_breast_cancer
+from sklearn.model_selection import cross_val_score, GridSearchCV
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+# --- 1. the worked example: a maximum-margin line ------------------------
+X = np.array([[2, 2], [3, 2], [2, 4], [0, 0], [-1, -1], [1, -2]])
+y = np.array([1, 1, 1, -1, -1, -1])
+svm = SVC(kernel="linear", C=1e6).fit(X, y)       # huge C = hard margin
+w, b = svm.coef_[0], svm.intercept_[0]
+print("w =", w.round(3), " b =", round(b, 3))
+print("margin width 2/||w|| =", round(2 / np.linalg.norm(w), 3))
+print("support vectors:", svm.support_vectors_.tolist())
+print("f(1.5, 1) =", round(float(svm.decision_function([[1.5, 1]])[0]), 3))
+
+# --- 2. a problem no line can solve --------------------------------------
+Xc, yc = make_circles(n_samples=400, noise=0.08, factor=0.4, random_state=0)
+for kernel in ("linear", "poly", "rbf"):
+    acc = cross_val_score(SVC(kernel=kernel, degree=2), Xc, yc, cv=5).mean()
+    print(f"circles, {kernel:6s} kernel: accuracy {acc:.3f}")
+
+# --- 3. tune C and gamma together, features scaled -----------------------
+Xb, yb = load_breast_cancer(return_X_y=True)
+pipe = make_pipeline(StandardScaler(), SVC(kernel="rbf"))
+grid = GridSearchCV(pipe, {"svc__C": [0.1, 1, 10, 100],
+                           "svc__gamma": [0.001, 0.01, 0.1, 1]}, cv=5)
+grid.fit(Xb, yb)
+print("best:", grid.best_params_, "CV accuracy",
+      round(grid.best_score_, 3))
+print("support vectors used:", grid.best_estimator_[-1].n_support_.sum(),
+      "of", len(yb))
+\end{lstlisting}
+In part 1, add the point $(1, 1.5)$ with label $+1$ and rerun. It lies inside the old
+margin: which support vectors change, and what happens to the margin width?
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A linear SVM has $\mathbf{w} = (3, 4)$ and $b = -5$. What is its margin width,
+        and how is $(1, 1)$ classified?
+  \item What happens to the margin and to training errors as $C$ is increased?
+  \item Why can the kernel trick be applied to the SVM at all?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Of all separating hyperplanes the SVM chooses the one with the widest
+        margin, $2/\|\mathbf{w}\|$; it is determined by the support vectors alone.
+  \item The soft-margin SVM allows violations priced by $C$, and is equivalent to
+        hinge loss plus an L2 penalty. Large $C$: narrow margin, high variance.
+  \item The hinge loss is zero beyond the margin, which is why only support vectors
+        matter.
+  \item Kernels compute dot products in a large feature space without building it;
+        the RBF kernel is the default for non-linear problems.
+  \item Scale the features and tune $C$ and $\gamma$ together on a logarithmic grid
+        by cross-validation.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The support vectors of an SVM are: (a)~all training points
+        (b)~the points on or inside the margin (c)~the misclassified points only
+        (d)~the cluster centres.
+  \item \textbf{(MCQ)} With the RBF kernel, a very large $\gamma$ tends to:
+        (a)~underfit (b)~overfit (c)~have no effect (d)~make the model linear.
+  \item \textbf{(MCQ)} The hinge loss of a point with $y f(\mathbf{x}) = 0.3$ is:
+        (a)~0 (b)~0.3 (c)~0.7 (d)~1.3.
+  \item \textbf{(Short)} Why is a wider margin expected to generalise better?
+  \item \textbf{(Short)} Compare the hinge loss with the logistic loss.
+  \item \textbf{(Short)} Explain the kernel trick without formulas.
+  \item \textbf{(Applied)} For support vectors $(1, 3)$ (label $+1$) and $(1, 1)$
+        (label $-1$), find $\mathbf{w}$, $b$ and the margin of the maximum-margin
+        line, and classify $(4, 2.5)$.
+  \item \textbf{(Applied)} Verify that $K(\mathbf{x}, \mathbf{z}) = (\mathbf{x}\cdot\mathbf{z})^2$
+        equals $\phi(\mathbf{x})\cdot\phi(\mathbf{z})$ for $\mathbf{x} = (2, -1)$ and
+        $\mathbf{z} = (1, 3)$.
+\end{reviewq}

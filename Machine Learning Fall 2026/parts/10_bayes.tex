@@ -1,0 +1,528 @@
+%=====================================================================
+\chapter{Bayesian Learning and Naive Bayes}\label{ch:bayes}
+%=====================================================================
+\locator{3}{Part III --- Supervised Learning Algorithms}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Apply} Bayes' theorem to hypotheses, and \textbf{find} the MAP
+        and maximum likelihood hypotheses.
+  \item \textbf{Explain} the Bayes optimal classifier and why it can disagree
+        with the single most probable hypothesis.
+  \item \textbf{Classify} an example with naive Bayes by hand, and
+        \textbf{state} its conditional independence assumption.
+  \item \textbf{Apply} Laplace smoothing, and \textbf{use} Gaussian naive Bayes
+        for continuous features.
+  \item \textbf{Build} a multinomial naive Bayes text classifier working in
+        log-probabilities.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (conditional probability, Bayes' theorem, the Gaussian, maximum
+likelihood) and \chref{trees} (the PlayTennis data, used again here).
+\end{prereq}
+
+\begin{keyterms}
+prior $\bullet$ likelihood $\bullet$ posterior $\bullet$ evidence $\bullet$ MAP
+hypothesis $\bullet$ maximum likelihood hypothesis $\bullet$ Bayes optimal
+classifier $\bullet$ conditional independence $\bullet$ naive Bayes $\bullet$
+zero-frequency problem $\bullet$ Laplace smoothing $\bullet$ $m$-estimate
+$\bullet$ Gaussian naive Bayes $\bullet$ bag of words $\bullet$ multinomial naive
+Bayes $\bullet$ log-probabilities
+\end{keyterms}
+
+\section{Learning as Updating Belief}
+
+The learners so far return one hypothesis and no statement of how sure they are.
+Bayesian learning treats every hypothesis as uncertain: it starts from a
+\term{prior} belief about which hypotheses are plausible, observes data, and
+computes a \term{posterior} belief. Two things follow that the earlier chapters
+could not offer. Prior knowledge can be put in explicitly, and every prediction
+comes with a probability. And even where Bayesian methods are too expensive to
+use directly, they give the standard against which other methods are judged.
+
+\section{Bayes' Theorem for Hypotheses}
+
+\begin{definitionbox}[Posterior, MAP and ML Hypotheses]
+For a hypothesis $h$ and training data $D$:
+\[
+P(h \mid D) = \frac{P(D \mid h)\,P(h)}{P(D)}
+\]
+$P(h)$ is the \term{prior}, $P(D \mid h)$ the \term{likelihood}, $P(D)$ the
+\term{evidence} and $P(h \mid D)$ the \term{posterior}. The \term{maximum a
+posteriori} (MAP) hypothesis maximises the posterior; since $P(D)$ is the same for
+every $h$, it can be dropped:
+\[
+h_{MAP} = \arg\max_{h \in H} P(D \mid h)\,P(h)
+\]
+If every hypothesis is equally likely a priori, this reduces to the \term{maximum
+likelihood} hypothesis $h_{ML} = \arg\max_h P(D \mid h)$.
+\end{definitionbox}
+
+\begin{worked}[A Positive Lab Test (Mitchell)]
+Two hypotheses: the patient has a particular cancer, or does not. 0.8\% of the
+population has it. The test is positive in 98\% of cases where the cancer is
+present, and in 3\% where it is not. A patient tests positive.
+
+\smallskip
+\begin{tight}
+  \item $P(+ \mid \text{cancer})\,P(\text{cancer}) = 0.98 \times 0.008 = 0.0078$
+  \item $P(+ \mid \neg\text{cancer})\,P(\neg\text{cancer}) = 0.03 \times 0.992 = 0.0298$
+\end{tight}
+\textbf{$h_{MAP} = \neg$cancer}, because $0.0298 > 0.0078$. Normalising:
+\[
+P(\text{cancer} \mid +) = \frac{0.0078}{0.0078 + 0.0298} = \mathbf{0.21}
+\]
+A positive result raises the probability from 0.8\% to 21\% --- a
+twenty-six-fold increase --- and it is still more likely than not that the
+patient is healthy. The maximum likelihood hypothesis, which ignores the prior,
+would say ``cancer'' ($0.98 > 0.03$). This is the base-rate effect of
+\chref{math}, now read as a choice between hypotheses.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=3 by 1, horizontal sep=1.0cm},
+  width=4.9cm, height=4.4cm, ybar, /pgf/bar width=0.55cm, axis lines=left,
+  ymin=0, symbolic x coords={cancer,healthy}, xtick=data,
+  tick label style={font=\tiny}, title style={font=\scriptsize\bfseries},
+  nodes near coords, nodes near coords style={font=\tiny},
+  enlarge x limits=0.5]
+\nextgroupplot[title={prior $P(h)$}, ymax=1.2,
+  point meta=explicit symbolic]
+\addplot[fill=primary!45, draw=primary] coordinates
+  {(cancer,0.008)[0.008] (healthy,0.992)[0.992]};
+\nextgroupplot[title={likelihood $P(+ \mid h)$}, ymax=1.2,
+  point meta=explicit symbolic]
+\addplot[fill=goldhl!55, draw=goldhl] coordinates
+  {(cancer,0.98)[0.98] (healthy,0.03)[0.03]};
+\nextgroupplot[title={posterior $P(h \mid +)$}, ymax=1.0,
+  point meta=explicit symbolic]
+\addplot[fill=greenhl!50, draw=greenhl!70!black] coordinates
+  {(cancer,0.21)[0.21] (healthy,0.79)[0.79]};
+\end{groupplot}
+\end{tikzpicture}}%
+{Prior times likelihood, normalised, gives the posterior. A test that strongly favours
+``cancer'' is not enough to overturn a prior that strongly favours ``healthy''.}{bayes-update}
+
+\begin{conceptbox}[Least Squares Is a MAP Hypothesis in Disguise]
+If the training labels are the true function plus Gaussian noise and all
+hypotheses are equally likely a priori, the maximum likelihood hypothesis is the
+one that minimises the sum of squared errors --- exactly the least-squares fit of
+\chref{linreg}. Put a Gaussian prior on the weights as well, favouring small
+ones, and the MAP hypothesis is the ridge regression of \chref{generalization}.
+Regularisation is a prior.
+\end{conceptbox}
+
+\section{The Bayes Optimal Classifier}
+
+The MAP hypothesis answers ``which hypothesis is most probable?''. That is not the
+same question as ``which classification is most probable?''. The \term{Bayes optimal
+classifier} answers the second by letting every hypothesis vote, weighted by its
+posterior:
+\[
+v_{\text{opt}} = \arg\max_{v} \sum_{h \in H} P(v \mid h)\,P(h \mid D)
+\]
+No other method using the same hypothesis space and prior can do better on
+average --- hence ``optimal''. It is rarely computable, because $H$ is too large to
+sum over, but it is the benchmark every approximation aims at.
+
+\begin{worked}[When the Most Probable Hypothesis Is Outvoted]
+Three hypotheses remain with posteriors $P(h_1 \mid D) = 0.4$, $P(h_2 \mid D) = 0.3$
+and $P(h_3 \mid D) = 0.3$. A new instance is classified positive by $h_1$ and negative
+by $h_2$ and $h_3$.
+\begin{tight}
+  \item \textbf{MAP:} $h_1$ is the most probable hypothesis, so ``positive''.
+  \item \textbf{Bayes optimal:} $P(+) = 0.4$ and $P(-) = 0.3 + 0.3 = 0.6$, so
+        \textbf{``negative''}.
+\end{tight}
+The single best hypothesis is outvoted by the combined weight of the others. The
+same idea --- let many hypotheses vote --- is the basis of the ensembles of
+\chref{ensembles}.
+\end{worked}
+
+\section{Naive Bayes}
+
+For classification with attributes $a_1, \dots, a_d$, the most probable class is
+\[
+v_{MAP} = \arg\max_{v} P(v)\,P(a_1, a_2, \dots, a_d \mid v)
+\]
+The prior $P(v)$ is easy to estimate: count. The joint likelihood is not: there are
+as many combinations of attribute values as there are possible examples, and most
+never appear in the training data. Naive Bayes removes the problem with one bold
+assumption.
+
+\begin{definitionbox}[The Naive Bayes Classifier]
+Assume the attributes are \term{conditionally independent} given the class:
+$P(a_1, \dots, a_d \mid v) = \prod_j P(a_j \mid v)$. Then
+\[
+v_{NB} = \arg\max_{v}\; P(v)\prod_{j=1}^{d} P(a_j \mid v)
+\]
+Each $P(a_j \mid v)$ is estimated from counts: the fraction of class-$v$ training
+examples that have value $a_j$. Training is a single pass of counting.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  cls/.style={circle, draw=primary, fill=primary!14, text=primary!80!black,
+              font=\scriptsize\bfseries, minimum size=1.3cm, align=center},
+  att/.style={circle, draw=secondary, fill=secondary!8, text=secondary!70!black,
+              font=\scriptsize, minimum size=1.15cm, align=center},
+  a/.style={-{Stealth[length=2mm]}, gray!60, line width=0.9pt}]
+\node[cls] (c) at (0,0) {Play?};
+\node[att] (o) at (-3.3,-2.1) {Outlook};
+\node[att] (t) at (-1.1,-2.1) {Temp.};
+\node[att] (h) at (1.1,-2.1) {Humidity};
+\node[att] (w) at (3.3,-2.1) {Wind};
+\foreach \n in {o,t,h,w}{\draw[a] (c) -- (\n);}
+\node[font=\tiny, text=gray!55!black, align=center] at (0,-3.2)
+     {no arrows between the attributes: given the class, they are assumed independent};
+\node[anchor=west, align=left, text width=5.8cm, font=\scriptsize, text=gray!55!black]
+     at (4.6,-0.9)
+     {\textbf{What is estimated.} One prior $P(v)$ per class, and one table
+      $P(a_j \mid v)$ per attribute and class. For PlayTennis that is 2 priors and
+      $2 \times (3 + 3 + 2 + 2) = 20$ conditional probabilities --- instead of a
+      joint distribution over all 36 combinations of attribute values for each
+      class.};
+\end{tikzpicture}}%
+{The naive Bayes assumption drawn as a network: the class causes each attribute, and
+the attributes do not influence each other once the class is known.}{nb-graph}
+
+\begin{worked}[Naive Bayes on PlayTennis]
+Classify the new day $\langle$Sunny, Cool, High, Strong$\rangle$ using the fourteen
+days of \chref{trees}.
+
+\smallskip
+\textbf{Priors:} $P(\text{Yes}) = 9/14 = 0.643$; $P(\text{No}) = 5/14 = 0.357$.
+
+\textbf{Conditionals}, counted within each class:
+\begin{tight}
+  \item Yes: $P(\text{Sunny}\mid\text{Yes}) = 2/9$, $P(\text{Cool}\mid\text{Yes}) = 3/9$,
+        $P(\text{High}\mid\text{Yes}) = 3/9$, $P(\text{Strong}\mid\text{Yes}) = 3/9$.
+  \item No: $P(\text{Sunny}\mid\text{No}) = 3/5$, $P(\text{Cool}\mid\text{No}) = 1/5$,
+        $P(\text{High}\mid\text{No}) = 4/5$, $P(\text{Strong}\mid\text{No}) = 3/5$.
+\end{tight}
+\textbf{Scores:}
+\[
+\text{Yes: } 0.643 \times \tfrac{2}{9} \times \tfrac{3}{9} \times \tfrac{3}{9} \times \tfrac{3}{9} = 0.0053
+\qquad
+\text{No: } 0.357 \times \tfrac{3}{5} \times \tfrac{1}{5} \times \tfrac{4}{5} \times \tfrac{3}{5} = 0.0206
+\]
+\textbf{Prediction: No.} Normalised, $P(\text{No} \mid x) = 0.0206/(0.0206 + 0.0053)
+= \mathbf{0.795}$. (The decision tree of \chref{trees} agrees: Sunny and High
+humidity means No.)
+\end{worked}
+
+\section{The Zero-Frequency Problem and Laplace Smoothing}
+
+Classify $\langle$Overcast, Hot, High, Strong$\rangle$. No training day with
+PlayTennis = No was Overcast, so $P(\text{Overcast} \mid \text{No}) = 0/5 = 0$, and
+the whole product for No is zero --- however strongly High humidity and Strong
+wind point towards No. One unseen attribute value silences all the others.
+
+\begin{definitionbox}[Laplace Smoothing and the $m$-Estimate]
+Add one imaginary example of every value:
+\[
+P(a_j = v \mid c) = \frac{n_{v,c} + 1}{n_c + k_j}
+\]
+where $n_{v,c}$ counts class-$c$ examples with that value, $n_c$ counts class-$c$
+examples, and $k_j$ is the number of values attribute $j$ can take.
+\end{definitionbox}
+
+Mitchell's more general \term{$m$-estimate}, $(n_{v,c} + m\,p)/(n_c + m)$, adds $m$
+imaginary examples distributed according to a prior estimate $p$; Laplace smoothing
+is the case $m = k_j$, $p = 1/k_j$.
+
+\begin{worked}[Smoothing Rescues the Overcast Day]
+With Laplace smoothing (Outlook and Temperature have 3 values, Humidity and Wind 2):
+\begin{tight}
+  \item Yes: $0.643 \times \tfrac{4+1}{9+3} \times \tfrac{2+1}{9+3} \times
+        \tfrac{3+1}{9+2} \times \tfrac{3+1}{9+2} = 0.643 \times 0.417 \times 0.250
+        \times 0.364 \times 0.364 = 0.0089$
+  \item No: $0.357 \times \tfrac{0+1}{5+3} \times \tfrac{2+1}{5+3} \times
+        \tfrac{4+1}{5+2} \times \tfrac{3+1}{5+2} = 0.357 \times 0.125 \times 0.375
+        \times 0.714 \times 0.571 = 0.0068$
+\end{tight}
+$P(\text{Yes} \mid x) = 0.0089/(0.0089 + 0.0068) = \mathbf{0.56}$. Without smoothing the
+answer was ``Yes with certainty''; with it, a narrow Yes that reflects the conflict
+between Overcast (always Yes in training) and High, Strong (usually No).
+\end{worked}
+
+\section{Continuous Features: Gaussian Naive Bayes}
+
+For a numeric attribute, counting values is useless --- every value is new. Instead
+model each attribute within each class as a Gaussian, with the class's own mean
+$\mu_{j,c}$ and standard deviation $\sigma_{j,c}$ estimated from the training data,
+and use the density as the likelihood:
+\[
+P(a_j \mid c) \;\propto\; \frac{1}{\sqrt{2\pi}\,\sigma_{j,c}}
+\exp\!\left(-\frac{(a_j - \mu_{j,c})^2}{2\sigma_{j,c}^2}\right)
+\]
+
+\begin{worked}[One Feature, Two Classes, a Strong Prior]
+Mean packet size is 500 bytes (sd 100) for normal flows and 900 bytes (sd 150) for a
+data-exfiltration attack; 5\% of flows are attacks. A flow averages 750 bytes.
+\begin{tight}
+  \item Normal: density $\dfrac{1}{100\sqrt{2\pi}}e^{-(250)^2/(2 \cdot 100^2)}
+        = 0.00399 \times e^{-3.125} = 0.000175$
+  \item Attack: density $\dfrac{1}{150\sqrt{2\pi}}e^{-(150)^2/(2 \cdot 150^2)}
+        = 0.00266 \times e^{-0.5} = 0.00161$
+\end{tight}
+The likelihood favours attack by $0.00161/0.000175 = 9.2$ to 1. Now the priors:
+\[
+P(\text{attack} \mid 750) = \frac{0.05 \times 0.00161}{0.05 \times 0.00161 + 0.95 \times 0.000175}
+= \frac{0.0000807}{0.000247} = \mathbf{0.33}
+\]
+Nine-to-one evidence against nineteen-to-one prior odds leaves the flow more likely
+normal. \dsref{gaussian-nb} shows the whole picture: the boundary is at 772
+bytes.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.4cm},
+  width=6.9cm, height=4.8cm, axis lines=left,
+  tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+  xlabel={mean packet size (bytes)}, xmin=150, xmax=1450]
+\nextgroupplot[title={Likelihoods $P(x \mid \text{class})$}, ylabel={density},
+  ymin=0, ymax=0.0046, ytick=\empty,
+  legend style={font=\tiny, draw=gray!40, at={(0.98,0.97)}, anchor=north east}]
+\addplot[primary, line width=1.3pt, domain=150:1450, samples=150]
+  {exp(-(x-500)^2/(2*100^2))/(100*sqrt(2*pi))};
+\addlegendentry{normal}
+\addplot[accent, line width=1.3pt, domain=150:1450, samples=150]
+  {exp(-(x-900)^2/(2*150^2))/(150*sqrt(2*pi))};
+\addlegendentry{attack}
+\draw[gray!55, dashed] (axis cs:750,0) -- (axis cs:750,0.0030);
+\node[font=\tiny, gray!55!black, anchor=south] at (axis cs:750,0.0030) {750};
+\nextgroupplot[title={Posterior $P(\text{attack} \mid x)$, prior 5\%},
+  ylabel={probability}, ymin=0, ymax=1.05]
+\addplot[accent, line width=1.3pt, domain=150:1450, samples=200]
+  {0.05*exp(-(x-900)^2/(2*150^2))/150 /
+   (0.05*exp(-(x-900)^2/(2*150^2))/150 + 0.95*exp(-(x-500)^2/(2*100^2))/100)};
+\addplot[gray!55, dashed] coordinates {(150,0.5)(1450,0.5)};
+\draw[greenhl!70!black, line width=0.9pt] (axis cs:772,0) -- (axis cs:772,0.5);
+\node[font=\tiny, greenhl!45!black, anchor=north west, align=left] at (axis cs:790,0.44)
+     {boundary at 772 bytes:\\beyond it, attack wins};
+\addplot[only marks, mark=*, mark size=1.8pt, primary] coordinates {(750,0.326)};
+\node[font=\tiny, primary, anchor=east] at (axis cs:730,0.33) {750 bytes: 0.33};
+\end{groupplot}
+\end{tikzpicture}}%
+{Left: the two class-conditional densities; at 750 bytes the attack density is nine
+times higher. Right: after weighting by the 5\% prior, the posterior crosses 0.5 only at
+772 bytes. The boundary sits beyond the midpoint of the means because the rare class
+needs more evidence.}{gaussian-nb}
+
+\section{Text Classification}
+
+Naive Bayes's most famous success is text: spam filtering, topic labelling,
+sentiment. A document is represented as a \term{bag of words} --- the count of
+each vocabulary word, order ignored --- and \term{multinomial naive Bayes} treats
+each word occurrence as an independent draw from a class-specific distribution over
+the vocabulary:
+\begin{gather*}
+P(w \mid c) = \frac{\text{count}(w, c) + 1}{\text{total words in } c + |V|}, \\
+v_{NB} = \arg\max_c\Big[\log P(c) + \sum_{\text{words } w \text{ in doc}} \log P(w \mid c)\Big]
+\end{gather*}
+Working in logarithms turns the product into a sum; a product of a few hundred
+probabilities would otherwise underflow to zero on a computer.
+
+\begin{worked}[A Four-Word Spam Filter]
+Training counts over a vocabulary of $|V| = 4$ words; both classes contain 40 words
+and are equally likely:
+
+\smallskip
+\begin{center}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+ & \textbf{free} & \textbf{win} & \textbf{meeting} & \textbf{report} \\
+\midrule
+spam & 20 & 15 & 2 & 3 \\
+ham & 2 & 1 & 18 & 19 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+With smoothing, $P(\text{free}\mid\text{spam}) = 21/44$, $P(\text{meeting}\mid\text{spam}) = 3/44$,
+$P(\text{free}\mid\text{ham}) = 3/44$, $P(\text{meeting}\mid\text{ham}) = 19/44$.
+
+\textbf{Message:} ``free meeting free''.
+\begin{tight}
+  \item spam: $\log\tfrac{1}{2} + 2\log\tfrac{21}{44} + \log\tfrac{3}{44}
+        = -0.693 - 1.479 - 2.686 = -4.858$
+  \item ham: $\log\tfrac{1}{2} + 2\log\tfrac{3}{44} + \log\tfrac{19}{44}
+        = -0.693 - 5.371 - 0.840 = -6.904$
+\end{tight}
+\textbf{Spam} wins by $2.05$ in log-probability, a likelihood ratio of
+$e^{2.05} \approx 7.7$, so $P(\text{spam}) = 7.7/8.7 = \mathbf{0.885}$. The two
+``free''s outweigh the one ``meeting'' --- which is also how a spammer defeats the
+filter: add enough innocent words.
+\end{worked}
+
+\begin{alertbox}[Why Naive Bayes Works When Its Assumption Is False]
+Words are obviously not independent --- ``free'' and ``prize'' travel together.
+Naive Bayes therefore double-counts correlated evidence and its probabilities are
+badly \emph{over-confident}. But classification needs only the right \emph{ranking}
+of classes, and the double-counting usually inflates the right class as much as
+it helps it. Use naive Bayes's decisions freely; do not trust its probabilities
+without calibration. Models that represent the dependencies explicitly --- Bayesian
+networks --- are the next step, and are covered in Mitchell's Chapter~6.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Forgetting to smooth.} One zero count vetoes the class.
+  \item \textbf{Multiplying hundreds of probabilities.} Add log-probabilities.
+  \item \textbf{Confusing MAP with ML.} Maximum likelihood ignores the prior, and
+        with rare classes the prior decides.
+  \item \textbf{Reporting naive Bayes probabilities as calibrated risks.} They are
+        too extreme; the ranking is what is reliable.
+  \item \textbf{Feeding Gaussian NB heavily skewed features.} Transform them (log)
+        first, or the Gaussian fits badly.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Naive Bayes}
+\lensLA{Classify forum posts as questions, complaints or social chat from their
+words, so that teaching assistants see the questions first. Naive Bayes trains in
+seconds on a few hundred labelled posts, and it can be retrained every week as the
+course vocabulary changes.}
+
+\lensPM{Triage incoming tickets into bug, feature request or support query from
+their text. The per-word log-probabilities explain each decision (``crash'' and
+``error'' pushed it to bug), which helps the team trust the router.}
+
+\lensIOT{Gaussian naive Bayes over a handful of sensor summaries is a fault
+classifier that fits in a few kilobytes and updates its means and variances
+incrementally as new labelled readings arrive --- useful on a gateway with no
+room for a training framework.}
+
+\lensSEC{The original statistical spam filters were naive Bayes, and the
+adversarial lesson came quickly: attackers padded spam with ham words (``Bayesian
+poisoning''). Keep the model retrained on fresh spam, and do not rely on it
+alone.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Naive Bayes by Counting, Then by Library]
+\begin{lstlisting}[language=Python]
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import cross_val_score
+from sklearn.naive_bayes import GaussianNB, MultinomialNB
+from sklearn.feature_extraction.text import CountVectorizer
+
+# --- 1. naive Bayes on PlayTennis, by counting ---------------------------
+days = [("Sunny Hot High Weak", "No"), ("Sunny Hot High Strong", "No"),
+        ("Overcast Hot High Weak", "Yes"), ("Rain Mild High Weak", "Yes"),
+        ("Rain Cool Normal Weak", "Yes"), ("Rain Cool Normal Strong", "No"),
+        ("Overcast Cool Normal Strong", "Yes"),
+        ("Sunny Mild High Weak", "No"), ("Sunny Cool Normal Weak", "Yes"),
+        ("Rain Mild Normal Weak", "Yes"), ("Sunny Mild Normal Strong", "Yes"),
+        ("Overcast Mild High Strong", "Yes"),
+        ("Overcast Hot Normal Weak", "Yes"), ("Rain Mild High Strong", "No")]
+X = [d.split() for d, _ in days]
+y = [c for _, c in days]
+n_values = [3, 3, 2, 2]                  # values per attribute
+
+
+def naive_bayes(x, laplace=0):
+    scores = {}
+    for c in ("Yes", "No"):
+        rows = [r for r, lab in zip(X, y) if lab == c]
+        p = len(rows) / len(X)                            # prior P(c)
+        for j, v in enumerate(x):                         # P(x_j | c)
+            count = sum(r[j] == v for r in rows)
+            p *= (count + laplace) / (len(rows) + laplace * n_values[j])
+        scores[c] = p
+    total = sum(scores.values())
+    return {c: round(s / total, 3) for c, s in scores.items()}, scores
+
+
+post, raw = naive_bayes(["Sunny", "Cool", "High", "Strong"])
+print("unnormalised:", {c: round(s, 5) for c, s in raw.items()})
+print("posterior:   ", post)
+day = ["Overcast", "Hot", "High", "Strong"]
+print("Overcast day, no smoothing:", naive_bayes(day)[1])
+print("Overcast day, Laplace     :", naive_bayes(day, laplace=1)[0])
+
+# --- 2. Gaussian naive Bayes on 30 continuous measurements ---------------
+Xb, yb = load_breast_cancer(return_X_y=True)
+print("GaussianNB 5-fold accuracy:",
+      cross_val_score(GaussianNB(), Xb, yb, cv=5).mean().round(3))
+
+# --- 3. a spam filter from twelve messages -------------------------------
+msgs = ["win a free prize now", "free money win cash", "claim your free gift",
+        "cheap loans win now", "free entry win big",
+        "urgent cash prize claim",
+        "meeting moved to monday", "please review the report",
+        "lunch meeting tomorrow", "report due friday please",
+        "project meeting notes", "draft report for review"]
+labels = [1] * 6 + [0] * 6                         # 1 = spam
+vec = CountVectorizer()
+nb = MultinomialNB(alpha=1.0).fit(vec.fit_transform(msgs), labels)
+for m in ["free meeting free", "report on the prize", "win win win"]:
+    p = nb.predict_proba(vec.transform([m]))[0, 1]
+    print(f"{m!r:24s} P(spam) = {p:.3f}")
+\end{lstlisting}
+Part 1 reproduces both worked examples. In part 3, \texttt{alpha} is the smoothing
+constant: set it to \texttt{1e-9} and classify ``report on the prize'' again.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A disease has prior 1\%. A test has $P(+\mid\text{disease}) = 0.9$ and
+        $P(+\mid\text{healthy}) = 0.05$. Give $h_{MAP}$ and $h_{ML}$ after a
+        positive test.
+  \item What exactly does naive Bayes assume, and what goes wrong in the
+        probabilities when the assumption fails?
+  \item Why must naive Bayes for text work with log-probabilities?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Bayesian learning updates a prior into a posterior with the likelihood;
+        $h_{MAP}$ maximises $P(D\mid h)P(h)$ and equals $h_{ML}$ under a uniform prior.
+  \item Least squares is maximum likelihood under Gaussian noise; ridge is MAP
+        with a Gaussian prior on the weights.
+  \item The Bayes optimal classifier weights every hypothesis's vote by its
+        posterior and can overrule the MAP hypothesis.
+  \item Naive Bayes assumes attributes are independent given the class, which
+        reduces training to counting; on PlayTennis it predicts No with 0.795.
+  \item Smooth the counts (Laplace, $m$-estimate) to avoid zero vetoes; use
+        Gaussian likelihoods for continuous features.
+  \item For text, use a bag of words and log-probabilities. Trust the ranking, not
+        the probabilities.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} With a uniform prior over hypotheses, $h_{MAP}$ equals:
+        (a)~$h_{ML}$ (b)~the Bayes optimal classifier (c)~the most specific
+        hypothesis (d)~none of these.
+  \item \textbf{(MCQ)} Laplace smoothing is used to: (a)~speed up training
+        (b)~prevent zero probabilities for unseen values (c)~normalise the
+        posterior (d)~remove correlated features.
+  \item \textbf{(MCQ)} In Gaussian naive Bayes, each class--feature pair is
+        described by: (a)~a count table (b)~a mean and a variance (c)~a
+        threshold (d)~a weight.
+  \item \textbf{(Short)} Explain the difference between the MAP hypothesis and the
+        Bayes optimal classification, with an example.
+  \item \textbf{(Short)} Why can naive Bayes classify well even when its
+        probabilities are poor?
+  \item \textbf{(Short)} Describe how a spammer can exploit a naive Bayes filter.
+  \item \textbf{(Applied)} Using the PlayTennis data and Laplace smoothing, classify
+        $\langle$Rain, Hot, Normal, Weak$\rangle$. Show every probability.
+  \item \textbf{(Applied)} For the Gaussian example, find the packet size at which
+        the two prior-weighted densities are equal, to the nearest 10 bytes, by
+        trying values. Explain why it is not 700, the midpoint of the means.
+\end{reviewq}

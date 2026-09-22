@@ -1,0 +1,444 @@
+%=====================================================================
+\chapter{Decision Tree Learning}\label{ch:trees}
+%=====================================================================
+\locator{3}{Part III --- Supervised Learning Algorithms}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Classify} an example with a decision tree, and \textbf{read} a
+        tree as a set of rules.
+  \item \textbf{Compute} entropy and information gain, and \textbf{trace} ID3's
+        choice of attribute at each node by hand.
+  \item \textbf{Handle} continuous attributes, attributes with many values
+        (gain ratio) and the Gini index.
+  \item \textbf{Explain} why trees overfit noisy data, and \textbf{apply}
+        reduced-error, rule post-pruning and cost-complexity pruning.
+  \item \textbf{State} the inductive bias of ID3.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (entropy), \chref{concept} (hypothesis spaces and inductive bias)
+and \chref{generalization} (overfitting, noise, choosing a setting by
+cross-validation).
+\end{prereq}
+
+\begin{keyterms}
+decision tree $\bullet$ internal node, branch, leaf $\bullet$ ID3 $\bullet$
+entropy $\bullet$ information gain $\bullet$ split information $\bullet$ gain
+ratio $\bullet$ Gini index $\bullet$ CART $\bullet$ threshold split $\bullet$
+overfitting $\bullet$ pre-pruning $\bullet$ reduced-error pruning $\bullet$ rule
+post-pruning $\bullet$ cost-complexity pruning $\bullet$ Occam's razor
+\end{keyterms}
+
+\section{Trees as Hypotheses}
+
+A \term{decision tree} classifies an example by asking a sequence of questions
+about its attributes. Each \term{internal node} tests one attribute, each
+\term{branch} is one outcome of the test, and each \term{leaf} gives a class.
+To classify, start at the root and follow the branches that match the example
+until a leaf is reached.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  attr/.style={rounded corners=3pt, draw=primary, fill=primary!10, text=primary!80!black,
+               font=\scriptsize\bfseries, minimum width=2.0cm, minimum height=0.65cm},
+  yes/.style={rounded corners=8pt, draw=greenhl, fill=greenhl!16, text=greenhl!40!black,
+              font=\scriptsize\bfseries, minimum width=1.2cm, minimum height=0.55cm},
+  no/.style={rounded corners=8pt, draw=accent, fill=accent!12, text=accent!80!black,
+             font=\scriptsize\bfseries, minimum width=1.2cm, minimum height=0.55cm},
+  br/.style={font=\tiny, text=gray!55!black, fill=white, inner sep=1pt},
+  e/.style={gray!60, line width=0.9pt}]
+\node[attr] (o) at (0,0) {Outlook};
+\node[attr] (h) at (-4.0,-1.7) {Humidity};
+\node[yes] (ov) at (0,-1.7) {Yes};
+\node[attr] (w) at (4.0,-1.7) {Wind};
+\node[no]  (h1) at (-5.3,-3.3) {No};
+\node[yes] (h2) at (-2.7,-3.3) {Yes};
+\node[no]  (w1) at (2.7,-3.3) {No};
+\node[yes] (w2) at (5.3,-3.3) {Yes};
+\draw[e] (o) -- node[br] {Sunny} (h);
+\draw[e] (o) -- node[br] {Overcast} (ov);
+\draw[e] (o) -- node[br] {Rain} (w);
+\draw[e] (h) -- node[br] {High} (h1);
+\draw[e] (h) -- node[br] {Normal} (h2);
+\draw[e] (w) -- node[br] {Strong} (w1);
+\draw[e] (w) -- node[br] {Weak} (w2);
+\node[font=\tiny, text=gray!55!black] at (-5.3,-3.85) {D1, D2, D8};
+\node[font=\tiny, text=gray!55!black] at (-2.7,-3.85) {D9, D11};
+\node[font=\tiny, text=gray!55!black] at (0,-2.25) {D3, D7, D12, D13};
+\node[font=\tiny, text=gray!55!black] at (2.7,-3.85) {D6, D14};
+\node[font=\tiny, text=gray!55!black] at (5.3,-3.85) {D4, D5, D10};
+\end{tikzpicture}}%
+{The tree ID3 learns from the fourteen PlayTennis days. Under each leaf are the training
+days that reach it; every leaf is pure. It is equivalent to the rule: play if
+(Sunny and Normal humidity) or Overcast or (Rain and Weak wind).}{playtennis-tree}
+
+A tree is a disjunction of conjunctions: each root-to-leaf path is an AND of tests,
+and the tree is the OR of the paths that end in ``Yes''. That makes trees far more
+expressive than the conjunctions of \chref{concept} --- a large enough tree can
+represent \emph{any} discrete function --- and it makes them readable. Trees
+suit problems where examples are attribute--value pairs, the target is discrete,
+disjunctions may be needed, and the training data may contain errors or missing
+values.
+
+\section{Choosing the Question: Entropy and Information Gain}
+
+The fourteen training days of \emph{PlayTennis}, from Mitchell's set text:
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{1.1cm}L{2.3cm}L{2.5cm}L{2.3cm}L{2.0cm}L{2.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Day} & \textbf{Outlook} & \textbf{Temperature} & \textbf{Humidity} & \textbf{Wind} & \textbf{PlayTennis} \\
+\midrule
+\endhead
+D1 & Sunny & Hot & High & Weak & No \\
+D2 & Sunny & Hot & High & Strong & No \\
+D3 & Overcast & Hot & High & Weak & Yes \\
+D4 & Rain & Mild & High & Weak & Yes \\
+D5 & Rain & Cool & Normal & Weak & Yes \\
+D6 & Rain & Cool & Normal & Strong & No \\
+D7 & Overcast & Cool & Normal & Strong & Yes \\
+D8 & Sunny & Mild & High & Weak & No \\
+D9 & Sunny & Cool & Normal & Weak & Yes \\
+D10 & Rain & Mild & Normal & Weak & Yes \\
+D11 & Sunny & Mild & Normal & Strong & Yes \\
+D12 & Overcast & Mild & High & Strong & Yes \\
+D13 & Overcast & Hot & Normal & Weak & Yes \\
+D14 & Rain & Mild & High & Strong & No \\
+\bottomrule
+\end{longtable}
+
+ID3 grows the tree top-down and greedily: at each node, it asks which single
+attribute best separates the examples that reach it, puts that attribute there,
+and recurses on each branch. ``Best separates'' is measured with the entropy of
+\chref{math}.
+
+\begin{definitionbox}[Information Gain]
+The \term{information gain} of attribute $A$ on example set $S$ is the expected
+reduction in entropy from splitting $S$ on $A$:
+\[
+\text{Gain}(S, A) = \text{Entropy}(S) - \sum_{v \in \text{Values}(A)}
+\frac{|S_v|}{|S|}\,\text{Entropy}(S_v)
+\]
+where $S_v$ is the subset of $S$ with $A = v$. ID3 puts the attribute with the
+highest gain at the node.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=8.4cm, height=4.8cm, axis lines=left,
+  xlabel={proportion of positive examples $p$}, ylabel={impurity},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=0, xmax=1, ymin=0, ymax=1.08,
+  legend style={font=\tiny, draw=gray!40, at={(0.5,0.03)}, anchor=south}]
+\addplot[primary, line width=1.3pt, domain=0.001:0.999, samples=120]
+  {-x*ln(x)/ln(2)-(1-x)*ln(1-x)/ln(2)};
+\addlegendentry{entropy (bits)}
+\addplot[goldhl, line width=1.2pt, domain=0:1, samples=60] {2*x*(1-x)};
+\addlegendentry{Gini index}
+\addplot[only marks, mark=*, mark size=1.8pt, accent] coordinates {(0.643,0.940)};
+\node[font=\tiny, accent, anchor=north] at (axis cs:0.643,0.9) {9 yes, 5 no: 0.940};
+\end{axis}
+\end{tikzpicture}}%
+{Two impurity measures for a two-class node. Both are zero for a pure node and largest
+for an even split; they almost always pick the same attribute.}{impurity}
+
+\begin{worked}[ID3's First Choice on PlayTennis]
+\textbf{The root.} 9 Yes, 5 No: $\text{Entropy}(S) = 0.940$ (computed in \chref{math}).
+
+\smallskip
+\textbf{Outlook} splits $S$ into Sunny (2 Yes, 3 No: entropy 0.971), Overcast (4, 0:
+entropy 0) and Rain (3, 2: entropy 0.971):
+\[
+\text{Gain}(S, \text{Outlook}) = 0.940 - \tfrac{5}{14}(0.971) - \tfrac{4}{14}(0)
+- \tfrac{5}{14}(0.971) = \mathbf{0.246}
+\]
+\textbf{Humidity}: High (3, 4: 0.985), Normal (6, 1: 0.592):
+\[
+\text{Gain}(S, \text{Humidity}) = 0.940 - \tfrac{7}{14}(0.985) - \tfrac{7}{14}(0.592) = \mathbf{0.151}
+\]
+\textbf{Wind}: Weak (6, 2: 0.811), Strong (3, 3: 1.000):
+\[
+\text{Gain}(S, \text{Wind}) = 0.940 - \tfrac{8}{14}(0.811) - \tfrac{6}{14}(1.000) = \mathbf{0.048}
+\]
+\textbf{Temperature}: $\text{Gain} = \mathbf{0.029}$ (check it yourself).
+
+\smallskip
+\textbf{Outlook wins} and goes at the root. Its Overcast branch is already pure, so
+it becomes a Yes leaf.
+
+\smallskip
+\textbf{The Sunny branch} (D1, D2, D8, D9, D11; entropy 0.971) is split the same
+way, using only those five days: Gain(Humidity) $= 0.971$, Gain(Temperature)
+$= 0.571$, Gain(Wind) $= 0.020$. Humidity separates them perfectly. On the Rain
+branch Wind does the same. Every leaf is now pure, and ID3 stops with the tree of
+\dsref{playtennis-tree}.
+\end{worked}
+
+\section{Beyond the Basic Algorithm}
+
+\textbf{Continuous attributes.} A numeric attribute is turned into a yes/no test
+$A \le t$. The only thresholds worth trying are midpoints between adjacent sorted
+values where the class changes; each is scored by information gain like any
+other attribute.
+
+\begin{worked}[Choosing a Threshold]
+Six days with Temperature $40, 48, 60, 72, 80, 90$ and PlayTennis No, No, Yes, Yes,
+Yes, No. The class changes between 48 and 60 and between 80 and 90, so the
+candidates are $t = 54$ and $t = 85$. The set has 3 Yes and 3 No: entropy 1.
+\begin{tight}
+  \item $t = 54$: $\le 54$ holds \{No, No\} (entropy 0); $> 54$ holds 3 Yes, 1 No
+        (entropy 0.811). Gain $= 1 - \tfrac{4}{6}(0.811) = \mathbf{0.459}$.
+  \item $t = 85$: $\le 85$ holds 3 Yes, 2 No (0.971); $> 85$ holds \{No\} (0).
+        Gain $= 1 - \tfrac{5}{6}(0.971) = \mathbf{0.191}$.
+\end{tight}
+The test Temperature $\le 54$ is chosen.
+\end{worked}
+
+\textbf{Attributes with many values.} Information gain favours attributes with
+many values. An attribute such as \emph{Date} splits the training days into
+fourteen pure singletons --- maximal gain, zero use. C4.5 corrects this with the
+\term{gain ratio}, dividing the gain by the \term{split information}, the entropy
+of the split itself:
+\[
+\text{SplitInfo}(S, A) = -\sum_{v} \frac{|S_v|}{|S|}\log_2 \frac{|S_v|}{|S|},
+\qquad
+\text{GainRatio}(S, A) = \frac{\text{Gain}(S, A)}{\text{SplitInfo}(S, A)}
+\]
+For Outlook (5, 4, 5 days) SplitInfo $= 1.577$ and the gain ratio is
+$0.246/1.577 = 0.156$. For Date, SplitInfo $= \log_2 14 = 3.81$, which heavily
+discounts its gain.
+
+\textbf{The Gini index.} CART, and scikit-learn by default, uses
+$\text{Gini}(S) = 1 - \sum_i p_i^2$ instead of entropy. For the PlayTennis root it is
+$1 - (9/14)^2 - (5/14)^2 = 0.459$, falling to 0.343 after splitting on Outlook.
+\dsref{impurity} shows why the choice rarely matters: the two curves have the same
+shape.
+
+\textbf{Missing values.} An example missing the tested attribute can be sent down
+the most common branch, or split fractionally among all branches in proportion to
+their training frequencies (C4.5's approach).
+
+\section{Overfitting, Noisy Data and Pruning}
+
+ID3 keeps splitting until every leaf is pure. With noisy data that means growing
+branches whose only purpose is to fit the mislabelled examples: add one wrongly
+labelled day to PlayTennis --- (Sunny, Hot, Normal, Strong, No) --- and ID3 must
+grow a new subtree under Sunny/Normal just to isolate it. \dsref{tree-overfit}
+shows the effect on a dataset in which 15\% of the labels were flipped.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=9.6cm, height=5.0cm, axis lines=left,
+  xlabel={size of tree (number of nodes)}, ylabel={accuracy},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=0, xmax=235, ymin=0.68, ymax=1.02,
+  legend style={font=\tiny, draw=gray!40, at={(0.98,0.5)}, anchor=east}]
+\addplot[primary, line width=1.2pt, mark=*, mark size=1.2pt] coordinates
+  {(3,0.773) (7,0.792) (11,0.809) (15,0.821) (23,0.841) (31,0.851) (47,0.873) (63,0.893) (95,0.924) (127,0.951) (191,0.988) (225,1.000)};
+\addlegendentry{on training data}
+\addplot[accent, line width=1.2pt, mark=square*, mark size=1.2pt] coordinates
+  {(3,0.724) (7,0.749) (11,0.773) (15,0.780) (23,0.792) (31,0.792) (47,0.779) (63,0.767) (95,0.776) (127,0.761) (191,0.747) (225,0.744)};
+\addlegendentry{on test data}
+\draw[greenhl!70!black, dashed, line width=0.9pt] (axis cs:27,0.68) -- (axis cs:27,0.792);
+\node[font=\tiny, greenhl!45!black, anchor=west] at (axis cs:31,0.705)
+     {best test accuracy at about 25--30 nodes};
+\end{axis}
+\end{tikzpicture}}%
+{Accuracy against tree size on data with 15\% label noise. Training accuracy climbs to
+100\% as the tree memorises the noise; test accuracy peaks early and then declines.}{tree-overfit}
+
+\begin{definitionbox}[Pruning]
+\term{Pre-pruning} stops growth early: a maximum depth, a minimum number of
+examples per leaf, or a minimum gain. \term{Post-pruning} grows the full tree and
+then cuts it back:
+\begin{tight}
+  \item \term{Reduced-error pruning}: using a separate validation set, repeatedly
+        replace the subtree whose removal most improves validation accuracy by a
+        leaf labelled with its majority class; stop when every removal hurts.
+  \item \term{Rule post-pruning} (C4.5): convert the tree into one rule per
+        root-to-leaf path, drop any precondition whose removal does not hurt the
+        rule's estimated accuracy, and sort the rules by accuracy.
+  \item \term{Cost-complexity pruning} (CART): minimise
+        $\text{error} + \alpha \times (\text{number of leaves})$; larger $\alpha$ gives
+        smaller trees, and $\alpha$ is chosen by cross-validation.
+\end{tight}
+\end{definitionbox}
+
+\begin{conceptbox}[Why Rules Are Easier to Prune Than Trees]
+Pruning a tree removes a node and everything below it --- a decision about the
+root's test affects every path through it. Converting to rules first lets each
+path be simplified on its own: the test Outlook = Sunny can be dropped from one
+rule and kept in another. It also produces a list of plain if--then statements,
+which is what a domain expert actually wants to read.
+\end{conceptbox}
+
+\section{The Inductive Bias of ID3}
+
+ID3 searches a \emph{complete} hypothesis space --- every discrete function is
+some tree --- so, unlike \textsc{Candidate-Elimination}, it does not restrict
+what can be learned. Its bias lies in its \emph{search}: it is greedy, never
+backtracks, and so prefers \textbf{shorter trees} and trees that put
+\textbf{high-gain attributes near the root}. That is a \term{preference bias}
+(an ordering over hypotheses), where \textsc{Candidate-Elimination}'s was a
+\term{restriction bias} (a limit on which hypotheses exist). Its justification is
+a form of \term{Occam's razor}: there are far fewer short trees than long ones,
+so a short tree that fits the data is less likely to fit it by coincidence.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Letting the tree grow until the leaves are pure} on noisy data. It
+        will fit the noise; prune, or cap the depth.
+  \item \textbf{Keeping an ID-like attribute.} It has maximal information gain and
+        no predictive value. Drop it, or use the gain ratio.
+  \item \textbf{Reading the root attribute as ``the most important feature''.}
+        Greedy splitting on correlated features picks one almost arbitrarily.
+  \item \textbf{Expecting stability.} A small change in the data can change the
+        root and hence the whole tree --- the high variance that
+        \chref{ensembles} exploits.
+  \item \textbf{Scaling features for a tree.} Unnecessary: a threshold test is
+        unchanged by any monotone rescaling.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Decision Trees}
+\lensLA{An advising tree --- ``attendance below 60\% and two quizzes missed:
+refer'' --- can be printed on one page and checked by staff, which matters more
+in a university committee than two points of accuracy. Keep it shallow: a
+depth-3 tree is policy; a depth-12 tree is noise.}
+
+\lensPM{Trees handle the mix of categorical and numeric project attributes
+(methodology, team size, number of integrations) without encoding, and their
+rules --- ``fixed-price and more than three external integrations'' --- map
+directly onto risk checklists.}
+
+\lensIOT{A shallow tree compiles to a few nested \texttt{if} statements, so it runs
+on the smallest microcontroller with no library at all. Threshold tests on sensor
+readings are also exactly how maintenance engineers already think.}
+
+\lensSEC{Early intrusion detection systems were decision trees over connection
+features, and the rules are still a good way to explain an alert. Their
+weakness is that an attacker who learns the thresholds can stay just inside
+them --- keep the rules secret, and prefer ensembles of trees in deployment.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[ID3 by Hand, Then Pruning by Cross-Validation]
+\begin{lstlisting}[language=Python]
+import numpy as np
+import pandas as pd
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.tree import DecisionTreeClassifier, export_text
+
+# --- 1. ID3's first choice, computed by hand -----------------------------
+rows = ["Sunny Hot High Weak No", "Sunny Hot High Strong No",
+        "Overcast Hot High Weak Yes", "Rain Mild High Weak Yes",
+        "Rain Cool Normal Weak Yes", "Rain Cool Normal Strong No",
+        "Overcast Cool Normal Strong Yes", "Sunny Mild High Weak No",
+        "Sunny Cool Normal Weak Yes", "Rain Mild Normal Weak Yes",
+        "Sunny Mild Normal Strong Yes", "Overcast Mild High Strong Yes",
+        "Overcast Hot Normal Weak Yes", "Rain Mild High Strong No"]
+df = pd.DataFrame([r.split() for r in rows],
+                  columns=["Outlook", "Temp", "Humidity", "Wind", "Play"])
+
+
+def entropy(labels):
+    p = labels.value_counts(normalize=True)
+    return float(-(p * np.log2(p)).sum())
+
+
+def gain(data, attr):
+    rest = sum(len(g) / len(data) * entropy(g.Play)
+               for _, g in data.groupby(attr))
+    return entropy(data.Play) - rest
+
+
+for a in ["Outlook", "Temp", "Humidity", "Wind"]:
+    print(f"Gain(S, {a:8s}) = {gain(df, a):.3f}")
+sunny = df[df.Outlook == "Sunny"]
+print("inside Sunny:", {a: round(gain(sunny, a), 3)
+                        for a in ["Temp", "Humidity", "Wind"]})
+
+# --- 2. noisy data: a tree grown without limit, then pruned -------------
+X, y = make_classification(n_samples=1500, n_features=10, n_informative=4,
+                           flip_y=0.15, random_state=4)  # 15% labels flipped
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.5,
+                                          random_state=0)
+full = DecisionTreeClassifier(criterion="entropy", random_state=0)
+full.fit(X_tr, y_tr)
+print(f"unpruned: {full.tree_.node_count:3d} nodes, "
+      f"train {full.score(X_tr, y_tr):.3f}, "
+      f"test {full.score(X_te, y_te):.3f}")
+
+# cost-complexity pruning: choose alpha by 5-fold CV on the training data
+alphas = full.cost_complexity_pruning_path(X_tr, y_tr).ccp_alphas[:-1]
+cv = [cross_val_score(DecisionTreeClassifier(criterion="entropy",
+      ccp_alpha=a, random_state=0), X_tr, y_tr, cv=5).mean() for a in alphas]
+best = alphas[int(np.argmax(cv))]
+pruned = DecisionTreeClassifier(criterion="entropy", ccp_alpha=best,
+                                random_state=0).fit(X_tr, y_tr)
+print(f"pruned:   {pruned.tree_.node_count:3d} nodes, "
+      f"train {pruned.score(X_tr, y_tr):.3f}, "
+      f"test {pruned.score(X_te, y_te):.3f}  (alpha = {best:.4f})")
+print(export_text(pruned, max_depth=1))
+\end{lstlisting}
+Part 1 prints 0.247 for Outlook where the worked example has 0.246: the code does
+not round the intermediate entropies. In part 2, pruning cuts the tree from 207 to
+63 nodes and \emph{raises} test accuracy from 0.72 to 0.75 while lowering training
+accuracy --- the signature of removing overfitting.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A node holds 8 positive and 8 negative examples. A test splits it into
+        (6+, 2$-$) and (2+, 6$-$). Compute the information gain.
+  \item Why does information gain favour an attribute such as \emph{StudentID}?
+        What fixes it?
+  \item What is the difference between a restriction bias and a preference bias?
+        Which does ID3 have?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item A decision tree is a disjunction of conjunctions of attribute tests; it
+        can represent any discrete function and reads as a set of rules.
+  \item ID3 grows the tree greedily, choosing at each node the attribute with the
+        greatest information gain; on PlayTennis, Outlook (0.246) wins at the root.
+  \item Numeric attributes become threshold tests at class boundaries; the gain
+        ratio corrects the preference for many-valued attributes; Gini behaves
+        like entropy.
+  \item Grown to purity on noisy data, trees overfit. Pre-prune with depth or
+        leaf-size limits, or post-prune by reduced error, rules or cost
+        complexity, choosing the strength by validation.
+  \item ID3's inductive bias is a preference for short trees with high-gain
+        attributes near the root --- Occam's razor.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The entropy of a node with 4 positive and 4 negative
+        examples is: (a)~0 (b)~0.5 (c)~1 (d)~2.
+  \item \textbf{(MCQ)} C4.5's gain ratio divides information gain by: (a)~the
+        number of examples (b)~the split information (c)~the Gini index (d)~the
+        tree depth.
+  \item \textbf{(MCQ)} Cost-complexity pruning with a larger $\alpha$ gives:
+        (a)~a larger tree (b)~a smaller tree (c)~the same tree (d)~a deeper tree.
+  \item \textbf{(Short)} Explain why a tree that classifies every training example
+        correctly may be a poor model.
+  \item \textbf{(Short)} Describe reduced-error pruning and state what data it
+        requires.
+  \item \textbf{(Short)} Why do decision trees not need feature scaling?
+  \item \textbf{(Applied)} Compute Gain(S, Temperature) for the full PlayTennis
+        data, showing the entropy of each of the three branches.
+  \item \textbf{(Applied)} On the Rain branch of PlayTennis (D4, D5, D6, D10,
+        D14), compute the gain of Humidity, Temperature and Wind, and confirm that
+        ID3 chooses Wind.
+\end{reviewq}

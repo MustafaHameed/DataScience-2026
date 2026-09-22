@@ -1,0 +1,437 @@
+%=====================================================================
+\chapter{Reinforcement Learning}\label{ch:rl}
+%=====================================================================
+\locator{5}{Part V --- Sequences, Decisions and Reinforcement}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} how reinforcement learning differs from planning with a
+        known model and from supervised learning.
+  \item \textbf{Estimate} values by Monte Carlo averaging of observed returns.
+  \item \textbf{Explain} the exploration--exploitation trade-off, and \textbf{apply}
+        greedy, $\varepsilon$-greedy and UCB action selection to a bandit problem.
+  \item \textbf{Perform} temporal-difference and Q-learning updates by hand.
+  \item \textbf{Contrast} Q-learning with SARSA, and \textbf{describe} how function
+        approximation leads to deep reinforcement learning.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{mdp} (MDPs, returns, value functions, the Bellman equations) and \chref{hmm}
+(Monte Carlo estimation). \chref{generalization} for the trade-off between trying new
+things and using what is known, which returns here in a new form.
+\end{prereq}
+
+\begin{keyterms}
+reinforcement learning $\bullet$ model-free $\bullet$ episode $\bullet$ Monte Carlo
+prediction $\bullet$ first-visit Monte Carlo $\bullet$ exploration vs.\ exploitation
+$\bullet$ multi-armed bandit $\bullet$ greedy $\bullet$ $\varepsilon$-greedy
+$\bullet$ upper confidence bound (UCB) $\bullet$ incremental mean $\bullet$ temporal
+difference (TD) $\bullet$ TD error $\bullet$ bootstrapping $\bullet$ Q-learning
+$\bullet$ SARSA $\bullet$ on-policy vs.\ off-policy $\bullet$ function
+approximation $\bullet$ deep Q-network
+\end{keyterms}
+
+\section{Learning From Consequences}
+
+\chref{mdp} solved decision problems when the rules of the world were written down:
+every transition probability and every reward. \term{Reinforcement learning} (RL)
+solves them when they are not. The agent acts, observes what happens and what it is
+paid, and improves its behaviour from that experience alone. Nobody tells it the right
+action --- unlike supervised learning, there are no labels, only a reward that may
+arrive many steps after the action that earned it. That is how Samuel's checkers
+program improved in 1959 (\chref{introduction}), and how AlphaGo beat a world champion
+in 2016.
+
+RL is \term{model-free} in the sense used here: it learns value functions or policies
+directly, without first estimating $P(s' \mid s, a)$. Two ideas carry the whole
+chapter. \textbf{Averaging}: the value of a state is the average return that follows
+it, so average the returns you observe (Monte Carlo). \textbf{Bootstrapping}: the
+Bellman equation says a state's value is the reward plus the next state's value, so
+nudge your estimate towards that (temporal-difference learning).
+
+\section{Monte Carlo Methods}
+
+\chref{hmm} introduced \emph{Monte Carlo estimation}: estimate an expectation by
+sampling and averaging, with error shrinking like $1/\sqrt{n}$. The simplest
+illustration needs no MDP at all. A server stays healthy for another minute with
+probability 0.8; what is the chance it survives ten minutes? Exactly, $0.8^{10} =
+0.107$. By simulation: run the ten minutes 100 times and count survivals --- the lab
+gets 0.120; a million runs give 0.1071. The same procedure works when no exact formula
+exists, which is the point.
+
+\begin{definitionbox}[Monte Carlo Prediction]
+To estimate $V^{\pi}(s)$ without a model: run many \term{episodes} (complete
+sequences from start to end) following $\pi$; each time $s$ is visited, record the
+return $G$ that followed; estimate $V^{\pi}(s)$ as the average of the recorded returns.
+\term{First-visit} Monte Carlo counts only the first visit to $s$ in each episode.
+With an $\varepsilon$-greedy policy (below) and averaging $Q(s, a)$ instead of $V(s)$,
+the same idea learns to \emph{control}, not just predict.
+\end{definitionbox}
+
+\begin{worked}[Averaging Returns]
+Three episodes pass through state $s$, and the returns that followed the first visit
+were $G = 7$, $3$ and $5$. The Monte Carlo estimate is $V(s) = (7 + 3 + 5)/3 =
+\mathbf{5}$.
+
+\smallskip
+The average can be kept \emph{incrementally} --- no need to store every return:
+\[
+V_{n} = V_{n-1} + \frac{1}{n}\big(G_n - V_{n-1}\big)
+\]
+After the first episode $V = 7$; after the second $7 + \tfrac{1}{2}(3 - 7) = 5$; after
+the third $5 + \tfrac{1}{3}(5 - 5) = 5$. The form ``old estimate plus a step towards
+the new evidence'' appears in every method in this chapter.
+\end{worked}
+
+Monte Carlo is simple and unbiased, but it must wait until an episode ends to learn
+anything, and returns summed over long episodes are noisy. The temporal-difference
+methods later in the chapter fix both.
+
+\section{Exploration and Exploitation}
+
+An agent that always takes the action it currently believes best \emph{exploits}
+what it knows, but may never discover that another action is better. One that tries
+actions at random \emph{explores}, but wastes effort on actions it already knows are
+poor. Every RL agent must balance the two, and the cleanest setting in which to study
+the balance is the bandit.
+
+\begin{definitionbox}[Multi-Armed Bandit]
+$k$ actions (``arms'', after slot machines), each paying a random reward from an
+unknown distribution; there is only one state. The agent pulls one arm per step and
+tries to maximise its total reward. Its estimate $Q(a)$ of each arm's value is the
+average reward received from it so far, updated incrementally:
+$Q(a) \leftarrow Q(a) + \tfrac{1}{N(a)}\big(r - Q(a)\big)$.
+\end{definitionbox}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.8cm}L{6.4cm}L{5.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Strategy} & \textbf{Rule} & \textbf{Behaviour} \\
+\midrule
+\endhead
+Greedy & Always pull $\arg\max_a Q(a)$ & Locks onto whichever arm looked good first;
+may never find the best \\
+$\varepsilon$-greedy & With probability $\varepsilon$ pull a random arm; otherwise
+greedy & Keeps exploring forever at rate $\varepsilon$; simple and robust \\
+UCB & Pull $\arg\max_a \Big[Q(a) + c\sqrt{\dfrac{\ln t}{N(a)}}\Big]$ & Explores arms in
+proportion to how \emph{uncertain} their estimate is: optimism under uncertainty \\
+\bottomrule
+\end{longtable}
+
+\begin{worked}[Which Advert Next?]
+A site has tried three adverts, with click rewards averaging: A $0.5$ (shown 10
+times), B $0.6$ (5 times), C $0.3$ (twice). Total pulls $t = 17$; $\ln 17 = 2.833$.
+
+\smallskip
+\textbf{Greedy:} B, the highest average.
+
+\textbf{$\varepsilon$-greedy} ($\varepsilon = 0.1$): B with probability
+$0.9 + 0.1/3 = 0.933$; A and C with $0.033$ each.
+
+\textbf{UCB} ($c = 1$):
+\begin{tight}
+  \item A: $0.5 + \sqrt{2.833/10} = 0.5 + 0.532 = 1.032$
+  \item B: $0.6 + \sqrt{2.833/5} = 0.6 + 0.753 = 1.353$
+  \item C: $0.3 + \sqrt{2.833/2} = 0.3 + 1.190 = \mathbf{1.490}$
+\end{tight}
+UCB shows \textbf{C}: its average is lowest, but it has been tried only twice, so its
+true value is the most uncertain. If C really is poor, a few more pulls will lower its
+bonus and UCB will stop choosing it; if it is good, greedy would never have found out.
+
+\smallskip
+\textbf{Update} after B is shown again and clicked (reward 1): $N(B) = 6$ and
+$Q(B) = 0.6 + \tfrac{1}{6}(1 - 0.6) = 0.667$.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=10cm, height=5.2cm, axis lines=left,
+  xlabel={step}, ylabel={average reward (20-step window)},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=0, xmax=1000, ymin=0.3, ymax=1.65,
+  legend style={font=\tiny, draw=gray!40, at={(0.98,0.03)}, anchor=south east}]
+\addplot[gray!60!black, line width=1.2pt] coordinates {(20,0.743) (29,0.956) (69,1.042) (109,1.060) (149,1.072) (189,1.055) (229,1.068) (269,1.083) (309,1.078) (349,1.067) (389,1.059) (429,1.072) (469,1.060) (509,1.066) (549,1.064) (589,1.060) (629,1.070) (669,1.059) (709,1.064) (749,1.059) (789,1.063) (829,1.056) (869,1.067) (909,1.058) (949,1.076) (989,1.077) (1000,1.079)};
+\addlegendentry{greedy}
+\addplot[secondary, line width=1.2pt] coordinates {(20,0.738) (29,0.960) (69,1.091) (109,1.184) (149,1.234) (189,1.281) (229,1.301) (269,1.326) (309,1.319) (349,1.322) (389,1.349) (429,1.361) (469,1.354) (509,1.355) (549,1.374) (589,1.391) (629,1.369) (669,1.369) (709,1.385) (749,1.380) (789,1.364) (829,1.380) (869,1.368) (909,1.376) (949,1.378) (989,1.388) (1000,1.385)};
+\addlegendentry{$\varepsilon$-greedy, $\varepsilon = 0.1$}
+\addplot[accent, line width=1.2pt] coordinates {(20,0.417) (29,0.799) (69,1.082) (109,1.237) (149,1.325) (189,1.325) (229,1.348) (269,1.384) (309,1.419) (349,1.399) (389,1.425) (429,1.418) (469,1.439) (509,1.444) (549,1.445) (589,1.458) (629,1.472) (669,1.467) (709,1.453) (749,1.476) (789,1.462) (829,1.453) (869,1.471) (909,1.469) (949,1.496) (989,1.479) (1000,1.464)};
+\addlegendentry{UCB, $c = 2$}
+\addplot[greenhl!70!black, dashed] coordinates {(0,1.54)(1000,1.54)};
+\node[font=\tiny, greenhl!45!black, anchor=south west] at (axis cs:10,1.55) {best arm, on average};
+\end{axis}
+\end{tikzpicture}}%
+{Ten-armed bandits (600 random problems, averaged). Greedy settles early on a
+mediocre arm; $\varepsilon$-greedy keeps improving; UCB explores hardest at first --- its
+worst start --- and earns the most thereafter.}{bandits}
+
+\section{Temporal-Difference Learning}
+
+Monte Carlo waits for the end of an episode to see the return. \term{Temporal-difference}
+(TD) learning updates after every single step, using the Bellman equation: the value
+of a state should equal the reward plus the discounted value of the next state, so move
+the estimate towards that.
+
+\begin{definitionbox}[TD(0) Update]
+After moving from $s$ to $s'$ with reward $r$:
+\[
+V(s) \leftarrow V(s) + \alpha\big[\underbrace{r + \gamma V(s')}_{\text{TD target}} - V(s)\big]
+\]
+The bracket is the \term{TD error}: how much better or worse things turned out than
+expected. Using the current estimate $V(s')$ inside the target is called
+\term{bootstrapping} --- learning a guess from a guess. It lets TD learn during an
+episode, and in tasks that never end.
+\end{definitionbox}
+
+\begin{worked}[One TD Update]
+$V(s) = 5$ and $V(s') = 10$. The agent moves from $s$ to $s'$ and receives $r = 2$;
+$\gamma = 0.9$, $\alpha = 0.1$.
+\[
+\text{TD target} = 2 + 0.9 \times 10 = 11, \quad \text{TD error} = 11 - 5 = 6, \quad
+V(s) \leftarrow 5 + 0.1 \times 6 = \mathbf{5.6}
+\]
+The step was better than expected, so the estimate of $s$ rises --- by a tenth of the
+surprise, because one step is weak evidence.
+\end{worked}
+
+\section{Q-Learning}
+
+To choose actions without a model, the agent needs action values $Q(s, a)$, not state
+values: with $Q$, the best action is simply $\arg\max_a Q(s, a)$, with no need to know
+where each action leads.
+
+\begin{definitionbox}[Q-Learning (Watkins, 1989)]
+Initialise $Q(s, a)$ arbitrarily (say 0). In each step: in state $s$ choose $a$
+(e.g.\ $\varepsilon$-greedily from $Q$), observe reward $r$ and next state $s'$, and
+update
+\[
+Q(s, a) \leftarrow Q(s, a) + \alpha\Big[r + \gamma\max_{a'} Q(s', a') - Q(s, a)\Big]
+\]
+Under mild conditions --- every action tried in every state infinitely often, and a
+suitably decreasing $\alpha$ --- $Q$ converges to the optimal $Q^{*}$ of \chref{mdp},
+whatever exploratory policy generated the experience.
+\end{definitionbox}
+
+\begin{worked}[Three Q-Learning Updates on the Maintenance MDP]
+The agent does not know the transition probabilities of \dsref{maintenance-mdp}; it
+only experiences them. $Q$ starts at 0 everywhere; $\alpha = 0.5$, $\gamma = 0.9$.
+
+\smallskip
+\textbf{Step 1:} in H, operate; reward $+10$; stays in H.
+$Q(H, \text{op}) \leftarrow 0 + 0.5\,[10 + 0.9 \times \max(0, 0) - 0] = \mathbf{5}$.
+
+\textbf{Step 2:} in H, operate; reward $+10$; degrades to D.
+$Q(H, \text{op}) \leftarrow 5 + 0.5\,[10 + 0.9 \times \max(Q(D, \cdot)) - 5] = 5 + 0.5 \times 5 =
+\mathbf{7.5}$.
+
+\textbf{Step 3:} in D, repair; reward $-4$; back to H.
+$Q(D, \text{rep}) \leftarrow 0 + 0.5\,[-4 + 0.9 \times 7.5 - 0] = 0.5 \times 2.75 =
+\mathbf{1.375}$.
+
+\smallskip
+The repair was penalised $-4$, yet its Q-value is \emph{positive}: the update already
+credits it with the value of the healthy state it leads to. Run for 200{,}000 steps (the
+lab), Q-learning arrives at the same policy value iteration computed from the full
+model --- operate when healthy, repair when degraded or failed --- having never seen
+a single transition probability.
+\end{worked}
+
+\begin{conceptbox}[Q-Learning and SARSA: Off-Policy and On-Policy]
+Q-learning's target uses $\max_{a'} Q(s', a')$ --- the value of the \emph{best} next
+action, whether or not the agent will take it. It learns the value of the optimal
+policy while behaving exploratorily: \term{off-policy}. \textbf{SARSA} uses instead the
+action $a'$ the agent actually takes next,
+$Q(s, a) \leftarrow Q(s, a) + \alpha[r + \gamma Q(s', a') - Q(s, a)]$ (the name lists the
+quintuple $s, a, r, s', a'$). It learns the value of the policy it follows, exploration
+included: \term{on-policy}. Near a cliff edge, where an exploratory step is
+disastrous, SARSA learns a safer path than Q-learning, because it accounts for its own
+occasional random steps.
+\end{conceptbox}
+
+\section{From Tables to Deep Reinforcement Learning}
+
+A table with one entry per state--action pair is fine for three machine states and
+hopeless for a chessboard or a camera image. \term{Function approximation} replaces
+the table by a model $\hat{Q}(s, a; \mathbf{w})$ --- a linear model over state features,
+or a neural network (\chref{ann}) --- trained with the same TD targets as regression
+targets. A \term{deep Q-network} (DQN, 2015) used a convolutional network on raw
+screen pixels to learn dozens of Atari games; AlphaGo (2016) combined deep networks
+with Monte Carlo tree search and self-play. Approximation brings instability that the
+tabular case does not have, which is why those systems also needed engineering tricks
+(experience replay, target networks) that belong to a deep RL course.
+
+\begin{alertbox}[What Makes Real Reinforcement Learning Hard]
+\begin{tight}
+  \item \textbf{Samples are expensive.} Q-learning needed 200{,}000 steps on a
+        three-state problem; a real machine, network or classroom cannot be
+        experimented on that freely. Most practical RL learns in a simulator first.
+  \item \textbf{Exploration can be unsafe.} ``Try a random action'' is unacceptable
+        for a medical dose or a power grid.
+  \item \textbf{The reward is the specification.} An agent will exploit any gap
+        between the reward and what was meant.
+\end{tight}
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Never exploring.} A greedy agent can lock onto a poor action for
+        ever.
+  \item \textbf{Exploring for ever at a high rate.} Decay $\varepsilon$ over time once
+        estimates are reliable.
+  \item \textbf{Confusing Q-learning's target with SARSA's.} Max over next actions
+        versus the next action actually taken.
+  \item \textbf{A learning rate that is too large.} Values oscillate; too small and
+        learning takes for ever.
+  \item \textbf{Judging a policy by one run.} Rewards are random; average many
+        episodes, as in the bandit figure.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Reinforcement Learning}
+\lensLA{Adaptive tutoring systems choose the next exercise to maximise long-run
+learning --- an RL problem. The bandit view is already practical: which hint, which
+explanation, which reminder message works best, learned from students' responses
+while still serving them.}
+
+\lensPM{Choosing which of several process changes to trial across teams is a
+bandit: every sprint is a pull, and UCB directs trials towards the options whose
+effect is still uncertain rather than repeating the current favourite.}
+
+\lensIOT{Building energy management is a standard RL application: states from sensors,
+actions to heat or cool, rewards trading comfort against cost. Controllers are
+trained in a simulator of the building, then deployed with conservative exploration.}
+
+\lensSEC{RL agents are used for automated penetration testing (learning which
+sequence of actions compromises a network) and for adaptive defence (where to
+deploy honeypots or tighten rules). Both sides can learn, which makes the environment
+non-stationary --- a hard case for every method in this chapter.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Monte Carlo, Bandits and Q-Learning]
+\begin{lstlisting}[language=Python]
+import numpy as np
+
+rng = np.random.default_rng(0)
+
+# --- 1. Monte Carlo inference: estimate an expectation by averaging ------
+# the chance that a server survives 10 minutes healthy (it degrades with
+# probability 0.2 each minute): exact answer 0.8 ** 10 = 0.107
+for n in (100, 10_000, 1_000_000):
+    runs = rng.random((n, 10)) > 0.2            # True = stayed healthy
+    print(f"{n:9,d} simulated runs: P(survive 10 min) ~ "
+          f"{runs.all(axis=1).mean():.4f}")
+
+
+# --- 2. exploration vs exploitation: a 10-armed bandit -------------------
+def bandit(strategy, steps=1000, arms=10, runs=300):
+    total = np.zeros(steps)
+    for _ in range(runs):
+        true = rng.normal(0, 1, arms)           # unknown mean payoffs
+        Q, N = np.zeros(arms), np.zeros(arms)
+        for t in range(1, steps + 1):
+            if strategy == "greedy":
+                a = int(np.argmax(Q))
+            elif strategy == "e-greedy":
+                a = (int(rng.integers(arms)) if rng.random() < 0.1
+                     else int(np.argmax(Q)))
+            else:                               # UCB, c = 2
+                ucb = Q + 2 * np.sqrt(np.log(t) / np.maximum(N, 1e-9))
+                a = int(np.argmax(np.where(N == 0, np.inf, ucb)))
+            r = rng.normal(true[a], 1)
+            N[a] += 1
+            Q[a] += (r - Q[a]) / N[a]           # incremental average
+            total[t - 1] += r
+    return total / runs
+
+
+for s in ("greedy", "e-greedy", "ucb"):
+    avg = bandit(s)
+    print(f"{s:8s}: mean reward, steps 1-100 {avg[:100].mean():.2f}; "
+          f"steps 901-1000 {avg[900:].mean():.2f}")
+
+# --- 3. Q-learning on the maintenance MDP, without being told P ----------
+P = {("H", "operate"): ([0.8, 0.2, 0.0], 10),
+     ("D", "operate"): ([0.0, 0.5, 0.5], 5),
+     ("F", "operate"): ([0.0, 0.0, 1.0], 0),
+     ("H", "repair"): ([1, 0, 0], -2), ("D", "repair"): ([1, 0, 0], -4),
+     ("F", "repair"): ([1, 0, 0], -15)}
+S, A = ["H", "D", "F"], ["operate", "repair"]
+
+
+def env_step(s, a):                         # the agent only sees samples
+    probs, reward = P[(S[s], A[a])]
+    return int(rng.choice(3, p=probs)), reward
+
+
+Q = np.zeros((3, 2))
+alpha, gamma, eps = 0.1, 0.9, 0.1
+s = 0
+for t in range(200_000):
+    a = int(rng.integers(2)) if rng.random() < eps else int(Q[s].argmax())
+    s2, r = env_step(s, a)
+    Q[s, a] += alpha * (r + gamma * Q[s2].max() - Q[s, a])   # Q-learning
+    s = s2
+print("learned Q (rows H, D, F; columns operate, repair):")
+print(Q.round(1))
+print("learned policy:", dict(zip(S, [A[a] for a in Q.argmax(axis=1)])))
+\end{lstlisting}
+The learned Q-values approach the true $Q^{*}$ (for H: operate 78.6, repair 68.8) but
+do not reach them exactly, because $\alpha$ stays at 0.1 and the agent keeps
+exploring. Try $\varepsilon = 0$: does Q-learning still find the repair policy?
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Returns of 10, 4 and 7 followed three visits to a state. What is the Monte
+        Carlo estimate of its value, and what does it become after a fourth return of
+        3?
+  \item Why can a purely greedy bandit strategy perform badly for ever?
+  \item $Q(s, a) = 4$; the agent receives $r = 1$ and lands in $s'$ where the best
+        action value is 6. With $\alpha = 0.5$ and $\gamma = 0.9$, what is the new
+        $Q(s, a)$?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Reinforcement learning finds good policies from experience, without a model
+        of the environment and without labels.
+  \item Monte Carlo methods average the returns observed after visiting a state;
+        they are unbiased but wait for episodes to end.
+  \item Exploration versus exploitation: greedy action selection can lock in a poor
+        choice; $\varepsilon$-greedy explores at a fixed rate; UCB explores where
+        estimates are most uncertain.
+  \item TD learning updates after every step towards $r + \gamma V(s')$,
+        bootstrapping from its own estimates.
+  \item Q-learning updates action values towards $r + \gamma\max_{a'}Q(s', a')$ and
+        converges to $Q^{*}$ off-policy; SARSA is its on-policy counterpart.
+  \item Function approximation, with neural networks, extends RL to huge state
+        spaces: deep reinforcement learning.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Q-learning is: (a)~on-policy (b)~off-policy (c)~a supervised
+        method (d)~a planning method that needs the model.
+  \item \textbf{(MCQ)} In UCB, an arm that has been tried few times receives:
+        (a)~a smaller bonus (b)~a larger bonus (c)~no bonus (d)~a negative value.
+  \item \textbf{(MCQ)} The TD error is: (a)~$r - V(s)$ (b)~$r + \gamma V(s') - V(s)$
+        (c)~$V(s') - V(s)$ (d)~$G - r$.
+  \item \textbf{(Short)} Compare Monte Carlo and TD learning: when does each update,
+        and what does each target use?
+  \item \textbf{(Short)} Explain ``optimism under uncertainty'' with reference to UCB.
+  \item \textbf{(Short)} Why is exploration dangerous in some real applications, and
+        what is done about it?
+  \item \textbf{(Applied)} For the advert example, compute the UCB scores with $c = 2$
+        and state which advert is shown. Then suppose it is shown and not clicked
+        (reward 0): recompute its average.
+  \item \textbf{(Applied)} Continue the Q-learning worked example with step 4: in H,
+        repair, reward $-2$, stays in H. Compute the new $Q(H, \text{repair})$ and
+        state which action is now greedy in H.
+\end{reviewq}

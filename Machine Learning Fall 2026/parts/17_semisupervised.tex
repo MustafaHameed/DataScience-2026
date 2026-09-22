@@ -1,0 +1,413 @@
+%=====================================================================
+\chapter{Semi-Supervised Learning and the EM Algorithm}\label{ch:semisup}
+%=====================================================================
+\locator{4}{Part IV --- Learning Without Full Labels}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} when unlabelled examples can improve a classifier, and the
+        assumptions that make it possible.
+  \item \textbf{Describe} self-training, and \textbf{state} its main risk.
+  \item \textbf{Formulate} a Gaussian mixture model with hidden cluster labels.
+  \item \textbf{Perform} an iteration of the EM algorithm by hand: responsibilities
+        in the E-step, weighted means in the M-step.
+  \item \textbf{Apply} EM to a mixture of labelled and unlabelled data, and
+        \textbf{relate} $k$-means to EM.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{math} (the Gaussian, maximum likelihood), \chref{bayes} (posteriors and
+naive Bayes) and \chref{clustering} ($k$-means). The algorithm of this chapter
+returns in \chref{hmm}.
+\end{prereq}
+
+\begin{keyterms}
+semi-supervised learning $\bullet$ smoothness, cluster and manifold assumptions
+$\bullet$ self-training (pseudo-labelling) $\bullet$ confirmation bias $\bullet$
+latent (hidden) variable $\bullet$ mixture model $\bullet$ Gaussian mixture
+$\bullet$ mixing weight $\bullet$ responsibility $\bullet$ EM algorithm
+$\bullet$ E-step $\bullet$ M-step $\bullet$ local maximum $\bullet$ hard vs.\ soft
+assignment $\bullet$ label propagation
+\end{keyterms}
+
+\section{Few Labels, Many Examples}
+
+Labels are expensive. A radiologist labels a scan; a security analyst investigates a
+binary; a teacher marks an essay. Unlabelled examples are nearly free: every scan in
+the archive, every file on every machine, every essay ever submitted.
+\term{Semi-supervised learning} uses both --- a small labelled set and a large
+unlabelled one --- to learn a better classifier than the labelled set alone would
+give.
+
+How can examples with no labels possibly help? Only if the way the examples are
+spread out says something about where the classes lie. Three assumptions, all
+versions of the same idea, make that true:
+\begin{tight}
+  \item \textbf{Smoothness:} examples close together are likely to share a label.
+  \item \textbf{Cluster:} examples form clusters, and a cluster tends to be one
+        class --- so the decision boundary should pass through low-density gaps,
+        not through the middle of a cluster.
+  \item \textbf{Manifold:} high-dimensional data lies near a lower-dimensional
+        surface, and distances along that surface are what matter.
+\end{tight}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  unl/.style={circle, fill=gray!40, inner sep=1.2pt},
+  la/.style={circle, fill=secondary, inner sep=2.6pt, draw=white, line width=0.6pt},
+  lb/.style={rectangle, fill=accent, inner sep=2.8pt, draw=white, line width=0.6pt}]
+\foreach \ox/\ttl in {0/{Two labels only}, 7.2/{Two labels + unlabelled data}}{
+  \begin{scope}[shift={(\ox,0)}]
+  \draw[rounded corners=4pt, gray!40] (-0.2,-0.2) rectangle (6.2,4.2);
+  \node[font=\scriptsize\bfseries, text=primary] at (3.0,4.6) {\ttl};
+  \foreach \x/\y in {0.8/1.9,1.1/2.6,1.4/1.4,1.7/2.2,1.2/3.1,2.0/2.9,0.6/2.4,1.9/1.6,2.3/2.4,1.5/3.4,
+                     0.9/1.2,2.4/3.2,2.1/1.1,1.0/3.6,2.6/1.8}{\node[unl] at (\x,\y) {};}
+  \foreach \x/\y in {4.1/2.2,4.4/1.4,4.7/2.8,5.0/1.9,4.2/3.2,5.3/2.5,4.8/1.1,5.5/3.2,3.9/1.6,
+                     5.1/3.6,4.5/0.8,5.6/1.6,4.3/2.6,5.4/0.9,3.8/3.0}{\node[unl] at (\x,\y) {};}
+  \node[la] at (2.3,2.4) {}; \node[lb] at (3.9,1.6) {};
+  \end{scope}}
+\draw[primary, line width=1.2pt, dashed] (3.62,0) -- (2.58,4.0);
+\node[font=\tiny, primary, anchor=north, align=center] at (3.1,-0.25)
+     {halfway between the two labels:\\cuts through the left cluster};
+\draw[greenhl!70!black, line width=1.4pt] (7.2+3.2,0) -- (7.2+3.2,4.0);
+\node[font=\tiny, greenhl!45!black, anchor=north, align=center] at (7.2+3.2,-0.25)
+     {through the empty gap:\\each cluster one class};
+\end{tikzpicture}}%
+{The cluster assumption. With two labelled points (blue circle, red square) a classifier
+puts the boundary between them, through the middle of a cluster. The unlabelled points
+(grey) reveal two clusters and a gap, and the boundary belongs in the gap.}{cluster-assumption}
+
+\begin{alertbox}[Unlabelled Data Can Also Hurt]
+When the assumptions are false --- the classes overlap in one blob, or a cluster
+contains both classes --- unlabelled data pushes the boundary to the wrong place,
+and the semi-supervised model can be \emph{worse} than one trained on the labels
+alone. Always compare against the labelled-only baseline on a held-out labelled test
+set.
+\end{alertbox}
+
+\section{Self-Training}
+
+The simplest method needs no new theory. \term{Self-training} (pseudo-labelling):
+\begin{tightnum}
+  \item train a classifier on the labelled examples;
+  \item predict the unlabelled examples, and add those predicted with high
+        confidence to the training set, with their predicted labels;
+  \item retrain, and repeat until no confident predictions remain.
+\end{tightnum}
+It works with any classifier that gives probabilities, and on the handwritten digits
+of this chapter's lab it lifts accuracy from 80\% with 50 labels to 90\% using the
+1{,}207 unlabelled images as well (all 1{,}257 labels give 97\%). Its risk is
+\term{confirmation bias}: an early confident mistake becomes a training label, is
+reinforced at every round, and is never corrected. A high confidence threshold
+limits the damage.
+
+\section{Mixture Models and Hidden Variables}
+
+A more principled approach models how the data was generated. Suppose each example
+was produced by first picking a class (or cluster) $z$, then drawing $\mathbf{x}$
+from that class's distribution. For labelled examples $z$ is observed; for
+unlabelled ones it is a \term{hidden} (latent) variable.
+
+\begin{definitionbox}[Gaussian Mixture Model]
+A \term{mixture} of $k$ Gaussians has, for each component $j$, a \term{mixing
+weight} $\pi_j$ (the probability of choosing it, with $\sum_j \pi_j = 1$), a mean
+$\boldsymbol{\mu}_j$ and a covariance $\Sigma_j$. The probability density of an example
+is
+\[
+p(\mathbf{x}) = \sum_{j=1}^{k} \pi_j\,\mathcal{N}(\mathbf{x} \mid \boldsymbol{\mu}_j, \Sigma_j)
+\]
+If we knew which component produced each example, fitting would be easy: average
+each component's own examples. If we knew the parameters, we could compute for each
+example the probability that each component produced it. We know neither --- and
+the EM algorithm alternates between the two.
+\end{definitionbox}
+
+\section{The EM Algorithm}
+
+\begin{definitionbox}[Expectation--Maximisation (EM)]
+Start from initial parameter guesses. Repeat until the likelihood stops improving:
+\begin{tight}
+  \item \textbf{E-step:} with the current parameters, compute for every example
+        $i$ and component $j$ the \term{responsibility} $r_{ij}$ below --- the
+        posterior probability that component $j$ produced example $i$.
+  \item \textbf{M-step:} re-estimate each component from \emph{all} examples,
+        weighted by responsibility: $\boldsymbol{\mu}_j = \sum_i r_{ij}\mathbf{x}_i / \sum_i r_{ij}$,
+        $\pi_j = \tfrac{1}{n}\sum_i r_{ij}$, and $\Sigma_j$ likewise.
+\end{tight}
+\[
+r_{ij} = \frac{\pi_j\,\mathcal{N}(\mathbf{x}_i \mid \boldsymbol{\mu}_j, \Sigma_j)}
+              {\sum_{l}\pi_l\,\mathcal{N}(\mathbf{x}_i \mid \boldsymbol{\mu}_l, \Sigma_l)}
+\]
+Each iteration never decreases the likelihood of the data, so EM converges --- to a
+\term{local maximum}, which depends on the starting point.
+\end{definitionbox}
+
+\begin{worked}[EM for Two Means (Mitchell's Example, in Numbers)]
+Six values: $x = 1, 2, 3, 7, 8, 9$. Model: two Gaussians with known $\sigma = 1$ and equal
+weights; unknown means. Start from $\mu_1 = 2$, $\mu_2 = 5$.
+
+\smallskip
+\textbf{E-step.} For each $x$, the densities are proportional to
+$e^{-(x-\mu)^2/2}$:
+\begin{tight}
+  \item $x = 1$: $e^{-0.5} = 0.607$ against $e^{-8} = 0.0003$ $\Rightarrow$ $r_1 = 0.999$
+  \item $x = 2$: $e^{0} = 1$ against $e^{-4.5} = 0.011$ $\Rightarrow$ $r_1 = 0.989$
+  \item $x = 3$: $e^{-0.5} = 0.607$ against $e^{-2} = 0.135$ $\Rightarrow$ $r_1 = 0.818$
+  \item $x = 7, 8, 9$: component 2 is overwhelmingly likelier $\Rightarrow$ $r_1 \approx 0$
+\end{tight}
+\textbf{M-step.} Responsibility-weighted means:
+\[
+\mu_1 = \frac{0.999(1) + 0.989(2) + 0.818(3)}{0.999 + 0.989 + 0.818} = \frac{5.430}{2.806} = \mathbf{1.935}
+\]
+\[
+\mu_2 = \frac{0.001(1) + 0.011(2) + 0.182(3) + 7 + 8 + 9}{0.001 + 0.011 + 0.182 + 3} = \frac{24.570}{3.194} = \mathbf{7.693}
+\]
+Note that $x = 3$ contributes 18\% of itself to component 2: a \emph{soft}
+assignment.
+
+\smallskip
+\textbf{Iteration 2} moves the means to $2.000$ and $8.000$, after which nothing
+changes. The log-likelihood of the data rises from $-24.96$ at the starting means to
+$-11.82$ after one iteration and $-11.67$ at convergence. EM has found the two groups
+\{1, 2, 3\} and \{7, 8, 9\}.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.3cm},
+  width=6.9cm, height=4.4cm, axis lines=left,
+  tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries}, xlabel={$x$},
+  xmin=-1, xmax=11, ymin=0, ymax=0.46, ytick=\empty]
+\nextgroupplot[title={Start: $\mu_1 = 2$, $\mu_2 = 5$}]
+\addplot[secondary, line width=1.2pt, domain=-1:11, samples=120] {0.5*exp(-(x-2)^2/2)/sqrt(2*pi)*2};
+\addplot[accent, line width=1.2pt, domain=-1:11, samples=120] {0.5*exp(-(x-5)^2/2)/sqrt(2*pi)*2};
+\addplot[only marks, mark=*, mark size=2.2pt, secondary] coordinates {(1,0.02)(2,0.02)};
+\addplot[only marks, mark=*, mark size=2.2pt, purplehl] coordinates {(3,0.02)};
+\addplot[only marks, mark=*, mark size=2.2pt, accent] coordinates {(7,0.02)(8,0.02)(9,0.02)};
+\draw[purplehl, line width=0.4pt] (axis cs:3,0.04) -- (axis cs:3.4,0.36);
+\node[font=\tiny, purplehl, anchor=south west] at (axis cs:3.3,0.36) {$x = 3$: 82\% / 18\%};
+\nextgroupplot[title={After EM: $\mu_1 = 2$, $\mu_2 = 8$}]
+\addplot[secondary, line width=1.2pt, domain=-1:11, samples=120] {0.5*exp(-(x-2)^2/2)/sqrt(2*pi)*2};
+\addplot[accent, line width=1.2pt, domain=-1:11, samples=120] {0.5*exp(-(x-8)^2/2)/sqrt(2*pi)*2};
+\addplot[only marks, mark=*, mark size=2.2pt, secondary] coordinates {(1,0.02)(2,0.02)(3,0.02)};
+\addplot[only marks, mark=*, mark size=2.2pt, accent] coordinates {(7,0.02)(8,0.02)(9,0.02)};
+\end{groupplot}
+\end{tikzpicture}}%
+{EM on the worked example. Each point is coloured by its responsibilities; $x = 3$ starts
+out shared between the components. Two iterations move the second Gaussian onto the group
+it explains.}{em-1d}
+
+\begin{conceptbox}[$k$-Means Is EM With Hard Assignments]
+Replace the E-step's probabilities by a hard choice --- responsibility 1 for the
+nearest mean, 0 for the others --- and the M-step becomes ``each mean is the average
+of its assigned points''. That is exactly $k$-means (\chref{clustering}). EM for
+Gaussian mixtures is the soft, probabilistic generalisation: clusters may overlap,
+may have different sizes and elongated shapes (through $\Sigma_j$), and each example
+gets a probability of membership instead of a verdict.
+\end{conceptbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  st/.style={rounded corners=4pt, draw=#1, line width=1pt, fill=#1!9, text=#1!55!black,
+             align=center, minimum width=4.4cm, minimum height=1.4cm, font=\scriptsize},
+  a/.style={-{Stealth[length=2.2mm]}, gray!60, line width=1pt}]
+\node[st=secondary] (e) at (0,0) {\textbf{E-step}\\[2pt]fill in the hidden labels\\as probabilities $r_{ij}$};
+\node[st=greenhl!70!black] (m) at (6.4,0) {\textbf{M-step}\\[2pt]re-fit the parameters\\as if the $r_{ij}$ were counts};
+\draw[a] (e.north east) .. controls +(1.4,0.9) and +(-1.4,0.9) .. node[above, font=\tiny] {soft labels} (m.north west);
+\draw[a] (m.south west) .. controls +(-1.4,-0.9) and +(1.4,-0.9) .. node[below, font=\tiny] {new parameters} (e.south east);
+\node[anchor=west, align=left, font=\scriptsize, text=gray!55!black] at (9.0,0)
+     {The same two steps fit:\\[2pt]
+      \textbullet\ Gaussian mixtures\\
+      \textbullet\ naive Bayes plus unlabelled data\\
+      \textbullet\ hidden Markov models (Ch.\ 18)\\
+      \textbullet\ $k$-means (hard assignments)};
+\end{tikzpicture}}%
+{The EM loop. Whenever a model would be easy to fit if some variable were observed, EM
+fills that variable in with probabilities and fits as if it were observed.}{em-loop}
+
+\section{EM With Labelled and Unlabelled Data}
+
+This is the method the HEC outline names. Nigam, McCallum, Thrun and Mitchell (2000)
+used it to classify web pages and news articles from a handful of labelled documents
+and thousands of unlabelled ones. The recipe:
+\begin{tightnum}
+  \item Fit the model --- naive Bayes for text, or a Gaussian per class --- on the
+        labelled examples alone.
+  \item \textbf{E-step:} give each \emph{unlabelled} example a probability for each
+        class from the current model. Labelled examples keep their known labels
+        (responsibility 1 for their class, 0 for the others).
+  \item \textbf{M-step:} refit the model on all examples, labelled ones counting in
+        full and unlabelled ones fractionally, by their responsibilities.
+  \item Repeat until the parameters settle.
+\end{tightnum}
+The labelled examples anchor each component to a class --- they say \emph{which}
+cluster is which --- and the unlabelled examples say \emph{where} the clusters really
+are. The authors report that adding unlabelled documents to small labelled sets
+reduced text-classification error by up to 30\%.
+
+\begin{worked}[Two Labels and Four Unlabelled Points]
+The six values of the previous example, but now $x = 3$ is labelled class A and $x = 7$
+class B; the rest are unlabelled.
+
+\smallskip
+\textbf{Labelled data alone} gives $\mu_A = 3$, $\mu_B = 7$, and a boundary at 5.
+
+\textbf{E-step.} $x = 1$ and $x = 2$ are far likelier under A, and $x = 8$ and $x = 9$
+under B; $x = 3$ and $x = 7$ are clamped to their labels.
+
+\textbf{M-step.} $\mu_A = (1 + 2 + 3)/3 = 2$ and $\mu_B = (7 + 8 + 9)/3 = 8$, to
+within a thousandth. The next iteration changes nothing.
+
+\smallskip
+The class means moved from 3 and 7 to \textbf{2 and 8} using points nobody labelled.
+Here the boundary stays at 5, but it would not if the two groups had different
+spreads or sizes --- and in higher dimensions the direction of the boundary moves too.
+\end{worked}
+
+\textbf{Graph-based methods} such as \term{label propagation} take the smoothness
+assumption literally: connect each example to its nearest neighbours in a graph, fix
+the labelled nodes, and let labels diffuse along the edges until they settle. They
+follow curved clusters that a Gaussian mixture cannot represent.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Skipping the labelled-only baseline.} Unlabelled data can make a
+        model worse; prove that it helped.
+  \item \textbf{Evaluating on pseudo-labels.} Test only on examples with genuine
+        labels, set aside before training.
+  \item \textbf{A low self-training threshold.} Early mistakes become permanent
+        labels.
+  \item \textbf{Running EM once.} It finds a local maximum; start it several times
+        and keep the highest likelihood.
+  \item \textbf{A mixture with the wrong shape.} If the classes are not roughly
+        Gaussian clusters, the mixture's components will not line up with them.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Semi-Supervised Learning}
+\lensLA{A few hundred essays have been marked by a teacher; tens of thousands have
+not. Self-training a quality classifier on both is attractive, and dangerous: an
+early confident mistake about a style of writing becomes a rule. Keep a human in the
+loop for the pseudo-labels that change decisions.}
+
+\lensPM{Only a few projects have a formal post-mortem label (``failed because of
+scope creep''), but all projects have metrics. EM over labelled and unlabelled
+projects estimates the typical metric profile of each failure mode from far more than
+the labelled handful.}
+
+\lensIOT{Engineers can label only a few fault episodes, but sensors record years of
+unlabelled operation. A Gaussian mixture of normal operating modes, anchored by the
+few labelled faults, is a practical starting point for a fault detector.}
+
+\lensSEC{Security labels are scarce, slow and expensive --- each needs an analyst.
+Semi-supervised malware and intrusion classifiers are standard, and so is their
+failure mode: an attacker who knows the model self-trains can feed it examples
+designed to be pseudo-labelled benign.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[EM by Hand, Then Fifty Labels and a Thousand Guesses]
+\begin{lstlisting}[language=Python]
+import numpy as np
+from sklearn.datasets import load_digits
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.semi_supervised import SelfTrainingClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+# --- 1. EM for two Gaussian means (sigma = 1 known, equal weights) -------
+x = np.array([1.0, 2.0, 3.0, 7.0, 8.0, 9.0])
+mu = np.array([2.0, 5.0])                        # initial guesses
+for it in range(1, 5):
+    dens = np.exp(-0.5 * (x[:, None] - mu[None, :]) ** 2)   # E-step
+    r = dens / dens.sum(axis=1, keepdims=True)    # responsibilities
+    ll = np.log(dens.mean(axis=1) / np.sqrt(2 * np.pi)).sum()
+    mu = (r * x[:, None]).sum(axis=0) / r.sum(axis=0)       # M-step
+    print(f"iteration {it}: log-likelihood {ll:8.3f} -> mu = {mu.round(3)}")
+
+# --- 2. two labels, four unlabelled points -------------------------------
+labelled = {2: 0, 3: 1}                 # x=3 is class A (0), x=7 class B (1)
+mu = np.array([x[2], x[3]])             # labelled points alone: 3 and 7
+print("from the two labels alone: mu =", mu)
+for it in range(10):
+    dens = np.exp(-0.5 * (x[:, None] - mu[None, :]) ** 2)
+    r = dens / dens.sum(axis=1, keepdims=True)
+    for i, c in labelled.items():       # a labelled point keeps its label
+        r[i] = np.eye(2)[c]
+    mu = (r * x[:, None]).sum(axis=0) / r.sum(axis=0)
+print("EM with the unlabelled points too: mu =", mu.round(3))
+
+# --- 3. self-training with 50 labels out of 1,257 ------------------------
+X, y = load_digits(return_X_y=True)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3,
+                                          random_state=0, stratify=y)
+rng = np.random.default_rng(0)
+keep = rng.choice(len(y_tr), size=50, replace=False)
+y_part = np.full_like(y_tr, -1)                 # -1 means "unlabelled"
+y_part[keep] = y_tr[keep]
+base = make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000))
+only = base.fit(X_tr[keep], y_tr[keep]).score(X_te, y_te)
+self_t = SelfTrainingClassifier(
+    make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000)),
+    threshold=0.9).fit(X_tr, y_part)
+print(f"50 labels only: {only:.3f}   self-training with the rest "
+      f"unlabelled: {self_t.score(X_te, y_te):.3f}   "
+      f"all {len(y_tr)} labels: "
+      f"{base.fit(X_tr, y_tr).score(X_te, y_te):.3f}")
+\end{lstlisting}
+Change the self-training \texttt{threshold} to 0.5 and then 0.99. Which is better, and
+what does the answer say about confirmation bias?
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item State the cluster assumption, and give an example where it fails.
+  \item In one EM iteration, what does the E-step compute and what does the M-step
+        compute?
+  \item How does $k$-means differ from EM for a Gaussian mixture?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Semi-supervised learning uses many unlabelled examples to improve a
+        classifier trained on few labels, relying on the smoothness, cluster or
+        manifold assumption; when those fail it can hurt.
+  \item Self-training adds confident predictions as labels and retrains; its risk is
+        confirmation bias.
+  \item A Gaussian mixture explains data as coming from hidden components, each with
+        a weight, mean and covariance.
+  \item EM alternates an E-step (responsibilities: soft assignments) and an M-step
+        (responsibility-weighted re-estimates), never lowering the likelihood and
+        converging to a local maximum; $k$-means is its hard-assignment special case.
+  \item With labelled and unlabelled data, labelled examples keep their labels in
+        the E-step and anchor each component to a class.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} In the EM algorithm, the responsibilities are computed in:
+        (a)~the M-step (b)~the E-step (c)~the initialisation (d)~neither step.
+  \item \textbf{(MCQ)} $k$-means corresponds to EM with: (a)~soft assignments
+        (b)~hard assignments (c)~no M-step (d)~labelled data only.
+  \item \textbf{(MCQ)} Self-training's main risk is: (a)~underfitting (b)~slow
+        prediction (c)~confirmation bias (d)~the curse of dimensionality.
+  \item \textbf{(Short)} Why can unlabelled data improve a classifier at all?
+  \item \textbf{(Short)} Explain why EM can converge to different answers from
+        different starting points, and what to do about it.
+  \item \textbf{(Short)} In semi-supervised EM, what role do the labelled examples
+        play that the unlabelled ones cannot?
+  \item \textbf{(Applied)} Repeat the first EM iteration of the worked example with
+        initial means $\mu_1 = 4$, $\mu_2 = 6$. Where do the means go?
+  \item \textbf{(Applied)} For the values $0, 1, 5, 6$ with $\sigma = 1$ and equal
+        weights, start EM from $\mu_1 = 0$, $\mu_2 = 1$ and perform two iterations.
+        Comment on the result.
+\end{reviewq}

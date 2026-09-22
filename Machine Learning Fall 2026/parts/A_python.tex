@@ -1,0 +1,142 @@
+%=====================================================================
+\chapter{Python and scikit-learn Reference}\label{app:python}
+%=====================================================================
+\normalfigures
+
+Everything the labs use, on a few pages. Each lab is also a runnable file in the
+\texttt{code/} folder, named after its chapter.
+
+\section{Setting Up}
+
+Install the Anaconda distribution (Python 3.10 or later); it includes NumPy, pandas,
+SciPy, Matplotlib, scikit-learn and Jupyter. Check the installation with:
+\begin{lstlisting}[language=Python]
+import numpy, pandas, scipy, sklearn
+print(numpy.__version__, pandas.__version__, sklearn.__version__)
+\end{lstlisting}
+The labs were tested with NumPy 2.3 and scikit-learn 1.7. Run a lab file from a
+terminal with \texttt{python ch05\_least\_squares\_three\_ways.py}, or paste it into a
+notebook cell.
+
+\section{NumPy in Ten Lines}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{6.0cm}L{9.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Code} & \textbf{What it does} \\
+\midrule
+\endhead
+\texttt{x = np.array([1.0, 2.0, 3.0])} & A vector \\
+\texttt{X = np.array([[1, 2], [3, 4]])} & A matrix: rows are examples \\
+\texttt{X.shape}, \texttt{X[:, 0]}, \texttt{X[1]} & Dimensions; first column; second row \\
+\texttt{w @ x}, \texttt{X @ w} & Dot product; matrix--vector product (\chref{math}) \\
+\texttt{x.mean()}, \texttt{x.std()}, \texttt{x.sum(axis=0)} & Summaries; \texttt{axis=0} runs down columns \\
+\texttt{np.linalg.norm(x - z)} & Euclidean distance \\
+\texttt{np.linalg.solve(A, b)} & Solve $A\mathbf{x} = \mathbf{b}$ (\chref{linreg}, \chref{mdp}) \\
+\texttt{np.linalg.eigh(S)} & Eigenvalues and eigenvectors of a symmetric matrix (\chref{pcasom}) \\
+\texttt{rng = np.random.default\_rng(0)} & A seeded random generator: \texttt{rng.random}, \texttt{rng.normal}, \texttt{rng.choice} \\
+\texttt{np.argmax(q)}, \texttt{np.argsort(-v)} & Index of the largest; indices from largest to smallest \\
+\bottomrule
+\end{longtable}
+
+\section{pandas in Ten Lines}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{6.0cm}L{9.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Code} & \textbf{What it does} \\
+\midrule
+\endhead
+\texttt{df = pd.read\_csv("file.csv")} & Load a table \\
+\texttt{df.head()}, \texttt{df.info()}, \texttt{df.describe()} & First rows; types and missing counts; summary statistics \\
+\texttt{df["col"]}, \texttt{df[["a", "b"]]} & One column (a Series); several (a DataFrame) \\
+\texttt{df[df.col > 5]} & Rows meeting a condition \\
+\texttt{df.col.value\_counts(}\newline\texttt{\ \ normalize=True)} & Class proportions --- check for imbalance \\
+\texttt{df.isna().sum()} & Missing values per column \\
+\texttt{df.groupby("g").col.mean()} & Mean per group (per-group evaluation, \chref{ethics}) \\
+\texttt{X = df.drop(columns="y")}, \texttt{y = df["y"]} & Features and label \\
+\texttt{pd.get\_dummies(df, columns=["c"])} & One-hot encoding outside a pipeline (inside, use \texttt{OneHotEncoder}) \\
+\bottomrule
+\end{longtable}
+
+\section{The scikit-learn Pattern}
+
+Every lab follows the same shape. Learn it once:
+\begin{lstlisting}[language=Python]
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+
+X_tr, X_te, y_tr, y_te = train_test_split(       # 1. split first
+    X, y, test_size=0.25, stratify=y, random_state=0)
+model = make_pipeline(StandardScaler(),           # 2. prepare + model
+                      LogisticRegression(max_iter=1000))
+scores = cross_val_score(model, X_tr, y_tr, cv=5)  # 3. compare by CV
+model.fit(X_tr, y_tr)                             # 4. fit on training
+print(scores.mean(), model.score(X_te, y_te))     # 5. test once
+\end{lstlisting}
+
+\section{Models, Chapter by Chapter}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{1.1cm}L{5.0cm}L{8.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Ch} & \textbf{Class} & \textbf{Key settings (hyperparameters)} \\
+\midrule
+\endhead
+5 & \texttt{LinearRegression} & none; \texttt{Ridge(alpha)}, \texttt{Lasso(alpha)} add a penalty \\
+6 & \texttt{LogisticRegression} & \texttt{C} $= 1/\lambda$; \texttt{class\_weight="balanced"}; \texttt{max\_iter} \\
+9 & \texttt{DecisionTreeClassifier} & \texttt{criterion} ("gini", "entropy"), \texttt{max\_depth}, \texttt{min\_samples\_leaf}, \texttt{ccp\_alpha} \\
+10 & \texttt{GaussianNB},\newline \texttt{MultinomialNB} &\texttt{alpha} (smoothing) for multinomial \\
+11 & \texttt{KNeighborsClassifier} & \texttt{n\_neighbors}, \texttt{weights} ("uniform", "distance"), \texttt{metric} \\
+12 & \texttt{SVC} & \texttt{kernel}, \texttt{C}, \texttt{gamma}, \texttt{degree}; \texttt{probability=True} \\
+13 & \texttt{MLPClassifier} & \texttt{hidden\_layer\_sizes}, \texttt{alpha} (weight decay), \texttt{early\_stopping}, \texttt{learning\_rate\_init} \\
+14 & \texttt{RandomForestClassifier} & \texttt{n\_estimators}, \texttt{max\_features}, \texttt{oob\_score=True} \\
+14 & \texttt{AdaBoostClassifier},\newline \texttt{GradientBoostingClassifier} &\texttt{n\_estimators}, \texttt{learning\_rate}, base tree depth \\
+15 & \texttt{KMeans},\newline \texttt{AgglomerativeClustering} &\texttt{n\_clusters}, \texttt{n\_init}; \texttt{linkage} \\
+16 & \texttt{PCA} & \texttt{n\_components} (an integer, or a fraction of variance such as 0.9) \\
+17 & \texttt{GaussianMixture},\newline \texttt{SelfTrainingClassifier} &\texttt{n\_components}, \texttt{covariance\_type}; \texttt{threshold} \\
+\bottomrule
+\end{longtable}
+
+\section{Evaluation Calls}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{6.4cm}L{8.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Code} & \textbf{Returns} \\
+\midrule
+\endhead
+\texttt{confusion\_matrix(y, pred).ravel()} & TN, FP, FN, TP for two classes \\
+\texttt{classification\_report(y, pred)} & Precision, recall, $F_1$ per class; macro and weighted averages \\
+\texttt{roc\_auc\_score(y, proba)} & ROC-AUC from probabilities \\
+\texttt{average\_precision\_score(y, proba)} & Area under the precision--recall curve \\
+\texttt{mean\_absolute\_error}, \texttt{mean\_squared\_error}, \texttt{r2\_score} & Regression metrics \\
+\texttt{silhouette\_score(X, labels)} & Mean silhouette of a clustering \\
+\texttt{adjusted\_rand\_score(truth, labels)} & Agreement of a clustering with known labels \\
+\texttt{GridSearchCV(model, grid, cv=5)} & Cross-validated search; \texttt{.best\_params\_}, \texttt{.best\_score\_} \\
+\bottomrule
+\end{longtable}
+
+\section{Errors Students Meet Every Semester}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{5.4cm}L{9.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Message} & \textbf{Usual cause and fix} \\
+\midrule
+\endhead
+\texttt{ConvergenceWarning} & The optimiser stopped early: scale the features, or raise \texttt{max\_iter} \\
+\texttt{could not convert string to float} & A categorical column reached the model: one-hot encode it \\
+\texttt{Input contains NaN} & Missing values: add \texttt{SimpleImputer} to the pipeline \\
+\texttt{Expected 2D array, got 1D} & One example or one feature: use \texttt{x.reshape(1, -1)} or \texttt{X[:, [j]]} \\
+Accuracy suspiciously high & Leakage (\chref{workflow}) or an imbalanced baseline (\chref{evaluation}) \\
+Different results every run & No \texttt{random\_state}: fix the seeds \\
+\bottomrule
+\end{longtable}

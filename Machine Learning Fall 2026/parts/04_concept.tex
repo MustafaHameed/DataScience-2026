@@ -1,0 +1,599 @@
+%=====================================================================
+\chapter{Concept Learning and the Version Space}\label{ch:concept}
+%=====================================================================
+\locator{1}{Part I --- Foundations}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Represent} a concept as a conjunction of attribute constraints,
+        and \textbf{order} hypotheses from specific to general.
+  \item \textbf{Trace} the \textsc{Find-S} algorithm on a set of training
+        examples, and \textbf{state} its limitations.
+  \item \textbf{Define} the version space, and \textbf{trace} the
+        \textsc{Candidate-Elimination} algorithm through the $S$ and $G$
+        boundaries by hand.
+  \item \textbf{Classify} a new instance with a partially learned concept, and
+        \textbf{choose} the most informative query.
+  \item \textbf{Explain} why an unbiased learner cannot generalise, and
+        \textbf{state} the inductive bias of \textsc{Candidate-Elimination}.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{introduction} (hypotheses, hypothesis spaces and inductive bias,
+introduced informally in \dsref{hypothesis-space}). This chapter makes those
+ideas exact.
+\end{prereq}
+
+\begin{keyterms}
+concept learning $\bullet$ instance space $\bullet$ target concept $\bullet$
+attribute constraint $\bullet$ consistent hypothesis $\bullet$
+more-general-than-or-equal-to $\bullet$ \textsc{Find-S} $\bullet$ version space
+$\bullet$ \textsc{List-Then-Eliminate} $\bullet$ general boundary $G$ $\bullet$
+specific boundary $S$ $\bullet$ \textsc{Candidate-Elimination} $\bullet$ query
+$\bullet$ unbiased learner $\bullet$ inductive bias
+\end{keyterms}
+
+\section{Concept Learning as a Task}
+
+Much of learning is learning a \emph{category}: which e-mails are phishing, which
+days are good for a match, which students need help. Each such category is a
+\term{concept}, and it can be described as a yes/no function over the things
+being classified.
+
+\begin{definitionbox}[Concept Learning]
+\term{Concept learning} is inferring a boolean-valued function from training
+examples of its input and output. Formally:
+\begin{tight}
+  \item the \term{instance space} $X$ is the set of all things that could be
+        classified;
+  \item the \term{target concept} is an unknown function $c: X \to \{0, 1\}$;
+  \item the training examples $D$ are pairs $\langle x, c(x)\rangle$;
+  \item the learner searches a hypothesis space $H$ for an $h$ with $h(x) = c(x)$
+        for every $x \in X$.
+\end{tight}
+\end{definitionbox}
+
+The running example of this chapter is Mitchell's \emph{EnjoySport}: on which days
+does a friend enjoy their favourite water sport? Each day is described by six
+attributes, and four days have been observed.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{0.9cm}L{1.6cm}L{1.7cm}L{1.9cm}L{1.6cm}L{1.6cm}L{1.9cm}L{2.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Day} & \textbf{Sky} & \textbf{AirTemp} & \textbf{Humidity} & \textbf{Wind} &
+\textbf{Water} & \textbf{Forecast} & \textbf{EnjoySport} \\
+\midrule
+\endhead
+1 & Sunny & Warm & Normal & Strong & Warm & Same & Yes \\
+2 & Sunny & Warm & High & Strong & Warm & Same & Yes \\
+3 & Rainy & Cold & High & Strong & Warm & Change & No \\
+4 & Sunny & Warm & High & Strong & Cool & Change & Yes \\
+\bottomrule
+\end{longtable}
+
+\begin{definitionbox}[Hypotheses as Conjunctions of Constraints]
+Each hypothesis is a vector of six \term{constraints}, one per attribute. Each
+constraint is one of:
+\begin{tight}
+  \item a specific value, such as \emph{Warm} --- only that value is acceptable;
+  \item ``?'' --- any value is acceptable;
+  \item ``$\varnothing$'' --- no value is acceptable.
+\end{tight}
+A hypothesis classifies an instance as positive if the instance satisfies every
+constraint. So $\langle$Sunny, ?, ?, Strong, ?, ?$\rangle$ means ``sunny and windy,
+whatever else''; $\langle$?, ?, ?, ?, ?, ?$\rangle$ says every day is positive; and a
+hypothesis containing $\varnothing$ says no day is.
+\end{definitionbox}
+
+\begin{worked}[How Big Are These Spaces?]
+Sky has 3 values and the other five attributes have 2 each.
+\begin{tight}
+  \item \textbf{Instances:} $3 \times 2^5 = \mathbf{96}$ possible days.
+  \item \textbf{Hypotheses, as written:} each constraint can also be ``?'' or
+        ``$\varnothing$'', so $5 \times 4^5 = 5120$.
+  \item \textbf{Hypotheses, by meaning:} every hypothesis containing a
+        $\varnothing$ classifies every day as negative, so they all mean the same
+        thing. Counting that as one: $1 + 4 \times 3^5 = \mathbf{973}$.
+  \item \textbf{All possible concepts} over 96 days: every subset of the days
+        is a concept, so $2^{96} \approx 7.9 \times 10^{28}$.
+\end{tight}
+\smallskip
+\textbf{The conjunctive language can express 973 of the $7.9 \times 10^{28}$
+possible concepts.} That restriction looks like a weakness. By the end of the
+chapter it will turn out to be the only reason learning is possible at all.
+\end{worked}
+
+\section{The Inductive Learning Hypothesis}
+
+A learner sees only the training examples. The best it can guarantee is a
+hypothesis that fits them. Everything rests on an assumption, which Mitchell
+names explicitly:
+
+\begin{conceptbox}[The Inductive Learning Hypothesis]
+Any hypothesis found to approximate the target function well over a sufficiently
+large set of training examples will also approximate the target function well
+over other unobserved examples.\\[3pt]
+This is an assumption, not a theorem. It fails whenever the future does not
+resemble the training data --- which is why \chref{generalization} and
+\chref{evaluation} measure performance on held-out data rather than trusting it.
+\end{conceptbox}
+
+\section{The General-to-Specific Ordering}
+
+Hypotheses are not an unordered heap. Some are strictly more permissive than
+others, and that structure is what makes efficient search possible.
+
+\begin{definitionbox}[More-General-Than-or-Equal-To]
+Hypothesis $h_j$ is \term{more general than or equal to} $h_k$, written
+$h_j \ge_g h_k$, if every instance that $h_k$ classifies as positive, $h_j$ also
+classifies as positive. $h_j$ is strictly more general ($h_j >_g h_k$) if, in
+addition, $h_k \not\ge_g h_j$. The relation is a \term{partial order}: some
+pairs of hypotheses are not comparable at all.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  hn/.style={rounded corners=2pt, draw=primary, fill=primary!8, text=primary!70!black,
+             font=\scriptsize, minimum height=0.55cm, inner xsep=4pt}]
+% instance space
+\draw[rounded corners=6pt, draw=gray!50, fill=gray!4] (0,0) rectangle (6.2,4.2);
+\node[font=\small\bfseries, text=gray!55!black, anchor=north west] at (0.1,4.15)
+     {Instances $X$};
+\draw[draw=secondary, line width=0.9pt, fill=secondary!8] (3.1,1.95) ellipse (2.65cm and 1.6cm);
+\draw[draw=greenhl!70!black, line width=0.9pt, fill=greenhl!12] (2.35,1.75) ellipse (1.3cm and 0.85cm);
+\draw[draw=goldhl, line width=0.9pt, fill=goldhl!14, fill opacity=0.7] (3.95,1.75) ellipse (1.3cm and 0.85cm);
+\node[font=\tiny\bfseries, text=secondary!70!black] at (3.1,3.2) {covered by $h_2$};
+\node[font=\tiny\bfseries, text=greenhl!45!black] at (1.75,1.75) {$h_1$};
+\node[font=\tiny\bfseries, text=goldhl!45!black] at (4.55,1.75) {$h_3$};
+\fill[accent] (3.15,1.85) circle (2pt) node[below, font=\tiny, text=accent] {$x_1$};
+\fill[accent] (4.9,2.75) circle (2pt) node[right, font=\tiny, text=accent] {$x_2$};
+% hypothesis space
+\draw[rounded corners=6pt, draw=gray!50, fill=gray!4] (7.0,0) rectangle (16.6,4.2);
+\node[font=\small\bfseries, text=gray!55!black, anchor=north west] at (7.1,4.15)
+     {Hypotheses $H$};
+\node[hn, draw=secondary, fill=secondary!10, text=secondary!70!black] (h2) at (11.4,3.1)
+     {$h_2 = \langle$Sunny, ?, ?, ?, ?, ?$\rangle$};
+\node[hn, draw=greenhl!70!black, fill=greenhl!12, text=greenhl!40!black, align=center]
+     (h1) at (8.85,1.2) {$h_1 =$\\$\langle$Sunny, ?, ?, Strong, ?, ?$\rangle$};
+\node[hn, draw=goldhl, fill=goldhl!14, text=goldhl!40!black, align=center]
+     (h3) at (13.95,1.2) {$h_3 =$\\$\langle$Sunny, ?, ?, ?, Cool, ?$\rangle$};
+\draw[-{Stealth[length=2mm]}, gray!60, line width=0.9pt] (h1) -- (h2);
+\draw[-{Stealth[length=2mm]}, gray!60, line width=0.9pt] (h3) -- (h2);
+\node[font=\tiny, text=gray!55!black, align=center] at (11.4,1.2)
+     {$h_1$, $h_3$:\\not\\comparable};
+\draw[-{Stealth[length=2.5mm]}, primary!50, line width=1.2pt] (16.25,0.3) -- (16.25,3.9);
+\node[font=\tiny, text=primary, rotate=90, anchor=south] at (16.2,2.1) {more general};
+\node[anchor=north west, align=left, text width=16.4cm, font=\scriptsize, text=gray!55!black]
+     at (0,-0.15)
+     {$x_1 = \langle$Sunny, Warm, High, Strong, Cool, Same$\rangle$ satisfies all three;
+      $x_2 = \langle$Sunny, Warm, High, Weak, Warm, Same$\rangle$ satisfies only $h_2$.
+      $h_2 \ge_g h_1$ and $h_2 \ge_g h_3$, because the set each covers is inside the set
+      $h_2$ covers.};
+\end{tikzpicture}}%
+{The more-general-than ordering. A more general hypothesis covers a superset of the
+instances; hypotheses whose covered sets merely overlap, like $h_1$ and $h_3$, are not
+comparable.}{general-specific}
+
+\section{Find-S: The Most Specific Consistent Hypothesis}
+
+The simplest algorithm that uses the ordering starts at the most specific
+hypothesis and generalises only as far as each positive example forces it to.
+
+\begin{definitionbox}[The Find-S Algorithm]
+\begin{tightnum}
+  \item Initialise $h$ to the most specific hypothesis
+        $\langle\varnothing, \varnothing, \varnothing, \varnothing, \varnothing,
+        \varnothing\rangle$.
+  \item For each \emph{positive} training example $x$: for each constraint in
+        $h$ that $x$ does not satisfy, replace it by the next more general
+        constraint that $x$ does satisfy ($\varnothing \to$ the value of $x$;
+        a different value $\to$ ``?'').
+  \item Ignore negative examples. Output $h$.
+\end{tightnum}
+\end{definitionbox}
+
+\begin{worked}[Find-S on EnjoySport]
+\textbf{Start:} $h_0 = \langle\varnothing, \varnothing, \varnothing, \varnothing,
+\varnothing, \varnothing\rangle$.
+
+\textbf{Day 1 (+):} nothing is satisfied, so copy the example:
+$h_1 = \langle$Sunny, Warm, Normal, Strong, Warm, Same$\rangle$.
+
+\textbf{Day 2 (+):} Humidity is High, not Normal, so generalise that constraint:
+$h_2 = \langle$Sunny, Warm, ?, Strong, Warm, Same$\rangle$.
+
+\textbf{Day 3 ($-$):} ignored. (It is correctly classified as negative anyway ---
+Sky is Rainy.)
+
+\textbf{Day 4 (+):} Water and Forecast differ, so generalise both:
+$h_4 = \langle$Sunny, Warm, ?, Strong, ?, ?$\rangle$.
+
+\smallskip
+\textbf{Output:} ``sunny, warm and windy''. Why is it safe to ignore negatives? If
+the target concept is in $H$, it is at least as general as $h$ (which only ever
+generalised as far as positives forced). A negative example is excluded by the
+target, so it is excluded by the more specific $h$ as well.
+\end{worked}
+
+\begin{alertbox}[What Find-S Cannot Tell You]
+\textsc{Find-S} returns \emph{a} consistent hypothesis, but not whether it is the
+only one; it cannot say whether it has converged; it cannot detect noisy or
+inconsistent data, because it never looks at negatives; and it always prefers the
+most specific answer, for no reason other than that it started there. The version
+space fixes the first three.
+\end{alertbox}
+
+\section{Version Spaces}
+
+\begin{definitionbox}[Consistent Hypothesis and Version Space]
+A hypothesis $h$ is \term{consistent} with training examples $D$ if $h(x) = c(x)$
+for every example $\langle x, c(x)\rangle$ in $D$. The \term{version space}
+$VS_{H,D}$ is the set of all hypotheses in $H$ consistent with $D$ --- every
+hypothesis the data has not yet ruled out.
+\end{definitionbox}
+
+The obvious way to find it is \textsc{List-Then-Eliminate}: write down every
+hypothesis in $H$, and for each training example cross out the ones it
+contradicts. What remains is the version space. For EnjoySport's 973 hypotheses
+this is feasible; for any realistic hypothesis space it is not. The trick of the
+next section is that the version space never needs to be listed --- two
+boundaries are enough.
+
+\section{The Candidate-Elimination Algorithm}
+
+\begin{definitionbox}[General and Specific Boundaries]
+The \term{general boundary} $G$ is the set of maximally general hypotheses in the
+version space; the \term{specific boundary} $S$ is the set of maximally specific
+ones. Every hypothesis in the version space lies between them: it is more general
+than or equal to some member of $S$ and more specific than or equal to some member
+of $G$.
+\end{definitionbox}
+
+\begin{definitionbox}[The Candidate-Elimination Algorithm]
+Initialise $G$ to $\{\langle ?, ?, ?, ?, ?, ?\rangle\}$ and $S$ to
+$\{\langle\varnothing, \varnothing, \varnothing, \varnothing, \varnothing,
+\varnothing\rangle\}$. For each training example $d$:
+\begin{tight}
+  \item \textbf{If $d$ is positive:} remove from $G$ every hypothesis that does not
+        cover $d$. Replace each $s \in S$ that does not cover $d$ by its minimal
+        generalisations that do, keeping only those that are more specific than
+        some member of $G$.
+  \item \textbf{If $d$ is negative:} remove from $S$ every hypothesis that covers
+        $d$. Replace each $g \in G$ that covers $d$ by its minimal
+        specialisations that do not, keeping only those that are more general
+        than some member of $S$, and then drop any that is less general than
+        another member of $G$.
+\end{tight}
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+\fill[primary!4] (0,0) rectangle (13.6,3.6);
+\draw[secondary, line width=1.6pt] (0.6,2.9) .. controls (4,2.6) and (9,2.6) .. (13.0,2.9);
+\draw[greenhl!70!black, line width=1.6pt] (0.6,0.7) .. controls (4,1.0) and (9,1.0) .. (13.0,0.7);
+\fill[purplehl!10] (0.6,2.9) .. controls (4,2.6) and (9,2.6) .. (13.0,2.9)
+     -- (13.0,0.7) .. controls (9,1.0) and (4,1.0) .. (0.6,0.7) -- cycle;
+\draw[secondary, line width=1.6pt] (0.6,2.9) .. controls (4,2.6) and (9,2.6) .. (13.0,2.9);
+\draw[greenhl!70!black, line width=1.6pt] (0.6,0.7) .. controls (4,1.0) and (9,1.0) .. (13.0,0.7);
+\node[font=\scriptsize\bfseries, text=secondary!70!black, anchor=south east] at (13.0,2.95)
+     {$G$ --- the most general hypotheses still consistent};
+\node[font=\scriptsize\bfseries, text=greenhl!45!black, anchor=north west] at (0.6,0.62)
+     {$S$ --- the most specific hypotheses still consistent};
+\node[font=\small\bfseries, text=purplehl!70!black] at (6.8,1.8) {version space};
+\draw[-{Stealth[length=2.5mm]}, accent, line width=1.2pt] (2.2,3.35) -- (2.2,2.55);
+\node[font=\tiny, text=accent, anchor=west, align=left] at (2.35,3.3)
+     {negative examples\\push $G$ down (specialise)};
+\draw[-{Stealth[length=2.5mm]}, greenhl!60!black, line width=1.2pt] (11.4,0.2) -- (11.4,1.05);
+\node[font=\tiny, text=greenhl!45!black, anchor=east, align=right] at (11.25,0.25)
+     {positive examples\\push $S$ up (generalise)};
+\node[font=\tiny, text=gray!55!black, rotate=90] at (-0.3,1.8) {specific \quad$\longrightarrow$\quad general};
+\end{tikzpicture}}%
+{The version space is everything between the two boundaries. Each example moves one
+boundary towards the other; if they meet, the concept has been learned exactly.}{boundaries}
+
+\begin{worked}[Candidate-Elimination on EnjoySport]
+\textbf{Start.} $S_0 = \{\langle\varnothing, \varnothing, \varnothing, \varnothing,
+\varnothing, \varnothing\rangle\}$, $\;G_0 = \{\langle ?, ?, ?, ?, ?, ?\rangle\}$.
+
+\smallskip
+\textbf{Day 1 (+)} $\langle$Sunny, Warm, Normal, Strong, Warm, Same$\rangle$.
+$G_0$ covers it: keep. $S_0$ does not: generalise minimally.\\
+$S_1 = \{\langle$Sunny, Warm, Normal, Strong, Warm, Same$\rangle\}$, $\;G_1 = G_0$.
+
+\smallskip
+\textbf{Day 2 (+)} $\langle$Sunny, Warm, High, Strong, Warm, Same$\rangle$.
+Humidity differs, so it becomes ``?''.\\
+$S_2 = \{\langle$Sunny, Warm, ?, Strong, Warm, Same$\rangle\}$, $\;G_2 = G_0$.
+
+\smallskip
+\textbf{Day 3 ($-$)} $\langle$Rainy, Cold, High, Strong, Warm, Change$\rangle$.
+$S_2$ already excludes it. $G_2$ covers it, so specialise $\langle ?, ?, ?, ?, ?,
+?\rangle$ one attribute at a time to a value the negative example does not have:
+\begin{tight}
+  \item Sky: Sunny or Cloudy. Only \emph{Sunny} is still more general than $S_2$.
+  \item AirTemp: \emph{Warm}. Kept.
+  \item Humidity: Normal --- but $S_2$ has ``?'' there, so this is not more
+        general than $S_2$. Dropped.
+  \item Wind: Weak --- contradicts $S_2$'s Strong. Dropped.
+  \item Water: Cool --- contradicts $S_2$'s Warm. Dropped.
+  \item Forecast: \emph{Same}. Kept.
+\end{tight}
+$S_3 = S_2$, $\;G_3 = \{\langle$Sunny, ?, ?, ?, ?, ?$\rangle$, $\langle$?, Warm, ?,
+?, ?, ?$\rangle$, $\langle$?, ?, ?, ?, ?, Same$\rangle\}$.
+
+\smallskip
+\textbf{Day 4 (+)} $\langle$Sunny, Warm, High, Strong, Cool, Change$\rangle$.
+$\langle$?, ?, ?, ?, ?, Same$\rangle$ does not cover it: removed from $G$. $S$
+generalises Water and Forecast.\\
+$S_4 = \{\langle$Sunny, Warm, ?, Strong, ?, ?$\rangle\}$, $\;G_4 = \{\langle$Sunny, ?,
+?, ?, ?, ?$\rangle$, $\langle$?, Warm, ?, ?, ?, ?$\rangle\}$.
+
+\smallskip
+\textbf{Check.} $S_4$ is exactly what \textsc{Find-S} returned. The difference is
+that \textsc{Candidate-Elimination} also knows the other end: the version space
+holds six hypotheses, drawn in \dsref{final-vs}.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  hv/.style={rounded corners=2pt, draw=#1, fill=#1!9, text=#1!55!black,
+             font=\scriptsize, minimum height=0.6cm, inner xsep=4pt},
+  e/.style={gray!55, line width=0.8pt}]
+\node[hv=secondary] (g1) at (2.6,3.2) {$\langle$Sunny, ?, ?, ?, ?, ?$\rangle$};
+\node[hv=secondary] (g2) at (9.4,3.2) {$\langle$?, Warm, ?, ?, ?, ?$\rangle$};
+\node[hv=purplehl] (m1) at (0.9,1.6) {$\langle$Sunny, ?, ?, Strong, ?, ?$\rangle$};
+\node[hv=purplehl] (m2) at (6.0,1.6) {$\langle$Sunny, Warm, ?, ?, ?, ?$\rangle$};
+\node[hv=purplehl] (m3) at (11.1,1.6) {$\langle$?, Warm, ?, Strong, ?, ?$\rangle$};
+\node[hv=greenhl] (s1) at (6.0,0) {$\langle$Sunny, Warm, ?, Strong, ?, ?$\rangle$};
+\draw[e] (g1) -- (m1); \draw[e] (g1) -- (m2); \draw[e] (g2) -- (m2); \draw[e] (g2) -- (m3);
+\draw[e] (m1) -- (s1); \draw[e] (m2) -- (s1); \draw[e] (m3) -- (s1);
+\node[font=\scriptsize\bfseries, text=secondary!70!black, anchor=east] at (-1.1,3.2) {$G_4$:};
+\node[font=\scriptsize\bfseries, text=greenhl!45!black, anchor=east] at (-1.1,0) {$S_4$:};
+\end{tikzpicture}}%
+{The final version space for EnjoySport: two maximally general hypotheses, one maximally
+specific one, and the three between them. A line joins each pair related by
+$\ge_g$.}{final-vs}
+
+\section{Using a Partially Learned Concept}
+
+Four examples have not pinned the concept down: six hypotheses survive. They can
+still classify new days, by voting.
+
+\begin{worked}[Classifying by Vote]
+\begin{tight}
+  \item $\langle$Sunny, Warm, Normal, Strong, Cool, Change$\rangle$: satisfies $S_4$,
+        and so every hypothesis above it. \textbf{6 yes, 0 no} --- classified
+        positive with the same confidence as if the concept were fully learned.
+  \item $\langle$Rainy, Cold, Normal, Weak, Warm, Same$\rangle$: satisfies neither
+        member of $G_4$, so no hypothesis. \textbf{0 yes, 6 no}.
+  \item $\langle$Sunny, Warm, Normal, Weak, Warm, Same$\rangle$: \textbf{3 yes,
+        3 no}. The data genuinely cannot decide.
+  \item $\langle$Sunny, Cold, Normal, Strong, Warm, Same$\rangle$: \textbf{2 yes,
+        4 no} --- a majority, but not a certainty.
+\end{tight}
+\smallskip
+Two tests are enough for the unanimous cases: an instance satisfying every
+member of $S$ is positive for the whole version space; one satisfying no member
+of $G$ is negative for all of it. And if the learner may \emph{ask} for a label,
+the best question is the third day: whatever the answer, it eliminates half the
+version space. Repeating that halves it each time, so the concept is found in
+about $\log_2 |VS|$ queries --- here $\log_2 6 \approx 2.6$, so three.
+\end{worked}
+
+\section{Inductive Bias}
+
+Why stop at conjunctions? Why not use a hypothesis space that can express
+\emph{every} one of the $2^{96}$ possible concepts, so that the target is
+certainly in it?
+
+\begin{conceptbox}[The Futility of an Unbiased Learner]
+Give \textsc{Candidate-Elimination} a hypothesis space containing every subset
+of $X$. After any training set, $S$ is the disjunction of the positive examples
+seen --- ``day 1 or day 2 or day 4'' --- and $G$ is ``anything except day 3''. The
+version space contains every concept between them. For any day \emph{not} in the
+training data, exactly half of those concepts call it positive and half negative:
+the vote is always a tie. The unbiased learner can classify the examples it has
+seen and nothing else. It has memorised; it has not learned.
+\end{conceptbox}
+
+\begin{definitionbox}[Inductive Bias]
+The \term{inductive bias} of a learner is the set of assumptions that, added to
+the training data, make its classification of new instances follow
+\emph{deductively}. The inductive bias of \textsc{Candidate-Elimination} is:
+\emph{the target concept is contained in the hypothesis space $H$} --- here, it is
+a conjunction of attribute constraints.
+\end{definitionbox}
+
+Learners can be ranked by the strength of their bias. A \textbf{rote learner},
+which stores examples and classifies only exact matches, has no bias and never
+generalises. \textsc{Candidate-Elimination} assumes the target is in $H$, and
+classifies a new instance only when the whole version space agrees.
+\textsc{Find-S} assumes that as well, and in addition that every instance is
+negative unless the evidence forces it to be positive --- a stronger bias, so it
+classifies everything. Every algorithm in the rest of this course has a bias,
+and its chapter names it.
+
+\begin{alertbox}[The Weakness Every Later Chapter Fixes]
+\textsc{Candidate-Elimination} assumes the data is \emph{noise-free}. Label one
+positive day as negative by mistake and the true concept is eliminated; with
+enough errors $S$ and $G$ cross, and the version space is empty. Real data always
+contains errors. The algorithms of Part III therefore replace ``consistent with
+every example'' by ``makes few errors'' and accept a hypothesis that is probably
+approximately right. Concept learning is where the vocabulary comes from; it is
+not how practical systems are built.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Specialising $G$ to values that contradict $S$.} Every new
+        member of $G$ must still be more general than a member of $S$; check each
+        candidate against $S$ before keeping it.
+  \item \textbf{Forgetting to prune $G$ on a positive example.} Members of $G$ that
+        do not cover a positive example are removed, as on Day 4.
+  \item \textbf{Believing Find-S's answer is unique.} It is one of the
+        six hypotheses in the version space --- the most specific.
+  \item \textbf{Reading ``unbiased'' as ``better''.} A learner with no bias
+        cannot generalise at all.
+  \item \textbf{Running Candidate-Elimination on noisy data.} One
+        mislabelled example can empty the version space.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Hypothesis Spaces}
+\lensLA{A conjunctive concept is an early-warning rule an adviser can read:
+$\langle$attendance low, quiz missing, ?, \dots$\rangle$. The version space tells
+the adviser something a single model cannot --- which students the evidence is
+split on, and so which cases deserve a human look rather than an automatic
+flag.}
+
+\lensPM{With a dozen past projects, the $S$ and $G$ boundaries are an honest
+summary of what is known: ``every late project had an external dependency'' ($S$)
+against ``no project without a new technology was late'' ($G$). Where they
+disagree, the data has not decided --- and with twelve projects, that is most of
+the space.}
+
+\lensIOT{Alarm conditions on a device are often exactly conjunctions:
+$\langle$temperature high, vibration high, ?, load normal$\rangle$. The general
+boundary is the broadest rule that has not yet fired on a healthy machine, which
+is useful to know before widening a rule that currently misses failures.}
+
+\lensSEC{Signature generation is \textsc{Find-S}: from several samples of one
+malware family, keep the byte patterns they share and generalise the rest. The
+most specific signature misses the next variant; the most general one that still
+excludes every benign file in the corpus catches more but will eventually flag a
+legitimate program. Real signature engines choose between those two ends.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Candidate Elimination in Forty Lines]
+The whole of this chapter, run: \textsc{Find-S}, the boundary trace of the worked
+example, and a brute-force check of the version space by listing every
+hypothesis.
+\begin{lstlisting}[language=Python]
+from itertools import product
+
+# EnjoySport. "?" = any value, "0" = no value (the empty constraint)
+VALUES = [("Sunny", "Cloudy", "Rainy"), ("Warm", "Cold"), ("Normal", "High"),
+          ("Strong", "Weak"), ("Warm", "Cool"), ("Same", "Change")]
+D = [(("Sunny", "Warm", "Normal", "Strong", "Warm", "Same"), True),
+     (("Sunny", "Warm", "High", "Strong", "Warm", "Same"), True),
+     (("Rainy", "Cold", "High", "Strong", "Warm", "Change"), False),
+     (("Sunny", "Warm", "High", "Strong", "Cool", "Change"), True)]
+show = lambda hs: "  ".join("<" + ", ".join(h) + ">" for h in sorted(hs))
+
+
+def covers(h, x):             # does h classify x as positive?
+    return all(c == "?" or c == v for c, v in zip(h, x))
+
+
+def more_general(h1, h2):     # h1 >=g h2
+    return "0" in h2 or all(a == "?" or a == b for a, b in zip(h1, h2))
+
+
+def generalize(s, x):         # minimal generalisation of s covering x
+    return tuple(v if c == "0" else (c if c == v else "?")
+                 for c, v in zip(s, x))
+
+
+def specializations(g, x):    # minimal specialisations of g excluding x
+    return [g[:i] + (v,) + g[i + 1:] for i, c in enumerate(g) if c == "?"
+            for v in VALUES[i] if v != x[i]]
+
+
+# --- Find-S --------------------------------------------------------------
+h = ("0",) * 6
+for x, positive in D:
+    if positive:
+        h = generalize(h, x)
+print("Find-S:", show([h]))
+
+# --- Candidate-Elimination -----------------------------------------------
+S, G = {("0",) * 6}, {("?",) * 6}
+for k, (x, positive) in enumerate(D, 1):
+    if positive:
+        G = {g for g in G if covers(g, x)}
+        S = {generalize(s, x) for s in S}
+        S = {s for s in S if any(more_general(g, s) for g in G)}
+    else:
+        S = {s for s in S if not covers(s, x)}
+        new = {g for g in G if not covers(g, x)}
+        for g in G - new:
+            new |= {h for h in specializations(g, x)
+                    if any(more_general(h, s) for s in S)}
+        G = {g for g in new
+             if not any(o != g and more_general(o, g) for o in new)}
+    print(f"day {k}  S: {show(S)}\n       G: {show(G)}")
+
+# --- brute force: list every hypothesis, keep the consistent ones ---------
+H = list(product(*[v + ("?",) for v in VALUES]))
+VS = [h for h in H if all(covers(h, x) == p for x, p in D)]
+print(len(VS), "hypotheses in the version space:")
+print(show(VS))
+day = ("Sunny", "Warm", "Normal", "Weak", "Warm", "Same")
+yes = sum(covers(h, day) for h in VS)
+print(f"vote on {day}: {yes} yes, {len(VS) - yes} no")
+\end{lstlisting}
+Now add a fifth example, a copy of Day 1 labelled \emph{No} --- a labelling
+mistake --- and run the trace again. What happens to $S$, $G$ and the version
+space?
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Is $\langle$Sunny, ?, ?, Strong, ?, ?$\rangle \ge_g \langle$Sunny, Warm,
+        ?, Strong, ?, ?$\rangle$? Is the reverse true?
+  \item Run \textsc{Find-S} on the EnjoySport data with Day 4 removed. What does
+        it return?
+  \item Why does an unbiased learner's vote on an unseen instance always end in a
+        tie?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Concept learning infers a yes/no function from examples by searching a
+        hypothesis space --- here, conjunctions of attribute constraints.
+  \item Hypotheses are partially ordered from specific to general; the ordering
+        lets a learner search without listing every hypothesis.
+  \item \textsc{Find-S} returns the most specific hypothesis consistent with the
+        positive examples, but cannot say whether it is the only one.
+  \item The version space is every hypothesis consistent with the data;
+        \textsc{Candidate-Elimination} represents it by its boundaries $S$ and
+        $G$, which positive and negative examples move towards each other.
+  \item A partially learned concept classifies by vote; the most informative
+        query splits the version space in half.
+  \item Without an inductive bias there is no generalisation. The bias of
+        \textsc{Candidate-Elimination} is that the target is in $H$ --- and it
+        assumes noise-free data, which later chapters drop.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} \textsc{Find-S} ignores: (a)~positive examples (b)~negative
+        examples (c)~the first example (d)~nothing.
+  \item \textbf{(MCQ)} A negative example can change: (a)~$S$ only (b)~$G$ only,
+        though it may also remove members of $S$ (c)~neither (d)~the hypothesis
+        space.
+  \item \textbf{(MCQ)} With 3 attributes of 3 values each, the number of
+        semantically distinct conjunctive hypotheses is: (a)~27 (b)~64 (c)~65
+        (d)~$2^{27}$.
+  \item \textbf{(Short)} Define the version space, and explain why
+        \textsc{Candidate-Elimination} does not need to list it.
+  \item \textbf{(Short)} State the inductive learning hypothesis. Why is it an
+        assumption rather than a theorem?
+  \item \textbf{(Short)} Explain how a single mislabelled training example affects
+        \textsc{Candidate-Elimination}.
+  \item \textbf{(Applied)} Trace \textsc{Candidate-Elimination} on the EnjoySport
+        data presented in the order Day 3, Day 1, Day 2, Day 4. Is the final
+        version space the same? Is any intermediate boundary different?
+  \item \textbf{(Applied)} For the final version space of this chapter, find an
+        instance that splits the vote 2 to 4 other than the one in the worked
+        example, and one that splits it 3 to 3. Explain why the second is the
+        better query.
+\end{reviewq}

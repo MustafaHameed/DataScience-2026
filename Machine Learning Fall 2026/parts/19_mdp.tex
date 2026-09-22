@@ -1,0 +1,453 @@
+%=====================================================================
+\chapter{Markov Decision Processes}\label{ch:mdp}
+%=====================================================================
+\locator{5}{Part V --- Sequences, Decisions and Reinforcement}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Formulate} a sequential decision problem as a Markov decision process:
+        states, actions, transitions, rewards and discount.
+  \item \textbf{Compute} the discounted return of a sequence of rewards, and
+        \textbf{explain} the role of $\gamma$.
+  \item \textbf{Define} state values and action values, and \textbf{write} the Bellman
+        equations for them.
+  \item \textbf{Perform} value iteration by hand for a small MDP and \textbf{read off}
+        the optimal policy.
+  \item \textbf{Describe} policy iteration and \textbf{compare} it with value iteration.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{hmm} (Markov chains and transition matrices) and, from \emph{Artificial
+Intelligence}, agents and search. An MDP is a Markov chain in which an agent chooses
+the transition probabilities by its actions, and is paid for doing so.
+\end{prereq}
+
+\begin{keyterms}
+agent $\bullet$ environment $\bullet$ state $\bullet$ action $\bullet$ reward
+$\bullet$ Markov decision process $\bullet$ transition model $\bullet$ policy
+$\bullet$ return $\bullet$ discount factor $\gamma$ $\bullet$ state-value function
+$V$ $\bullet$ action-value function $Q$ $\bullet$ Bellman expectation equation
+$\bullet$ Bellman optimality equation $\bullet$ value iteration $\bullet$ policy
+evaluation $\bullet$ policy improvement $\bullet$ policy iteration
+\end{keyterms}
+
+\section{Decisions Whose Consequences Unfold}
+
+Classification makes one decision per example, and the next example does not
+depend on it. Many real decisions are not like that. Repairing a machine now costs
+money now but keeps it earning later; offering a struggling student extra tutoring
+changes which state they are in next week; a thermostat that heats early spends
+energy to save discomfort. The value of an action depends on the situations it
+leads to, and on the actions that will be taken there. The framework for such
+problems is the \term{Markov decision process}, and it is the foundation of
+reinforcement learning (\chref{rl}).
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  box/.style={rounded corners=4pt, draw=#1, line width=1.1pt, fill=#1!10, text=#1!55!black,
+              minimum width=2.8cm, minimum height=1.2cm, font=\small\bfseries},
+  a/.style={-{Stealth[length=2.4mm]}, line width=1.1pt}]
+\node[box=tealhl] (ag) at (0,0) {Agent};
+\node[box=goldhl] (en) at (6.2,0) {Environment};
+\draw[a, tealhl!70!black] (ag.north) .. controls +(0,1.3) and +(0,1.3) .. node[above, font=\scriptsize]
+     {action $a_t$} (en.north);
+\draw[a, goldhl!80!black] (en.south) .. controls +(0,-1.3) and +(0,-1.3) .. node[below, font=\scriptsize,
+     align=center] {next state $s_{t+1}$, reward $r_{t+1}$} (ag.south);
+\node[anchor=west, align=left, text width=5.2cm, font=\scriptsize, text=gray!55!black] at (8.2,0)
+     {At each step the agent observes the state, chooses an action, and the environment
+      responds with a new state and a numeric reward. The agent's goal is to choose
+      actions that maximise the \emph{total} reward over time, not the next reward
+      alone.};
+\end{tikzpicture}}%
+{The agent--environment loop. Every problem in Part V's last two chapters has this
+shape.}{agent-env}
+
+\section{The Markov Decision Process}
+
+\begin{definitionbox}[Markov Decision Process]
+An MDP consists of:
+\begin{tight}
+  \item a set of \term{states} $S$ and a set of \term{actions} $A$;
+  \item a \term{transition model} $P(s' \mid s, a)$ --- the probability that action
+        $a$ in state $s$ leads to state $s'$;
+  \item a \term{reward} $R(s, a)$ received for taking $a$ in $s$ (or $R(s, a, s')$);
+  \item a \term{discount factor} $0 \le \gamma < 1$.
+\end{tight}
+It has the Markov property: what happens next depends only on the current state and
+action. A \term{policy} $\pi$ says what to do in each state, $a = \pi(s)$; solving the
+MDP means finding the policy that maximises the expected discounted return.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  st/.style={circle, draw=#1, line width=1.1pt, fill=#1!12, text=#1!55!black,
+             minimum size=1.35cm, font=\scriptsize\bfseries, align=center},
+  op/.style={-{Stealth[length=2mm]}, secondary, line width=0.9pt},
+  rp/.style={-{Stealth[length=2mm]}, goldhl!85!black, line width=0.9pt, dashed},
+  lb/.style={font=\tiny, fill=white, inner sep=1pt}]
+\node[st=greenhl!70!black] (H) at (0,0) {Healthy};
+\node[st=accent] (D) at (4.4,0) {Degraded};
+\node[st=gray!70!black] (F) at (8.8,0) {Failed};
+\draw[op] (H) to[out=120, in=60, looseness=6] node[lb, above] {op: 0.8, $+10$} (H);
+\draw[op] (H) to[bend left=18] node[lb, above] {op: 0.2, $+10$} (D);
+\draw[op] (D) to[out=120, in=60, looseness=6] node[lb, above] {op: 0.5, $+5$} (D);
+\draw[op] (D) to[bend left=18] node[lb, above] {op: 0.5, $+5$} (F);
+\draw[op] (F) to[out=120, in=60, looseness=6] node[lb, above] {op: 1.0, $0$} (F);
+\draw[rp] (D) to[bend left=18] node[lb, below] {repair: 1.0, $-4$} (H);
+\draw[rp] (F) to[bend left=38] node[lb, below] {repair: 1.0, $-15$} (H);
+\draw[rp] (H) to[out=-120, in=-60, looseness=6] node[lb, below] {repair: $-2$} (H);
+\node[anchor=west, font=\tiny, text=gray!55!black, align=left] at (10.0,0.4)
+     {\textcolor{secondary}{\bfseries solid}: operate\\[2pt]
+      \textcolor{goldhl!85!black}{\bfseries dashed}: repair\\[2pt]
+      label: probability, reward\\[2pt]
+      discount $\gamma = 0.9$};
+\end{tikzpicture}}%
+{The maintenance MDP of the worked examples. Operating earns money but risks decline;
+repairing costs money and restores the machine.}{maintenance-mdp}
+
+\begin{definitionbox}[Return and Discounting]
+The \term{return} from time $t$ is the discounted sum of future rewards:
+\[
+G_t = r_{t+1} + \gamma\,r_{t+2} + \gamma^2 r_{t+3} + \dots = \sum_{k=0}^{\infty}\gamma^k\,r_{t+k+1}
+\]
+With $\gamma < 1$ the sum is finite even for tasks that never end, and a reward $k$ steps
+away is worth $\gamma^k$ of the same reward now. A small $\gamma$ makes the agent
+short-sighted; $\gamma$ close to 1 makes it patient.
+\end{definitionbox}
+
+\begin{worked}[Two Returns]
+With $\gamma = 0.9$:
+\begin{tight}
+  \item Rewards $10, 10, 10, 5, 5, 0, 0, \dots$ (operate until the machine fails):
+        $G = 10 + 9 + 8.1 + 5(0.729) + 5(0.656) = 27.1 + 3.645 + 3.281 = \mathbf{34.0}$.
+  \item Rewards $10, 10, -4, 10, 10, \dots$ (repair once, then keep operating): the
+        first two give $19$; the repair costs $4 \times 0.81 = 3.24$; and a healthy
+        machine thereafter earns, at the least, $10(0.729 + 0.656 + \dots) = 10 \times
+        0.729/(1 - 0.9) = 72.9$ if it never degrades again. The repair pays for itself
+        many times over.
+\end{tight}
+The second calculation needs to know what happens after the repair --- which is
+exactly what the value functions below capture.
+\end{worked}
+
+\section{Value Functions and the Bellman Equations}
+
+\begin{definitionbox}[State and Action Values]
+Under a policy $\pi$, the \term{state value} $V^{\pi}(s)$ is the expected return
+starting from $s$ and following $\pi$; the \term{action value} $Q^{\pi}(s, a)$ is the
+expected return from taking $a$ in $s$ and following $\pi$ afterwards. They satisfy
+the \term{Bellman expectation equation}:
+\[
+V^{\pi}(s) = R(s, \pi(s)) + \gamma\sum_{s'} P(s' \mid s, \pi(s))\,V^{\pi}(s')
+\]
+--- the value of a state is the immediate reward plus the discounted value of where
+you go next. The best achievable values satisfy the \term{Bellman optimality
+equation}:
+\[
+V^{*}(s) = \max_{a}\Big[R(s, a) + \gamma\sum_{s'} P(s' \mid s, a)\,V^{*}(s')\Big] = \max_a Q^{*}(s, a)
+\]
+and the optimal policy is to act greedily with respect to them:
+$\pi^{*}(s) = \arg\max_a Q^{*}(s, a)$.
+\end{definitionbox}
+
+\begin{conceptbox}[Why a Recursive Definition Is Useful]
+The Bellman equation turns a sum over infinitely many futures into a relation between
+neighbouring states. For a known policy it is a set of linear equations --- one per
+state --- that can be solved directly. For the optimal values it is not linear
+(because of the max), but it can be solved by repeatedly applying it, which is value
+iteration.
+\end{conceptbox}
+
+\section{Value Iteration}
+
+\begin{definitionbox}[Value Iteration]
+Start with $V(s) = 0$ for every state. Repeat until the values stop changing: for
+every state, set
+\[
+V(s) \leftarrow \max_a\Big[R(s, a) + \gamma\sum_{s'} P(s' \mid s, a)\,V(s')\Big]
+\]
+Then read off the policy: in each state, the action achieving the maximum. After $k$
+sweeps, $V$ is the best return achievable in $k$ steps; as $k$ grows it converges to
+$V^{*}$.
+\end{definitionbox}
+
+\begin{worked}[Value Iteration on the Maintenance MDP]
+$\gamma = 0.9$; start from $V = (0, 0, 0)$ for (H, D, F).
+
+\smallskip
+\textbf{Sweep 1.} With all values 0, only immediate rewards count: operate gives 10, 5,
+0 and repair $-2$, $-4$, $-15$. $V = (10,\ 5,\ 0)$; best action everywhere: operate.
+
+\textbf{Sweep 2.}
+\begin{tight}
+  \item H: operate $10 + 0.9(0.8 \times 10 + 0.2 \times 5) = 10 + 8.1 = 18.1$; repair
+        $-2 + 0.9 \times 10 = 7$. $\;V(H) = 18.1$.
+  \item D: operate $5 + 0.9(0.5 \times 5 + 0.5 \times 0) = 7.25$; repair $-4 + 0.9 \times 10
+        = 5$. $\;V(D) = 7.25$.
+  \item F: operate $0 + 0.9 \times 0 = 0$; repair $-15 + 9 = -6$. $\;V(F) = 0$.
+\end{tight}
+\textbf{Sweep 3.}
+\begin{tight}
+  \item H: operate $10 + 0.9(0.8 \times 18.1 + 0.2 \times 7.25) = 24.34$; repair $-2 +
+        16.29 = 14.29$. $\;V(H) = 24.34$.
+  \item D: operate $5 + 0.9(0.5 \times 7.25 + 0) = 8.26$; repair $-4 + 0.9 \times 18.1 =
+        \mathbf{12.29}$. \textbf{Repair now wins.}
+  \item F: operate $0$; repair $-15 + 16.29 = \mathbf{1.29}$. \textbf{Repair wins.}
+\end{tight}
+\textbf{Converged} (after about 200 sweeps): $V^{*} = (78.64,\ 66.78,\ 55.78)$, and the
+optimal policy is \textbf{operate when healthy, repair when degraded or failed}.
+
+\smallskip
+\textbf{Check} with the Bellman equation for that policy:
+$V(H) = 10 + 0.9(0.8V(H) + 0.2V(D))$ and $V(D) = -4 + 0.9V(H)$ give
+$V(H) = 9.28/0.118 = 78.64$. For comparison, ``always operate'' is worth only
+$V(H) = 41.56$: the machine eventually fails and earns nothing forever.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  cell/.style={draw=gray!50, minimum width=2.0cm, minimum height=1.5cm, align=center},
+  arr/.style={-{Stealth[length=2mm]}, line width=1.4pt, tealhl}]
+% row 0 (top)
+\node[cell, fill=tealhl!10] (c00) at (0,0) {0.812};
+\node[cell, fill=tealhl!13] (c01) at (2.0,0) {0.868};
+\node[cell, fill=tealhl!16] (c02) at (4.0,0) {0.918};
+\node[cell, fill=greenhl!35, font=\scriptsize\bfseries] (c03) at (6.0,0) {$+1$};
+% row 1
+\node[cell, fill=tealhl!8] (c10) at (0,-1.5) {0.762};
+\node[cell, fill=gray!45] (c11) at (2.0,-1.5) {wall};
+\node[cell, fill=tealhl!6] (c12) at (4.0,-1.5) {0.660};
+\node[cell, fill=accent!40, font=\scriptsize\bfseries] (c13) at (6.0,-1.5) {$-1$};
+% row 2
+\node[cell, fill=tealhl!7] (c20) at (0,-3.0) {0.705};
+\node[cell, fill=tealhl!6] (c21) at (2.0,-3.0) {0.655};
+\node[cell, fill=tealhl!5] (c22) at (4.0,-3.0) {0.611};
+\node[cell, fill=tealhl!3] (c23) at (6.0,-3.0) {0.388};
+% policy arrows
+\draw[arr] (0.45,0.35) -- (0.9,0.35);
+\draw[arr] (2.45,0.35) -- (2.9,0.35);
+\draw[arr] (4.45,0.35) -- (4.9,0.35);
+\draw[arr] (0.55,-1.4) -- (0.55,-0.95);
+\draw[arr] (4.55,-1.4) -- (4.55,-0.95);
+\draw[arr] (0.55,-2.9) -- (0.55,-2.45);
+\draw[arr] (1.55,-2.65) -- (1.1,-2.65);
+\draw[arr] (3.55,-2.65) -- (3.1,-2.65);
+\draw[arr] (5.55,-2.65) -- (5.1,-2.65);
+\node[anchor=west, align=left, text width=5.4cm, font=\scriptsize, text=gray!55!black] at (7.4,-1.5)
+     {Each move succeeds with probability 0.8 and slips sideways with 0.1 each way;
+      every step costs 0.04; the two exits pay $+1$ and $-1$.\\[4pt]
+      Numbers are $V^{*}$; arrows are the optimal policy. From the bottom-right cell the
+      agent goes the \emph{long way round}: heading up past the $-1$ exit risks slipping
+      into it.};
+\end{tikzpicture}}%
+{Optimal values and policy for a small gridworld (the standard example of Russell and
+Norvig), computed by value iteration with $\gamma = 1$.}{gridworld}
+
+\section{Policy Iteration}
+
+Value iteration improves values and only implicitly improves the policy. \term{Policy
+iteration} alternates two explicit steps:
+\begin{tightnum}
+  \item \textbf{Policy evaluation:} compute $V^{\pi}$ for the current policy exactly,
+        by solving the Bellman expectation equations --- one linear equation per
+        state.
+  \item \textbf{Policy improvement:} make the policy greedy with respect to $V^{\pi}$:
+        $\pi(s) \leftarrow \arg\max_a\big[R(s, a) + \gamma\sum_{s'}P(s' \mid s, a)V^{\pi}(s')\big]$.
+\end{tightnum}
+Stop when the policy no longer changes. Each improvement is guaranteed not to make any
+state worse, and there are finitely many policies, so it terminates --- usually in a
+handful of iterations. On the maintenance MDP it starts from ``always operate''
+($V(H) = 41.56$), improves once to ``repair when degraded or failed'', evaluates that
+($V(H) = 78.64$), finds nothing to change, and stops: two evaluations against about
+two hundred sweeps of value iteration, each evaluation costlier.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.0cm}L{6.0cm}L{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{} & \textbf{Value iteration} & \textbf{Policy iteration} \\
+\midrule
+\endhead
+Each iteration & One cheap sweep: a max over actions per state & A full policy
+evaluation (solve $|S|$ linear equations) plus an improvement \\
+Iterations needed & Many; converges gradually & Few; stops exactly \\
+Best when & Many states, cheap sweeps & Fewer states, or a good starting policy \\
+Needs the model? & Yes: $P$ and $R$ & Yes: $P$ and $R$ \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Both Methods Need the Model]
+Value and policy iteration are \emph{planning} algorithms: they compute the optimal
+policy from a known $P(s' \mid s, a)$ and $R(s, a)$. In most real problems nobody
+writes those down --- the probabilities of a student's response, a user's click or a
+network's congestion are unknown. \chref{rl} removes the model: the agent learns the
+same value functions from experience, by trying actions and observing what happens.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Maximising the next reward.} The point of an MDP is that the best
+        action now may earn less now.
+  \item \textbf{Choosing $\gamma$ carelessly.} A small $\gamma$ ignores long-term
+        consequences; $\gamma = 1$ can make values infinite in tasks that never end.
+  \item \textbf{A state that is not Markov.} If the right action depends on history
+        the state does not record, add that history to the state.
+  \item \textbf{Stopping value iteration early and trusting the values.} The policy
+        often settles long before the values do; check both.
+  \item \textbf{Rewarding the wrong thing.} An agent maximises exactly the reward it
+        is given. Reward the outcome you want, not a proxy it can game.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Markov Decision Processes}
+\lensLA{States describe a student's progress; actions are interventions (a reminder,
+a tutoring session, nothing); rewards are learning gains minus the cost of the
+intervention. An MDP makes explicit what a well-meaning adviser does implicitly:
+spend scarce support where it changes the future most.}
+
+\lensPM{Project states (on track, slipping, critical) and actions (continue, add
+staff, cut scope) with estimated transition probabilities turn a gut decision into
+a policy --- and expose the assumption, often wrong, that adding people to a late
+project speeds it up.}
+
+\lensIOT{The worked example is a real problem class: condition-based maintenance.
+With transition probabilities estimated from fleet data (\chref{hmm}), value
+iteration gives the repair policy that maximises long-run output.}
+
+\lensSEC{An attacker moving through a network, and a defender choosing where to
+patch or monitor, can both be modelled as MDPs; the attack graph provides the states.
+Solving the defender's MDP ranks mitigations by how much they reduce the attacker's
+expected success.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Value Iteration, Policy Iteration and a Gridworld]
+\begin{lstlisting}[language=Python]
+import numpy as np
+
+# --- the maintenance MDP: states H, D, F; actions operate (0), repair (1)
+S, A = ["H", "D", "F"], ["operate", "repair"]
+P = np.zeros((2, 3, 3))              # P[a, s, s']
+P[0, 0] = [0.8, 0.2, 0.0]            # operate when healthy
+P[0, 1] = [0.0, 0.5, 0.5]            # operate when degraded
+P[0, 2] = [0.0, 0.0, 1.0]            # operate when failed: stays failed
+P[1, :, 0] = 1.0                     # repair: back to healthy
+R = np.array([[10.0, 5.0, 0.0],      # R[a, s]: operate
+              [-2.0, -4.0, -15.0]])  #          repair
+gamma = 0.9
+
+# --- value iteration -------------------------------------------------------
+V = np.zeros(3)
+for it in range(1, 1000):
+    Q = R + gamma * P @ V            # Q[a, s]
+    V_new = Q.max(axis=0)
+    if it <= 3:
+        print(f"iteration {it}: V = {V_new.round(3)}  "
+              f"policy = {[A[a] for a in Q.argmax(axis=0)]}")
+    if np.abs(V_new - V).max() < 1e-8:
+        break
+    V = V_new
+print(f"converged after {it} iterations: V = {V.round(2)}")
+print("optimal policy:", dict(zip(S, [A[a] for a in Q.argmax(axis=0)])))
+
+# --- policy iteration: evaluate exactly, then improve ----------------------
+policy = np.zeros(3, dtype=int)                  # start: always operate
+while True:
+    Pp = P[policy, np.arange(3)]                 # 3 x 3 under the policy
+    Rp = R[policy, np.arange(3)]
+    V = np.linalg.solve(np.eye(3) - gamma * Pp, Rp)   # V = R + g P V
+    print("evaluate", [A[a] for a in policy], "->", V.round(2))
+    new = (R + gamma * P @ V).argmax(axis=0)     # improve greedily
+    if (new == policy).all():
+        break
+    policy = new
+
+# --- a gridworld: 3 x 4, wall at (1,1), exits +1 and -1, slippery moves ---
+rows, cols, wall = 3, 4, (1, 1)
+exits = {(0, 3): 1.0, (1, 3): -1.0}
+moves = {"^": (-1, 0), "v": (1, 0), "<": (0, -1), ">": (0, 1)}
+side = {"^": "<>", "v": "<>", "<": "^v", ">": "^v"}
+
+
+def step(s, a):
+    r, c = s[0] + moves[a][0], s[1] + moves[a][1]
+    ok = 0 <= r < rows and 0 <= c < cols and (r, c) != wall
+    return (r, c) if ok else s
+
+
+def q(V, s, a):                                  # expected next value
+    return (0.8 * V[step(s, a)] + 0.1 * V[step(s, side[a][0])]
+            + 0.1 * V[step(s, side[a][1])])
+
+
+cells = [(r, c) for r in range(rows) for c in range(cols) if (r, c) != wall]
+V = {s: 0.0 for s in cells}
+for _ in range(200):
+    V = {s: exits[s] if s in exits else
+         -0.04 + 1.0 * max(q(V, s, a) for a in moves) for s in cells}
+for r in range(rows):
+    line = []
+    for c in range(cols):
+        s = (r, c)
+        if s == wall:
+            line.append(" wall  ")
+        else:
+            best = "" if s in exits else max(moves, key=lambda a: q(V, s, a))
+            line.append(f"{V[s]:6.3f}{best or ' '}")
+    print(" ".join(line))
+\end{lstlisting}
+The gridworld reproduces \dsref{gridworld}. Change the step cost from $-0.04$ to $-0.4$
+and rerun: the agent stops taking the long way round. Why?
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item With $\gamma = 0.5$, what is the return of the rewards $4, 4, 4, 0, 0, \dots$?
+  \item What is the difference between $V^{\pi}(s)$ and $Q^{\pi}(s, a)$?
+  \item In the maintenance MDP, why does ``always operate'' score so much less than
+        the optimal policy, when operating always earns more immediately than
+        repairing?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item An MDP has states, actions, a transition model, rewards and a discount; a
+        policy maps states to actions.
+  \item The return is the discounted sum of future rewards; $\gamma$ sets how far
+        ahead the agent looks.
+  \item The Bellman equations relate each state's value to its neighbours'; the
+        optimal policy acts greedily with respect to the optimal action values.
+  \item Value iteration repeatedly applies the Bellman optimality update; policy
+        iteration alternates exact evaluation and greedy improvement and usually
+        needs very few rounds.
+  \item Both are planning methods that require the model; reinforcement learning
+        learns without it.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The discount factor $\gamma$ controls: (a)~the learning rate
+        (b)~how much future rewards count relative to immediate ones (c)~the
+        probability of a transition (d)~the number of actions.
+  \item \textbf{(MCQ)} Value iteration requires: (a)~no model (b)~the transition and
+        reward model (c)~labelled examples (d)~a neural network.
+  \item \textbf{(MCQ)} The optimal policy chooses in each state the action that
+        maximises: (a)~$R(s, a)$ (b)~$Q^{*}(s, a)$ (c)~$V^{*}(s)$ (d)~$P(s' \mid s, a)$.
+  \item \textbf{(Short)} Explain the Bellman expectation equation in words.
+  \item \textbf{(Short)} Why does policy iteration usually need fewer iterations than
+        value iteration?
+  \item \textbf{(Short)} Give an example of a reward that an agent could satisfy in an
+        unintended way.
+  \item \textbf{(Applied)} Perform sweep 4 of value iteration on the maintenance MDP,
+        starting from the sweep-3 values $(24.34, 12.29, 1.29)$.
+  \item \textbf{(Applied)} In the maintenance MDP, raise the cost of repairing a
+        degraded machine to $-20$. Write the Bellman equations for the policy
+        ``operate when healthy or degraded, repair when failed'' and solve them for
+        $V(H)$.
+\end{reviewq}

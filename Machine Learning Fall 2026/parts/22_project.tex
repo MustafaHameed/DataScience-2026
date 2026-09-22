@@ -1,0 +1,394 @@
+%=====================================================================
+\chapter{The Machine Learning Project}\label{ch:project}
+%=====================================================================
+\locator{6}{Part VI --- Responsible Practice}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Scope} a machine learning project: turn a vague aim into a task,
+        performance measure, data source, baseline and success criterion.
+  \item \textbf{Plan} the project in milestones and \textbf{write} a one-page
+        proposal.
+  \item \textbf{Run} experiments reproducibly: one fixed split, cross-validated
+        comparisons, an experiment log, seeds and version control.
+  \item \textbf{Report} results honestly, with a baseline, uncertainty, per-group
+        performance and a model card.
+  \item \textbf{Present} and \textbf{defend} the project's choices.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+Everything. In particular \chref{introduction} (T, P and E), \chref{workflow} (the
+workflow and leakage), \chref{generalization} (model selection),
+\chref{evaluation} (metrics and uncertainty) and \chref{ethics} (the checklist and the
+model card). The project delivers HEC 2023 CLO-5 --- ``develop a reasonable size project
+using suitable machine learning technique'' --- and the HEC 2025 outcome ``design and
+develop end-to-end ML solutions for real-world datasets''.
+\end{prereq}
+
+\begin{keyterms}
+problem framing $\bullet$ success criterion $\bullet$ proposal $\bullet$ milestone
+$\bullet$ fixed test set $\bullet$ experiment log $\bullet$ reproducibility
+$\bullet$ random seed $\bullet$ version control $\bullet$ ablation $\bullet$ error
+analysis $\bullet$ model card $\bullet$ technical report $\bullet$ presentation
+\end{keyterms}
+
+\section{What the Project Is For}
+
+Each chapter has taught one piece: one algorithm, one metric, one pitfall. Real work
+needs all of them at once, in the right order, on data nobody has cleaned in advance,
+for a question that matters to someone. The project is where that happens. It is
+worth 15\% of the course (see the Course Specification), is done in pairs, runs from
+Week~11 to Week~16, and is judged less on the final accuracy than on whether every
+number in it can be trusted.
+
+\section{Choosing and Scoping a Problem}
+
+A good project problem has four properties: a \textbf{decision} someone would make
+with the prediction; \textbf{data} you can legally obtain, with labels, preferably at
+least a thousand examples; a \textbf{baseline} that is easy to compute; and a
+\textbf{scope} that fits five weeks. Sources of data:
+\begin{tight}
+  \item the UCI Machine Learning Repository, OpenML and Kaggle, each with thousands of
+        documented datasets;
+  \item the datasets bundled with scikit-learn, for rehearsing the pipeline;
+  \item data from your own institution or employer --- only with written
+        permission, and never with personal identifiers (\chref{ethics}).
+\end{tight}
+
+\begin{worked}[From a Vague Idea to a Project]
+\textbf{Idea:} ``Use machine learning to improve student results.''
+
+\smallskip
+\textbf{Decision.} Who acts on the prediction? The department's advisers, who can
+contact about 50 students each term.
+
+\textbf{Task $T$.} In Week~4, rank enrolled students by their risk of failing the
+course.
+
+\textbf{Experience $E$.} Three past cohorts (about 900 students) with Week-4 attendance,
+quiz marks and LMS activity, and final results --- obtained anonymised, with the
+department's written permission.
+
+\textbf{Performance $P$.} Recall among the top 50 ranked students (how many eventual
+failures the advisers would reach), with precision reported beside it.
+
+\textbf{Baseline.} Rank by attendance alone --- the rule advisers already use.
+
+\textbf{Success criterion.} Beat the attendance rule's recall at 50 by at least five
+students on the held-out cohort, with no group of students (by programme) whose recall
+is below 60\% of the others'.
+
+\smallskip
+Every later choice --- features, model, threshold, fairness check --- now has
+something to be judged against. A project without that paragraph cannot fail, and so
+cannot succeed either.
+\end{worked}
+
+\section{The Plan}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  bar/.style={rounded corners=2pt, fill=#1!55, draw=#1, minimum height=0.46cm},
+  ms/.style={diamond, fill=accent, inner sep=1.8pt}]
+\foreach \w in {11,...,16}{
+  \pgfmathsetmacro{\xx}{(\w-11)*2.0}
+  \node[font=\scriptsize\bfseries, text=primary] at (\xx+1.0,0.55) {Week \w};
+  \draw[gray!30] (\xx,0.3) -- (\xx,-5.2);}
+\draw[gray!30] (12.0,0.3) -- (12.0,-5.2);
+\foreach \y/\lab/\s/\e/\c in {
+   0/{Proposal and data}/0/2.0/primary,
+   1/{Baseline and pipeline}/1.0/4.0/secondary,
+   2/{Experiments and tuning}/2.0/7.0/greenhl,
+   3/{Error analysis and fairness check}/5.0/8.5/purplehl,
+   4/{Test once; report and model card}/7.5/10.5/goldhl,
+   5/{Presentation}/10.0/12.0/tealhl}{
+  \node[anchor=east, font=\scriptsize] at (-0.2,-\y*0.8-0.1) {\lab};
+  \node[bar=\c, anchor=west, minimum width={(\e-\s)*1cm}] at (\s,-\y*0.8-0.1) {};}
+\node[ms] at (2.0,-0.1) {};
+\node[font=\tiny, accent, anchor=west] at (2.15,-0.1) {proposal due};
+\node[ms] at (7.0,-1.7) {};
+\node[font=\tiny, accent, anchor=west] at (7.15,-1.7) {experiments frozen};
+\node[ms] at (10.5,-3.3) {};
+\node[font=\tiny, accent, anchor=west] at (10.62,-2.95) {report due};
+\end{tikzpicture}}%
+{The project across the last six weeks of the semester. The test set is opened only once,
+after experiments are frozen in Week~14.}{project-plan}
+
+\begin{conceptbox}[The One-Page Proposal (due end of Week 11)]
+\begin{tightnum}
+  \item \textbf{Problem and decision:} who will use the prediction, for what.
+  \item \textbf{$T$, $P$, $E$}, as in the worked example.
+  \item \textbf{Data:} source, size, label, permission, known problems.
+  \item \textbf{Baseline} and \textbf{success criterion}.
+  \item \textbf{Planned models} (at least one from each of two different chapters).
+  \item \textbf{Risks and ethics:} who could be harmed; which fairness check.
+\end{tightnum}
+\end{conceptbox}
+
+\section{Running Experiments Honestly}
+
+\begin{definitionbox}[Rules for Reproducible Experiments]
+\begin{tight}
+  \item \textbf{Split once, first,} and store the test indices; the test set is not
+        opened until the experiments are frozen.
+  \item \textbf{Every model is a pipeline} (\chref{workflow}) evaluated by the same
+        cross-validation folds.
+  \item \textbf{Log every run}: date, model, settings, CV mean and standard deviation,
+        and one line on why it was run. The log, not memory, is the record.
+  \item \textbf{Fix the random seeds} and record the library versions.
+  \item \textbf{Use version control} (Git): commit the code with each logged run, so
+        any number in the report can be regenerated.
+\end{tight}
+\end{definitionbox}
+
+\begin{worked}[Reading an Experiment Log]
+The lab's template writes this log for a tumour classifier whose metric is recall on
+the malignant class:
+
+\smallskip
+\begin{center}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Model} & \textbf{CV recall (mean)} & \textbf{(sd)} \\
+\midrule
+baseline (majority class) & 0.000 & 0.000 \\
+logistic regression & 0.944 & 0.036 \\
+random forest & 0.937 & 0.034 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The baseline scores zero}: it predicts ``benign'' for everyone, so it never
+catches a malignant case --- the accuracy paradox of \chref{evaluation} expressed in the
+metric that matters. \textbf{The two models} --- logistic regression (\chref{logreg})
+and a random forest (\chref{ensembles}) --- \textbf{are indistinguishable}: 0.944 and 0.937
+differ by far less than one fold-to-fold standard deviation. Choose the simpler, more
+explainable one --- logistic regression --- tune it (the template finds $C = 0.1$ with
+balanced class weights), and only then open the test set, once: recall 0.962 on 53
+malignant cases, which is 51 of 53 caught.
+\end{worked}
+
+\textbf{Error analysis} is the step most projects skip and the one that teaches most:
+look at the examples the model gets wrong, and ask what they have in common. An
+\textbf{ablation} --- removing one feature or one step and measuring the change --- shows
+what each part of the pipeline contributes. Both belong in the report.
+
+\section{The Report and the Presentation}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.6cm}L{11.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Section} & \textbf{Contents} \\
+\midrule
+\endhead
+1. Problem & The decision, $T$, $P$, $E$, success criterion (from the proposal, updated) \\
+2. Data & Source, permission, size, label, cleaning, the split; a table of features \\
+3. Method & Baseline; models compared; the pipeline; how hyperparameters were chosen \\
+4. Results & The experiment log; the chosen model's test performance \emph{with a
+confidence interval} (\chref{evaluation}); comparison with the baseline and success
+criterion \\
+5. Analysis & Error analysis; ablation; per-group performance and the fairness check \\
+6. Limitations & What the model must not be used for; what would change the conclusion \\
+Appendix & The model card (\chref{ethics}); how to rerun everything \\
+\bottomrule
+\end{longtable}
+
+The presentation is ten minutes and five slides: the decision and why it matters; the
+data; what was compared and how; the result against the baseline, with its uncertainty;
+and one limitation. Every member of the pair must be able to answer any question on any
+part.
+
+\section{Assessment}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.4cm}L{1.3cm}L{7.4cm}L{1.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Criterion} & \textbf{Marks} & \textbf{Full marks require} & \textbf{CLO} \\
+\midrule
+\endhead
+Framing and proposal & 10 & A decision, $T$/$P$/$E$, baseline and success criterion
+stated before any modelling & 1, 6 \\
+Data and pipeline & 15 & Legal data; leak-free pipeline; one fixed split & 6 \\
+Experiments & 20 & At least two model families; CV comparison; logged; reproducible from
+the repository & 2--4, 6 \\
+Evaluation & 20 & Right metric; baseline; confidence interval; test set used once & 5 \\
+Analysis and ethics & 15 & Error analysis; per-group results; model card & 5, 7 \\
+Report & 10 & Clear, complete, honest about limitations & 6 \\
+Presentation and defence & 10 & Both members answer confidently & 6 \\
+\midrule
+\textbf{Total} & \textbf{100} & Weighted to 15\% of the course & \\
+\bottomrule
+\end{longtable}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Choosing the dataset before the question.} Start from a decision;
+        find data for it.
+  \item \textbf{Opening the test set to ``check progress''.} It is then a validation
+        set, and the final number is optimistic.
+  \item \textbf{No baseline.} A 92\% model means nothing until the baseline is known.
+  \item \textbf{Reporting only the best run.} Report the log, including what did not
+        work.
+  \item \textbf{A notebook that runs only in the order it was written.} Restart and run
+        everything before submitting; better, turn it into a script.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Project Ideas}
+\lensLA{Predict course failure from early-term engagement (the worked example); cluster
+students by study behaviour and describe each group; or run a bandit over reminder
+messages and report which works best. Obtain anonymised data with written permission,
+and include the fairness check across programmes.}
+
+\lensPM{Estimate issue resolution time from ticket text and metadata (regression plus
+naive Bayes features); or classify projects at risk from their weekly metrics. Open
+issue trackers from public software projects are an accessible, legal source.}
+
+\lensIOT{Detect machine faults from a public vibration or predictive-maintenance
+dataset; compare an anomaly detector trained on normal data with a supervised
+classifier, and report the cost of each kind of error.}
+
+\lensSEC{Classify network connections as benign or malicious on a public
+intrusion-detection dataset, or phishing URLs from their features. Report precision at
+fixed recall, compare with a signature-style rule, and test how easily the model can be
+evaded by changing one feature.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[A Project Template, End to End]
+Copy this script as the skeleton of your project and replace the data and the
+candidate models. It writes an experiment log, the saved model and a model card into
+a folder called \texttt{project\_output}.
+\begin{lstlisting}[language=Python]
+"""Project skeleton: from raw data to a saved, documented model."""
+import csv
+import datetime
+import json
+import os
+
+import joblib
+import sklearn
+from sklearn.datasets import load_breast_cancer
+from sklearn.dummy import DummyClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, recall_score
+from sklearn.model_selection import (GridSearchCV, StratifiedKFold,
+                                     cross_val_score, train_test_split)
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+SEED = 42                                   # one seed, used everywhere
+OUT = "project_output"
+os.makedirs(OUT, exist_ok=True)
+
+# --- 1. data, and a split made once and never changed --------------------
+data = load_breast_cancer()
+X, y = data.data, 1 - data.target           # 1 = malignant: must not miss
+X_tr, X_te, y_tr, y_te = train_test_split(
+    X, y, test_size=0.25, stratify=y, random_state=SEED)
+cv = StratifiedKFold(5, shuffle=True, random_state=SEED)
+metric = "recall"                           # chosen in the proposal
+
+# --- 2. baseline, then candidates, all by cross-validation ---------------
+candidates = {
+    "baseline": DummyClassifier(strategy="most_frequent"),
+    "logistic": make_pipeline(StandardScaler(),
+                              LogisticRegression(max_iter=2000)),
+    "forest": RandomForestClassifier(n_estimators=300, random_state=SEED),
+}
+with open(os.path.join(OUT, "experiments.csv"), "w", newline="") as fh:
+    log = csv.writer(fh)
+    log.writerow(["model", f"cv_{metric}_mean", f"cv_{metric}_std"])
+    for name, model in candidates.items():
+        s = cross_val_score(model, X_tr, y_tr, cv=cv, scoring=metric)
+        log.writerow([name, round(s.mean(), 4), round(s.std(), 4)])
+        print(f"{name:9s} CV {metric} {s.mean():.3f} +/- {s.std():.3f}")
+
+# --- 3. tune the chosen family -------------------------------------------
+params = {"logisticregression__C": [0.01, 0.1, 1, 10],
+          "logisticregression__class_weight": [None, "balanced"]}
+grid = GridSearchCV(candidates["logistic"], params, cv=cv,
+                    scoring=metric).fit(X_tr, y_tr)
+print("chosen settings:", grid.best_params_)
+
+# --- 4. the test set, once -----------------------------------------------
+pred = grid.predict(X_te)
+test_recall = recall_score(y_te, pred)
+print(classification_report(y_te, pred,
+                            target_names=["benign", "malignant"], digits=3))
+
+# --- 5. save the model and write its model card --------------------------
+joblib.dump(grid.best_estimator_, os.path.join(OUT, "model.joblib"))
+card = {
+    "model": "logistic regression, standardised features",
+    "intended use": "second reader for tumour measurements; never alone",
+    "data": f"Wisconsin breast cancer, {len(y)} cases, 30 features",
+    "split": f"75/25 stratified, seed {SEED}; 5-fold CV for selection",
+    "settings": grid.best_params_,
+    f"test {metric}": round(float(test_recall), 3),
+    "limitations": "one hospital's data; not validated on other scanners",
+    "date": datetime.date.today().isoformat(),
+    "library": f"scikit-learn {sklearn.__version__}",
+}
+with open(os.path.join(OUT, "model_card.json"), "w") as fh:
+    json.dump(card, fh, indent=2, default=str)
+print("saved:", sorted(os.listdir(OUT)))
+\end{lstlisting}
+The template reproduces the experiment log of the worked example. Before adapting it,
+change \texttt{metric} to \texttt{"precision"} and rerun: does the chosen model change?
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Write a success criterion for a spam filter that a manager could check.
+  \item Two models score 0.912 $\pm$ 0.030 and 0.905 $\pm$ 0.028 in cross-validation.
+        Which do you choose, and on what grounds?
+  \item Name three things that must be recorded for an experiment to be reproducible.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Start from a decision, and write $T$, $P$, $E$, a baseline and a success
+        criterion before modelling.
+  \item Split once; compare pipelines by cross-validation on fixed folds; log every
+        run; fix seeds; commit code.
+  \item Choose between near-equal models on simplicity; open the test set once;
+        report the result with its uncertainty and beside the baseline.
+  \item Error analysis, ablations and per-group results turn a score into
+        understanding.
+  \item The report, the model card and the defence are part of the work, not
+        decoration.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The test set should be used: (a)~after every experiment
+        (b)~once, after experiments are frozen (c)~to choose hyperparameters
+        (d)~never.
+  \item \textbf{(MCQ)} An ablation study: (a)~removes components to measure their
+        contribution (b)~adds more data (c)~tunes the learning rate (d)~cleans labels.
+  \item \textbf{(MCQ)} The most important part of a project proposal is: (a)~the
+        choice of algorithm (b)~the decision, metric and success criterion (c)~the
+        number of features (d)~the programming language.
+  \item \textbf{(Short)} Why should an experiment log include runs that did not
+        improve the model?
+  \item \textbf{(Short)} What is error analysis, and what can it reveal that a single
+        metric cannot?
+  \item \textbf{(Short)} Explain why the worked example chose logistic regression over
+        the random forest.
+  \item \textbf{(Applied)} Write the one-page proposal for a project in a domain of your
+        choice, using the template of this chapter.
+  \item \textbf{(Applied)} For the worked example's test result (51 of 53 malignant
+        cases caught), compute a 95\% confidence interval for the recall and discuss
+        what it means for the claim ``the model catches 96\% of cancers''.
+\end{reviewq}

@@ -1,0 +1,570 @@
+%=====================================================================
+\chapter{Overfitting, Bias--Variance and Regularisation}\label{ch:generalization}
+%=====================================================================
+\locator{2}{Part II --- Linear Models and Generalization}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} training error from true error, and
+        \textbf{recognise} underfitting and overfitting from both.
+  \item \textbf{Decompose} expected error into bias, variance and noise, and
+        \textbf{compute} each from repeated predictions.
+  \item \textbf{Diagnose} a model from its learning curves and \textbf{choose} the
+        right remedy.
+  \item \textbf{Apply} ridge and lasso regularisation and \textbf{explain} how the
+        penalty strength trades bias for variance.
+  \item \textbf{Select} a model and its hyperparameters with $k$-fold
+        cross-validation, touching the test set only once.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{workflow} (training, validation and test sets; pipelines),
+\chref{linreg} (polynomial features, MSE) and \chref{logreg} (the growing weights
+on separable data).
+\end{prereq}
+
+\begin{keyterms}
+generalisation $\bullet$ training error $\bullet$ true error $\bullet$
+generalisation gap $\bullet$ underfitting $\bullet$ overfitting $\bullet$ model
+complexity $\bullet$ bias $\bullet$ variance $\bullet$ irreducible error (noise)
+$\bullet$ learning curve $\bullet$ regularisation $\bullet$ ridge (L2) $\bullet$
+lasso (L1) $\bullet$ hyperparameter $\bullet$ $k$-fold cross-validation $\bullet$
+grid search $\bullet$ nested cross-validation
+\end{keyterms}
+
+\section{The Goal Is Generalisation}
+
+A model's \term{training error} is its error on the examples it learned from. Its
+\term{true error} is its expected error on new examples drawn from the same
+source --- the only error anybody cares about. The difference between the two is
+the \term{generalisation gap}. Training error is easy to measure and always
+optimistic; true error cannot be measured at all, only estimated on data the
+model has never seen. Everything in this chapter follows from taking that
+distinction seriously.
+
+\section{Underfitting and Overfitting}
+
+\dsref{polyfits} fits polynomials of three degrees to the same ten noisy samples
+of a sine wave. Degree 1 is too rigid to follow the curve at all. Degree 9 has ten
+coefficients for ten points, so it passes through every one of them --- training
+error exactly zero --- and swings wildly between them. Degree 3 follows the shape
+and ignores the noise.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=3 by 1, horizontal sep=0.9cm},
+  width=5.6cm, height=4.6cm, axis lines=left,
+  tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+  xmin=0, xmax=1, ymin=-2, ymax=2, xtick={0,0.5,1}, ytick={-2,-1,0,1,2}]
+\nextgroupplot[title={Degree 1: underfits}, ylabel={$y$}]
+\addplot[gray!55, dashed, domain=0:1, samples=60] {sin(deg(2*pi*x))};
+\addplot[accent, line width=1.2pt] coordinates {(0.020,0.761) (0.030,0.746) (0.040,0.731) (0.050,0.716) (0.060,0.701) (0.070,0.686) (0.080,0.671) (0.090,0.656) (0.100,0.641) (0.110,0.627) (0.120,0.612) (0.130,0.597) (0.140,0.582) (0.150,0.567) (0.160,0.552) (0.170,0.537) (0.180,0.522) (0.190,0.507) (0.200,0.492) (0.210,0.477) (0.220,0.462) (0.230,0.447) (0.240,0.432) (0.250,0.417) (0.260,0.402) (0.270,0.387) (0.280,0.372) (0.290,0.357) (0.300,0.342) (0.310,0.327) (0.320,0.312) (0.330,0.297) (0.340,0.282) (0.350,0.267) (0.360,0.252) (0.370,0.237) (0.380,0.222) (0.390,0.207) (0.400,0.192) (0.410,0.177) (0.420,0.162) (0.430,0.147) (0.440,0.133) (0.450,0.118) (0.460,0.103) (0.470,0.088) (0.480,0.073) (0.490,0.058) (0.500,0.043) (0.510,0.028) (0.520,0.013) (0.530,-0.002) (0.540,-0.017) (0.550,-0.032) (0.560,-0.047) (0.570,-0.062) (0.580,-0.077) (0.590,-0.092) (0.600,-0.107) (0.610,-0.122) (0.620,-0.137) (0.630,-0.152) (0.640,-0.167) (0.650,-0.182) (0.660,-0.197) (0.670,-0.212) (0.680,-0.227) (0.690,-0.242) (0.700,-0.257) (0.710,-0.272) (0.720,-0.287) (0.730,-0.302) (0.740,-0.317) (0.750,-0.332) (0.760,-0.347) (0.770,-0.361) (0.780,-0.376) (0.790,-0.391) (0.800,-0.406) (0.810,-0.421) (0.820,-0.436) (0.830,-0.451) (0.840,-0.466) (0.850,-0.481) (0.860,-0.496) (0.870,-0.511) (0.880,-0.526) (0.890,-0.541) (0.900,-0.556) (0.910,-0.571) (0.920,-0.586) (0.930,-0.601) (0.940,-0.616) (0.950,-0.631) (0.960,-0.646) (0.970,-0.661) (0.980,-0.676) (0.990,-0.691)};
+\addplot[only marks, mark=*, mark size=1.6pt, primary] coordinates {(0.034,0.313) (0.141,0.623) (0.262,0.482) (0.365,1.276) (0.433,0.409) (0.531,-0.078) (0.651,-0.974) (0.772,-1.197) (0.870,-0.567) (0.976,0.089)};
+\nextgroupplot[title={Degree 3: about right}]
+\addplot[gray!55, dashed, domain=0:1, samples=60] {sin(deg(2*pi*x))};
+\addplot[greenhl!70!black, line width=1.2pt] coordinates {(0.020,-0.024) (0.030,0.083) (0.040,0.184) (0.050,0.278) (0.060,0.366) (0.070,0.447) (0.080,0.522) (0.090,0.591) (0.100,0.654) (0.110,0.711) (0.120,0.763) (0.130,0.809) (0.140,0.849) (0.150,0.885) (0.160,0.915) (0.170,0.941) (0.180,0.961) (0.190,0.977) (0.200,0.989) (0.210,0.996) (0.220,0.999) (0.230,0.999) (0.240,0.994) (0.250,0.985) (0.260,0.973) (0.270,0.958) (0.280,0.939) (0.290,0.917) (0.300,0.892) (0.310,0.864) (0.320,0.833) (0.330,0.800) (0.340,0.764) (0.350,0.726) (0.360,0.686) (0.370,0.644) (0.380,0.601) (0.390,0.555) (0.400,0.508) (0.410,0.459) (0.420,0.410) (0.430,0.359) (0.440,0.307) (0.450,0.254) (0.460,0.201) (0.470,0.147) (0.480,0.093) (0.490,0.039) (0.500,-0.016) (0.510,-0.070) (0.520,-0.124) (0.530,-0.178) (0.540,-0.232) (0.550,-0.284) (0.560,-0.336) (0.570,-0.387) (0.580,-0.437) (0.590,-0.486) (0.600,-0.533) (0.610,-0.579) (0.620,-0.623) (0.630,-0.665) (0.640,-0.706) (0.650,-0.744) (0.660,-0.780) (0.670,-0.813) (0.680,-0.844) (0.690,-0.873) (0.700,-0.898) (0.710,-0.920) (0.720,-0.940) (0.730,-0.956) (0.740,-0.968) (0.750,-0.978) (0.760,-0.983) (0.770,-0.984) (0.780,-0.982) (0.790,-0.975) (0.800,-0.964) (0.810,-0.949) (0.820,-0.928) (0.830,-0.904) (0.840,-0.874) (0.850,-0.839) (0.860,-0.799) (0.870,-0.754) (0.880,-0.703) (0.890,-0.647) (0.900,-0.585) (0.910,-0.517) (0.920,-0.443) (0.930,-0.362) (0.940,-0.276) (0.950,-0.183) (0.960,-0.083) (0.970,0.024) (0.980,0.137) (0.990,0.258)};
+\addplot[only marks, mark=*, mark size=1.6pt, primary] coordinates {(0.034,0.313) (0.141,0.623) (0.262,0.482) (0.365,1.276) (0.433,0.409) (0.531,-0.078) (0.651,-0.974) (0.772,-1.197) (0.870,-0.567) (0.976,0.089)};
+\nextgroupplot[title={Degree 9: overfits}]
+\addplot[gray!55, dashed, domain=0:1, samples=60] {sin(deg(2*pi*x))};
+\addplot[accent, line width=1.2pt] coordinates {(0.020,-3.000) (0.030,-1.382) (0.040,2.785) (0.050,3.000) (0.060,3.000) (0.070,3.000) (0.080,3.000) (0.090,3.000) (0.100,3.000) (0.110,3.000) (0.120,2.433) (0.130,1.484) (0.140,0.664) (0.150,-0.001) (0.160,-0.503) (0.170,-0.844) (0.180,-1.036) (0.190,-1.095) (0.200,-1.041) (0.210,-0.897) (0.220,-0.685) (0.230,-0.427) (0.240,-0.144) (0.250,0.148) (0.260,0.432) (0.270,0.695) (0.280,0.928) (0.290,1.123) (0.300,1.276) (0.310,1.384) (0.320,1.448) (0.330,1.470) (0.340,1.453) (0.350,1.401) (0.360,1.320) (0.370,1.217) (0.380,1.096) (0.390,0.965) (0.400,0.829) (0.410,0.693) (0.420,0.562) (0.430,0.441) (0.440,0.331) (0.450,0.236) (0.460,0.155) (0.470,0.089) (0.480,0.038) (0.490,-0.000) (0.500,-0.028) (0.510,-0.048) (0.520,-0.063) (0.530,-0.076) (0.540,-0.092) (0.550,-0.112) (0.560,-0.141) (0.570,-0.180) (0.580,-0.233) (0.590,-0.298) (0.600,-0.379) (0.610,-0.473) (0.620,-0.581) (0.630,-0.699) (0.640,-0.825) (0.650,-0.955) (0.660,-1.085) (0.670,-1.209) (0.680,-1.324) (0.690,-1.424) (0.700,-1.503) (0.710,-1.557) (0.720,-1.582) (0.730,-1.575) (0.740,-1.535) (0.750,-1.462) (0.760,-1.357) (0.770,-1.224) (0.780,-1.070) (0.790,-0.901) (0.800,-0.729) (0.810,-0.566) (0.820,-0.425) (0.830,-0.321) (0.840,-0.270) (0.850,-0.285) (0.860,-0.380) (0.870,-0.563) (0.880,-0.837) (0.890,-1.198) (0.900,-1.629) (0.910,-2.102) (0.920,-2.568) (0.930,-2.955) (0.940,-3.000) (0.950,-3.000) (0.960,-2.479) (0.970,-1.184) (0.980,1.100) (0.990,3.000)};
+\addplot[only marks, mark=*, mark size=1.6pt, primary] coordinates {(0.034,0.313) (0.141,0.623) (0.262,0.482) (0.365,1.276) (0.433,0.409) (0.531,-0.078) (0.651,-0.974) (0.772,-1.197) (0.870,-0.567) (0.976,0.089)};
+\end{groupplot}
+\end{tikzpicture}}%
+{Three polynomials fitted to the same ten points (blue); the dashed curve is the true
+function. Training error falls from left to right and reaches zero at degree 9, which
+is nonetheless the worst of the three on new data.}{polyfits}
+
+\begin{definitionbox}[Underfitting and Overfitting]
+A model \term{underfits} when it is too simple to capture the pattern: both
+training and test error are high. A model \term{overfits} when it captures the
+noise in its particular training sample as well as the pattern: training error is
+low, test error is high, and the gap between them is large.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[width=9.6cm, height=5.4cm, axis lines=left,
+  xlabel={polynomial degree (model complexity)}, ylabel={RMSE},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  xmin=0, xmax=9.3, ymin=0, ymax=1.6, xtick={0,...,9},
+  legend style={font=\tiny, draw=gray!40, at={(0.03,0.97)}, anchor=north west}]
+\fill[accent!6] (axis cs:0,0) rectangle (axis cs:2.5,1.6);
+\fill[accent!6] (axis cs:7.5,0) rectangle (axis cs:9.3,1.6);
+\addplot[primary, line width=1.2pt, mark=*, mark size=1.4pt] coordinates
+  {(0,0.722)(1,0.568)(2,0.567)(3,0.290)(4,0.263)(5,0.206)(6,0.186)(7,0.169)(8,0.128)(9,0.000)};
+\addlegendentry{training error}
+\addplot[accent, line width=1.2pt, mark=square*, mark size=1.4pt] coordinates
+  {(0,0.777)(1,0.509)(2,0.508)(3,0.248)(4,0.271)(5,0.298)(6,0.326)(7,0.329)(8,0.502)(9,1.500)};
+\addlegendentry{test error}
+\node[font=\tiny\bfseries, accent!80!black] at (axis cs:1.25,1.45) {underfitting};
+\node[font=\tiny\bfseries, accent!80!black] at (axis cs:8.4,1.15) {overfitting};
+\draw[greenhl!70!black, dashed, line width=0.9pt] (axis cs:3,0) -- (axis cs:3,1.0);
+\node[font=\tiny, greenhl!45!black, anchor=south] at (axis cs:3,1.0) {best: degree 3};
+\node[font=\tiny, accent, anchor=east] at (axis cs:8.85,1.5) {1.69 $\rightarrow$};
+\end{axis}
+\end{tikzpicture}}%
+{Training and test error for the polynomials of \dsref{polyfits}, degree 0 to 9, with the
+test error measured on 2{,}000 fresh samples. Training error only ever falls; test error
+falls, bottoms out, and rises. The shape of that second curve is the whole of this
+chapter.}{complexity-curve}
+
+\section{The Bias--Variance Decomposition}
+
+Why does test error rise again? Imagine repeating the whole experiment many
+times: draw a fresh training set, fit the model, predict at one fixed input
+$x_0$. The predictions scatter. Their average may miss the truth, and they may be
+spread widely around their own average. Those are two different failings.
+
+\begin{definitionbox}[Bias, Variance and Noise]
+For a fixed input $x_0$ with true value $f(x_0)$, let $\hat{f}(x_0)$ be the
+prediction of a model trained on a random training set. Then the expected squared
+error on a new observation $y = f(x_0) + \varepsilon$ is
+\[
+\mathbb{E}\big[(y - \hat{f}(x_0))^2\big]
+= \underbrace{\big(\mathbb{E}[\hat{f}(x_0)] - f(x_0)\big)^2}_{\text{bias}^2}
++ \underbrace{\mathbb{E}\big[(\hat{f}(x_0) - \mathbb{E}[\hat{f}(x_0)])^2\big]}_{\text{variance}}
++ \underbrace{\sigma^2_{\varepsilon}}_{\text{noise}}
+\]
+\term{Bias} is how far the average prediction is from the truth --- the error of
+the model's assumptions. \term{Variance} is how much the prediction changes from
+one training set to another --- its sensitivity to the particular sample.
+\term{Noise} is the \term{irreducible error} in the labels themselves, which no
+model can remove.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+\foreach \cx/\cy/\ttl/\sx/\sy/\spread in {
+    0/0/{Low bias, low variance}/0/0/0.18,
+    4.2/0/{Low bias, high variance}/0/0/0.62,
+    0/-4.0/{High bias, low variance}/0.7/0.45/0.18,
+    4.2/-4.0/{High bias, high variance}/0.7/0.45/0.62}{
+  \begin{scope}[shift={(\cx,\cy)}]
+    \fill[accent!10] (0,0) circle (1.5);
+    \fill[white] (0,0) circle (1.1);
+    \fill[accent!18] (0,0) circle (0.7);
+    \fill[white] (0,0) circle (0.35);
+    \fill[accent!45] (0,0) circle (0.12);
+    \draw[gray!50] (0,0) circle (1.5);
+    \foreach \a/\r in {10/0.9,75/0.6,140/1.0,200/0.4,260/0.85,320/0.7,30/0.3,180/0.75}{
+      \fill[primary] ({\sx+\spread*\r*cos(\a)},{\sy+\spread*\r*sin(\a)}) circle (1.6pt);}
+    \node[font=\scriptsize\bfseries, text=primary, anchor=north] at (0,-1.6) {\ttl};
+  \end{scope}}
+\node[anchor=north west, align=left, text width=5.6cm, font=\scriptsize, text=gray!55!black]
+     at (6.4,1.5)
+     {\textbf{The centre is the truth $f(x_0)$.} Each dot is the prediction of a model
+      trained on a different random training set.\\[4pt]
+      \textbf{Bias} is how far the \emph{cloud's centre} is from the bull's-eye:
+      simple models such as a straight line through a curve miss in the same
+      direction every time.\\[4pt]
+      \textbf{Variance} is how \emph{spread out} the cloud is: flexible models such
+      as the degree-9 polynomial land somewhere different every time.\\[4pt]
+      Increasing complexity moves a model from the bottom-left target towards the
+      top-right one.};
+\end{tikzpicture}}%
+{Bias and variance as target practice. The goal is the top-left target; in practice
+lowering one tends to raise the other.}{bias-variance}
+
+\begin{worked}[Bias and Variance From Four Training Sets]
+The true value at $x_0$ is $f(x_0) = 5$, and the label noise has variance
+$\sigma^2_\varepsilon = 1$. Two models are each trained on the same four random
+training sets and predict at $x_0$:
+\begin{tight}
+  \item \textbf{Simple model:} $3.8,\ 4.2,\ 4.0,\ 4.0$. Mean $4.0$.\\
+        $\text{bias}^2 = (4.0 - 5)^2 = 1.00$;\quad
+        variance $= \tfrac{0.04 + 0.04 + 0 + 0}{4} = 0.02$.
+  \item \textbf{Complex model:} $6.5,\ 3.4,\ 5.9,\ 4.2$. Mean $5.0$.\\
+        $\text{bias}^2 = 0$;\quad
+        variance $= \tfrac{2.25 + 2.56 + 0.81 + 0.64}{4} = 1.565$.
+\end{tight}
+\textbf{Expected squared error} $=$ bias$^2$ $+$ variance $+$ noise:
+\begin{tight}
+  \item simple: $1.00 + 0.02 + 1 = \mathbf{2.02}$
+  \item complex: $0 + 1.565 + 1 = \mathbf{2.57}$
+\end{tight}
+\smallskip
+\textbf{The biased model wins.} It is wrong on average, but consistently so; the
+unbiased model is right on average and wrong every single time. And neither can
+go below 1.0 --- that is the noise.
+\end{worked}
+
+\begin{conceptbox}[The Trade-Off]
+Making a model more flexible lowers its bias and raises its variance; making it
+more rigid does the reverse. Test error is their sum plus noise, so it is
+U-shaped in complexity (\dsref{complexity-curve}). The practical question is never
+``how do I eliminate bias?'' or ``how do I eliminate variance?'' but ``where is the
+bottom of the U, for this much data?'' --- because more data lowers variance and
+moves the bottom to the right.
+\end{conceptbox}
+
+\section{Noisy Data}
+
+Noise is not only measurement error in the features. It is also \emph{label}
+noise: a student recorded as failing who in fact withdrew, an intrusion alert
+closed as benign by a tired analyst. Noise sets the floor on achievable error,
+and it is exactly what an overfitting model memorises. Two consequences follow.
+First, a training error far below the noise level is a symptom, not an
+achievement --- the model has fitted the noise. Second, the noisier the data, the
+simpler the model it will support: every method in Part III has a setting (tree
+depth and pruning, $k$ in nearest neighbours, $C$ in an SVM) whose job is to stop
+it chasing noise.
+
+\section{Diagnosing With Learning Curves}
+
+A \term{learning curve} plots training and validation error against the number of
+training examples. Its shape tells you which of bias and variance is the problem,
+and therefore what to do.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.3cm},
+  width=6.8cm, height=4.6cm, axis lines=left,
+  tick label style={font=\tiny}, label style={font=\tiny},
+  title style={font=\scriptsize\bfseries},
+  xlabel={training set size}, ylabel={error},
+  xmin=0, xmax=100, ymin=0, ymax=1, xtick=\empty, ytick=\empty]
+\nextgroupplot[title={High bias}]
+\addplot[primary, line width=1.2pt, domain=3:100, samples=60] {0.62-0.35*exp(-x/12)};
+\addplot[accent, line width=1.2pt, domain=3:100, samples=60] {0.66+0.3*exp(-x/12)};
+\addplot[gray!55, dashed] coordinates {(0,0.2)(100,0.2)};
+\node[font=\tiny, primary, anchor=north east] at (axis cs:98,0.6) {training};
+\node[font=\tiny, accent, anchor=south east] at (axis cs:98,0.68) {validation};
+\node[font=\tiny, gray!55!black, anchor=north east] at (axis cs:98,0.19) {acceptable error};
+\node[font=\tiny, text=gray!55!black, anchor=north west, align=left] at (axis cs:38,0.47)
+     {both high and close:\\more data will not help};
+\nextgroupplot[title={High variance}]
+\addplot[primary, line width=1.2pt, domain=3:100, samples=60] {0.02+0.12*(1-exp(-x/30))};
+\addplot[accent, line width=1.2pt, domain=3:100, samples=60] {0.26+0.62*exp(-x/28)};
+\addplot[gray!55, dashed] coordinates {(0,0.2)(100,0.2)};
+\node[font=\tiny, primary, anchor=north east] at (axis cs:98,0.13) {training};
+\node[font=\tiny, accent, anchor=south east] at (axis cs:98,0.28) {validation};
+\node[font=\tiny, text=gray!55!black, anchor=north west, align=left] at (axis cs:35,0.75)
+     {large gap, still closing:\\more data will help};
+\end{groupplot}
+\end{tikzpicture}}%
+{Learning curves. With high bias the curves meet early at an unacceptable level; with
+high variance there is a wide gap that more data would narrow.}{learning-curves}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.0cm}L{4.4cm}L{7.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Diagnosis} & \textbf{Symptom} & \textbf{What helps} \\
+\midrule
+\endhead
+High bias (underfitting) & Training error high; validation close to it & A more
+flexible model; more or better features; less regularisation. More data does
+\emph{not} help \\
+High variance (overfitting) & Training error low; validation much higher & More
+data; fewer features; a simpler model; more regularisation; ensembles that
+average (\chref{ensembles}) \\
+Both fine but still poor & Both curves meet at the noise level & Better data:
+cleaner labels, more informative features. The algorithm is not the problem \\
+\bottomrule
+\end{longtable}
+
+\section{Regularisation}
+
+Choosing a lower polynomial degree is one way to control complexity, but a crude
+one: the degree jumps in whole steps. \term{Regularisation} controls it smoothly,
+by keeping the high-degree terms but charging the model for large weights.
+
+\begin{definitionbox}[Ridge and Lasso]
+Add a penalty on the size of the weights to the training loss:
+\[
+\text{Ridge (L2):}\quad \text{MSE} + \lambda\sum_{j} w_j^2
+\qquad\qquad
+\text{Lasso (L1):}\quad \text{MSE} + \lambda\sum_{j} |w_j|
+\]
+The \term{hyperparameter} $\lambda \ge 0$ sets the strength: $\lambda = 0$ is
+ordinary least squares; a very large $\lambda$ forces every weight to 0 (the bias
+$b$ is not penalised). Ridge shrinks all weights smoothly; lasso drives some of
+them to exactly zero, so it also \emph{selects features}. Features must be
+standardised first, or the penalty falls unequally on them.
+\end{definitionbox}
+
+\begin{worked}[Ridge Shrinkage in One Dimension]
+Centred data $x = -2, -1, 0, 1, 2$ and $y = -3, -1, 0, 2, 2$, fitted by $\hat{y} = wx$.
+Minimising $\sum(y_i - wx_i)^2 + \lambda w^2$ gives
+\[
+w = \frac{\sum x_i y_i}{\sum x_i^2 + \lambda}
+\qquad\text{with}\quad \textstyle\sum x_i y_i = 6 + 1 + 0 + 2 + 4 = 13,\quad \sum x_i^2 = 10
+\]
+\begin{tight}
+  \item $\lambda = 0$: $w = 13/10 = \mathbf{1.30}$ (least squares).
+  \item $\lambda = 2$: $w = 13/12 = \mathbf{1.08}$.
+  \item $\lambda = 10$: $w = 13/20 = \mathbf{0.65}$.
+\end{tight}
+The penalty adds $\lambda$ to the denominator, so it pulls the weight towards zero
+--- a little when the data is plentiful ($\sum x^2$ large), a lot when it is not.
+That is exactly the behaviour wanted: shrink hardest where the data says least.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+\foreach \ox/\ttl in {0/{Ridge (L2): a circle}, 6.6/{Lasso (L1): a diamond}}{
+  \begin{scope}[shift={(\ox,0)}]
+  \draw[-{Stealth[length=2mm]}, gray!60] (-2.2,0) -- (2.8,0) node[right, font=\tiny] {$w_1$};
+  \draw[-{Stealth[length=2mm]}, gray!60] (0,-1.6) -- (0,3.3) node[above, font=\tiny] {$w_2$};
+  \node[font=\scriptsize\bfseries, text=primary] at (0.3,-2.0) {\ttl};
+  \end{scope}}
+% ridge: least squares at (1.45, 1.2); tangent level 1.363, touching at (0.669, 0.743)
+\fill[greenhl!18, draw=greenhl!70!black, line width=1pt] (0,0) circle (1.0);
+\foreach \lv in {0.35,0.8,1.363}{
+  \draw[secondary!70, line width=0.8pt, rotate around={-35:(1.45,1.2)}]
+       (1.45,1.2) ellipse ({1.2*\lv} and {0.62*\lv});}
+\fill[secondary] (1.45,1.2) circle (1.6pt);
+\node[font=\tiny, text=secondary!70!black, anchor=south west] at (1.5,1.25) {least squares};
+\fill[greenhl!40!black] (0.669,0.743) circle (1.9pt);
+\node[font=\tiny, text=greenhl!40!black, anchor=north west, align=left] at (0.9,-0.1)
+     {first contact:\\both weights shrunk,\\neither is 0};
+\draw[greenhl!40!black, line width=0.4pt] (0.95,-0.12) -- (0.70,0.70);
+% lasso: least squares at (0.55, 1.95); tangent level 1.632, touching the corner (0, 1.1)
+\fill[greenhl!18, draw=greenhl!70!black, line width=1pt]
+     (6.6+1.1,0) -- (6.6,1.1) -- (6.6-1.1,0) -- (6.6,-1.1) -- cycle;
+\foreach \lv in {0.4,0.95,1.632}{
+  \draw[secondary!70, line width=0.8pt, rotate around={-35:(7.15,1.95)}]
+       (7.15,1.95) ellipse ({1.2*\lv} and {0.62*\lv});}
+\fill[secondary] (7.15,1.95) circle (1.6pt);
+\node[font=\tiny, text=secondary!70!black, anchor=south west] at (7.2,2.0) {least squares};
+\fill[accent] (6.6,1.1) circle (2pt);
+\node[font=\tiny, text=accent, anchor=north east, align=right] at (5.4,0.95)
+     {first contact at a corner:\\$w_1 = 0$ exactly};
+\draw[accent, line width=0.4pt] (5.42,0.92) -- (6.52,1.08);
+\end{tikzpicture}}%
+{Why lasso sets weights to zero. The regularised solution is where the smallest
+error ellipse (blue) first touches the region allowed by the penalty (green). A circle
+is touched at a generic point; a diamond is usually touched at a corner, where one
+weight is exactly zero.}{ridge-lasso}
+
+\begin{alertbox}[Regularisation Is Everywhere, Under Other Names]
+Every flexible model in this course has a knob that trades variance for bias.
+Maximum tree depth and pruning (\chref{trees}); $k$ in $k$-nearest neighbours
+(\chref{knn}); $C$ in SVMs (\chref{svm}); weight decay, early stopping and dropout
+in neural networks (\chref{ann}); $C = 1/\lambda$ in scikit-learn's
+\texttt{LogisticRegression} (\chref{logreg}). Once you see them as the same idea,
+tuning them is the same procedure --- the one in the next section.
+\end{alertbox}
+
+\section{Model Selection With Cross-Validation}
+
+A \term{hyperparameter} is a setting chosen before training --- degree, $\lambda$,
+$k$, tree depth --- as opposed to a \emph{parameter} such as a weight, which
+training sets. Hyperparameters are chosen by validation error. With little data a
+single validation split is too noisy to trust, so it is replaced by
+cross-validation.
+
+\begin{definitionbox}[$k$-Fold Cross-Validation]
+Split the training data into $k$ equal folds (typically 5 or 10). For each fold in
+turn, train on the other $k - 1$ folds and measure error on the held-out fold.
+The cross-validation score is the mean of the $k$ errors; report their standard
+deviation too. Every example is used for validation exactly once.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+\foreach \r in {1,...,5}{
+  \pgfmathsetmacro{\yy}{-(\r-1)*0.62}
+  \node[anchor=east, font=\tiny, text=gray!55!black] at (-0.2,\yy) {round \r};
+  \foreach \c in {1,...,5}{
+    \pgfmathsetmacro{\xx}{(\c-1)*1.9+0.95}
+    \ifnum\c=\r
+      \node[rounded corners=2pt, fill=goldhl!30, draw=goldhl, minimum width=1.8cm,
+            minimum height=0.48cm, font=\tiny\bfseries, text=goldhl!45!black] at (\xx,\yy) {validate};
+    \else
+      \node[rounded corners=2pt, fill=primary!12, draw=primary!50, minimum width=1.8cm,
+            minimum height=0.48cm, font=\tiny, text=primary!55!black] at (\xx,\yy) {train};
+    \fi}
+  \node[anchor=west, font=\tiny, text=gray!55!black] at (9.6,\yy) {error$_\r$};}
+\node[rounded corners=2pt, fill=gray!12, draw=gray!50, minimum width=1.8cm,
+      minimum height=2.95cm, font=\tiny\bfseries, text=gray!45!black, align=center]
+      at (12.4,-1.24) {TEST\\[2pt]set aside\\before\\any of this};
+\node[anchor=north west, align=left, text width=11cm, font=\tiny, text=gray!55!black]
+     at (-1.0,-2.95)
+     {CV score $=$ mean of the five errors. Repeat for every candidate setting, pick the best,
+      refit on all the training data, then evaluate on the test set once.};
+\end{tikzpicture}}%
+{Five-fold cross-validation on the training data. The test set is not part of the
+rotation.}{kfold}
+
+\Needspace{14\baselineskip}
+\begin{worked}[Choosing $\lambda$ by Cross-Validation]
+Five-fold cross-validation of a degree-12 polynomial with ridge penalties,
+from this chapter's lab:
+
+\smallskip
+\begin{center}
+\begin{tabular}{@{}lrl@{}}
+\toprule
+$\lambda$ & \textbf{CV RMSE} & \\
+\midrule
+$10^{-6}$ & 0.388 & \\
+$10^{-3}$ & 0.326 & $\leftarrow$ \textbf{lowest} \\
+$10^{-1}$ & 0.330 & \\
+$10$ & 0.441 & \\
+$1000$ & 0.706 & \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+The U-shape again: too little penalty overfits, too much underfits. Choose
+$\lambda = 10^{-3}$, refit on the whole training set, and only then measure the
+test set: RMSE 0.299. Unregularised, the same degree-12 polynomial had a CV RMSE of
+2.14 --- regularisation, not a lower degree, rescued it.
+
+\textbf{Notice} that $10^{-3}$ and $10^{-1}$ are within 0.004 of each other, far less
+than the fold-to-fold variation. When candidates are this close, prefer the
+simpler model --- here the larger penalty.
+\end{worked}
+
+\begin{alertbox}[Tuning on the Test Set Is Still Cheating When a Library Does It]
+If you try thirty settings and report the best \emph{test} score, the test set has
+become a validation set and the score is optimistic. Tune with cross-validation on
+the training data (\texttt{GridSearchCV} does this), then use the test set once.
+When even the tuning procedure must be evaluated honestly --- for a published
+comparison --- wrap the whole search in an outer cross-validation loop:
+\term{nested cross-validation}.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Celebrating zero training error.} With noisy labels it proves
+        overfitting.
+  \item \textbf{Collecting more data to cure high bias.} If training error is
+        already high, more of the same data will not lower it.
+  \item \textbf{Regularising unscaled features.} The penalty then depends on the
+        units each feature happens to be measured in.
+  \item \textbf{Reporting the best of many test scores.} Select on
+        cross-validation; test once.
+  \item \textbf{Choosing between near-identical CV scores.} Differences smaller
+        than the fold-to-fold standard deviation are noise.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{fourlenses}{Bias and Variance}
+\lensLA{A dropout model trained on one cohort of 200 students is a high-variance
+model: retrained on next year's cohort it gives different students different
+risks. Strong regularisation and a small number of well-understood features
+usually beat a flexible model here, because the data is small and the cohorts
+drift.}
+
+\lensPM{Effort data from one team is tiny and noisy, so the right model is nearly
+always simpler than it looks. A regression with two features that generalises
+beats one with twenty that fits last quarter perfectly; learning curves on
+project data usually show high variance.}
+
+\lensIOT{Vibration data is plentiful but each machine is different. A model with
+low variance across machines --- tested by holding out whole machines in
+cross-validation, not random readings --- is worth more than one that is very
+accurate on the machines it was trained on.}
+
+\lensSEC{An intrusion model that fits last month's traffic perfectly has learned
+last month's attacks, including their noise. Overfitting here is also a security
+weakness: a model that memorises exact signatures is evaded by the smallest
+variation. Regularised, simpler models degrade more gracefully.}
+\end{fourlenses}
+
+%---------------------------------------------------------------------
+\begin{lab}[Find the Bottom of the U]
+\begin{lstlisting}[language=Python]
+import numpy as np
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.model_selection import (train_test_split, KFold,
+                                     cross_val_score, GridSearchCV)
+
+# --- noisy samples of a sine wave ----------------------------------------
+rng = np.random.default_rng(0)
+X = rng.uniform(0, 1, (60, 1))
+y = np.sin(2 * np.pi * X[:, 0]) + rng.normal(0, 0.25, 60)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.25,
+                                          random_state=0)
+cv = KFold(5, shuffle=True, random_state=0)
+rmse = "neg_root_mean_squared_error"
+
+# --- 1. complexity: training error against cross-validated error ---------
+for deg in (1, 3, 6, 12):
+    m = make_pipeline(PolynomialFeatures(deg), StandardScaler(),
+                      LinearRegression())
+    m.fit(X_tr, y_tr)
+    train = np.sqrt(np.mean((m.predict(X_tr) - y_tr) ** 2))
+    cvs = -cross_val_score(m, X_tr, y_tr, cv=cv, scoring=rmse)
+    print(f"degree {deg:2d}: train RMSE {train:.3f}   "
+          f"CV RMSE {cvs.mean():.3f} +/- {cvs.std():.3f}")
+
+# --- 2. keep degree 12, but regularise; choose alpha by CV ---------------
+pipe = make_pipeline(PolynomialFeatures(12), StandardScaler(), Ridge())
+grid = GridSearchCV(pipe, {"ridge__alpha": [1e-6, 1e-3, 1e-1, 10, 1000]},
+                    cv=cv, scoring=rmse).fit(X_tr, y_tr)
+for a, s in zip(grid.cv_results_["param_ridge__alpha"],
+                grid.cv_results_["mean_test_score"]):
+    print(f"alpha {a:>8g}: CV RMSE {-s:.3f}")
+print("chosen:", grid.best_params_)
+
+# --- 3. only now, once: the test set -------------------------------------
+pred = grid.predict(X_te)
+print("test RMSE:", round(float(np.sqrt(np.mean((pred - y_te) ** 2))), 3))
+\end{lstlisting}
+scikit-learn calls $\lambda$ \texttt{alpha}. Change the 60 samples to 600 and run
+again: which degrees stop overfitting, and why?
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A model has training RMSE 0.05 and validation RMSE 0.90. Is the problem
+        bias or variance? Name two remedies.
+  \item Ten models trained on different samples predict $2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2$ at a point whose true value is 3. Give the bias$^2$ and the
+        variance.
+  \item Why does lasso, but not ridge, perform feature selection?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Training error is optimistic; generalisation is judged on unseen data.
+  \item Underfitting: both errors high. Overfitting: training error low, test
+        error high. Test error is U-shaped in model complexity.
+  \item Expected error $=$ bias$^2$ $+$ variance $+$ noise. Flexibility trades bias
+        for variance; noise is a floor no model can go below.
+  \item Learning curves diagnose the problem: converged and high means bias; a
+        wide, closing gap means variance.
+  \item Ridge (L2) shrinks weights; lasso (L1) also sets some to zero. The
+        penalty strength is a hyperparameter.
+  \item Choose hyperparameters by $k$-fold cross-validation on the training
+        data, refit, then test once.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Adding training data is most useful when a model has:
+        (a)~high bias (b)~high variance (c)~high noise (d)~low variance.
+  \item \textbf{(MCQ)} As $\lambda$ in ridge regression increases: (a)~bias and
+        variance both fall (b)~bias rises and variance falls (c)~bias falls and
+        variance rises (d)~neither changes.
+  \item \textbf{(MCQ)} Which of these is a hyperparameter? (a)~a regression
+        weight (b)~the bias term $b$ (c)~the number of folds' mean error
+        (d)~the degree of a polynomial.
+  \item \textbf{(Short)} Explain why training error cannot be used to choose the
+        degree of a polynomial.
+  \item \textbf{(Short)} What is irreducible error, and why can no model remove
+        it?
+  \item \textbf{(Short)} Describe nested cross-validation and when it is needed.
+  \item \textbf{(Applied)} Three models predict at a point with true value 10 and
+        noise variance 4. Over five training sets they predict: A: $8, 8, 9, 8, 7$;
+        B: $12, 7, 10, 13, 8$; C: $10, 10, 11, 9, 10$. Compute bias$^2$, variance and
+        expected error for each, and rank them.
+  \item \textbf{(Applied)} For the centred data $x = -1, 0, 1, 2$ (centre it first)
+        and $y = 1, 2, 2, 5$ (centre it too), compute the ridge weight for
+        $\lambda = 0, 1, 5$ and describe the pattern.
+\end{reviewq}

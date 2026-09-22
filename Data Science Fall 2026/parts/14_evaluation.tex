@@ -49,8 +49,8 @@ some ratio of these four numbers.
 \begin{tikzpicture}[font=\scriptsize]
 \node[rounded corners=3pt, fill=primary, text=white, font=\scriptsize\bfseries,
       minimum width=5.6cm, minimum height=0.6cm] at (3.0,2.35) {ACTUAL TRUTH};
-\node[font=\scriptsize\bfseries, text=primary] at (1.4,1.72) {Positive};
-\node[font=\scriptsize\bfseries, text=primary] at (4.6,1.72) {Negative};
+\node[font=\scriptsize\bfseries, text=primary] at (1.4,1.9) {Positive};
+\node[font=\scriptsize\bfseries, text=primary] at (4.6,1.9) {Negative};
 \node[rotate=90, font=\scriptsize\bfseries, text=white, fill=primary, rounded corners=3pt,
       minimum width=3.5cm, minimum height=0.6cm] at (-1.85,-0.15) {MODEL SAYS};
 \node[font=\scriptsize\bfseries, text=primary, align=center, text width=1.3cm] at (-0.85,0.85) {Positive};
@@ -70,7 +70,7 @@ some ratio of these four numbers.
      {{\color{greenhl!45!black}\bfseries TRUE NEGATIVE}\\[2pt]{\tiny correctly ignored}};
 
 % --- metric formulas, tied to the cells
-\node[anchor=north west, align=left, text width=6.6cm] at (6.7,2.1) {%
+\node[anchor=north west, align=left, text width=7.6cm] at (6.5,2.1) {%
   {\color{primary}\bfseries Accuracy} $=\dfrac{\text{TP}+\text{TN}}{\text{all}}$
   \quad{\tiny how often right overall}\\[6pt]
   {\color{greenhl!45!black}\bfseries Precision} $=\dfrac{\text{TP}}{\text{TP}+\text{FP}}$
@@ -163,7 +163,7 @@ the stakeholder.
   {2*((0.06+0.88*x^0.75)*(1-0.93*x^1.7))/((0.06+0.88*x^0.75)+(1-0.93*x^1.7))};
 \addlegendentry{$F_1$}
 \draw[accent, dashed, line width=0.9pt] (axis cs:0.5,0) -- (axis cs:0.5,1.0);
-\node[font=\tiny, accent, anchor=south, rotate=90] at (axis cs:0.5,0.06) {default 0.5};
+\node[font=\tiny, accent, anchor=south west, rotate=90] at (axis cs:0.5,0.06) {default 0.5};
 
 \nextgroupplot[title={ROC curve},
   xlabel={false positive rate ($1-$specificity)}, ylabel={true positive rate (recall)},
@@ -171,12 +171,14 @@ the stakeholder.
   legend style={at={(0.99,0.16)}, anchor=south east}]
 \addplot[gray!60, dashed, line width=0.9pt] coordinates {(0,0)(1,1)};
 \addlegendentry{random (AUC 0.5)}
-\addplot[greenhl, line width=1.4pt, domain=0:1, samples=90] {x^0.22};
+% y = x^a has AUC 1/(1+a): a = 1/9 gives 0.90, a = 3/7 gives 0.70
+\addplot[greenhl, line width=1.4pt, domain=0:1, samples=160] {x^(1/9)};
 \addlegendentry{good (AUC 0.90)}
-\addplot[goldhl, line width=1.2pt, domain=0:1, samples=90] {x^0.52};
+\addplot[goldhl, line width=1.2pt, domain=0:1, samples=160] {x^(3/7)};
 \addlegendentry{fair (AUC 0.70)}
 \addplot[accent, only marks, mark=*, mark size=1.7pt] coordinates {(0.011,0.80)};
-\node[font=\tiny, accent, anchor=west] at (axis cs:0.055,0.78) {worked example};
+\draw[accent, line width=0.4pt] (axis cs:0.014,0.775) -- (axis cs:0.05,0.655);
+\node[font=\tiny, accent, anchor=north west, inner sep=1pt] at (axis cs:0.045,0.655) {worked example};
 \node[font=\tiny, text=gray!55!black, anchor=north west] at (axis cs:0.03,0.99) {perfect $\rightarrow$};
 \end{groupplot}
 \end{tikzpicture}}%
@@ -228,11 +230,11 @@ Evaluate on the validation set across a grid of $t$ and pick the minimum.
 \toprule
 \textbf{Threshold} & \textbf{FP} & \textbf{FN} & \textbf{Cost} & \\
 \midrule
+0.05 & 780 & \phantom{0}2 & \$19{,}700 & $\leftarrow$ \textbf{minimum} \\
 0.10 & 420 & \phantom{0}4 & \$22{,}300 & \\
 0.20 & 210 & \phantom{0}9 & \$39{,}150 & \\
 0.30 & 120 & 16 & \$65{,}800 & \\
 0.50 & \phantom{0}48 & 31 & \$124{,}720 & \emph{the default} \\
-0.05 & 780 & \phantom{0}2 & \$19{,}700 & $\leftarrow$ \textbf{minimum} \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -257,7 +259,7 @@ mean and standard deviation of the $k$ scores.
 \begin{tikzpicture}[font=\scriptsize]
 \foreach \r in {1,...,5}{
   \pgfmathsetmacro{\yy}{-(\r-1)*0.72}
-  \node[anchor=east, font=\tiny, text=gray!55!black] at (-0.25,\yy) {fold \r};
+  \node[anchor=east, font=\tiny, text=gray!55!black] at (-1.15,\yy) {fold \r};
   \foreach \c in {1,...,5}{
     \pgfmathsetmacro{\xx}{(\c-1)*2.15}
     \ifnum\c=\r
@@ -267,11 +269,11 @@ mean and standard deviation of the $k$ scores.
       \node[rounded corners=2pt, fill=primary!12, draw=primary!50, minimum width=2.0cm,
             minimum height=0.56cm, font=\tiny, text=primary!55!black] at (\xx,\yy) {train};
     \fi}
-  \node[anchor=west, font=\tiny, text=gray!55!black] at (9.3,\yy)
+  \node[anchor=west, font=\tiny, text=gray!55!black] at (9.72,\yy)
        {score$_\r$};}
 
 \draw[decorate, decoration={brace, amplitude=4pt}, gray!60]
-     (10.55,0.3) -- (10.55,-3.18)
+     (10.85,0.3) -- (10.85,-3.18)
      node[midway, right=5pt, align=left, font=\tiny, text=gray!55!black]
      {report \textbf{mean} $\pm$ \textbf{sd}\\[2pt]
       a large sd means the\\estimate is unstable ---\\usually too little data};
@@ -373,7 +375,7 @@ COST_FP, COST_FN = 15, 4000
 best_t, best_cost = 0.5, float("inf")
 for t in np.linspace(0.01, 0.95, 95):
     p = (proba > t).astype(int)
-    _, fp_, fn_, _ = confusion_matrix(y_te, p).ravel()[[0,1,2,3]]
+    _, fp_, fn_, _ = confusion_matrix(y_te, p).ravel()
     cost = COST_FP*fp_ + COST_FN*fn_
     if cost < best_cost:
         best_t, best_cost = t, cost
