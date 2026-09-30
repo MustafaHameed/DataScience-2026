@@ -1,0 +1,673 @@
+%=====================================================================
+\chapter{Bayesian Networks}\label{ch:bayesnets}
+%=====================================================================
+\locator{5}{Part V --- Reasoning Under Uncertainty}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Read} a Bayesian network as a set of conditional independence
+        claims, and \textbf{count} the numbers it needs against the full joint.
+  \item \textbf{Compute} a posterior by enumeration and by variable elimination.
+  \item \textbf{Estimate} a posterior by rejection sampling and by likelihood
+        weighting, and \textbf{say} when each is preferable.
+  \item \textbf{Recognise} \emph{explaining away}, and \textbf{explain} why it
+        cannot be produced by any rule-based system.
+  \item \textbf{Judge} when variable elimination is worth its overhead.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{uncertainty} --- Bayes' rule, marginalisation, and above all conditional
+independence, which is the single idea this whole representation is built on.
+\end{prereq}
+
+\begin{keyterms}
+Bayesian network $\bullet$ directed acyclic graph $\bullet$ conditional probability
+table $\bullet$ parent $\bullet$ chain rule $\bullet$ enumeration $\bullet$ factor
+$\bullet$ variable elimination $\bullet$ rejection sampling $\bullet$ likelihood
+weighting $\bullet$ explaining away $\bullet$ diagnostic and causal direction
+\end{keyterms}
+
+\section{Diagnosing a Defect}
+
+A release has been rolled back. Why?
+
+The team believes three things make defects likely: a rushed specification, a
+junior developer working unsupervised, and weak test coverage. A defect in turn
+makes two things likely: an emergency hotfix, and a rollback. Nobody observes the
+defect directly --- they observe the rollback and want to know what caused it.
+
+That is a diagnosis problem, and its structure is what a \term{Bayesian network}
+represents.
+
+\begin{definitionbox}[Bayesian network]
+A \term{Bayesian network} is a directed acyclic graph in which each node is a random
+variable and each node carries a \term{conditional probability table} giving
+$P(\text{node} \mid \text{its parents})$.
+
+The graph asserts that \emph{each variable is conditionally independent of its
+non-descendants given its parents}. That assertion licenses the chain rule
+\[
+  P(x_{1}, \ldots, x_{n}) \;=\; \prod_{i=1}^{n}
+  P\bigl(x_{i} \mid \mathrm{parents}(x_{i})\bigr)
+\]
+so the full joint distribution is recoverable from the tables --- which is why the
+tables are all you have to store, and all anybody has to estimate.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  n/.style={circle, draw=#1, line width=1.1pt, fill=#1!12, text=#1!55!black,
+            font=\scriptsize\bfseries, minimum size=1.35cm, align=center,
+            inner sep=1pt},
+  e/.style={-{Stealth[length=2mm]}, primary!60, line width=1pt},
+  cpt/.style={rounded corners=2pt, draw=#1!50, fill=#1!5, text=#1!55!black,
+              font=\tiny, align=flush left, inner sep=4pt}]
+
+\node[n=goldhl]  (r) at (-3.4,2.0) {Rushed\\spec};
+\node[n=goldhl]  (j) at (0,2.0)    {Junior\\dev};
+\node[n=goldhl]  (w) at (3.4,2.0)  {Weak\\tests};
+\node[n=accent]  (d) at (0,0)      {Defect};
+\node[n=greenhl] (h) at (-2.2,-2.0){Hotfix};
+\node[n=greenhl] (b) at (2.2,-2.0) {Rollback};
+
+\foreach \a in {r,j,w}{\draw[e] (\a) -- (d);}
+\draw[e] (d) -- (h);
+\draw[e] (d) -- (b);
+
+\node[cpt=goldhl, anchor=east] at (-4.4,2.0)
+  {$P(\mathit{Rushed}) = 0.30$\\
+   $P(\mathit{Junior}) = 0.40$\\
+   $P(\mathit{Weak}) = 0.25$};
+
+\node[cpt=accent, anchor=west] at (1.5,0.1)
+  {$P(\mathit{Defect} \mid R,J,W)$\\[1pt]
+   \texttt{T T T} \ 0.95 \quad \texttt{F T T} \ 0.70\\
+   \texttt{T T F} \ 0.80 \quad \texttt{F T F} \ 0.40\\
+   \texttt{T F T} \ 0.75 \quad \texttt{F F T} \ 0.30\\
+   \texttt{T F F} \ 0.50 \quad \texttt{F F F} \ 0.05};
+
+\node[cpt=greenhl, anchor=east] at (-3.3,-2.0)
+  {$P(H \mid D)$\\ \texttt{T} \ 0.90\\ \texttt{F} \ 0.10};
+\node[cpt=greenhl, anchor=west] at (3.3,-2.0)
+  {$P(B \mid D)$\\ \texttt{T} \ 0.70\\ \texttt{F} \ 0.05};
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!30, line width=0.9pt,
+      text=primary!70!black, font=\scriptsize, text width=6.0cm,
+      align=flush left, inner sep=6pt, anchor=north] at (0,-3.2)
+  {\textbf{The full joint over six binary variables needs $2^{6} = 64$ numbers.
+   This network needs 15} --- and each of the 15 is a quantity somebody could
+   actually estimate from records, which the 64 are not.};
+\end{tikzpicture}}%
+{The diagnosis network. Causes point to effects, so the arrows run the way the
+world does; inference then runs against them, from rollback back to
+cause.}{bayesnet}
+
+\begin{alertbox}[What the missing arrows say]
+The content of a Bayesian network is in the edges it \emph{lacks}.
+
+There is no arrow from \emph{Hotfix} to \emph{Rollback}, which asserts that once you
+know whether there is a defect, learning that a hotfix was issued tells you nothing
+further about whether a rollback happened. There is no arrow between \emph{Rushed}
+and \emph{Junior}, asserting they are independent before any evidence.
+
+Those are substantive claims about the domain and they can be wrong. If rushed
+specifications are usually handed to junior developers, the second claim is false
+and the network will give confidently wrong answers. \emph{Drawing the graph is the
+modelling; the numbers are the easy part.}
+\end{alertbox}
+
+\section{Exact Inference by Enumeration}
+
+$P(\mathit{Rushed} \mid \mathit{Rollback})$ follows directly from the definition:
+\[
+  P(r \mid b) \;=\; \alpha \sum_{j,w,d,h} P(r)P(j)P(w)
+  P(d \mid r,j,w) P(h \mid d) P(b \mid d)
+\]
+Sum the joint over every hidden variable, for each value of the query, and
+normalise. On this network that is $32$ terms, and the answer is
+\[
+  P(\mathit{Rushed} \mid \mathit{Rollback}) \;=\; 0.4899
+\]
+against a prior of $0.30$. A rollback makes a rushed specification substantially
+more likely --- not because any rule says so, but because the arithmetic of the
+graph says so.
+
+Enumeration is exact and it is $O(2^{n})$. That is \chref{propositional}'s model
+checking again, and it fails for the same reason.
+
+\section{Variable Elimination}
+
+Enumeration recomputes the same subexpressions over and over. \term{Variable
+elimination} computes each once, by pushing sums inward and caching the results as
+\term{factors}.
+
+A factor is a table over some subset of the variables. The procedure is: build one
+factor per node; then for each hidden variable, multiply together every factor
+mentioning it and sum it out, leaving a new factor; finally multiply what remains
+and normalise.
+
+\begin{alertbox}[On this network, variable elimination is slower]
+It uses $74$ operations where enumeration uses $32$ terms, and returns the same
+$0.4899$. The bookkeeping costs more than the sharing saves, because the network has
+six nodes and there is almost nothing to share.
+
+This is the same lesson as \chref{csp}'s AC-3 and \chref{planning}'s heuristic, and
+it is worth stating as a rule: \emph{an algorithm whose advantage is asymptotic has
+no advantage at the size where you first test it}. Measure at the size you will
+deploy at.
+\end{alertbox}
+
+Deploy it at scale and the picture inverts completely. Take a chain of services,
+each of which may be delayed by the one before it, and ask about the first given
+evidence about the last:
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=11.8cm, height=5.6cm,
+  xlabel={services in the chain, $n$},
+  ylabel={arithmetic operations},
+  xlabel style={font=\scriptsize}, ylabel style={font=\scriptsize},
+  tick label style={font=\tiny},
+  ymode=log, log basis y=10,
+  xmin=5, xmax=19, ymin=10, ymax=2e4,
+  grid=both, major grid style={gray!18}, minor grid style={gray!8},
+  legend style={font=\tiny, at={(0.03,0.97)}, anchor=north west,
+                draw=gray!40, fill=white},
+  legend cell align=left]
+
+\addplot[accent, line width=1.3pt, mark=*, mark size=1.6pt]
+  coordinates {(6,32) (10,512) (14,8192)};
+\addlegendentry{enumeration --- doubles with every service}
+
+\addplot[greenhl, line width=1.3pt, mark=square*, mark size=1.6pt]
+  coordinates {(6,58) (10,122) (14,186) (18,250)};
+\addlegendentry{variable elimination --- linear}
+
+\node[font=\tiny\itshape, text=accent, anchor=west] at (axis cs:14.4,8192)
+  {enumeration is already infeasible};
+\node[font=\tiny\itshape, text=greenhl!50!black, anchor=west]
+  at (axis cs:14.6,250) {250 operations at $n=18$};
+\end{axis}
+\end{tikzpicture}}%
+{Enumeration against variable elimination on a chain. At six nodes enumeration
+wins; at fourteen it needs $8{,}192$ terms against $186$ operations, and beyond
+that it stops being an option.}{ve-scaling}
+
+Variable elimination is not always polynomial --- its cost is governed by the
+largest intermediate factor, which depends on the graph's structure and on the
+elimination order. On a chain it is linear; on a densely connected graph it is
+exponential again, and exact inference in general Bayesian networks is NP-hard.
+
+\section{Approximate Inference by Sampling}
+
+When exact inference is out of reach, generate samples from the network and count.
+
+\term{Rejection sampling} is the obvious method: sample every variable in
+topological order using its conditional probability table, discard any sample that
+disagrees with the evidence, and take the proportion among the survivors.
+
+It is correct, and it wastes almost everything. Here the evidence
+$\mathit{Rollback} = \text{T}$ has probability about $0.30$, so roughly $70\%$ of
+samples are thrown away: $20{,}000$ samples leave about $6{,}000$ usable. With
+rarer evidence --- and diagnostic evidence is usually rare, since that is why it is
+interesting --- the rejection rate approaches $100\%$ and the method stops working.
+
+\term{Likelihood weighting} fixes this. Do not sample the evidence variables at all:
+fix them to their observed values, sample only the rest, and weight each sample by
+the probability of the evidence given what was sampled. Every sample now counts.
+
+\smallskip
+\noindent\begin{longtable}{@{}L{4.4cm}L{2.7cm}L{2.7cm}L{4.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Method} & \textbf{Answer} & \textbf{Error} & \textbf{Note} \\
+\midrule
+\endhead
+Enumeration (exact) & 0.48990 & --- & 32 terms \\
+Variable elimination (exact) & 0.48990 & --- & 74 operations \\
+Rejection, 20{,}000 samples & 0.4952 & 0.0053 & $6{,}034$ kept; $70\%$ discarded \\
+Likelihood weighting, 20{,}000 & 0.4913 & \textbf{0.0014} & every sample used \\
+\bottomrule
+\caption{$P(\mathit{Rushed} \mid \mathit{Rollback})$ four ways. The two exact
+methods agree to every digit; the two approximate ones differ mainly in how much
+of their work they throw away.}\label{tab:bn-inference}
+\end{longtable}
+
+\section{Explaining Away}
+
+Here is the behaviour that justifies the whole apparatus, and that no rule base of
+\chref{expert} can produce.
+
+Learn that there \emph{is} a defect. Belief in a rushed specification rises from
+$0.30$ to $0.5281$ --- the defect needs explaining, and a rushed specification is
+one of the explanations.
+
+Now additionally learn that a junior developer was working unsupervised. Belief in a
+rushed specification \emph{falls}, to $0.4304$. The junior developer already
+accounts for the defect, so less of the explanatory work is left for the
+specification to do.
+
+\begin{conceptbox}
+Two causes of a common effect are independent \emph{until} the effect is observed,
+and become dependent once it is --- negatively so. That is \term{explaining away},
+and it is the reason to build a network rather than a rule base.
+
+Notice what a production rule would have to say. \textsc{if} defect \textsc{and}
+junior developer \textsc{then} rushed specification is \emph{less} likely --- a rule
+whose conclusion is weakened by adding a condition, which no forward-chaining engine
+can express, and which \chref{expert}'s specificity strategy would actively get
+wrong. The behaviour falls out of the graph and the arithmetic without anybody
+writing it down, and it would have to be anticipated and hand-coded in any
+rule-based system.
+
+It is also the formal version of something every incident reviewer does: on finding
+one sufficient cause, they become less interested in the others. The network says
+exactly how much less.
+\end{conceptbox}
+
+\begin{worked}[Computing $P(\mathit{Rushed} \mid \mathit{Rollback})$ by hand]
+The query has one evidence variable, and $\mathit{Junior}$, $\mathit{Weak}$,
+$\mathit{Defect}$ and $\mathit{Hotfix}$ are hidden.
+
+\smallskip
+\textbf{Step 1: drop \emph{Hotfix}.} It is not in the query and not in the
+evidence, and nothing else depends on it. Summing it out gives
+$\sum_{h} P(h \mid d) = 1$ for either value of $d$, so it contributes a factor of
+one and can be deleted before any arithmetic. \emph{A hidden variable with no
+observed descendants is irrelevant} --- a useful check to run before computing
+anything.
+
+\smallskip
+\textbf{Step 2: the remaining sum.} With $r$ for \emph{Rushed}, $b$ for
+\emph{Rollback}:
+\[
+  P(r \mid b) = \alpha\, P(r) \sum_{j} P(j) \sum_{w} P(w) \sum_{d}
+  P(d \mid r,j,w)\, P(b \mid d)
+\]
+
+\textbf{Step 3: the inner sum.} For each combination of $r, j, w$ let
+$q = P(\mathit{Defect} \mid r,j,w)$. Then
+\[
+  \sum_{d} P(d \mid r,j,w) P(b \mid d) = 0.70\,q + 0.05\,(1-q)
+  = 0.05 + 0.65\,q
+\]
+so every row of the big table reduces to one number. With $r$ true the four $q$
+values are $0.95, 0.80, 0.75, 0.50$, giving $0.6675, 0.5700, 0.5375, 0.3750$.
+
+\smallskip
+\textbf{Step 4: weight by the priors.} $P(j) = 0.40$, $P(w) = 0.25$:
+\begin{align*}
+  &0.40 \times 0.25 \times 0.6675 \;+\; 0.40 \times 0.75 \times 0.5700 \\
+  &{}+\; 0.60 \times 0.25 \times 0.5375 \;+\; 0.60 \times 0.75 \times 0.3750 \\
+  &= 0.06675 + 0.17100 + 0.08063 + 0.16875 \;=\; 0.48713
+\end{align*}
+Multiply by $P(r) = 0.30$: the unnormalised weight for $r$ true is $0.146138$.
+
+\smallskip
+\textbf{Step 5: the other branch.} With $r$ false the four $q$ values are
+$0.70, 0.40, 0.30, 0.05$, giving $0.5050, 0.3100, 0.2450, 0.0825$; weighting by the
+same priors gives $0.21738$, and multiplying by $P(\neg r) = 0.70$ gives
+$0.152163$.
+
+\smallskip
+\textbf{Step 6: normalise.}
+\[
+  P(r \mid b) = \frac{0.146138}{0.146138 + 0.152163}
+  = \frac{0.146138}{0.298301} = 0.4899
+\]
+
+\smallskip
+\textbf{What the work shows.} Steps 3 and 4 were done once for $r$ true and once
+for $r$ false, and the inner structure was identical both times. Variable
+elimination is exactly the observation that this shared structure need not be
+recomputed --- and on six variables the saving is not worth the bookkeeping, while
+on \dsref{ve-scaling}'s chain it is the difference between possible and impossible.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Reading arrows as ``causes'' and inference as following them.} The
+        arrows point from cause to effect; the query here runs backwards, from
+        rollback to specification. Both directions are ordinary conditional
+        probability.
+  \item \textbf{Forgetting that the missing arrows are the claims.} No edge between
+        \emph{Rushed} and \emph{Junior} asserts independence. If rushed work is
+        usually given to junior developers, the network is simply wrong.
+  \item \textbf{Using rejection sampling with rare evidence.} $70\%$ of samples
+        discarded here; with evidence of probability $0.01$ it is $99\%$. Use
+        likelihood weighting.
+  \item \textbf{Assuming variable elimination is always faster.} It lost on this
+        network, $74$ operations against $32$. Its advantage is asymptotic and
+        depends on the elimination order.
+  \item \textbf{Expecting exact inference to scale in general.} It is linear on a
+        chain and NP-hard on general graphs.
+  \item \textbf{Summing over hidden variables that cannot matter.} A hidden variable
+        with no observed descendants sums to one. Delete \emph{Hotfix} before
+        computing, not after.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[Diagnosing a Defect's Cause]
+The network of \dsref{bayesnet}, four inference methods, the explaining-away
+measurement, and the scaling comparison of \dsref{ve-scaling}.
+\begin{lstlisting}[language=Python]
+"""Chapter 15 lab -- inference in a Bayesian network.
+
+Four ways to compute P(Rushed | Rollback): two exact, two by
+sampling. Then explaining away, and the scaling comparison that
+justifies variable elimination.
+"""
+
+import itertools
+import random
+
+# node -> (parents, table mapping parent values to P(node = True))
+NET = {
+    "Rushed":   ([], {(): 0.30}),
+    "Junior":   ([], {(): 0.40}),
+    "WeakTest": ([], {(): 0.25}),
+    "Defect":   (["Rushed", "Junior", "WeakTest"], {
+        (True, True, True): 0.95,   (True, True, False): 0.80,
+        (True, False, True): 0.75,  (True, False, False): 0.50,
+        (False, True, True): 0.70,  (False, True, False): 0.40,
+        (False, False, True): 0.30, (False, False, False): 0.05,
+    }),
+    "Hotfix":   (["Defect"], {(True,): 0.90, (False,): 0.10}),
+    "Rollback": (["Defect"], {(True,): 0.70, (False,): 0.05}),
+}
+ORDER = ["Rushed", "Junior", "WeakTest", "Defect", "Hotfix", "Rollback"]
+
+
+def p_true(net, node, a):
+    parents, table = net[node]
+    return table[tuple(a[p] for p in parents)]
+
+
+def prob(net, node, value, a):
+    p = p_true(net, node, a)
+    return p if value else 1 - p
+
+
+# --- 1. exact: enumeration -----------------------------------------
+def enumerate_query(net, order, query, evidence):
+    hidden = [n for n in order if n != query and n not in evidence]
+    totals, terms = {True: 0.0, False: 0.0}, 0
+    for qv in (True, False):
+        for combo in itertools.product([True, False],
+                                       repeat=len(hidden)):
+            a = dict(evidence)
+            a[query] = qv
+            a.update(dict(zip(hidden, combo)))
+            pr = 1.0
+            for n in order:
+                pr *= prob(net, n, a[n], a)
+            totals[qv] += pr
+            terms += 1
+    z = totals[True] + totals[False]
+    return totals[True] / z, terms
+
+
+# --- 2. exact: variable elimination --------------------------------
+class Factor:
+    def __init__(self, vars_, table):
+        self.vars, self.table = list(vars_), table
+
+
+def make_factor(net, node, evidence):
+    allv = net[node][0] + [node]
+    keep = [v for v in allv if v not in evidence]
+    table = {}
+    for combo in itertools.product([True, False], repeat=len(allv)):
+        a = dict(zip(allv, combo))
+        if any(v in evidence and a[v] != evidence[v] for v in allv):
+            continue
+        table[tuple(a[v] for v in keep)] = prob(net, node, a[node], a)
+    return Factor(keep, table)
+
+
+def multiply(f1, f2, ops):
+    vars_ = f1.vars + [v for v in f2.vars if v not in f1.vars]
+    table = {}
+    for combo in itertools.product([True, False], repeat=len(vars_)):
+        a = dict(zip(vars_, combo))
+        table[combo] = (f1.table[tuple(a[v] for v in f1.vars)]
+                        * f2.table[tuple(a[v] for v in f2.vars)])
+        ops[0] += 1
+    return Factor(vars_, table)
+
+
+def sum_out(f, var, ops):
+    i = f.vars.index(var)
+    keep = [v for v in f.vars if v != var]
+    table = {}
+    for combo, val in f.table.items():
+        k = combo[:i] + combo[i + 1:]
+        table[k] = table.get(k, 0.0) + val
+        ops[0] += 1
+    return Factor(keep, table)
+
+
+def var_elim(net, order, query, evidence):
+    ops = [0]
+    factors = [f for f in (make_factor(net, n, evidence) for n in order)
+               if f.vars]
+    for h in [n for n in order if n != query and n not in evidence]:
+        involved = [f for f in factors if h in f.vars]
+        if not involved:
+            continue
+        factors = [f for f in factors if h not in f.vars]
+        prod = involved[0]
+        for f in involved[1:]:
+            prod = multiply(prod, f, ops)
+        factors.append(sum_out(prod, h, ops))
+    prod = factors[0]
+    for f in factors[1:]:
+        prod = multiply(prod, f, ops)
+    i = prod.vars.index(query)
+    totals = {True: 0.0, False: 0.0}
+    for combo, val in prod.table.items():
+        totals[combo[i]] += val
+    z = totals[True] + totals[False]
+    return totals[True] / z, ops[0]
+
+
+# --- 3. rejection sampling -----------------------------------------
+def rejection(net, order, query, evidence, n, rng):
+    kept = hits = 0
+    for _ in range(n):
+        a = {}
+        for node in order:
+            a[node] = rng.random() < p_true(net, node, a)
+        if all(a[k] == v for k, v in evidence.items()):
+            kept += 1
+            hits += a[query]
+    return (hits / kept if kept else None), kept
+
+
+# --- 4. likelihood weighting ---------------------------------------
+def likelihood_weighting(net, order, query, evidence, n, rng):
+    num = den = 0.0
+    for _ in range(n):
+        a, w = {}, 1.0
+        for node in order:
+            if node in evidence:
+                a[node] = evidence[node]
+                w *= prob(net, node, a[node], a)     # weight, not sample
+            else:
+                a[node] = rng.random() < p_true(net, node, a)
+        den += w
+        if a[query]:
+            num += w
+    return num / den, den
+
+
+def make_chain(n):
+    """X1 -> X2 -> ... -> Xn: a service dependency chain."""
+    net = {"X1": ([], {(): 0.3})}
+    for i in range(2, n + 1):
+        net["X%d" % i] = (["X%d" % (i - 1)],
+                          {(True,): 0.8, (False,): 0.1})
+    return net, ["X%d" % i for i in range(1, n + 1)]
+
+
+if __name__ == "__main__":
+    print("variables: %d   full joint entries: %d"
+          % (len(ORDER), 2 ** len(ORDER)))
+    print("numbers the network stores: %d"
+          % sum(len(NET[n][1]) for n in ORDER))
+    print()
+
+    ev = {"Rollback": True}
+    exact, terms = enumerate_query(NET, ORDER, "Rushed", ev)
+    ve, ops = var_elim(NET, ORDER, "Rushed", ev)
+    print("P(Rushed)                = %.4f   (the prior)" % 0.30)
+    print("P(Rushed | Rollback)     = %.5f" % exact)
+    assert abs(exact - ve) < 1e-9
+    print()
+    print("method                          answer    work")
+    print("-" * 48)
+    print("enumeration (exact)           %9.5f  %4d terms" % (exact, terms))
+    print("variable elimination (exact)  %9.5f  %4d ops" % (ve, ops))
+
+    rng = random.Random(0)
+    rej, kept = rejection(NET, ORDER, "Rushed", ev, 20000, rng)
+    rng = random.Random(0)
+    lw, _ = likelihood_weighting(NET, ORDER, "Rushed", ev, 20000, rng)
+    print("rejection, 20000 samples      %9.4f  %4d kept (%.0f%%)"
+          % (rej, kept, 100.0 * kept / 20000))
+    print("likelihood weighting, 20000   %9.4f  all samples used" % lw)
+    print()
+    print("   errors: rejection %.4f, weighting %.4f"
+          % (abs(rej - exact), abs(lw - exact)))
+    assert abs(lw - exact) < 0.01 and abs(rej - exact) < 0.02
+
+    # variable elimination LOSES on a network this small
+    assert ops > terms
+    print()
+    print("Note that variable elimination used MORE work than")
+    print("enumeration here (%d against %d). Its advantage is" % (ops, terms))
+    print("asymptotic, and six variables is not asymptotic.")
+
+    # --- explaining away -------------------------------------------
+    print()
+    print("=== explaining away ===")
+    prior = 0.30
+    given_d, _ = enumerate_query(NET, ORDER, "Rushed", {"Defect": True})
+    given_dj, _ = enumerate_query(NET, ORDER, "Rushed",
+                                  {"Defect": True, "Junior": True})
+    print("   P(Rushed)                       = %.4f" % prior)
+    print("   P(Rushed | Defect)              = %.4f   (rises)" % given_d)
+    print("   P(Rushed | Defect, Junior)      = %.4f   (FALLS)"
+          % given_dj)
+    assert given_d > prior > 0 and given_dj < given_d
+    print()
+    print("   The junior developer already accounts for the defect,")
+    print("   so less explaining is left for the rushed spec to do.")
+    print("   Two causes of one effect are independent until the")
+    print("   effect is seen, and negatively dependent afterwards.")
+    print("   No production rule can express a conclusion that gets")
+    print("   WEAKER when a condition is added.")
+
+    # --- and where variable elimination earns its keep -------------
+    print()
+    print("=== scaling, on a chain of services ===")
+    print("  n   enumeration   VE ops")
+    print("-" * 30)
+    for n in (6, 10, 14, 18):
+        net, order = make_chain(n)
+        e = {order[-1]: True}
+        v, vops = var_elim(net, order, "X1", e)
+        if n <= 14:
+            ex, et = enumerate_query(net, order, "X1", e)
+            assert abs(ex - v) < 1e-9
+            print("%3d %13d %8d" % (n, et, vops))
+        else:
+            print("%3d %13s %8d" % (n, "infeasible", vops))
+    print()
+    print("Enumeration doubles with every service; variable")
+    print("elimination grows linearly on a chain. At n=14 that is")
+    print("8192 terms against 186 operations.")
+\end{lstlisting}
+Then add an arrow from \emph{Junior} to \emph{Rushed} --- suppose rushed work really
+is given to junior developers --- and re-run. The explaining-away effect changes
+size, because the two causes are no longer independent to begin with. That is the
+modelling decision of the alertbox, made concrete.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item The full joint over these six variables needs $64$ numbers and the network
+        stores $15$. State precisely what the network asserts in order to get away
+        with the smaller number, and name one assertion in \dsref{bayesnet} that
+        could be false in a real organisation.
+  \item Learning that there is a defect raised belief in a rushed specification from
+        $0.30$ to $0.5281$; additionally learning that a junior developer was
+        involved \emph{lowered} it to $0.4304$. Explain why, and say why a
+        forward-chaining rule base cannot reproduce this.
+  \item Rejection sampling discarded $70\%$ of its samples here. Describe the
+        circumstance in which it becomes useless, and say what likelihood weighting
+        does differently.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item A \term{Bayesian network} is a directed acyclic graph with a conditional
+        probability table at each node. It asserts that each variable is
+        conditionally independent of its non-descendants given its parents, which
+        licenses the chain rule and lets $15$ numbers stand for a joint of $64$.
+  \item \emph{The missing arrows are the claims.} They are substantive assertions
+        about the domain and they can be wrong; drawing the graph is the modelling.
+  \item \term{Enumeration} is exact and $O(2^{n})$. \term{Variable elimination} is
+        exact and computes shared subexpressions once --- but it \emph{lost} on this
+        six-node network, $74$ operations against $32$ terms. Its advantage is
+        asymptotic: on a fourteen-service chain it is $186$ operations against
+        $8{,}192$ terms.
+  \item Exact inference in general Bayesian networks is NP-hard; the cost is
+        governed by the largest intermediate factor.
+  \item \term{Rejection sampling} discards every sample disagreeing with the
+        evidence --- $70\%$ here, and nearly everything when the evidence is rare.
+        \term{Likelihood weighting} fixes the evidence and weights instead, so every
+        sample counts.
+  \item \term{Explaining away}: two causes of a common effect are independent until
+        the effect is observed and negatively dependent afterwards. Belief in a
+        rushed specification rose to $0.5281$ on seeing a defect and fell to
+        $0.4304$ on also learning of a junior developer.
+  \item That behaviour is why one builds a network rather than a rule base: it
+        requires a conclusion to become \emph{weaker} as a condition is added,
+        which no production rule expresses and \chref{expert}'s specificity
+        strategy would get backwards.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A Bayesian network asserts that each variable is conditionally
+        independent of: (a)~all other variables (b)~its non-descendants, given its
+        parents (c)~its parents (d)~its descendants, given the evidence.
+  \item \textbf{(MCQ)} Explaining away means that: (a)~evidence for one cause raises
+        belief in another (b)~evidence for one cause lowers belief in another
+        (c)~causes are always independent (d)~effects are independent of causes.
+  \item \textbf{(MCQ)} Likelihood weighting differs from rejection sampling by:
+        (a)~sampling more variables (b)~fixing the evidence and weighting each
+        sample (c)~using exact arithmetic (d)~eliminating variables.
+  \item \textbf{(MCQ)} A hidden variable with no observed descendants:
+        (a)~must be summed over (b)~sums to one and can be deleted
+        (c)~makes the query intractable (d)~must be given evidence.
+  \item \textbf{(Short)} Explain what it means to say ``the missing arrows are the
+        claims'', using one missing arrow from \dsref{bayesnet}.
+  \item \textbf{(Short)} Variable elimination was slower than enumeration on this
+        network and far faster on a chain of fourteen. Explain both results with
+        one principle.
+  \item \textbf{(Short)} Why can a production rule not express explaining away?
+        State what such a rule would have to do.
+  \item \textbf{(Applied)} Compute $P(\mathit{Defect} \mid \mathit{Hotfix})$ by hand
+        from the tables of \dsref{bayesnet}, showing the marginalisation over
+        $\mathit{Rushed}$, $\mathit{Junior}$ and $\mathit{WeakTest}$. Then say
+        whether $\mathit{Rollback}$ needs to be summed over, and why.
+\end{reviewq}

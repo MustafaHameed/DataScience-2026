@@ -1,0 +1,663 @@
+%=====================================================================
+\chapter{What Artificial Intelligence Is}\label{ch:introduction}
+%=====================================================================
+\locator{1}{Part I --- Foundations of Intelligent Systems}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} artificial intelligence, and \textbf{distinguish} the
+        four classical definitions along the two axes of thinking versus acting
+        and humanly versus rationally.
+  \item \textbf{Identify} whether a given piece of software is an AI system, by
+        applying a five-point test rather than by reputation.
+  \item \textbf{Name} the branches of AI and \textbf{say} which of them this
+        course teaches, which it signposts, and which belong to other courses.
+  \item \textbf{Describe} the field's history as a sequence of promises,
+        disappointments and recoveries, and \textbf{explain} what caused each
+        turn.
+  \item \textbf{State} the boundary between artificial intelligence, machine
+        learning and data science in terms of what each one is given and what
+        each one must work out for itself.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+Object Oriented Programming, the published prerequisite for this course: classes,
+objects, inheritance, collections and recursion. No mathematics beyond school
+algebra is assumed in this chapter. Appendix~A is a reference for every Python
+construct the labs use.
+\end{prereq}
+
+\begin{keyterms}
+artificial intelligence $\bullet$ agent $\bullet$ percept $\bullet$ action
+$\bullet$ rationality $\bullet$ the Turing test $\bullet$ symbolic AI $\bullet$
+knowledge representation $\bullet$ search $\bullet$ heuristic $\bullet$
+combinatorial explosion $\bullet$ weak and strong AI $\bullet$ narrow and general
+AI $\bullet$ AI winter $\bullet$ expert system
+\end{keyterms}
+
+\section{Two Programs in a Project Office}
+
+A software house runs its delivery work out of a project management office. Two
+programs run there every night.
+
+The first recalculates the Gantt chart. It is given the task list, each task's
+duration and each task's predecessors, and it computes the earliest start and
+latest finish of every task, the critical path, and the float on everything off
+it. It is a few hundred lines long, it is completely deterministic, and if it
+ever disagrees with a hand calculation the program is wrong. Nobody in the office
+calls it intelligent.
+
+The second decides which of tonight's three hundred open tickets to escalate to
+the on-call engineer. It is given the tickets, the service level agreements, who
+is on shift, what each engineer has already been handed, and a history of which
+escalations turned out to have been worth making. There is no formula in the
+brief. Two reasonable people, given the same three hundred tickets, would escalate
+different ones and each could defend the choice. The program has to decide anyway,
+tonight, before midnight.
+
+That difference --- not the difficulty of the arithmetic, not the size of the
+codebase, and not the fashionability of the technique --- is what this book is
+about. The first program computes an answer that was already implied by its
+input. The second must work out what to do when its input does not determine the
+answer.
+
+\begin{definitionbox}[Artificial intelligence]
+\term{Artificial intelligence} is the study and construction of \term{agents}:
+programs that perceive an environment through \term{percepts} and act on it
+through \term{actions}, choosing those actions so as to do well by some measure of
+success. The central question of the field is not ``can a machine think?'' but
+``given what it can perceive, what should this agent do next?''
+
+\smallskip
+\noindent\emph{After} S.~Russell and P.~Norvig, \emph{Artificial Intelligence: A
+Modern Approach}, 3rd edition, Prentice Hall, 2010 --- the set text for this
+course in both the HEC 2017 and HEC 2023 outlines.
+\end{definitionbox}
+
+The definition is deliberately modest. It says nothing about consciousness,
+nothing about brains, and nothing about whether the agent's reasoning resembles
+ours. It asks only that the agent take in a situation and choose. Everything in
+this course is machinery for making that choice: search when the agent must look
+ahead (Chapters~4 to~6), constraint reasoning when the choice must satisfy rules
+at once (Chapter~7), game reasoning when another agent is choosing against you
+(Chapter~8), planning when the choice is a sequence (Chapter~9), logic when the
+agent must draw conclusions from what it has been told (Chapters~10 to~13), and
+probability when what it has been told is not certain (Chapters~14 to~16).
+
+\section{Four Definitions, Two Axes}
+
+The field has never had one definition. It has had four, and they differ along two
+axes: whether the goal is to replicate \emph{thought} or to produce the right
+\emph{behaviour}, and whether the standard of correctness is \emph{human}
+performance or an ideal standard of \emph{rationality}. \dsref{ai-axes} sets them
+out.
+
+\dsfig{%
+\begin{tikzpicture}[font=\small,
+  qbox/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!7,
+               text width=5.6cm, align=flush left, inner sep=7pt,
+               minimum height=2.5cm, text=#1!55!black},
+  axl/.style={font=\scriptsize\bfseries, text=neutral}]
+
+\node[qbox=purplehl] (tw) at (0,0)
+  {{\bfseries Thinking humanly}\\[2pt]
+   {\scriptsize The cognitive modelling approach. A program is right if it solves
+    the problem by the same steps a person does. Validated against
+    psychological experiment, not against the answer.}\\[3pt]
+   {\scriptsize\itshape Newell \& Simon, General Problem Solver, 1961}};
+
+\node[qbox=primary, right=0.7cm of tw] (tr)
+  {{\bfseries Thinking rationally}\\[2pt]
+   {\scriptsize The laws-of-thought approach. Correct reasoning is a formal
+    relation between premises and conclusions; build a program that computes it.}\\[3pt]
+   {\scriptsize\itshape Aristotle's syllogisms to modern logic ---
+    Chapters~10 to~13}};
+
+\node[qbox=goldhl, below=0.7cm of tw] (aw)
+  {{\bfseries Acting humanly}\\[2pt]
+   {\scriptsize The Turing test approach. A program is intelligent if an
+    interrogator cannot tell it from a person in conversation. Behaviour is the
+    only evidence admitted.}\\[3pt]
+   {\scriptsize\itshape Turing 1950; Eliza, 1966 --- Chapters~18 and~19}};
+
+\node[qbox=greenhl, below=0.7cm of tr] (ar)
+  {{\bfseries Acting rationally}\\[2pt]
+   {\scriptsize The rational agent approach. Given what it perceives and what it
+    is trying to achieve, the agent takes the action that can be expected to do
+    best. Human imitation is not required.}\\[3pt]
+   {\scriptsize\itshape \bfseries The approach this course takes}};
+
+\node[axl, above=3pt of tw.north] {HUMAN STANDARD};
+\node[axl, above=3pt of tr.north] {RATIONAL STANDARD};
+\node[axl, rotate=90, left=3pt of tw.west] {REASONING};
+\node[axl, rotate=90, left=3pt of aw.west] {BEHAVIOUR};
+
+\draw[greenhl, line width=1.6pt, rounded corners=4pt]
+  ($(ar.north west)+(-3pt,3pt)$) rectangle ($(ar.south east)+(3pt,-3pt)$);
+\end{tikzpicture}}%
+{The four classical definitions of artificial intelligence, on the two axes of
+thought against behaviour and human performance against rational performance.
+This course works in the bottom-right quadrant throughout.}{ai-axes}
+
+\begin{conceptbox}
+The four quadrants are not four opinions about the same question; they are four
+different questions, and they license different evidence. If your goal is
+\emph{acting humanly}, then a program that answers a service-desk query the way a
+tired engineer would --- including the shortcuts --- is a success. If your goal is
+\emph{acting rationally}, the same program is a failure, because the tired
+engineer was wrong.
+
+This matters in practice, and the practical consequence is this: \emph{decide
+which quadrant you are in before you choose your evaluation}. Chapter~19 shows
+Eliza, a program that is a triumph in the bottom-left quadrant and worthless in
+the bottom-right, and the difference is not in the code.
+\end{conceptbox}
+
+\section{Is It AI? A Checklist}
+\label{sec:is-it-ai}
+
+``Artificial intelligence'' is now a procurement word. Vendors apply it to
+spreadsheet macros, and sceptics withhold it from systems that plainly reason. The
+HEC outline asks you to be able to \emph{identify} AI systems, which means having
+a test you can apply to software you did not write. Here is one. Five questions;
+score each one and count.
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=3pt, topsep=4pt]
+  \item \textbf{Goal.} Is the program given an \emph{objective} rather than a
+        procedure? A program told \emph{minimise the number of breached service
+        level agreements} has a goal. A program told \emph{sort the tickets by
+        deadline, then assign the first ten} has a procedure.
+  \item \textbf{Search.} Does it \emph{consider alternatives it does not act on}?
+        An agent that generates candidate assignments, evaluates them and picks
+        one has searched. An agent that computes one answer directly has not.
+  \item \textbf{Knowledge.} Does it hold an explicit, inspectable
+        \emph{representation} of its domain --- facts, rules, constraints, a
+        probability model --- that a domain expert could read and correct without
+        editing the algorithm?
+  \item \textbf{Adaptation.} Does its behaviour change with \emph{experience},
+        without being reprogrammed?
+  \item \textbf{Explanation.} Can it say \emph{why}? Can it produce the chain of
+        facts and inferences that led to its answer?
+\end{enumerate}
+
+A program scoring zero is ordinary software, however valuable. A program scoring
+one or two is doing something interesting. Three or more, and the vocabulary of
+this course is the right vocabulary for talking about it.
+
+Two warnings about the test. First, it is not a quality measure: a badly built
+system can score five, and the Gantt recalculator that scores zero is the most
+useful program in the office. Second, question~4 is neither necessary nor
+sufficient. Much of the most successful AI ever built --- the chess programs of
+Chapter~8, the schedulers of Chapter~7, the diagnostic systems of Chapter~13 ---
+scores zero on adaptation. Learning is one route to intelligent behaviour, not its
+definition. That is worth saying plainly at the start of a course that will spend
+fifteen weeks on the other routes.
+
+\begin{examplebox}[Five tools in one project office]
+Scores on the five tests of Section~\ref{sec:is-it-ai}, for the five programs the
+office actually runs. This is the audit the chapter's lab reproduces in code.
+
+\smallskip
+\noindent\begin{tabular}{@{}L{5.3cm}ccccc@{\hspace{6pt}}c@{}}
+\toprule
+\textbf{Program} & \textbf{Goal} & \textbf{Srch} & \textbf{Know} &
+\textbf{Adapt} & \textbf{Expl} & \textbf{Score} \\
+\midrule
+Gantt recalculator        & --- & --- & --- & --- & --- & 0 \\
+Burndown chart generator  & --- & --- & --- & --- & --- & 0 \\
+Sprint scheduler          & yes & yes & yes & --- & yes & 4 \\
+Escalation adviser        & yes & yes & yes & --- & yes & 4 \\
+Duplicate-ticket finder   & --- & --- & --- & yes & --- & 1 \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+The two zeroes are not failures; they are the right tools for questions that have
+formulas. The sprint scheduler is Chapter~7, the escalation adviser is
+Chapter~13, and the duplicate finder is the one tool of the five that this course
+hands to \chref{learning} and then to Machine Learning.
+\end{examplebox}
+
+\section{The Branches of AI}
+
+The field is conventionally divided as in \dsref{ai-branches}. The division is
+untidy, because the branches are not disjoint --- planning uses search, natural
+language processing uses both logic and probability --- but it is the division the
+HEC outline uses and the one job advertisements use.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  root/.style={rounded corners=4pt, fill=primary, text=white,
+               font=\small\bfseries, minimum width=3.4cm, minimum height=0.85cm,
+               align=center},
+  br/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!10,
+             text=#1!55!black, font=\scriptsize\bfseries, text width=2.45cm,
+             align=center, minimum height=0.8cm},
+  sub/.style={font=\tiny, text=neutral, text width=2.45cm, align=center},
+  a/.style={-{Stealth[length=1.8mm]}, primary!45, line width=0.8pt}]
+
+\node[root] (r) at (0,0) {Artificial Intelligence};
+
+\node[br=primary]   (b1) at (-6.3,-1.9) {Search \& Problem Solving};
+\node[br=secondary] (b2) at (-3.15,-1.9) {Knowledge \& Reasoning};
+\node[br=greenhl]   (b3) at (0,-1.9)     {Planning \& Scheduling};
+\node[br=tealhl]    (b4) at (3.15,-1.9)  {Uncertainty \& Probability};
+\node[br=purplehl]  (b5) at (6.3,-1.9)   {Machine Learning};
+
+\node[sub, below=2pt of b1] {Ch.\ 4--6, 8\\[-1pt]states, heuristics, games};
+\node[sub, below=2pt of b2] {Ch.\ 10--13\\[-1pt]logic, rules, ontologies};
+\node[sub, below=2pt of b3] {Ch.\ 7, 9\\[-1pt]constraints, STRIPS};
+\node[sub, below=2pt of b4] {Ch.\ 14--16\\[-1pt]Bayes nets, fuzzy logic};
+\node[sub, below=2pt of b5] {Ch.\ 17 only\\[-1pt]\emph{Machine Learning
+      Fall 2026}};
+
+\node[br=goldhl]  (b6) at (-4.7,-4.6) {Natural Language Processing};
+\node[br=goldhl]  (b7) at (-1.55,-4.6) {Computer Vision};
+\node[br=goldhl]  (b8) at (1.6,-4.6)   {Robotics};
+\node[br=goldhl]  (b9) at (4.75,-4.6)  {Multi-Agent Systems};
+
+\node[sub, below=2pt of b6] {Ch.\ 18 (symbolic)};
+\node[sub, below=2pt of b7] {\emph{Computer Vision}};
+\node[sub, below=2pt of b8] {not in this degree};
+\node[sub, below=2pt of b9] {Ch.\ 20 (signpost)};
+
+\foreach \b in {b1,b2,b3,b4,b5}{\draw[a] (r) -- (\b.north);}
+\foreach \b in {b6,b7,b8,b9}{\draw[a, goldhl!55] (r.south) -- (\b.north);}
+
+\node[font=\tiny\itshape, text=neutral, align=left, anchor=west]
+  at (-6.6,-6.0) {Bold branches are taught here. Grey captions name the course
+  that owns the branch instead; Appendix~F states every boundary in full.};
+\end{tikzpicture}}%
+{The branches of artificial intelligence, and which of them this course teaches.
+The five branches on the upper row are the body of the course; the lower row is
+covered by a signpost chapter or by another course entirely.}{ai-branches}
+
+\section{Sixty Years in Five Waves}
+
+AI has a distinctive history: repeated cycles in which a genuine advance is
+over-promised, fails to generalise, and is followed by a collapse in funding
+severe enough to have earned its own name, an \term{AI winter}. Knowing the shape
+of the cycle is professionally useful, because it is happening again now and you
+will be asked to make judgements inside it.
+
+\smallskip
+\noindent\begin{longtable}{@{}L{2.5cm}L{5.4cm}L{7.1cm}@{}}
+\toprule
+\textbf{Period} & \textbf{What was achieved} & \textbf{Why it stalled} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Period} & \textbf{What was achieved} & \textbf{Why it stalled} \\
+\midrule
+\endhead
+1943--1956 \newline \emph{Foundations} &
+McCulloch and Pitts' artificial neuron; Turing's 1950 paper and his test; the
+1956 Dartmouth workshop, which named the field. &
+Nothing stalled yet. The founding claim --- that every aspect of intelligence
+could be ``so precisely described that a machine can be made to simulate it'' ---
+set the expectations that the next twenty years failed to meet. \\
+1956--1974 \newline \emph{Search and the general solver} &
+The Logic Theorist and the General Problem Solver (Chapter~9); Samuel's checkers
+player; Eliza (Chapter~18); early perceptrons (Chapter~17). &
+\term{Combinatorial explosion}. The methods worked on toy problems and died on
+real ones: a search that is fine at depth 6 is hopeless at depth 20. Minsky and
+Papert's 1969 analysis of the perceptron's limits closed the neural line for
+fifteen years. \\
+1974--1980 \newline \emph{First winter} &
+--- &
+The Lighthill report (1973) in the UK and DARPA's withdrawal in the US ended
+general AI funding. The diagnosis was correct: the field had solved the easy half
+of its problems and called it progress. \\
+1980--1987 \newline \emph{Expert systems} &
+Knowledge, not cleverness, as the engine: MYCIN, XCON, and a commercial industry
+in rule-based systems (Chapter~13). Japan's Fifth Generation project. &
+The \term{knowledge acquisition bottleneck}. Rules had to be elicited from experts
+one at a time, could not be learned, grew brittle at a few thousand rules, and
+degraded catastrophically rather than gracefully at the edge of their competence.
+\\
+1987--1993 \newline \emph{Second winter} &
+--- &
+The specialised hardware market collapsed; ``AI'' became a word firms avoided in
+prospectuses. The research continued under other names --- ``knowledge-based
+systems'', ``decision support''. \\
+1993--2011 \newline \emph{The quiet, successful period} &
+The rational-agent reframing that this course follows; probability and Bayesian
+networks (Chapter~15); Deep Blue (1997); statistical machine translation; search
+engines and recommenders. AI methods everywhere, under other names. &
+It did not stall. It stopped claiming to be AI, which is why this era is the least
+famous and the most useful. \\
+2012--present \newline \emph{Learning at scale} &
+Deep networks, then transformers and large language models; systems that write
+fluent text and usable code (Chapter~20). &
+Still open. The symbolic questions this course teaches --- can it prove it, can it
+explain it, can it guarantee the constraint holds --- are exactly the ones the
+current wave answers least well (Chapter~21). \\
+\bottomrule
+\caption{Five waves and two winters. Each collapse followed a real achievement
+that was mistaken for a general one.}\label{tab:ai-history}
+\end{longtable}
+
+\begin{alertbox}[The pattern worth taking from the history]
+Every winter arrived the same way: a method that worked at small scale was sold as
+a method that worked, and the gap was discovered by customers rather than by
+researchers. The methods themselves were not discredited --- minimax, resolution
+and rule engines are all in production today, in this book's Chapters~8, 12
+and~13. What was discredited each time was a claim about their \emph{reach}.
+
+You will be asked to make that kind of claim in your own career, probably about
+something you built over a weekend that worked beautifully on twenty examples.
+Chapter~21 gives you the vocabulary to make it honestly.
+\end{alertbox}
+
+\section{What This Course Teaches, and What It Does Not}
+
+Artificial intelligence, machine learning and data science are three courses in
+this degree, taught in that order, and students routinely confuse them because all
+three are described in job advertisements with the same six words.
+\dsref{ai-scope} draws the boundary in a way that survives contact with a real
+question, and Appendix~F states it chapter by chapter.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  crs/.style={rounded corners=4pt, draw=#1, line width=1.4pt, fill=#1!8,
+              text width=4.15cm, align=flush left, inner sep=7pt,
+              text=#1!50!black},
+  hd/.style={rounded corners=2pt, fill=#1, text=white,
+             font=\scriptsize\bfseries, inner sep=3pt},
+  a/.style={-{Stealth[length=2.4mm]}, neutral, line width=1.1pt}]
+
+\node[crs=primary] (ai) at (0,0)
+  {\\[1pt]{\scriptsize\bfseries Given:} the rules of the world --- the tasks and
+   their dependencies, the constraints, the operators, the facts.\\[3pt]
+   {\scriptsize\bfseries Must work out:} \emph{what to do}. Which sequence of
+   actions reaches the goal.\\[3pt]
+   {\scriptsize\bfseries Method:} search and inference over an explicit
+   representation.\\[3pt]
+   {\scriptsize\bfseries Answer comes with:} a proof, a plan, or a trace.};
+
+\node[crs=greenhl, right=0.75cm of ai] (ml)
+  {\\[1pt]{\scriptsize\bfseries Given:} examples of inputs paired with the right
+   outputs. The rules are \emph{not} given.\\[3pt]
+   {\scriptsize\bfseries Must work out:} \emph{the rule itself}, and whether it
+   will hold on data never seen.\\[3pt]
+   {\scriptsize\bfseries Method:} fitting a model, then measuring how it
+   generalises.\\[3pt]
+   {\scriptsize\bfseries Answer comes with:} an error estimate.};
+
+\node[crs=goldhl, right=0.75cm of ml] (ds)
+  {\\[1pt]{\scriptsize\bfseries Given:} a question somebody actually asked, and
+   messy data that half answers it.\\[3pt]
+   {\scriptsize\bfseries Must work out:} \emph{what is true}, and what should be
+   done about it.\\[3pt]
+   {\scriptsize\bfseries Method:} the whole pipeline --- acquisition, cleaning,
+   inference, models, communication.\\[3pt]
+   {\scriptsize\bfseries Answer comes with:} a decision and a caveat.};
+
+\node[hd=primary] at (ai.north) {ARTIFICIAL INTELLIGENCE \textnormal{$\cdot$ Sem 3}};
+\node[hd=greenhl] at (ml.north) {MACHINE LEARNING \textnormal{$\cdot$ Sem 6}};
+\node[hd=goldhl]  at (ds.north) {DATA SCIENCE \textnormal{$\cdot$ Sem 7}};
+
+\draw[a] (ai.east) -- node[above, font=\tiny\itshape, text=neutral]
+  {prerequisite} (ml.west);
+\draw[a] (ml.east) -- node[above, font=\tiny\itshape, text=neutral]
+  {prerequisite} (ds.west);
+
+\node[font=\tiny\itshape, text=neutral, text width=13.5cm, align=flush left]
+  at (4.5,-3.35)
+  {One question, three courses. \emph{Which tickets should be escalated
+   tonight?} --- AI writes the rules down as constraints and infers the
+   escalation set, with the chain of reasoning attached (Chapter~13). Machine
+   Learning is given ten thousand past escalations and their outcomes and learns
+   which features predict a worthwhile one. Data Science asks whether
+   ``worthwhile'' was measured correctly in the first place, and what the
+   escalation policy is doing to the on-call engineers.};
+\end{tikzpicture}}%
+{Artificial intelligence, machine learning and data science, separated by what
+each is given and what each must work out. The distinction is not the technique;
+it is where the rules come from.}{ai-scope}
+
+So: this course is \emph{symbolic}. It teaches the agent that is told the rules
+and must reason with them. That is not a historical curiosity, for three reasons.
+It is where guarantees live --- a constraint solver can prove no engineer is
+double-booked, and no learned model can (Chapter~7). It is where explanations live
+--- a rule engine can print the chain that produced its answer, and that chain is
+what an auditor accepts (Chapter~13). And it is where you go when you have no
+data, which is the situation at the start of every new project.
+
+Chapter~17 is the one chapter about learning. It covers the three paradigms the
+HEC 2017 outline names, works the perceptron numerically, shows why a single
+perceptron cannot represent exclusive-or --- the result that caused the first
+neural winter --- and then stops and hands over. It is a signpost, not a unit.
+
+\begin{worked}[Auditing one tool against the five tests]
+The office's \emph{duplicate-ticket finder} takes each new ticket and flags the
+three existing tickets most similar to it, so the service desk can merge them. Its
+similarity measure is tuned monthly against the merges the desk actually made.
+Score it.
+
+\smallskip
+\textbf{1. Goal?} \emph{No.} The brief is a procedure: compute similarity, return
+the top three. There is no objective it is trying to do well by; if the desk
+wanted the top five it would be a different program.
+\smallskip
+
+\textbf{2. Search?} \emph{No.} It scores every candidate and returns the best
+three. Scoring all alternatives and ranking them is not search --- there is no
+point at which the program commits to a partial choice and explores its
+consequences. Compare Chapter~4, where a decision about task~3 changes which
+states are reachable at all.
+\smallskip
+
+\textbf{3. Knowledge?} \emph{No.} The similarity weights are numbers in a
+configuration file. A service-desk manager cannot read them and say ``that is
+wrong, a database timeout is not like a login failure''.
+\smallskip
+
+\textbf{4. Adaptation?} \emph{Yes.} Behaviour changes monthly on the evidence of
+past merges, with nobody editing the code.
+\smallskip
+
+\textbf{5. Explanation?} \emph{No.} It reports a similarity score. A score is a
+number, not a reason.
+\smallskip
+
+\textbf{Score: 1 of 5} --- and the one point is adaptation, the single test that
+this course does not teach. That is the correct verdict, and the useful one: the
+duplicate finder is a good tool and it is not an AI problem in the sense of this
+course. It is the machine learning course's problem. Contrast the sprint
+scheduler, which scores 4 and whose one missing point is adaptation.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Treating ``AI'' as a synonym for ``machine learning''.} It is the
+        most common error in this subject, and it makes whole categories of
+        problem invisible. If a constraint must \emph{never} be violated, no
+        amount of training data is the answer; you need Chapter~7.
+  \item \textbf{Reading the four quadrants of \dsref{ai-axes} as a ranking.} They
+        are different goals with different evidence. A program can be excellent
+        in one and worthless in the neighbouring one.
+  \item \textbf{Assuming a program that scores well on the checklist is a good
+        program.} The checklist identifies the \emph{kind} of system, not its
+        quality. The highest-scoring system in an office can be the one that
+        should be deleted.
+  \item \textbf{Believing the winters were caused by the methods failing.}
+        Minimax, resolution and rule engines all still work and are all still
+        deployed. What failed was a claim about how far they reached.
+  \item \textbf{Calling a system ``general'' AI because it is fluent.} Fluency is
+        the bottom-left quadrant --- acting humanly. Chapter~19's Eliza is
+        two hundred lines long and was mistaken for a therapist in 1966.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[Is It AI? A Five-Point Audit]
+The audit of the \emph{examplebox} above, in code. Five tools from the project
+management office, five tests, one verdict each. Pure standard library: the point
+of this lab is the classification, not the computation.
+\begin{lstlisting}[language=Python]
+"""Chapter 1 lab -- Is it AI? A five-point audit.
+
+Score five programs from a project management office against the five
+tests of Section 1.3, and classify each one. Nothing here learns
+anything; the exercise is to separate programs that decide from
+programs that compute.
+"""
+
+TESTS = ("goal", "search", "knowledge", "adapts", "explains")
+
+# One row per tool: which of the five tests it passes, and why the
+# most interesting answer is what it is.
+TOOLS = {
+    "Gantt recalculator": {
+        "passes": (),
+        "note": "given a procedure, not an objective; one answer, "
+                "computed directly",
+    },
+    "Burndown chart generator": {
+        "passes": (),
+        "note": "arithmetic and a plot; no alternatives considered",
+    },
+    "Sprint scheduler": {
+        "passes": ("goal", "search", "knowledge", "explains"),
+        "note": "constraints are declared, not coded; reports which "
+                "constraint blocked a story  (Chapter 7)",
+    },
+    "Escalation adviser": {
+        "passes": ("goal", "search", "knowledge", "explains"),
+        "note": "rules an operations lead can read and correct; prints "
+                "its firing chain  (Chapter 13)",
+    },
+    "Duplicate-ticket finder": {
+        "passes": ("adapts",),
+        "note": "weights retuned monthly from past merges; the one "
+                "tool here that belongs to Machine Learning",
+    },
+}
+
+
+def verdict(score):
+    """The reading of a score given in Section 1.3."""
+    if score == 0:
+        return "ordinary software"
+    if score <= 2:
+        return "doing something interesting"
+    return "an AI system"
+
+
+def audit():
+    width = max(len(name) for name in TOOLS)
+    head = "TOOL".ljust(width) + "  " + " ".join(
+        t[:4].upper().rjust(5) for t in TESTS) + "   SCORE  VERDICT"
+    print(head)
+    print("-" * len(head))
+    for name, row in TOOLS.items():
+        marks = ["yes".rjust(5) if t in row["passes"] else "-".rjust(5)
+                 for t in TESTS]
+        score = len(row["passes"])
+        print(name.ljust(width) + "  " + " ".join(marks) +
+              "   %5d  %s" % (score, verdict(score)))
+    print()
+    for name, row in TOOLS.items():
+        print("%s\n    %s" % (name, row["note"]))
+
+
+def check():
+    """The two claims the chapter makes about this table."""
+    scores = {n: len(r["passes"]) for n, r in TOOLS.items()}
+    # Adaptation is the only test the AI systems here fail ...
+    for name in ("Sprint scheduler", "Escalation adviser"):
+        assert "adapts" not in TOOLS[name]["passes"], name
+        assert scores[name] == 4, name
+    # ... and the only test the machine learning tool passes.
+    assert TOOLS["Duplicate-ticket finder"]["passes"] == ("adapts",)
+    print("\nchecks passed: intelligent behaviour here does not "
+          "require learning,")
+    print("and the one tool that learns is the one this course "
+          "hands on.")
+
+
+if __name__ == "__main__":
+    audit()
+    check()
+\end{lstlisting}
+Now add a sixth tool of your own --- something you have actually used, a CI
+pipeline or an IDE's autocomplete --- and score it. The interesting cases are the
+ones that score 2 or 3: write down which test you were least sure about and why.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A program is given the sentence \emph{minimise total project delay} and a
+        list of tasks with durations and dependencies. Which of the five tests of
+        Section~\ref{sec:is-it-ai} does it pass on that description alone, and
+        which cannot be judged until you see the implementation?
+  \item A chatbot answers service-desk questions so convincingly that users
+        believe it is a person, but it has no representation of the service catalogue
+        and cannot say why it gave an answer. Which quadrant of \dsref{ai-axes} is
+        it succeeding in, and which is it failing in?
+  \item The expert-systems boom ended in the knowledge acquisition bottleneck.
+        Name the chapter of this handout that builds an expert system, and state
+        which single one of the five tests such a system fails.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item An \term{agent} perceives an environment and acts on it. Artificial
+        intelligence is the study of choosing those actions well; the field's
+        question is ``what should this agent do next?''.
+  \item The four classical definitions differ on two axes: thinking against
+        acting, and the human standard against the rational standard. This course
+        works throughout in the \emph{acting rationally} quadrant.
+  \item A program is an AI system to the extent that it is given a goal rather
+        than a procedure, considers alternatives, holds an inspectable
+        representation of its domain, adapts, and can explain itself. Three or
+        more of the five, and this course's vocabulary applies.
+  \item Learning is one route to intelligent behaviour, not the definition of it.
+        Chess programs, schedulers and diagnostic systems score zero on
+        adaptation and are unambiguously AI.
+  \item The history is a cycle: a real advance, an over-general claim, a winter.
+        Combinatorial explosion ended the first wave; the knowledge acquisition
+        bottleneck ended the expert-system wave.
+  \item Artificial intelligence is given the rules and must work out what to do;
+        machine learning is given examples and must work out the rule; data
+        science is given a question and must work out what is true. This course is
+        the first of the three, and it is symbolic.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A program that beats a grandmaster at chess but cannot
+        learn from its games is: (a)~not AI, because it does not learn (b)~AI, and
+        scores zero on the adaptation test (c)~AI only in the ``thinking humanly''
+        sense (d)~machine learning.
+  \item \textbf{(MCQ)} The Turing test belongs in which quadrant?
+        (a)~thinking humanly (b)~thinking rationally (c)~acting humanly
+        (d)~acting rationally.
+  \item \textbf{(MCQ)} Which ended the first wave of AI research?
+        (a)~the knowledge acquisition bottleneck (b)~combinatorial explosion
+        (c)~the collapse of the Lisp machine market (d)~Minsky and Papert's book
+        alone.
+  \item \textbf{(MCQ)} A system is given the tasks, the dependencies and the
+        objective, and returns a sequence of actions with a proof that no
+        dependency is violated. Which course owns this problem?
+        (a)~Artificial Intelligence (b)~Machine Learning (c)~Data Science
+        (d)~Data Mining.
+  \item \textbf{(Short)} State the difference between being given a goal and being
+        given a procedure, using two versions of the same ticket-triage
+        requirement as your example.
+  \item \textbf{(Short)} Why is ``it adapts'' neither necessary nor sufficient for
+        a program to be an AI system? Give one example each way.
+  \item \textbf{(Short)} The expert-system industry collapsed even though rule
+        engines work. Explain what actually failed, and name the chapter of this
+        handout in which you will build one anyway.
+  \item \textbf{(Applied)} Take a piece of software you have used this week. Score
+        it against the five tests, writing one sentence of justification per test,
+        and give the verdict. Then state which single change to the system would
+        raise its score by one --- and whether that change would make it better.
+\end{reviewq}

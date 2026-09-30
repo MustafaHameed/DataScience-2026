@@ -1,0 +1,633 @@
+%=====================================================================
+\chapter{Uncertainty and Decision Making}\label{ch:uncertainty}
+%=====================================================================
+\locator{5}{Part V --- Reasoning Under Uncertainty}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why logic alone cannot represent what a delivery team
+        knows, and \textbf{state} probability as a degree of belief.
+  \item \textbf{Apply} Bayes' rule to update a belief on evidence, and
+        \textbf{avoid} the base-rate fallacy.
+  \item \textbf{Use} conditional independence to reduce the size of a joint
+        distribution.
+  \item \textbf{Choose} an action by maximising expected utility, and
+        \textbf{distinguish} a change of belief from a change of decision.
+  \item \textbf{Compute} the value of perfect information, and \textbf{say} when
+        gathering evidence is worth paying for.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{propositional} (what a truth value can and cannot express) and
+\chref{agents} (the utility-based agent, and rationality as maximising
+\emph{expected} performance --- this chapter is where that phrase acquires a
+number). School probability; nothing beyond it is assumed.
+\end{prereq}
+
+\begin{keyterms}
+degree of belief $\bullet$ prior $\bullet$ posterior $\bullet$ likelihood
+$\bullet$ base rate $\bullet$ joint distribution $\bullet$ marginalisation
+$\bullet$ Bayes' rule $\bullet$ conditional independence $\bullet$ utility
+$\bullet$ expected utility $\bullet$ maximum expected utility $\bullet$ decision
+table $\bullet$ value of perfect information
+\end{keyterms}
+
+\section{What Logic Cannot Say}
+
+\chref{propositional} settled the release gate because everything it was told was
+either true or false. Almost nothing a delivery team knows is like that.
+
+\emph{This release probably has a defect.} \emph{The smoke test usually catches
+this kind of problem.} \emph{Auth is normally the culprit when payments is slow.}
+Every one is actionable, none is a truth value, and writing any of them as a
+logical sentence forces a choice between two wrong options: assert it and be
+committed to something false, or omit it and reason without what the team knows.
+
+\chref{kr}'s defaults were one answer --- ``normally'', withdrawn on evidence. They
+work, and they cannot be combined: two defaults pointing different ways gave
+\dsref{diamond}'s conflict, with no principled resolution. Probability is the other
+answer, and it is the one that composes.
+
+\begin{definitionbox}[Probability as degree of belief]
+$P(a) \in [0,1]$ is an agent's \term{degree of belief} in proposition $a$ given
+what it knows --- not a claim about long-run frequency, and not a property of the
+world. $P(\mathit{defect}) = 0.1$ says this agent, with this evidence, would accept
+either side of a bet at those odds.
+
+A \term{prior} $P(a)$ is the belief before evidence; a \term{posterior}
+$P(a \mid b)$ the belief after. The definition of conditional probability,
+\[
+  P(a \mid b) \;=\; \frac{P(a \wedge b)}{P(b)},
+\]
+is the whole apparatus, and everything else in this chapter follows from it.
+\end{definitionbox}
+
+Unlike defaults, degrees of belief \emph{combine}. Two pieces of evidence pointing
+different ways produce a number between them rather than a conflict, and the
+combination rule is forced --- not chosen by whoever wrote the system.
+
+\section{Bayes' Rule}
+
+Rearranging the definition gives the tool:
+\[
+  P(a \mid b) \;=\; \frac{P(b \mid a)\, P(a)}{P(b)}
+\]
+
+It matters because the two conditionals are not interchangeable and the available
+one is usually the wrong way round. A test report says \emph{how often the test
+fires when there is a defect} --- $P(\mathit{alarm} \mid \mathit{defect})$ --- and
+what you need is \emph{how likely a defect is, given that it fired} ---
+$P(\mathit{defect} \mid \mathit{alarm})$. Confusing the two is the \term{base-rate
+fallacy}, and it is the single most consequential probabilistic error made in
+engineering organisations.
+
+\begin{examplebox}[The smoke test]
+The team's smoke test is a good test:
+\begin{tight}
+  \item It fires on $90\%$ of releases that really do have a serious defect:
+        $P(\mathit{alarm} \mid \mathit{defect}) = 0.9$.
+  \item It fires on $20\%$ of releases that do not:
+        $P(\mathit{alarm} \mid \neg\mathit{defect}) = 0.2$.
+  \item Historically one release in ten has a serious defect:
+        $P(\mathit{defect}) = 0.1$.
+\end{tight}
+The test has just fired. How worried should you be?
+\end{examplebox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  b/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!10,
+            text=#1!55!black, font=\scriptsize\bfseries, align=center,
+            minimum width=2.5cm, minimum height=0.62cm},
+  e/.style={-{Stealth[length=1.8mm]}, neutral!70, line width=0.9pt},
+  el/.style={font=\tiny, text=neutral, inner sep=1.5pt}]
+
+\node[b=primary] (all) at (0,3.0) {1000 releases};
+\node[b=accent]  (def) at (-3.2,1.6) {100 defective};
+\node[b=greenhl] (ok)  at (3.2,1.6)  {900 sound};
+
+\node[b=accent]  (da)  at (-4.8,0.1) {90 alarm};
+\node[b=neutral] (dn)  at (-1.7,0.1) {10 silent};
+\node[b=goldhl]  (oa)  at (1.7,0.1)  {180 alarm};
+\node[b=neutral] (on)  at (4.8,0.1)  {720 silent};
+
+\draw[e] (all) -- node[el, above left] {1 in 10} (def);
+\draw[e] (all) -- node[el, above right] {9 in 10} (ok);
+\draw[e] (def) -- node[el, left] {90\%} (da);
+\draw[e] (def) -- node[el, right] {10\%} (dn);
+\draw[e] (ok) -- node[el, left] {20\%} (oa);
+\draw[e] (ok) -- node[el, right] {80\%} (on);
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!35, line width=1pt,
+      text=primary!70!black, font=\scriptsize, text width=12.6cm,
+      align=flush left, inner sep=6pt] at (0,-1.5)
+  {\textbf{Count the alarms.} $90 + 180 = 270$ releases set the test off, and only
+   $90$ of them are actually defective:
+   \[
+     P(\mathit{defect} \mid \mathit{alarm}) \;=\; \frac{90}{270}
+     \;=\; \frac{1}{3}
+   \]
+   \smallskip
+   A test that catches $90\%$ of defects has fired, and the release is still
+   \emph{twice as likely to be sound as broken}. The $180$ false alarms swamp the
+   $90$ true ones, because there are nine times as many sound releases to draw
+   them from. That is the base rate doing the work, and it is why the intuitive
+   answer --- ``$90\%$'' --- is wrong by a factor of nearly three.};
+\end{tikzpicture}}%
+{The same calculation as Bayes' rule, in whole releases rather than fractions.
+Natural frequencies make the base-rate effect visible, which is why this is the
+form to use when explaining a result to a team.}{base-rate}
+
+Silence is far more informative than an alarm here:
+$P(\mathit{defect} \mid \neg\mathit{alarm}) = 10/730 = 1/73 \approx 0.014$. A test
+with a high false-alarm rate tells you much more by staying quiet.
+
+\section{Conditional Independence}
+
+A \term{joint distribution} over $n$ binary variables has $2^{n}$ entries, which is
+\chref{propositional}'s problem again. The escape is the same idea that made
+semantic networks tractable: most things are irrelevant to most other things.
+
+\begin{definitionbox}[Conditional independence]
+$a$ and $b$ are \term{conditionally independent given} $c$ when
+\[
+  P(a \wedge b \mid c) \;=\; P(a \mid c)\, P(b \mid c)
+\]
+Equivalently $P(a \mid b \wedge c) = P(a \mid c)$: once $c$ is known, $b$ says
+nothing further about $a$.
+\end{definitionbox}
+
+The smoke test and a customer complaint are both caused by the defect, and both are
+evidence for it --- but once you \emph{know} whether there is a defect, the
+complaint tells you nothing more about whether the test will fire. That is a
+conditional independence, and asserting it replaces a table of $2^{3} = 8$ numbers
+with three small ones. \chref{bayesnets} makes this the organising principle of a
+whole representation.
+
+\section{From Belief to Decision}
+
+A belief is not yet an action. The team does not need to know how likely the defect
+is; they need to know whether to ship.
+
+\begin{definitionbox}[Expected utility and the principle of maximum expected utility]
+A \term{utility} $U(s)$ is a number expressing how much outcome $s$ is worth. The
+\term{expected utility} of action $a$ is
+\[
+  \mathrm{EU}(a) \;=\; \sum_{s} P(s \mid a)\, U(s)
+\]
+and a rational agent chooses $a^{*} = \arg\max_{a} \mathrm{EU}(a)$. This is the
+precise form of the definition of rationality given informally in \chref{agents}.
+\end{definitionbox}
+
+\begin{examplebox}[Ship now or delay a week]
+Four outcomes, with the team's own numbers:
+
+\smallskip
+\noindent\begin{tabular}{@{}L{3.6cm}L{4.6cm}L{6.0cm}@{}}
+\toprule
+\textbf{Action} & \textbf{If there is a defect} & \textbf{If there is not} \\
+\midrule
+Ship now & $-100$ \newline incident, rollback, reputation &
+$+40$ \newline a week of revenue earned early \\
+Delay a week & $-5$ \newline caught it; a small slip &
+$-10$ \newline a week lost for nothing \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+Note that delaying is never \emph{good} --- both its outcomes are negative. It is
+insurance, and insurance always costs something.
+\end{examplebox}
+
+With $p = P(\mathit{defect})$:
+\begin{align*}
+  \mathrm{EU}(\text{ship}) &= -100p + 40(1-p) = 40 - 140p \\
+  \mathrm{EU}(\text{delay}) &= -5p - 10(1-p) = 5p - 10
+\end{align*}
+They cross where $40 - 140p = 5p - 10$, that is at
+\[
+  p^{*} \;=\; \frac{50}{145} \;=\; \frac{10}{29} \;\approx\; 0.345
+\]
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=12.4cm, height=6.2cm,
+  xlabel={$p = P(\mathrm{defect})$}, ylabel={expected utility},
+  xlabel style={font=\scriptsize}, ylabel style={font=\scriptsize},
+  tick label style={font=\tiny},
+  xmin=0, xmax=1, ymin=-105, ymax=55,
+  grid=both, major grid style={gray!18}, minor grid style={gray!8},
+  legend style={font=\tiny, at={(0.97,0.97)}, anchor=north east,
+                draw=gray!40, fill=white},
+  legend cell align=left, domain=0:1, samples=2]
+
+\addplot[primary, line width=1.3pt] {40 - 140*x};
+\addlegendentry{$\mathrm{EU}(\text{ship}) = 40 - 140p$}
+\addplot[goldhl, line width=1.3pt] {5*x - 10};
+\addlegendentry{$\mathrm{EU}(\text{delay}) = 5p - 10$}
+
+\draw[greenhl, line width=1pt, dash pattern=on 3pt off 2pt]
+  (axis cs:0.3448,-105) -- (axis cs:0.3448,55);
+\node[font=\tiny\bfseries, text=greenhl!50!black, rotate=90, anchor=south]
+  at (axis cs:0.3448,-60) {decision flips, $p^{*}=10/29$};
+
+\addplot[only marks, mark=*, mark size=1.8pt, primary]
+  coordinates {(0.1,26)} node[above right, font=\tiny, text=primary]
+  {prior $0.1$: ship};
+\addplot[only marks, mark=*, mark size=1.8pt, accent]
+  coordinates {(0.3333,-6.67)} node[above right, font=\tiny, text=accent]
+  {after an alarm $1/3$: \emph{still} ship};
+\end{axis}
+\end{tikzpicture}}%
+{The two expected utilities as the probability of a defect varies. The alarm moves
+the belief a long way and leaves the decision alone, because $1/3$ falls just short
+of the crossing at $10/29$.}{eu-lines}
+
+\section{A Change of Belief Is Not a Change of Decision}
+
+This is the chapter's most useful idea, and \dsref{eu-lines} contains it.
+
+The alarm fires. Belief in a defect more than triples, from $0.1$ to $1/3$. And the
+recommendation does not change: at $p = 1/3$, $\mathrm{EU}(\text{ship}) = -6.67$
+against $\mathrm{EU}(\text{delay}) = -8.33$, so shipping is still --- barely ---
+the better bet. The flip comes at $10/29 \approx 0.345$, and $1/3 \approx 0.333$
+falls just short.
+
+Two consequences worth taking seriously.
+
+\textbf{Do not report beliefs to decision makers as though they were decisions.} An
+engineer who says ``the probability of a defect has tripled'' has said something
+true and nearly useless. The question is which side of $p^{*}$ the number falls on.
+
+\textbf{Attend to the margin.} At $p = 1/3$ the two options differ by $1.67$ utility
+units, which is noise. The honest report is not ``ship'' but ``ship, marginally, and
+this is now close enough that better evidence would be worth having'' --- which is
+exactly what the next section makes precise.
+
+\section{The Value of Information}
+
+If the decision is nearly balanced, finding out is worth a lot. If it is not, it is
+worth nothing at all, however interesting the answer.
+
+\begin{definitionbox}[Value of perfect information]
+The \term{value of perfect information} about a variable is the increase in
+expected utility from learning it before deciding:
+\[
+  \mathrm{VPI} \;=\; \Bigl[\textstyle\sum_{s} P(s)\, \max_{a} \mathrm{EU}(a \mid s)
+  \Bigr] \;-\; \max_{a} \mathrm{EU}(a)
+\]
+the first term being what you could achieve choosing the best action for each case
+once you know which case you are in. It is never negative, and it is an upper bound
+on what the evidence is worth paying for.
+\end{definitionbox}
+
+For the release decision, $\mathrm{VPI}(p) = 95p$ below the flip point and
+$50 - 50p$ above it. Evaluated at the two beliefs of interest:
+
+\smallskip
+\noindent\begin{longtable}{@{}L{4.6cm}L{2.6cm}L{2.6cm}L{4.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Situation} & \textbf{$P(\text{defect})$} & \textbf{Decision} &
+\textbf{Value of perfect information} \\
+\midrule
+\endhead
+Before any test & $0.1$ & ship & $9.50$ \\
+After the test fires & $1/3$ & ship (marginally) & $\mathbf{31.67}$ \\
+After the test is silent & $1/73$ & ship & $1.30$ \\
+At the flip point & $10/29$ & indifferent & $32.76$ (the maximum) \\
+\bottomrule
+\caption{Information is worth most exactly where the decision is hardest, and
+nothing at all where it is easy.}\label{tab:vpi}
+\end{longtable}
+
+That shape is the point. Before any evidence, certainty would be worth $9.50$.
+After an ambiguous alarm --- which changed nothing about what to do --- it is worth
+$31.67$, more than three times as much. Information is valuable in proportion to
+how close the decision is to flipping, not in proportion to how interesting it is.
+
+\begin{conceptbox}
+This is a usable rule for engineering organisations, and it cuts both ways.
+
+\emph{Stop gathering evidence that cannot change the decision.} If the answer is
+``ship'' at every plausible value of $p$, another day of investigation has a value
+of zero however much everyone would like to know.
+
+\emph{Gather evidence hard when the decision is balanced.} The correct response to
+``it is basically a coin flip'' is not to flip the coin but to notice that this is
+precisely the circumstance in which finding out pays best.
+
+And notice that both follow from arithmetic rather than from temperament. This is
+what it means for an agent to be rational about its own information gathering ---
+the third thing \chref{agents} said rationality does not forbid.
+\end{conceptbox}
+
+\begin{worked}[Working the alarm through, end to end]
+\textbf{Step 1: the posterior.} With $P(d) = 0.1$,
+$P(\mathit{al} \mid d) = 0.9$, $P(\mathit{al} \mid \neg d) = 0.2$:
+\[
+  P(\mathit{al}) = 0.9 \times 0.1 + 0.2 \times 0.9 = 0.09 + 0.18 = 0.27
+\]
+\[
+  P(d \mid \mathit{al}) = \frac{0.9 \times 0.1}{0.27}
+  = \frac{0.09}{0.27} = \frac{1}{3}
+\]
+Check against \dsref{base-rate}: $90$ true alarms out of $270$. The same number,
+and the frequency version is the one to put in front of the team.
+
+\smallskip
+\textbf{Step 2: the decision.}
+\[
+  \mathrm{EU}(\text{ship}) = 40 - 140 \times \tfrac{1}{3}
+  = 40 - 46.67 = -6.67
+\]
+\[
+  \mathrm{EU}(\text{delay}) = 5 \times \tfrac{1}{3} - 10 = -8.33
+\]
+Ship, by $1.67$. Both options are now bad --- the alarm has cost the team something
+whatever they do --- but shipping is less bad.
+
+\smallskip
+\textbf{Step 3: is more evidence worth buying?} With perfect information we would
+delay when there is a defect ($-5$ rather than $-100$) and ship when there is not
+($+40$ rather than $-10$):
+\[
+  \text{with information} = \tfrac{1}{3}(-5) + \tfrac{2}{3}(40)
+  = -1.67 + 26.67 = 25.00
+\]
+\[
+  \mathrm{VPI} = 25.00 - (-6.67) = 31.67
+\]
+So certainty is worth $31.67$ units --- against the $10$ units that delaying a week
+costs when the release turns out to be sound. \emph{An investigation costing less
+than a week's delay is clearly worth doing}, and that conclusion came from the
+numbers rather than from anybody's instinct.
+
+\smallskip
+\textbf{Step 4: the sensitivity that matters.} Suppose the team disputes the
+$-100$. Redo the flip point with shipping a defect costing $-60$:
+$\mathrm{EU}(\text{ship}) = 40 - 100p$, which meets $5p - 10$ at
+$p^{*} = 50/105 \approx 0.476$. The alarm's $1/3$ is now far from flipping
+anything, and the value of information falls accordingly. \emph{The utilities
+matter as much as the probabilities}, and they are the part nobody measures ---
+which is the honest weakness of this whole apparatus and the reason to write them
+down where they can be argued with.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{The base-rate fallacy.} $P(\mathit{alarm} \mid \mathit{defect})
+        = 0.9$ does not make $P(\mathit{defect} \mid \mathit{alarm})$ anything like
+        $0.9$. Here it is $1/3$. Draw the natural-frequency tree.
+  \item \textbf{Reporting a belief as though it were a decision.} ``The probability
+        tripled'' is true and does not say what to do. Say which side of $p^{*}$ it
+        falls.
+  \item \textbf{Ignoring the margin.} At $p = 1/3$ the options differ by $1.67$
+        units. Report the closeness, not only the winner.
+  \item \textbf{Gathering evidence that cannot change the decision.} If the action
+        is the same across every plausible probability, the value of information is
+        zero.
+  \item \textbf{Leaving utilities implicit.} They decide the answer as much as the
+        probabilities do, and unlike the probabilities nobody measures them. Write
+        them down so they can be disputed.
+  \item \textbf{Assuming independence to make the arithmetic easy.} Two symptoms of
+        the same cause are \emph{not} independent, and treating them as such
+        double-counts the evidence. They may be conditionally independent
+        \emph{given} the cause, which is a different claim --- and the one
+        \chref{bayesnets} is built on.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[Go/No-Go Under Uncertainty]
+Bayes' rule with exact arithmetic, the decision, the flip point and the value of
+information. Every number the chapter quotes is computed here.
+\begin{lstlisting}[language=Python]
+"""Chapter 14 lab -- ship now or delay a week.
+
+Fractions throughout, so every printed number can be checked by hand
+against the natural-frequency tree of Figure 14.1.
+"""
+
+from fractions import Fraction as F
+
+# --- the smoke test -----------------------------------------------
+P_DEFECT = F(1, 10)          # one release in ten has a serious defect
+SENS = F(9, 10)              # P(alarm | defect)
+FPR = F(2, 10)               # P(alarm | no defect)
+
+# --- what each outcome is worth -----------------------------------
+UTIL = {
+    ("ship", "defect"): -100,    # incident, rollback, reputation
+    ("ship", "ok"): 40,          # a week of revenue earned early
+    ("delay", "defect"): -5,     # caught it; a small slip
+    ("delay", "ok"): -10,        # a week lost for nothing
+}
+ACTIONS = ("ship", "delay")
+
+
+def posterior(prior, sens, fpr, alarm=True):
+    """Bayes' rule. P(defect | alarm) or P(defect | no alarm)."""
+    like_d = sens if alarm else 1 - sens
+    like_ok = fpr if alarm else 1 - fpr
+    return (like_d * prior) / (like_d * prior + like_ok * (1 - prior))
+
+
+def eu(action, p):
+    return UTIL[(action, "defect")] * p + UTIL[(action, "ok")] * (1 - p)
+
+
+def best(p):
+    a = max(ACTIONS, key=lambda x: eu(x, p))
+    return a, eu(a, p)
+
+
+def vpi(p):
+    """Value of perfect information about the defect."""
+    informed = (p * max(UTIL[(a, "defect")] for a in ACTIONS)
+                + (1 - p) * max(UTIL[(a, "ok")] for a in ACTIONS))
+    return informed - best(p)[1]
+
+
+def flip_point():
+    """Solve EU(ship) = EU(delay) for p, exactly.
+
+    EU(ship)  = Ud*p + Uo*(1-p)   = Uo + (Ud-Uo)p
+    EU(delay) = Vd*p + Vo*(1-p)   = Vo + (Vd-Vo)p
+    """
+    ud, uo = UTIL[("ship", "defect")], UTIL[("ship", "ok")]
+    vd, vo = UTIL[("delay", "defect")], UTIL[("delay", "ok")]
+    return F(vo - uo, (ud - uo) - (vd - vo))
+
+
+if __name__ == "__main__":
+    print("=== the smoke test ===")
+    print("P(defect)            =", P_DEFECT)
+    print("P(alarm | defect)    =", SENS)
+    print("P(alarm | no defect) =", FPR)
+
+    post = posterior(P_DEFECT, SENS, FPR, alarm=True)
+    quiet = posterior(P_DEFECT, SENS, FPR, alarm=False)
+    print()
+    print("P(defect | alarm)    =", post, "=", round(float(post), 4))
+    print("P(defect | silence)  =", quiet, "=", round(float(quiet), 4))
+    assert post == F(1, 3)
+
+    # the natural-frequency check of Figure 14.1
+    n = 1000
+    defective = n * P_DEFECT                 # 100
+    true_alarms = defective * SENS           # 90
+    false_alarms = (n - defective) * FPR     # 180
+    print()
+    print("in %d releases: %d defective, %d true alarms, %d false"
+          % (n, defective, true_alarms, false_alarms))
+    print("   %d of %d alarms are real = %s"
+          % (true_alarms, true_alarms + false_alarms,
+             F(int(true_alarms), int(true_alarms + false_alarms))))
+    assert F(int(true_alarms), int(true_alarms + false_alarms)) == post
+    print("   a 90%-sensitive test fired, and the release is still")
+    print("   TWICE as likely sound as broken.")
+
+    # --- the decision ---------------------------------------------
+    print()
+    print("=== the decision ===")
+    print("situation          P(defect)   EU(ship)  EU(delay)  choose")
+    print("-" * 60)
+    rows = (("no test yet   ", P_DEFECT),
+            ("alarm fired   ", post),
+            ("test is silent", quiet))
+    for label, p in rows:
+        a, _ = best(p)
+        print("%s %10s %10.2f %10.2f  %s"
+              % (label, round(float(p), 4), float(eu("ship", p)),
+                 float(eu("delay", p)), a))
+
+    star = flip_point()
+    print()
+    print("flip point p* =", star, "=", round(float(star), 4))
+    assert star == F(10, 29)
+    # just either side of it
+    assert best(star - F(1, 1000))[0] == "ship"
+    assert best(star + F(1, 1000))[0] == "delay"
+
+    # the headline: belief changed a lot, decision did not change
+    assert best(P_DEFECT)[0] == "ship"
+    assert best(post)[0] == "ship"
+    margin = eu("ship", post) - eu("delay", post)
+    print()
+    print("the alarm moved belief from %s to %s -- more than triple --"
+          % (P_DEFECT, post))
+    print("and the decision did not change, because %s < %s."
+          % (post, star))
+    print("the margin is now only %.2f utility units." % float(margin))
+    assert float(margin) < 2
+
+    # --- the value of information ---------------------------------
+    print()
+    print("=== value of perfect information ===")
+    for label, p in rows + (("at the flip point", star),):
+        print("   %-18s p=%-8s VPI = %6.2f"
+              % (label.strip(), round(float(p), 4), float(vpi(p))))
+    assert vpi(post) > 3 * vpi(P_DEFECT)
+    print()
+    print("Information is worth most where the decision is hardest:")
+    print("%.2f before the test, %.2f after an ambiguous alarm."
+          % (float(vpi(P_DEFECT)), float(vpi(post))))
+    print("Delaying a week costs 10 when the release is sound, so an")
+    print("investigation cheaper than that is clearly worth doing.")
+
+    # --- and the utilities matter as much as the probabilities ----
+    print()
+    print("=== if shipping a defect cost 60 rather than 100 ===")
+    UTIL[("ship", "defect")] = -60
+    star2 = flip_point()
+    print("   flip point moves from %s to %s (%.3f)"
+          % (star, star2, float(star2)))
+    print("   the alarm's 1/3 is now far from flipping anything:",
+          best(post)[0])
+    print("   VPI after an alarm falls from %.2f to %.2f"
+          % (31.67, float(vpi(post))))
+    assert star2 > star
+    print()
+    print("The utilities decide the answer as much as the")
+    print("probabilities do -- and they are the part nobody measures.")
+\end{lstlisting}
+Then change \texttt{FPR} to $0.02$ --- a test that almost never cries wolf --- and
+re-run. The posterior after an alarm jumps to about $0.83$, the decision flips to
+\emph{delay}, and the value of information collapses. A test is worth having in
+proportion to how often its answer changes what you do.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A test that fires on $90\%$ of defective releases has fired, and the
+        posterior probability of a defect is $1/3$. Explain to a delivery manager,
+        in two sentences and without algebra, why those numbers are consistent.
+  \item The alarm moved the belief from $0.1$ to $1/3$ and did not change the
+        recommendation. State the general lesson, and say what an engineer should
+        report instead of ``the probability tripled''.
+  \item The value of perfect information was $9.50$ before the test and $31.67$
+        after an ambiguous alarm. Explain why more evidence became \emph{more}
+        valuable after evidence arrived.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Probability is a \term{degree of belief} given what is known. Unlike
+        \chref{kr}'s defaults it \emph{combines}: two pieces of evidence pointing
+        different ways give a number between them, by a rule nobody gets to choose.
+  \item \term{Bayes' rule} inverts a conditional. The one you have is usually the
+        wrong way round, and assuming otherwise is the \term{base-rate fallacy}: a
+        $90\%$-sensitive test fired and left $P(\mathit{defect}) = 1/3$.
+  \item Natural frequencies --- $90$ true alarms among $270$ --- make the base rate
+        visible. Use them when explaining a result to people.
+  \item \term{Conditional independence} is what stops a joint distribution growing
+        as $2^{n}$, and it is the organising idea of \chref{bayesnets}.
+  \item A rational agent maximises \term{expected utility},
+        $\mathrm{EU}(a) = \sum_{s} P(s \mid a) U(s)$. This is the precise form of
+        \chref{agents}' definition of rationality.
+  \item \emph{A change of belief is not a change of decision.} The alarm tripled
+        the probability and left the recommendation alone, because $1/3$ falls
+        short of the flip point $10/29$. Report which side of $p^{*}$ you are on,
+        and how close.
+  \item The \term{value of perfect information} is greatest exactly where the
+        decision is most finely balanced --- $31.67$ after the ambiguous alarm
+        against $9.50$ before it. Gather evidence when it could change the action,
+        and stop when it could not.
+  \item The utilities decide the outcome as much as the probabilities, and they are
+        the part nobody measures. Write them down so they can be argued with.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The base-rate fallacy is confusing:
+        (a)~$P(a)$ with $P(\neg a)$ (b)~$P(a \mid b)$ with $P(b \mid a)$
+        (c)~a prior with a utility (d)~independence with conditional independence.
+  \item \textbf{(MCQ)} A rational agent chooses the action maximising:
+        (a)~probability of success (b)~utility of the best outcome
+        (c)~expected utility (d)~the value of information.
+  \item \textbf{(MCQ)} The value of perfect information is largest when:
+        (a)~one action is clearly best (b)~the decision is finely balanced
+        (c)~the prior is zero (d)~the utilities are equal.
+  \item \textbf{(MCQ)} $a$ and $b$ are conditionally independent given $c$ when:
+        (a)~$P(a \wedge b) = P(a)P(b)$ (b)~$P(a \mid b \wedge c) = P(a \mid c)$
+        (c)~$P(a \mid c) = P(a)$ (d)~$P(c \mid a) = P(c \mid b)$.
+  \item \textbf{(Short)} Draw the natural-frequency tree for a test with $80\%$
+        sensitivity and a $10\%$ false-alarm rate on a $5\%$ base rate, and give
+        $P(\mathit{defect} \mid \mathit{alarm})$.
+  \item \textbf{(Short)} Explain why the value of information rose after the alarm,
+        even though the alarm did not change the recommended action.
+  \item \textbf{(Short)} Give one decision from your own experience where more
+        investigation had a value of zero, and say how you would have known in
+        advance.
+  \item \textbf{(Applied)} The team argues that delaying a week should cost $-25$
+        when the release turns out sound, not $-10$. Recompute the flip point
+        $p^{*}$, say whether the alarm at $p = 1/3$ now changes the decision, and
+        compute the new value of perfect information at that point.
+\end{reviewq}

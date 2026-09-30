@@ -1,0 +1,735 @@
+%=====================================================================
+\chapter{Propositional Logic and Inference}\label{ch:propositional}
+%=====================================================================
+\locator{4}{Part IV --- Knowledge, Logic and Reasoning}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Write} statements about a domain in propositional logic and
+        \textbf{evaluate} them in a model.
+  \item \textbf{Distinguish} entailment from derivation, and \textbf{explain} what
+        soundness and completeness each guarantee.
+  \item \textbf{Decide} entailment by model checking, by DPLL and by resolution
+        refutation, and \textbf{compare} their cost.
+  \item \textbf{Convert} a sentence to conjunctive normal form.
+  \item \textbf{Produce} a countermodel when a conclusion does \emph{not} follow,
+        and \textbf{explain} why that is the more useful answer in practice.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{kr} (what a representation is for, and the price defaults charge) and
+\chref{python} (recursion and sets). No previous logic is assumed. \chref{csp} is
+useful: deciding satisfiability is a constraint problem, and DPLL is backtracking
+with propagation under another name.
+\end{prereq}
+
+\begin{keyterms}
+proposition $\bullet$ connective $\bullet$ model $\bullet$ truth table $\bullet$
+satisfiable $\bullet$ valid $\bullet$ entailment ($\models$) $\bullet$ derivation
+($\vdash$) $\bullet$ soundness $\bullet$ completeness $\bullet$ literal $\bullet$
+clause $\bullet$ conjunctive normal form $\bullet$ model checking $\bullet$ DPLL
+$\bullet$ unit propagation $\bullet$ pure literal $\bullet$ resolution $\bullet$
+refutation $\bullet$ countermodel
+\end{keyterms}
+
+\section{The Release Gate, Written Down}
+
+The delivery team has a rule about when a release may go out. Everyone can state it
+and nobody has written it down precisely, so every release involves an argument.
+Here it is in logic.
+
+\begin{examplebox}[The release gate]
+Six propositions --- each either true or false --- and seven sentences.
+
+\smallskip
+\noindent\begin{tabular}{@{}L{0.9cm}L{6.0cm}L{7.0cm}@{}}
+\toprule
+ & \textbf{Sentence} & \textbf{In English} \\
+\midrule
+R1 & $\mathit{Reviewed} \wedge \mathit{Tested} \Rightarrow \mathit{Staged}$ &
+Code that is reviewed and tested reaches staging \\
+R2 & $\mathit{Staged} \wedge \mathit{SignedOff} \Rightarrow \mathit{Deploy}$ &
+Staged and signed off means it may deploy \\
+R3 & $\mathit{Blocker} \Rightarrow \neg \mathit{Deploy}$ &
+An open blocker forbids deployment \\
+F1 & $\mathit{Reviewed}$ & The code was reviewed \\
+F2 & $\mathit{Tested}$ & The tests passed \\
+F3 & $\mathit{SignedOff}$ & The product owner signed off \\
+F4 & $\neg \mathit{Blocker}$ & There is no open blocker \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+The question the team actually argues about: \emph{may we deploy?} In the notation
+of this chapter, is $\mathit{KB} \models \mathit{Deploy}$?
+\end{examplebox}
+
+\section{Syntax, Semantics and Models}
+
+\begin{definitionbox}[Model, satisfiability, validity]
+A \term{model} is an assignment of true or false to every proposition symbol. With
+$n$ symbols there are $2^{n}$ models; the gate above has six symbols and therefore
+$64$.
+
+A sentence is \term{satisfiable} if some model makes it true, \term{valid} if every
+model does, and \term{unsatisfiable} if none does. The connectives have their usual
+truth tables; the only one that regularly surprises people is implication:
+\[
+  \begin{array}{cc|c}
+    a & b & a \Rightarrow b \\ \hline
+    \text{F} & \text{F} & \text{T} \\
+    \text{F} & \text{T} & \text{T} \\
+    \text{T} & \text{F} & \text{F} \\
+    \text{T} & \text{T} & \text{T}
+  \end{array}
+\]
+$a \Rightarrow b$ is false in exactly one case: $a$ true and $b$ false. So
+``if there is a blocker then we do not deploy'' says nothing whatever about the case
+where there is no blocker --- which is correct, and is why F4 has to be stated
+separately.
+\end{definitionbox}
+
+\begin{alertbox}[Implication is not causation, and not relevance]
+$\mathit{Blocker} \Rightarrow \neg \mathit{Deploy}$ does not say the blocker
+\emph{causes} the decision, and $a \Rightarrow b$ is true whenever $a$ is false
+regardless of what $b$ is about. ``If the build number is prime then Ayesha is on
+call'' is a true sentence on any day the build number is composite.
+
+This bothers everyone at first and it is not a defect: it is the price of a
+connective whose truth depends only on the truth of its parts, which is exactly the
+property that makes mechanical inference possible.
+\end{alertbox}
+
+\section{Entailment and Derivation}
+
+Two ideas that look alike, are constantly confused, and are the foundation of the
+whole part.
+
+\begin{definitionbox}[Entailment and derivation]
+$\mathit{KB} \models \alpha$ --- \term{entailment} --- means $\alpha$ is true in
+\emph{every} model in which $\mathit{KB}$ is true. It is a statement about
+\emph{meaning}, and it makes no reference to any algorithm.
+
+$\mathit{KB} \vdash_{i} \alpha$ --- \term{derivation} --- means the inference
+procedure $i$ can produce $\alpha$ from $\mathit{KB}$. It is a statement about
+\emph{that procedure}.
+
+A procedure is \term{sound} if everything it derives is entailed
+($\vdash$ implies $\models$): it never lies. It is \term{complete} if everything
+entailed can be derived ($\models$ implies $\vdash$): it never misses anything.
+\end{definitionbox}
+
+An inference procedure is worth having exactly when it is both. Soundness without
+completeness gives a system that is right when it speaks and sometimes silent;
+completeness without soundness is worthless, because a procedure that derives
+everything is complete.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+\begin{scope}
+  \fill[primary!6, rounded corners=4pt] (-4.6,-2.0) rectangle (4.6,2.0);
+  \node[font=\scriptsize\bfseries, text=primary!70!black, anchor=north west]
+    at (-4.5,1.92) {all 64 models};
+
+  \draw[greenhl, line width=1.2pt, fill=greenhl!10] (1.2,0) ellipse (3.0 and 1.5);
+  \node[font=\scriptsize\bfseries, text=greenhl!50!black] at (2.9,1.05)
+    {models where \emph{Deploy} is true};
+
+  \draw[primary, line width=1.4pt, fill=primary!22] (0.1,0) ellipse (1.25 and 0.78);
+  \node[font=\scriptsize\bfseries, text=primary!70!black] at (0.1,0.28)
+    {models of KB};
+  \node[font=\tiny, text=primary!70!black] at (0.1,-0.12) {here: exactly 1};
+\end{scope}
+
+\node[font=\scriptsize, text=neutral, text width=4.2cm, align=flush left,
+      anchor=north west] at (-4.5,-0.35)
+  {\textbf{$\mathit{KB} \models \mathit{Deploy}$} means the inner region lies
+   \emph{entirely} inside the outer one: there is no model in which the knowledge
+   base holds and the conclusion fails.};
+
+\node[rounded corners=3pt, fill=accent!7, draw=accent!55, line width=0.9pt,
+      text=accent!55!black, font=\scriptsize, text width=13.0cm,
+      align=flush left, inner sep=6pt] at (0,-2.85)
+  {\textbf{More knowledge shrinks the inner region.} Every sentence added to the
+   knowledge base rules models out, so the set of entailed conclusions can only
+   grow. That is \term{monotonicity}, and it is exactly what \chref{kr}'s defaults
+   gave up: there, adding ``Release 4.7 is a regulated change'' \emph{removed} a
+   conclusion. Logic cannot do that, and in exchange it never has to guess.};
+\end{tikzpicture}}%
+{Entailment as containment between sets of models. The picture is the definition;
+the algorithms in the rest of the chapter are three ways of checking
+it.}{entailment}
+
+\section{Deciding It: Model Checking}
+
+The definition is directly executable: enumerate all $2^{n}$ models, keep those
+satisfying every sentence of the knowledge base, and check whether the query is true
+in all of them.
+
+On the release gate this is decisive. Of $64$ models, exactly \textbf{one} satisfies
+the knowledge base:
+\[
+  \mathit{Reviewed} = \mathit{Tested} = \mathit{SignedOff} = \mathit{Staged}
+  = \mathit{Deploy} = \text{T}, \qquad \mathit{Blocker} = \text{F}
+\]
+and $\mathit{Deploy}$ is true in it. So $\mathit{KB} \models \mathit{Deploy}$: the
+release may go out, and the argument is over.
+
+Model checking is sound, complete, and trivially correct --- and it is $O(2^{n})$.
+Six symbols is $64$; a realistic gate with forty conditions is $10^{12}$. It is the
+definition made executable, not a usable algorithm.
+
+\section{Deciding It Better: DPLL}
+
+\term{DPLL} is a backtracking search over assignments --- exactly \chref{csp}'s
+backtracking, with propagation --- plus two rules that do most of the work.
+
+\begin{definitionbox}[DPLL]
+Work on the knowledge base in \term{conjunctive normal form}: a conjunction of
+\term{clauses}, each a disjunction of \term{literals}. To test satisfiability:
+\begin{tight}
+  \item If there are no clauses left, the assignment satisfies everything: report
+        \emph{satisfiable}.
+  \item If any clause is empty, it cannot be satisfied: backtrack.
+  \item \term{Unit propagation}: if a clause has one literal left, that literal
+        \emph{must} be true. Assign it and simplify.
+  \item \term{Pure literal}: if a symbol appears with only one sign anywhere,
+        assign it that way; it can never help to do otherwise.
+  \item Otherwise pick a symbol and try both values.
+\end{tight}
+\end{definitionbox}
+
+To decide entailment with a satisfiability test, use the equivalence that underlies
+every refutation proof in this part:
+\[
+  \mathit{KB} \models \alpha
+  \quad\text{if and only if}\quad
+  (\mathit{KB} \wedge \neg\alpha) \text{ is unsatisfiable}
+\]
+If assuming the opposite of the conclusion leads to a contradiction, the conclusion
+follows.
+
+On the release gate, DPLL settles it in \textbf{6 recursive calls with 5 unit
+propagations}, against model checking's $64$ enumerations --- and it never branches
+once, because the facts F1--F4 are unit clauses that cascade.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  step/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!8,
+               text=#1!50!black, text width=5.6cm, align=flush left,
+               inner sep=5pt, font=\scriptsize},
+  a/.style={-{Stealth[length=2mm]}, neutral!70, line width=0.9pt},
+  tag/.style={rounded corners=2pt, fill=#1, text=white,
+              font=\tiny\bfseries, inner sep=2.5pt}]
+
+\node[step=primary] (s0) at (0,4.3)
+  {\texttt{Reviewed} is a unit clause (F1). It must be true. Every clause
+   containing it is satisfied and removed; \texttt{-Reviewed} is struck out of
+   R1.};
+\node[step=primary] (s1) at (0,2.9)
+  {\texttt{Tested} (F2) is now a unit clause. R1 shortens to the single literal
+   \texttt{Staged}.};
+\node[step=greenhl] (s2) at (0,1.5)
+  {\texttt{Staged} is therefore forced --- and it was never given as a fact. This
+   is the first genuinely \emph{new} conclusion.};
+\node[step=greenhl] (s3) at (0,0.1)
+  {\texttt{SignedOff} (F3) plus \texttt{Staged} shortens R2 to \texttt{Deploy}.
+   \texttt{Deploy} is forced.};
+\node[step=accent] (s4) at (0,-1.3)
+  {But we assumed \texttt{-Deploy} to test entailment. That clause is now
+   \textbf{empty}: a contradiction.};
+
+\foreach \a/\b in {s0/s1,s1/s2,s2/s3,s3/s4}{\draw[a] (\a) -- (\b);}
+
+\node[tag=primary, anchor=west] at (3.1,4.3)  {unit};
+\node[tag=primary, anchor=west] at (3.1,2.9)  {unit};
+\node[tag=greenhl, anchor=west] at (3.1,1.5)  {derived};
+\node[tag=greenhl, anchor=west] at (3.1,0.1)  {derived};
+\node[tag=accent,  anchor=west] at (3.1,-1.3) {refutation};
+
+\node[font=\scriptsize, text=neutral, text width=4.6cm, align=flush left,
+      anchor=north west] at (3.9,3.9)
+  {Five unit propagations, six recursive calls, and \emph{no branching at all}.
+
+   \smallskip
+   Model checking would have enumerated all 64 assignments to reach the same
+   conclusion.
+
+   \smallskip
+   The contradiction means $\mathit{KB} \wedge \neg\mathit{Deploy}$ is
+   unsatisfiable, and therefore
+   $\mathit{KB} \models \mathit{Deploy}$.};
+\end{tikzpicture}}%
+{DPLL deciding the release gate. Unit propagation cascades from the four given
+facts and closes the question without a single branch.}{dpll}
+
+\section{Conjunctive Normal Form}
+
+DPLL and resolution both need CNF. Every propositional sentence has an equivalent
+one, obtained mechanically:
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=2pt, topsep=4pt]
+  \item Eliminate $\Leftrightarrow$: replace $a \Leftrightarrow b$ with
+        $(a \Rightarrow b) \wedge (b \Rightarrow a)$.
+  \item Eliminate $\Rightarrow$: replace $a \Rightarrow b$ with
+        $\neg a \vee b$.
+  \item Drive $\neg$ inwards by De~Morgan:
+        $\neg(a \wedge b) \equiv \neg a \vee \neg b$, and
+        $\neg(a \vee b) \equiv \neg a \wedge \neg b$; remove double negations.
+  \item Distribute $\vee$ over $\wedge$.
+\end{enumerate}
+
+Applying step~2 to the gate's rules gives the clauses the lab uses:
+
+\smallskip
+\noindent\begin{tabular}{@{}L{1.0cm}L{6.0cm}L{7.6cm}@{}}
+\toprule
+ & \textbf{Sentence} & \textbf{Clause} \\
+\midrule
+R1 & $\mathit{Reviewed} \wedge \mathit{Tested} \Rightarrow \mathit{Staged}$ &
+$\neg \mathit{Reviewed} \vee \neg \mathit{Tested} \vee \mathit{Staged}$ \\
+R2 & $\mathit{Staged} \wedge \mathit{SignedOff} \Rightarrow \mathit{Deploy}$ &
+$\neg \mathit{Staged} \vee \neg \mathit{SignedOff} \vee \mathit{Deploy}$ \\
+R3 & $\mathit{Blocker} \Rightarrow \neg \mathit{Deploy}$ &
+$\neg \mathit{Blocker} \vee \neg \mathit{Deploy}$ \\
+\bottomrule
+\end{tabular}
+
+\section{Resolution}
+
+\begin{definitionbox}[The resolution rule]
+From two clauses containing complementary literals, infer their combination with
+that pair removed:
+\[
+  \frac{\alpha \vee \ell \qquad \beta \vee \neg\ell}
+       {\alpha \vee \beta}
+\]
+Resolution is sound, and --- applied to CNF with the negated query added --- it is
+\term{refutation complete}: if the set is unsatisfiable, repeated resolution will
+derive the \term{empty clause}, which is a disjunction of nothing and therefore
+false.
+\end{definitionbox}
+
+The proof for the release gate is five steps. Set as a table, because a proof is a
+numbered list of clauses with a provenance column:
+
+\smallskip
+\rowcolors{2}{white}{lightbg}
+\noindent\begin{longtable}{@{}L{1.0cm}L{6.6cm}L{7.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{\#} & \textbf{Clause} & \textbf{Derived from} \\
+\midrule
+\endhead
+1 & $\mathit{Reviewed}$ & given (F1) \\
+2 & $\mathit{Tested}$ & given (F2) \\
+3 & $\mathit{SignedOff}$ & given (F3) \\
+4 & $\neg \mathit{Reviewed} \vee \neg \mathit{Tested} \vee \mathit{Staged}$ &
+given (R1) \\
+5 & $\neg \mathit{Staged} \vee \neg \mathit{SignedOff} \vee \mathit{Deploy}$ &
+given (R2) \\
+6 & $\neg \mathit{Deploy}$ & \textbf{assumed}: the negation of the query \\
+7 & $\neg \mathit{Tested} \vee \mathit{Staged}$ & 1, 4 \\
+8 & $\mathit{Staged}$ & 2, 7 \\
+9 & $\neg \mathit{Staged} \vee \mathit{Deploy}$ & 3, 5 \\
+10 & $\mathit{Deploy}$ & 8, 9 \\
+11 & $\square$ \quad (the empty clause) & 6, 10 \\
+\bottomrule
+\caption{A resolution refutation of $\neg \mathit{Deploy}$. Deriving the empty
+clause shows the assumption is inconsistent with the knowledge base, so
+$\mathit{KB} \models \mathit{Deploy}$.}\label{tab:resolution}
+\end{longtable}
+
+\begin{alertbox}[Resolution is not the fast one]
+That proof is five steps, and a naive implementation does not find it in five. The
+lab's breadth-first version --- resolve every pair, add everything new, repeat ---
+takes \textbf{105 resolution steps} to reach the empty clause, which is more work
+than enumerating all $64$ models.
+
+So resolution is not here because it is efficient on propositional problems; DPLL
+is, and modern SAT solvers are DPLL with better bookkeeping. Resolution is here for
+two reasons. It produces an \emph{auditable proof} --- Table~\ref{tab:resolution}
+can be read by a person and checked line by line, which no model count can. And it
+\emph{lifts to first-order logic} (\chref{fol}), where there are infinitely many
+models and enumerating them is not merely slow but impossible.
+\end{alertbox}
+
+\section{When the Answer Is No}
+
+Drop F3 --- suppose the product owner has not signed off. Now three models satisfy
+the knowledge base, and $\mathit{Deploy}$ is false in one of them:
+\[
+  \mathit{Reviewed} = \mathit{Tested} = \mathit{Staged} = \text{T},\quad
+  \mathit{SignedOff} = \mathit{Blocker} = \mathit{Deploy} = \text{F}
+\]
+That is a \term{countermodel}: a concrete situation consistent with everything known
+in which the conclusion fails. Resolution correctly fails to derive the empty
+clause, and model checking hands you the countermodel directly.
+
+In practice the countermodel is the more valuable output. ``It does not follow'' is
+an assertion a team can argue with; ``here is a situation where everything you told
+me holds and the release still must not go out --- nobody signed off'' ends the
+argument. When you build one of these systems, return the countermodel.
+
+\begin{worked}[A conclusion the knowledge base implies without being told]
+Drop F4 instead --- delete $\neg \mathit{Blocker}$, so nobody has checked the
+blocker list. Does $\mathit{Deploy}$ still follow?
+
+\smallskip
+\textbf{The intuition says no.} Nothing now rules out a blocker, and R3 says a
+blocker forbids deployment.
+
+\smallskip
+\textbf{The models say yes.} Work it through:
+\begin{tight}
+  \item F1, F2, F3 force $\mathit{Reviewed}$, $\mathit{Tested}$,
+        $\mathit{SignedOff}$ all true.
+  \item R1 then forces $\mathit{Staged}$ true.
+  \item R2 then forces $\mathit{Deploy}$ true.
+  \item R3 says $\mathit{Blocker} \Rightarrow \neg\mathit{Deploy}$. Since
+        $\mathit{Deploy}$ is true, $\neg\mathit{Deploy}$ is false, so
+        $\mathit{Blocker}$ \emph{must be false} --- otherwise R3 is violated.
+\end{tight}
+Exactly one model survives, and it is the same one as before. So
+$\mathit{KB} \models \mathit{Deploy}$, \emph{and} $\mathit{KB} \models \neg
+\mathit{Blocker}$: the knowledge base entails that there is no blocker, without
+anyone having said so.
+
+\smallskip
+\textbf{Is that right?} Logically, yes, and it is worth sitting with the
+discomfort. The knowledge base asserts as facts that the code is reviewed, tested
+and signed off, and asserts as a rule that these permit deployment. Taken together
+those \emph{are inconsistent with} an open blocker. The system has not been
+careless; it has drawn a consequence of what it was told.
+
+\smallskip
+\textbf{And it is a modelling error.} The team's intent was surely ``deployment is
+permitted \emph{provided} no blocker'', which is
+$\mathit{Staged} \wedge \mathit{SignedOff} \wedge \neg \mathit{Blocker}
+\Rightarrow \mathit{Deploy}$. Write R2 that way and the entailment disappears:
+without F4, $\mathit{Deploy}$ no longer follows, which is what everyone expected.
+
+\smallskip
+\textbf{The lesson.} Inference is only as good as the axioms, and the failure mode
+is not a wrong answer --- it is a \emph{correct answer to a question you did not
+mean to ask}. Contrast \chref{kr}: a default would have said ``normally no blocker''
+and withdrawn it on evidence. Logic will not guess, so everything you mean must be
+written down, including the things that seem too obvious to state.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Confusing $\models$ with $\vdash$.} The first is about meaning, the
+        second about a procedure. Soundness and completeness are precisely the two
+        claims that connect them.
+  \item \textbf{Expecting $a \Rightarrow b$ to mean $a$ causes $b$.} It is false in
+        exactly one row of the truth table and is true whenever $a$ is false.
+  \item \textbf{Omitting a condition from a rule because it is obvious.} The worked
+        example above turns on exactly this, and the result is a system that
+        concludes there is no blocker.
+  \item \textbf{Using model checking beyond about twenty symbols.} $2^{n}$ is the
+        definition, not an algorithm.
+  \item \textbf{Assuming resolution is the efficient method.} It took $105$ steps
+        where DPLL took $6$ calls. Its value is auditable proofs and the lift to
+        first-order logic.
+  \item \textbf{Reporting only ``does not follow''.} Return the countermodel; it is
+        what turns a refusal into a diagnosis.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[Three Ways to Decide a Release Gate]
+Model checking, DPLL and resolution refutation on the same knowledge base, plus the
+two variants of the worked example.
+\begin{lstlisting}[language=Python]
+"""Chapter 11 lab -- deciding a release gate three ways.
+
+A clause is a frozenset of literals; a literal is "X" or "-X". The
+three procedures agree on every question, and differ enormously in
+what they cost and in what they hand back.
+"""
+
+import itertools
+
+SYMBOLS = ["Reviewed", "Tested", "SignedOff", "Blocker", "Staged",
+           "Deploy"]
+
+# The knowledge base, already in conjunctive normal form.
+KB = [
+    frozenset({"-Reviewed", "-Tested", "Staged"}),      # R1
+    frozenset({"-Staged", "-SignedOff", "Deploy"}),     # R2
+    frozenset({"-Blocker", "-Deploy"}),                 # R3
+    frozenset({"Reviewed"}),                            # F1
+    frozenset({"Tested"}),                              # F2
+    frozenset({"SignedOff"}),                           # F3
+    frozenset({"-Blocker"}),                            # F4
+]
+LABEL = {KB[0]: "R1", KB[1]: "R2", KB[2]: "R3", KB[3]: "F1",
+         KB[4]: "F2", KB[5]: "F3", KB[6]: "F4"}
+
+
+def neg(lit):
+    return lit[1:] if lit.startswith("-") else "-" + lit
+
+
+def holds(lit, model):
+    return (not model[lit[1:]]) if lit.startswith("-") else model[lit]
+
+
+def clause_true(clause, model):
+    return any(holds(l, model) for l in clause)
+
+
+# --- 1. model checking: the definition, made executable ------------
+def model_check(kb, query, symbols):
+    """Returns (entailed, models of kb, models enumerated)."""
+    models, seen = [], 0
+    for combo in itertools.product([False, True], repeat=len(symbols)):
+        m = dict(zip(symbols, combo))
+        seen += 1
+        if all(clause_true(c, m) for c in kb):
+            models.append(m)
+    entailed = bool(models) and all(m[query] for m in models)
+    return entailed, models, seen
+
+
+# --- 2. DPLL: backtracking with propagation ------------------------
+class Work:
+    def __init__(self):
+        self.calls = 0
+        self.units = 0
+        self.branches = 0
+
+
+def simplify(kb, lit):
+    out = []
+    for c in kb:
+        if lit in c:
+            continue                       # clause already satisfied
+        if neg(lit) in c:
+            out.append(c - {neg(lit)})     # clause shortens
+        else:
+            out.append(c)
+    return out
+
+
+def dpll(kb, assign, w):
+    w.calls += 1
+    if not kb:
+        return True, assign
+    if any(len(c) == 0 for c in kb):
+        return False, None
+    for c in kb:                           # unit propagation
+        if len(c) == 1:
+            lit = next(iter(c))
+            w.units += 1
+            a = dict(assign)
+            a[lit.lstrip("-")] = not lit.startswith("-")
+            return dpll(simplify(kb, lit), a, w)
+    lits = {l for c in kb for l in c}
+    for l in lits:                         # pure literal
+        if neg(l) not in lits:
+            a = dict(assign)
+            a[l.lstrip("-")] = not l.startswith("-")
+            return dpll(simplify(kb, l), a, w)
+    l = next(iter(next(iter(kb))))         # branch
+    w.branches += 1
+    for choice in (l, neg(l)):
+        a = dict(assign)
+        a[choice.lstrip("-")] = not choice.startswith("-")
+        ok, res = dpll(simplify(kb, choice), a, w)
+        if ok:
+            return True, res
+    return False, None
+
+
+def entails_dpll(kb, query):
+    """KB |= q  iff  KB and not-q is unsatisfiable."""
+    w = Work()
+    sat, _ = dpll(list(kb) + [frozenset({neg(query)})], {}, w)
+    return (not sat), w
+
+
+# --- 3. resolution refutation --------------------------------------
+def resolve(ci, cj):
+    out = []
+    for l in ci:
+        if neg(l) in cj:
+            out.append((ci - {l}) | (cj - {neg(l)}))
+    return out
+
+
+def resolution(kb, query):
+    """Breadth-first saturation. Honest, complete, and slow."""
+    clauses = list(kb) + [frozenset({neg(query)})]
+    steps = 0
+    while True:
+        new = set()
+        for i in range(len(clauses)):
+            for j in range(i + 1, len(clauses)):
+                for r in resolve(clauses[i], clauses[j]):
+                    steps += 1
+                    if not r:
+                        return True, steps
+                    if r not in clauses:
+                        new.add(r)
+        if not new - set(clauses):
+            return False, steps
+        clauses += sorted(new, key=lambda c: (len(c), sorted(c)))
+
+
+def show(model):
+    return "  ".join("%s=%d" % (s, model[s]) for s in SYMBOLS)
+
+
+if __name__ == "__main__":
+    print("symbols %d, so %d models to enumerate"
+          % (len(SYMBOLS), 2 ** len(SYMBOLS)))
+    print()
+
+    ent, models, seen = model_check(KB, "Deploy", SYMBOLS)
+    print("MODEL CHECKING")
+    print("   %d of %d models satisfy the KB" % (len(models), seen))
+    for m in models:
+        print("      " + show(m))
+    print("   KB entails Deploy:", ent)
+    assert ent and len(models) == 1
+
+    ent2, w = entails_dpll(KB, "Deploy")
+    print()
+    print("DPLL")
+    print("   %d calls, %d unit propagations, %d branches"
+          % (w.calls, w.units, w.branches))
+    print("   KB entails Deploy:", ent2)
+    assert ent2 and ent2 == ent
+    assert w.branches == 0, "the facts cascade; no branching needed"
+
+    ent3, steps = resolution(KB, "Deploy")
+    print()
+    print("RESOLUTION")
+    print("   empty clause derived:", ent3, " in %d steps" % steps)
+    assert ent3 == ent
+    print("   ... which is more work than enumerating all %d models."
+          % seen)
+    assert steps > seen
+
+    # --- drop the sign-off: the answer becomes no ------------------
+    print()
+    print("=== drop F3 (SignedOff) ===")
+    KB2 = [c for c in KB if c != frozenset({"SignedOff"})]
+    ent4, models4, _ = model_check(KB2, "Deploy", SYMBOLS)
+    print("   %d models satisfy the KB; entails Deploy: %s"
+          % (len(models4), ent4))
+    counter = [m for m in models4 if not m["Deploy"]]
+    print("   countermodel:")
+    print("      " + show(counter[0]))
+    assert not ent4 and counter
+    ok4, _ = resolution(KB2, "Deploy")
+    assert not ok4
+    print("   resolution correctly fails to derive the empty clause.")
+    print("   The countermodel is the useful output: everything you")
+    print("   told me holds, and the release still must not go out.")
+
+    # --- drop the blocker fact: the surprise ----------------------
+    print()
+    print("=== drop F4 (not Blocker) ===")
+    KB3 = [c for c in KB if c != frozenset({"-Blocker"})]
+    ent5, models5, _ = model_check(KB3, "Deploy", SYMBOLS)
+    print("   %d models satisfy the KB; entails Deploy: %s"
+          % (len(models5), ent5))
+    assert ent5 and len(models5) == 1
+    print("   Blocker is %d in the only model: the KB entails that"
+          % models5[0]["Blocker"])
+    print("   there is no blocker, without anyone saying so.")
+    assert not models5[0]["Blocker"]
+
+    # --- and the fix: put the condition in the rule ---------------
+    print()
+    print("=== the fix: R2 requires no blocker ===")
+    KB4 = [c for c in KB3
+           if c != frozenset({"-Staged", "-SignedOff", "Deploy"})]
+    KB4.append(frozenset({"-Staged", "-SignedOff", "Blocker", "Deploy"}))
+    ent6, models6, _ = model_check(KB4, "Deploy", SYMBOLS)
+    print("   %d models satisfy the KB; entails Deploy: %s"
+          % (len(models6), ent6))
+    assert not ent6
+    print("   Now Deploy does NOT follow without knowing about")
+    print("   blockers -- which is what the team meant all along.")
+\end{lstlisting}
+Then add a fortieth condition to the gate and re-run. Model checking stops being
+possible ($2^{40}$ models); DPLL does not notice. That is the moment the difference
+between a definition and an algorithm becomes concrete.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item State the difference between $\mathit{KB} \models \alpha$ and
+        $\mathit{KB} \vdash \alpha$, and say which of soundness and completeness
+        would be violated by a procedure that derives every sentence.
+  \item With F4 removed, the knowledge base still entails $\mathit{Deploy}$
+        \emph{and} entails $\neg \mathit{Blocker}$. Explain how, and say whether
+        this is a bug in the inference procedure.
+  \item Resolution took $105$ steps where DPLL took $6$ calls on the same problem.
+        Give the two reasons resolution is nevertheless worth teaching.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item A \term{model} assigns true or false to every symbol; $n$ symbols give
+        $2^{n}$ models. A sentence is \term{satisfiable} if some model makes it
+        true and \term{valid} if all do.
+  \item $\mathit{KB} \models \alpha$ means $\alpha$ holds in every model of
+        $\mathit{KB}$ --- a statement about meaning. $\mathit{KB} \vdash \alpha$
+        means a procedure derives it. \term{Soundness} and \term{completeness} are
+        the two claims linking them.
+  \item Logic is \term{monotonic}: adding knowledge only ever rules models out, so
+        conclusions are never withdrawn. That is precisely what \chref{kr}'s
+        defaults traded away.
+  \item \term{Model checking} is the definition made executable and is $O(2^{n})$.
+        \term{DPLL} is backtracking with \term{unit propagation} and the
+        \term{pure literal} rule --- $6$ calls against $64$ enumerations here, with
+        no branching at all.
+  \item $\mathit{KB} \models \alpha$ if and only if $\mathit{KB} \wedge \neg\alpha$
+        is unsatisfiable. Every refutation method rests on this.
+  \item \term{Resolution} on CNF is refutation complete. It is slower than DPLL
+        ($105$ steps against $6$ calls) and is worth having because it yields an
+        auditable proof and because it lifts to first-order logic.
+  \item When a conclusion does not follow, return the \term{countermodel}. And
+        remember that inference is only as good as the axioms: an omitted condition
+        produces a correct answer to a question you did not mean to ask.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} $\mathit{KB} \models \alpha$ means: (a)~a procedure derives
+        $\alpha$ (b)~$\alpha$ is true in every model of $\mathit{KB}$
+        (c)~$\alpha$ is valid (d)~$\mathit{KB}$ is satisfiable.
+  \item \textbf{(MCQ)} A sound inference procedure: (a)~derives everything entailed
+        (b)~derives only things that are entailed (c)~always terminates
+        (d)~is complete.
+  \item \textbf{(MCQ)} $\mathit{KB} \models \alpha$ if and only if:
+        (a)~$\mathit{KB} \wedge \alpha$ is satisfiable
+        (b)~$\mathit{KB} \wedge \neg\alpha$ is unsatisfiable
+        (c)~$\mathit{KB} \vee \alpha$ is valid (d)~$\alpha$ is a unit clause.
+  \item \textbf{(MCQ)} Unit propagation applies when a clause has:
+        (a)~no literals (b)~exactly one literal left (c)~only positive literals
+        (d)~duplicate literals.
+  \item \textbf{(Short)} Convert
+        $\mathit{Staged} \wedge \mathit{SignedOff} \wedge \neg\mathit{Blocker}
+        \Rightarrow \mathit{Deploy}$ to a clause, showing each step.
+  \item \textbf{(Short)} Why is a countermodel a more useful answer than ``it does
+        not follow''? Give the countermodel from this chapter and the sentence you
+        would say to the delivery team.
+  \item \textbf{(Short)} Resolution is slower than DPLL on propositional problems.
+        Give the two reasons it is still the method developed in \chref{fol}.
+  \item \textbf{(Applied)} Add the rule ``a release with an open blocker may still
+        deploy if the incident commander approves'' to the gate, introducing one
+        new symbol. Write it as a sentence, convert it to a clause, and determine
+        --- by hand, using unit propagation --- whether $\mathit{Deploy}$ follows
+        from F1--F3 together with $\mathit{Blocker}$ and the commander's approval.
+\end{reviewq}

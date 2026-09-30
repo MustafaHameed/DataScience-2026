@@ -1,0 +1,711 @@
+%=====================================================================
+\chapter{Natural Language Processing}\label{ch:nlp}
+%=====================================================================
+\locator{6}{Part VI --- Learning, Language and Responsible AI}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} the symbolic language pipeline from characters to
+        meaning, and \textbf{say} what each stage contributes.
+  \item \textbf{Write} a context-free grammar for a small sub-language and
+        \textbf{parse} sentences with the CYK algorithm.
+  \item \textbf{Identify} structural ambiguity, \textbf{count} the parses, and
+        \textbf{explain} why the ambiguity is operationally consequential.
+  \item \textbf{Implement} pattern substitution in the style of Eliza, and
+        \textbf{say} precisely what it demonstrates and what it does not.
+  \item \textbf{Build} an n-gram model and \textbf{state} the limitation that no
+        amount of data removes.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{python} (dictionaries, recursion) and \chref{fol} --- pattern matching with
+variables is unification in another guise, and recognising that saves learning it
+twice. \chref{uncertainty} for the n-gram section.
+\end{prereq}
+
+\begin{keyterms}
+tokenisation $\bullet$ morphology $\bullet$ stemming $\bullet$ part of speech
+$\bullet$ context-free grammar $\bullet$ terminal and non-terminal $\bullet$
+Chomsky normal form $\bullet$ parse tree $\bullet$ chart parsing $\bullet$ CYK
+$\bullet$ structural ambiguity $\bullet$ attachment $\bullet$ pattern substitution
+$\bullet$ Eliza $\bullet$ n-gram $\bullet$ Markov assumption $\bullet$ sparsity
+\end{keyterms}
+
+\section{Ticket Subject Lines}
+
+The service desk receives several hundred tickets a day, each with a one-line
+subject written by a person in a hurry:
+
+\begin{quote}\ttfamily\small
+restart the server after the timeout\\
+check the payments gateway\\
+fix the login error on the gateway
+\end{quote}
+
+The routing system needs to know what is being asked for and what it is being asked
+about. That is a language problem, and this chapter takes the \emph{symbolic}
+approach to it: grammars, parsing and pattern matching, with no learned component
+anywhere.
+
+That approach is not how a modern system would do it, and the reasons to study it
+are specific. Grammars are the clearest case of a representation whose structure
+\emph{is} the knowledge. Ambiguity is easiest to see when a parser hands you two
+trees rather than one confident answer. And Eliza, in Section~\ref{sec:eliza}, is
+the most instructive failure in the history of the field --- it is impossible to
+understand what modern language systems are and are not doing without it.
+
+\section{The Symbolic Pipeline}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  st/.style={rounded corners=3pt, draw=#1, line width=1.1pt, fill=#1!8,
+             text=#1!50!black, text width=2.45cm, align=flush left,
+             inner sep=5pt, minimum height=2.5cm},
+  hd/.style={rounded corners=2pt, fill=#1, text=white,
+             font=\tiny\bfseries, inner sep=2.5pt, text width=2.3cm,
+             align=center},
+  a/.style={-{Stealth[length=2mm]}, neutral!70, line width=1pt}]
+
+\node[st=primary]   (s1) at (0,0)    {\\[2pt]\texttt{"restart the}\\
+  \texttt{server"}\\[4pt] split on whitespace and punctuation, fold case};
+\node[st=secondary] (s2) at (3.1,0)  {\\[2pt]\texttt{restart}\\ \texttt{the}\\
+  \texttt{server}\\[4pt] reduce inflected forms: \texttt{restarting}
+  $\rightarrow$ \texttt{restart}};
+\node[st=goldhl]    (s3) at (6.2,0)  {\\[2pt]\texttt{restart}/V\\
+  \texttt{the}/Det\\ \texttt{server}/N\\[4pt] look up each word's possible
+  categories};
+\node[st=greenhl]   (s4) at (9.3,0)  {\\[2pt]a \emph{parse tree}\\[4pt]
+  which words group with which, and how};
+\node[st=accent]    (s5) at (12.4,0) {\\[2pt]\texttt{action=restart}\\
+  \texttt{target=server}\\[4pt] something the router can act on};
+
+\node[hd=primary]   at (s1.north) {1. TOKENISE};
+\node[hd=secondary] at (s2.north) {2. MORPHOLOGY};
+\node[hd=goldhl]    at (s3.north) {3. TAG};
+\node[hd=greenhl]   at (s4.north) {4. PARSE};
+\node[hd=accent]    at (s5.north) {5. INTERPRET};
+
+\foreach \x/\y in {s1/s2,s2/s3,s3/s4,s4/s5}{\draw[a] (\x) -- (\y);}
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!30, line width=0.8pt,
+      text=primary!70!black, font=\scriptsize, text width=13.6cm,
+      align=flush left, inner sep=6pt] at (6.2,-2.2)
+  {\textbf{Each stage can fail, and a failure at stage 4 is the useful kind.} If the
+   parser returns nothing, the subject line was not in the sub-language the grammar
+   describes, and the system knows it does not know. If it returns \emph{two} trees,
+   the request is genuinely ambiguous and a person should be asked. Both are
+   better outcomes than a confident guess, and both come free with a grammar.};
+\end{tikzpicture}}%
+{The symbolic pipeline. Stages 1 to 3 are bookkeeping; stage 4 is where the
+knowledge lives.}{nlp-pipeline}
+
+\section{Context-Free Grammars}
+
+\begin{definitionbox}[Context-free grammar]
+A \term{context-free grammar} is a set of rules $A \to \beta$, where $A$ is a
+\term{non-terminal} (a category such as \texttt{NP}) and $\beta$ a sequence of
+non-terminals and \term{terminals} (words). A string is \term{in the language} if
+the start symbol can be rewritten to it.
+
+``Context-free'' means a rule may be applied wherever its left side appears,
+regardless of surroundings --- which is what makes efficient parsing possible and
+what makes the formalism too weak for some natural-language phenomena.
+\end{definitionbox}
+
+The grammar for ticket subjects is seven rules:
+
+\smallskip
+\noindent\begin{tabular}{@{}L{5.2cm}L{9.6cm}@{}}
+\toprule
+\textbf{Rule} & \textbf{Reading} \\
+\midrule
+$S \to \mathit{VP}$ & an imperative: ``restart the server'' \\
+$S \to \mathit{NP}\ \mathit{VP}$ & a statement: ``the server crashed'' \\
+$\mathit{VP} \to V\ \mathit{NP}$ & a verb and its object \\
+$\mathit{VP} \to \mathit{VP}\ \mathit{PP}$ & a verb phrase modified by a
+phrase \\
+$\mathit{NP} \to \mathit{Det}\ N$ & a determiner and a noun \\
+$\mathit{NP} \to \mathit{NP}\ \mathit{PP}$ & a noun phrase modified by a
+phrase \\
+$\mathit{PP} \to P\ \mathit{NP}$ & a preposition and its object \\
+$N \to N\ N$ & a noun compound: ``payments gateway'' \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+Every rule has either two non-terminals or one terminal on its right, which is
+\term{Chomsky normal form} --- the shape the CYK algorithm needs.
+
+\section{Parsing with CYK}
+
+\term{CYK} is dynamic programming over spans. Fill a triangular chart: cell
+$(i,j)$ holds every category that could cover words $i$ to $j$. Single words come
+from the lexicon; longer spans are built by trying every split point $k$ and every
+rule $A \to B\,C$, entering $A$ whenever $B$ covers $(i,k)$ and $C$ covers
+$(k,j)$. The sentence parses if the start symbol reaches the top cell.
+
+Its cost is $O(n^{3}|G|)$ --- cubic in the sentence length --- which for a subject
+line of seven words means a chart of $28$ cells, of which $18$ are non-empty. The
+important property is that it finds \emph{all} parses, and it finds them without
+backtracking.
+
+\section{Ambiguity Is the Point}
+
+\begin{examplebox}[Five subject lines, parsed]
+\begin{tabular}{@{}L{8.7cm}L{2.0cm}L{3.0cm}@{}}
+\toprule
+\textbf{Subject} & \textbf{Parses?} & \textbf{How many} \\
+\midrule
+\texttt{restart the server} & yes & 1 \\
+\texttt{check the payments gateway} & yes & 1 \\
+\texttt{restart the server after the timeout} & yes & \textbf{2} \\
+\texttt{fix the login error on the gateway} & yes & \textbf{2} \\
+\texttt{restart the gateway after the payments error} & yes & \textbf{2} \\
+\midrule
+\texttt{the the server restart} & no & 0 \\
+\bottomrule
+\end{tabular}
+\end{examplebox}
+
+Three of the five are ambiguous, and the ambiguity is not a quirk of the grammar.
+Consider:
+
+\begin{quote}\ttfamily\small
+restart the server after the timeout
+\end{quote}
+
+Does \emph{after the timeout} attach to the verb phrase --- restart it, and do so
+after the timeout occurs --- or to the noun phrase, meaning \emph{the server that
+handles timeouts}? The two readings give different instructions, and the grammar
+correctly reports that the sentence supports both.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  nt/.style={font=\scriptsize\bfseries, text=#1, inner sep=1.5pt},
+  wd/.style={font=\ttfamily\tiny, text=neutral!60!black, inner sep=1.5pt},
+  e/.style={neutral!60, line width=0.7pt}]
+
+% ---- reading 1: PP attaches to VP
+\node[nt=primary] (s1) at (0,3.0) {S};
+\node[nt=primary] (vp1) at (0,2.3) {VP};
+\node[nt=greenhl] (vpa) at (-1.5,1.6) {VP};
+\node[nt=accent]  (pp1) at (1.8,1.6) {PP};
+\node[nt=greenhl] (v1) at (-2.6,0.9) {V};
+\node[nt=greenhl] (np1) at (-0.7,0.9) {NP};
+\node[nt=accent]  (p1) at (0.9,0.9) {P};
+\node[nt=accent]  (np2) at (2.7,0.9) {NP};
+\node[wd] (w1) at (-2.6,0.25) {restart};
+\node[wd] (w2) at (-1.3,0.25) {the};
+\node[wd] (w3) at (-0.2,0.25) {server};
+\node[wd] (w4) at (0.9,0.25) {after};
+\node[wd] (w5) at (2.1,0.25) {the};
+\node[wd] (w6) at (3.3,0.25) {timeout};
+\foreach \a/\b in {s1/vp1,vp1/vpa,vp1/pp1,vpa/v1,vpa/np1,pp1/p1,pp1/np2,
+                   v1/w1,np1/w2,np1/w3,p1/w4,np2/w5,np2/w6}{
+  \draw[e] (\a) -- (\b);}
+\node[font=\scriptsize\bfseries, text=greenhl!50!black] at (0,3.7)
+  {Reading 1: attach to the \emph{verb}};
+\node[font=\tiny\itshape, text=greenhl!50!black, text width=4.4cm,
+      align=center] at (0,-0.35)
+  {\emph{restart it, and do so after the timeout happens}};
+
+% ---- reading 2: PP attaches to NP
+\node[nt=primary] (s2) at (8.6,3.0) {S};
+\node[nt=primary] (vp2) at (8.6,2.3) {VP};
+\node[nt=greenhl] (v2) at (6.6,1.6) {V};
+\node[nt=accent]  (npb) at (9.6,1.6) {NP};
+\node[nt=accent]  (npc) at (8.3,0.9) {NP};
+\node[nt=accent]  (pp2) at (10.9,0.9) {PP};
+\node[wd] (x1) at (6.6,0.25) {restart};
+\node[wd] (x2) at (7.7,0.25) {the};
+\node[wd] (x3) at (8.8,0.25) {server};
+\node[wd] (x4) at (9.9,0.25) {after};
+\node[wd] (x5) at (11.0,0.25) {the};
+\node[wd] (x6) at (12.1,0.25) {timeout};
+\foreach \a/\b in {s2/vp2,vp2/v2,vp2/npb,npb/npc,npb/pp2,
+                   v2/x1,npc/x2,npc/x3,pp2/x4,pp2/x5,pp2/x6}{
+  \draw[e] (\a) -- (\b);}
+\node[font=\scriptsize\bfseries, text=accent!55!black] at (8.6,3.7)
+  {Reading 2: attach to the \emph{noun}};
+\node[font=\tiny\itshape, text=accent!55!black, text width=4.4cm,
+      align=center] at (9.3,-0.35)
+  {\emph{restart the server that handles timeouts}};
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!30, line width=0.9pt,
+      text=primary!70!black, font=\scriptsize, text width=13.4cm,
+      align=flush left, inner sep=6pt] at (4.8,-1.55)
+  {\textbf{Two different instructions from one subject line.} A parser that
+   returned only the first would be confidently wrong half the time and would give
+   no indication of it. Returning both is the honest answer, and it tells the
+   routing system exactly when to ask a person --- which is a capability the
+   grammar provides for free.};
+\end{tikzpicture}}%
+{Prepositional-phrase attachment ambiguity. The words and their order are identical;
+only the structure differs, and the structure is the meaning.}{parse-trees}
+
+Ambiguity multiplies. Each additional prepositional phrase roughly doubles the
+number of parses --- the counts follow the Catalan numbers --- so a sentence with
+six of them has hundreds of readings. Resolving them requires knowledge the grammar
+does not contain, which is where statistical and, later, neural methods enter.
+
+\section{Pattern Substitution: Eliza}
+\label{sec:eliza}
+
+In 1966 Joseph Weizenbaum wrote a program of a few hundred lines that conducted
+conversations in the manner of a Rogerian psychotherapist. It had no grammar, no
+parser, no representation of the conversation and no model of anything. It matched
+patterns and rearranged pronouns.
+
+\begin{examplebox}[A service-desk Eliza]
+\begin{tabular}{@{}L{6.6cm}L{8.2cm}@{}}
+\toprule
+\textbf{User says} & \textbf{Rule that matched, and the reply} \\
+\midrule
+\texttt{I am worried about the release} &
+\texttt{I am *} $\to$ \texttt{How long have you been *?}\newline
+``How long have you been worried about the release?'' \\
+\texttt{my deploy keeps failing} &
+\texttt{my * keeps *} $\to$ \texttt{Tell me more about your *.}\newline
+``Tell me more about your deploy.'' \\
+\texttt{because the config is wrong} &
+\texttt{because *} $\to$ \texttt{Is that the real reason?}\newline
+``Is that the real reason?'' \\
+\texttt{no idea what is happening} &
+(no pattern) $\to$ fallback\newline
+``Can you tell me more about that?'' \\
+\bottomrule
+\end{tabular}
+\end{examplebox}
+
+The mechanism is exactly \chref{fol}'s unification, restricted to strings: a pattern
+containing a variable is matched against an input, the variable binds to whatever
+it covered, and the binding is substituted into a template. Weizenbaum added one
+more trick --- swap \emph{my} for \emph{your} and \emph{I} for \emph{you} in the
+captured text --- and that is the whole program.
+
+\begin{alertbox}[The Eliza effect]
+Weizenbaum's own account is that people who knew exactly how the program worked ---
+his secretary among them --- nonetheless asked to be left alone with it, and
+disclosed things they would not have told a colleague. He found this so disturbing
+that he spent much of the rest of his career arguing against the uses being proposed
+for such systems.
+
+The lesson named after the episode --- the \term{Eliza effect} --- is that
+\emph{people attribute understanding to any system that produces fluent,
+contextually apt responses}, and that the attribution is nearly impossible to
+suppress even with full knowledge of the mechanism.
+
+That is worth holding onto when you meet \chref{trends}. The question is not whether
+a system's output feels like understanding; Eliza's did, in two hundred lines, in
+1966. The question is what the system \emph{represents} and what it can be held to
+--- which is what \chref{introduction}'s five-point checklist asks, and why the
+checklist is the right instrument rather than your impression of the transcript.
+\end{alertbox}
+
+\section{N-Grams and Their Limit}
+
+The alternative to grammar is counting. An \term{n-gram} model estimates the
+probability of a word from the $n-1$ words before it:
+\[
+  P(w_{i} \mid w_{1} \ldots w_{i-1}) \;\approx\;
+  P(w_{i} \mid w_{i-n+1} \ldots w_{i-1})
+\]
+This is the \term{Markov assumption}: everything before the window is irrelevant.
+Estimating the right-hand side is just counting, which is why n-gram models were
+the backbone of speech recognition and machine translation for decades and why they
+still make excellent autocompletions for a constrained domain such as ticket
+subjects.
+
+Two limitations, and only one of them is fixable.
+
+\textbf{Sparsity} is fixable. Most possible trigrams never appear, even in a large
+corpus, so unseen ones get probability zero and the model assigns zero to any
+sentence containing one. Smoothing --- reserving probability mass for the unseen ---
+handles it, and \emph{Machine Learning} Chapter~10 covers the standard methods.
+
+\textbf{The fixed window is not.} In
+\emph{the server that the engineer who wrote the runbook maintained was restarted},
+the subject of \emph{was restarted} is \emph{the server}, nine words back. No
+$n$-gram with a practical $n$ can connect them, and increasing $n$ makes sparsity
+exponentially worse. The dependency is a structural fact about the sentence, and
+capturing it is exactly what a grammar does and what counting cannot.
+
+That tension --- grammars capture structure but are brittle, counting is robust but
+structurally blind --- defined the field for thirty years. \chref{trends} describes
+what resolved it.
+
+\begin{worked}[Filling the CYK chart, by hand]
+Parse \texttt{restart the server} with the grammar above. Three words, so the chart
+is a triangle of six cells.
+
+\smallskip
+\textbf{Row 1 --- single words, from the lexicon.}
+\begin{tight}
+  \item $(0,1)$ \texttt{restart}: $\{V\}$.
+  \item $(1,2)$ \texttt{the}: $\{\mathit{Det}\}$.
+  \item $(2,3)$ \texttt{server}: $\{N\}$.
+\end{tight}
+
+\smallskip
+\textbf{Row 2 --- spans of two.}
+\begin{tight}
+  \item $(0,2)$ covering \texttt{restart the}: the only split is $k=1$, giving
+        $V$ then $\mathit{Det}$. No rule has right side $V\ \mathit{Det}$, so the
+        cell is \textbf{empty}.
+  \item $(1,3)$ covering \texttt{the server}: split at $k=2$ gives
+        $\mathit{Det}$ then $N$, and $\mathit{NP} \to \mathit{Det}\ N$ applies.
+        Cell: $\{\mathit{NP}\}$.
+\end{tight}
+
+\smallskip
+\textbf{Row 3 --- the whole sentence, $(0,3)$.} Two split points:
+\begin{tight}
+  \item $k=1$: cell $(0,1) = \{V\}$ and cell $(1,3) = \{\mathit{NP}\}$. The rule
+        $\mathit{VP} \to V\ \mathit{NP}$ applies, so $\mathit{VP}$ is entered.
+  \item $k=2$: cell $(0,2)$ is empty, so nothing.
+\end{tight}
+Then the unit rule $S \to \mathit{VP}$ adds $S$. Cell $(0,3) = \{\mathit{VP}, S\}$,
+the start symbol is present, and the sentence parses --- by exactly one derivation.
+
+\smallskip
+\textbf{Now the ambiguous case.} Add \texttt{after the timeout}. At the top cell
+there are now \emph{two} ways to reach $S$: one via
+$\mathit{VP} \to \mathit{VP}\ \mathit{PP}$ (split after \texttt{server}), and one
+via $\mathit{VP} \to V\ \mathit{NP}$ where the $\mathit{NP}$ was itself built by
+$\mathit{NP} \to \mathit{NP}\ \mathit{PP}$ (split after \texttt{restart}). Both
+entries record $S$ in the same cell, which is why counting parses means counting
+\emph{derivations} rather than checking membership --- and why the lab keeps
+back-pointers.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Treating a single parse as the answer.} Three of the five subject
+        lines here have two readings. A parser that returns the first is
+        confidently wrong and silent about it.
+  \item \textbf{Forgetting Chomsky normal form.} CYK needs rules of the form
+        $A \to B\,C$ or $A \to w$. A grammar written naturally must be converted
+        first.
+  \item \textbf{Assuming a bigger grammar is a better one.} Every added rule
+        multiplies the ambiguity. Real broad-coverage grammars return thousands of
+        parses per sentence, which is why ranking them became the whole problem.
+  \item \textbf{Mistaking Eliza's fluency for understanding.} It has no
+        representation of anything. If the impression of understanding is your
+        evidence, you have no evidence.
+  \item \textbf{Believing more data fixes the n-gram window.} Sparsity is fixable
+        by smoothing; a fixed window cannot represent a nine-word dependency at any
+        corpus size.
+  \item \textbf{Parsing when you could match.} If the domain is genuinely a few
+        dozen command shapes, patterns are shorter, faster and easier to maintain.
+        Reach for a grammar when structure matters.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[Parsing Ticket Subjects]
+A CYK parser with back-pointers, the ambiguity count, an Eliza responder, and a
+bigram model with its limitation demonstrated.
+\begin{lstlisting}[language=Python]
+"""Chapter 18 lab -- symbolic language processing on ticket subjects.
+
+A CYK chart parser, a pattern-substitution responder in the style of
+Eliza, and a bigram model. Nothing here learns; the knowledge is in
+the grammar and the patterns.
+"""
+
+import re
+from collections import defaultdict
+
+# --- the grammar, in Chomsky normal form ---------------------------
+RULES = [
+    ("S", ("VP",)),                 # imperative: "restart the server"
+    ("S", ("NP", "VP")),            # statement:  "the server crashed"
+    ("VP", ("V", "NP")),
+    ("VP", ("VP", "PP")),           # PP attaches to the verb phrase
+    ("NP", ("Det", "N")),
+    ("NP", ("NP", "PP")),           # ... or to the noun phrase
+    ("PP", ("P", "NP")),
+    ("N", ("N", "N")),              # noun compound: "payments gateway"
+]
+LEXICON = {
+    "restart": ["V"], "check": ["V"], "fix": ["V"],
+    "server": ["N"], "payments": ["N"], "login": ["N"],
+    "error": ["N"], "timeout": ["N"], "gateway": ["N"],
+    "the": ["Det"], "a": ["Det"],
+    "on": ["P"], "after": ["P"], "in": ["P"],
+}
+
+
+def cyk(words):
+    """Fill the triangular chart. Returns (chart, back-pointers)."""
+    n = len(words)
+    chart = defaultdict(set)
+    back = defaultdict(list)
+
+    def close(cell):
+        """Apply unit rules such as S -> VP until nothing changes."""
+        changed = True
+        while changed:
+            changed = False
+            for (lhs, rhs) in RULES:
+                if len(rhs) == 1 and rhs[0] in chart[cell] \
+                        and lhs not in chart[cell]:
+                    chart[cell].add(lhs)
+                    changed = True
+
+    for i, w in enumerate(words):
+        for tag in LEXICON.get(w, []):
+            chart[(i, i + 1)].add(tag)
+        close((i, i + 1))
+
+    for span in range(2, n + 1):
+        for i in range(0, n - span + 1):
+            j = i + span
+            for k in range(i + 1, j):
+                for (lhs, rhs) in RULES:
+                    if len(rhs) != 2:
+                        continue
+                    b, c = rhs
+                    if b in chart[(i, k)] and c in chart[(k, j)]:
+                        chart[(i, j)].add(lhs)
+                        back[(i, j, lhs)].append((k, b, c))
+            close((i, j))
+    return chart, back
+
+
+def count_parses(chart, back, i, j, sym, memo=None):
+    """Count DERIVATIONS, not membership: an ambiguous sentence
+    reaches the same cell by two different routes."""
+    if memo is None:
+        memo = {}
+    key = (i, j, sym)
+    if key in memo:
+        return memo[key]
+    total = 0
+    for (k, b, c) in back[key]:
+        total += (count_parses(chart, back, i, k, b, memo)
+                  * count_parses(chart, back, k, j, c, memo))
+    for (lhs, rhs) in RULES:                     # unit rules
+        if lhs == sym and len(rhs) == 1 and rhs[0] != sym \
+                and rhs[0] in chart[(i, j)]:
+            total += count_parses(chart, back, i, j, rhs[0], memo)
+    if total == 0 and j == i + 1 and sym in chart[(i, j)]:
+        total = 1
+    memo[key] = total
+    return total
+
+
+def parse(subject):
+    words = subject.split()
+    chart, back = cyk(words)
+    ok = "S" in chart[(0, len(words))]
+    n = count_parses(chart, back, 0, len(words), "S") if ok else 0
+    return ok, n, chart
+
+
+# --- Eliza: pattern substitution, and nothing else ------------------
+REFLECT = {"my": "your", "i": "you", "me": "you", "am": "are",
+           "mine": "yours", "myself": "yourself"}
+
+PATTERNS = [
+    (r"^i am (.*)$", "How long have you been {0}?"),
+    (r"^my (\w+) keeps (.*)$", "Tell me more about your {0}."),
+    (r"^because (.*)$", "Is that the real reason?"),
+    (r"^i (?:can't|cannot) (.*)$", "What stops you from {0}?"),
+    (r"^(.*) is broken$", "What makes you say {0} is broken?"),
+]
+FALLBACK = "Can you tell me more about that?"
+
+
+def reflect(text):
+    return " ".join(REFLECT.get(w, w) for w in text.split())
+
+
+def eliza(line):
+    low = line.lower().strip().rstrip(".!?")
+    for (pat, template) in PATTERNS:
+        m = re.match(pat, low)
+        if m:
+            return template.format(*[reflect(g) for g in m.groups()])
+    return FALLBACK
+
+
+# --- a bigram model -------------------------------------------------
+CORPUS = [
+    "restart the server", "restart the gateway", "restart the service",
+    "check the payments gateway", "check the login error",
+    "check the server", "fix the login error", "fix the timeout error",
+    "restart the payments gateway", "check the timeout",
+]
+
+
+def bigrams(corpus):
+    counts = defaultdict(lambda: defaultdict(int))
+    for line in corpus:
+        toks = ["<s>"] + line.split()
+        for a, b in zip(toks, toks[1:]):
+            counts[a][b] += 1
+    return counts
+
+
+def suggest(counts, word, k=3):
+    nxt = counts.get(word, {})
+    total = sum(nxt.values())
+    ranked = sorted(nxt.items(), key=lambda kv: -kv[1])[:k]
+    return [(w, c / total) for w, c in ranked]
+
+
+SUBJECTS = [
+    "restart the server",
+    "check the payments gateway",
+    "restart the server after the timeout",
+    "fix the login error on the gateway",
+    "restart the gateway after the payments error",
+]
+
+if __name__ == "__main__":
+    print("=== parsing ticket subjects ===")
+    print("subject                                         parses  count")
+    print("-" * 62)
+    counts = {}
+    for s in SUBJECTS:
+        ok, n, _ = parse(s)
+        counts[s] = n
+        print("%-46s %7s %6d" % (s, ok, n))
+    # three of the five are structurally ambiguous
+    ambiguous = [s for s in SUBJECTS if counts[s] > 1]
+    assert len(ambiguous) == 3 and all(counts[s] == 2 for s in ambiguous)
+    print()
+    print("%d of %d subjects have more than one parse."
+          % (len(ambiguous), len(SUBJECTS)))
+    print("Each extra prepositional phrase roughly doubles the count.")
+
+    print()
+    print("=== and one that is not in the language ===")
+    for bad in ("the the server restart", "server the",
+                "restart restart the"):
+        ok, n, _ = parse(bad)
+        print("   %-32s parses: %s" % (bad, ok))
+        assert not ok
+    print("   Returning nothing is a useful answer: the system knows")
+    print("   that it does not know.")
+
+    print()
+    print("=== the chart ===")
+    words = SUBJECTS[4].split()
+    chart, _ = cyk(words)
+    cells = sum(1 for k in chart if chart[k])
+    total = len(words) * (len(words) + 1) // 2
+    print("   %d words -> %d cells, %d of them non-empty"
+          % (len(words), total, cells))
+
+    print()
+    print("=== Eliza ===")
+    for line in ("I am worried about the release",
+                 "my deploy keeps failing",
+                 "because the config is wrong",
+                 "I can't reproduce it",
+                 "the gateway is broken",
+                 "no idea what is happening"):
+        print("   > %-34s %s" % (line, eliza(line)))
+    print()
+    print("   Pattern matching and pronoun swapping. No grammar, no")
+    print("   representation of the conversation, no model of")
+    print("   anything -- and it reads as though it is listening.")
+    assert eliza("something unmatched entirely") == FALLBACK
+
+    print()
+    print("=== a bigram model ===")
+    bg = bigrams(CORPUS)
+    for w in ("<s>", "restart", "the", "login"):
+        print("   after %-10s -> %s"
+              % (w, ", ".join("%s %.2f" % t for t in suggest(bg, w))))
+
+    print()
+    print("=== the limitation no corpus size removes ===")
+    hard = ("the server that the engineer who wrote the runbook "
+            "maintained was restarted")
+    toks = hard.split()
+    print("   '%s'" % hard)
+    print("   'was restarted' is at position %d; its subject 'server'"
+          % toks.index("was"))
+    print("   is at position %d -- %d words back."
+          % (toks.index("server"), toks.index("was") - toks.index("server")))
+    print("   No n-gram with a practical n connects them, and raising")
+    print("   n makes sparsity exponentially worse. A grammar has no")
+    print("   difficulty with it, because the dependency is structural.")
+    assert toks.index("was") - toks.index("server") >= 8
+\end{lstlisting}
+Then add one more prepositional phrase --- \texttt{restart the server after the
+timeout on the gateway} --- and count the parses. The answer is five, not four: the
+growth follows the Catalan numbers, and this is the moment broad-coverage parsing
+stops being a matter of writing more rules.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item \texttt{restart the server after the timeout} has exactly two parses. Give
+        both readings in English, and say what a routing system should do with a
+        subject line that has more than one.
+  \item Eliza has no grammar, no parser and no representation of the conversation,
+        and people disclosed things to it they would not tell a colleague. State
+        what this shows about fluency as evidence of understanding.
+  \item Smoothing fixes n-gram sparsity but nothing fixes the fixed window. Explain
+        the difference, with the nine-word dependency from this chapter.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item The symbolic pipeline runs tokenise, morphology, tag, parse, interpret.
+        Stages 1--3 are bookkeeping; the \emph{parse} is where the knowledge lives.
+  \item A \term{context-free grammar} is rules $A \to \beta$. In \term{Chomsky
+        normal form} every rule is $A \to B\,C$ or $A \to w$, which is what
+        \term{CYK} needs.
+  \item CYK is dynamic programming over spans, costs $O(n^{3}|G|)$, and finds
+        \emph{every} parse without backtracking.
+  \item \term{Ambiguity} is the normal case, not a defect: three of five subject
+        lines here have two readings, and each extra prepositional phrase roughly
+        doubles the count. Returning two trees is the honest answer and tells the
+        system when to ask a person.
+  \item \term{Eliza} matched patterns and swapped pronouns in a few hundred lines,
+        and people attributed understanding to it. The \term{Eliza effect} is that
+        fluency compels that attribution regardless of what is underneath --- which
+        is why \chref{introduction}'s checklist, and not your impression of a
+        transcript, is the instrument to use.
+  \item Pattern substitution is \chref{fol}'s unification restricted to strings.
+  \item An \term{n-gram} model applies the \term{Markov assumption} and is pure
+        counting. \term{Sparsity} is fixable by smoothing; the \emph{fixed window}
+        is not, and a nine-word dependency defeats it at any corpus size. Grammars
+        capture structure and are brittle; counting is robust and structurally
+        blind.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} CYK requires the grammar to be in: (a)~Backus--Naur form
+        (b)~Chomsky normal form (c)~Greibach normal form (d)~any context-free
+        form.
+  \item \textbf{(MCQ)} The time complexity of CYK in the sentence length is:
+        (a)~$O(n)$ (b)~$O(n^{2})$ (c)~$O(n^{3})$ (d)~$O(2^{n})$.
+  \item \textbf{(MCQ)} Eliza's mechanism is closest to: (a)~chart parsing
+        (b)~unification restricted to strings (c)~an n-gram model (d)~forward
+        chaining.
+  \item \textbf{(MCQ)} Smoothing an n-gram model addresses: (a)~the fixed window
+        (b)~sparsity (c)~structural ambiguity (d)~the Markov assumption.
+  \item \textbf{(Short)} Give the two readings of \texttt{fix the login error on the
+        gateway} and say which one a routing system would need to disambiguate
+        before acting.
+  \item \textbf{(Short)} Explain why returning no parse is a more useful failure
+        than returning a guess, with a service-desk example.
+  \item \textbf{(Short)} State the Eliza effect and say why it is relevant to
+        evaluating a modern language system.
+  \item \textbf{(Applied)} Add the rule $\mathit{VP} \to V$ (an intransitive verb,
+        as in \texttt{restart}) to the grammar, and re-count the parses of
+        \texttt{restart the server after the timeout}. Explain the change, and say
+        what it illustrates about adding rules to a grammar.
+\end{reviewq}

@@ -1,0 +1,542 @@
+%=====================================================================
+\chapter{The Artificial Intelligence Project}\label{ch:project}
+%=====================================================================
+\locator{6}{Part VI --- Learning, Language and Responsible AI}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Choose} and \textbf{scope} a problem that the methods of this
+        course can actually solve.
+  \item \textbf{Write} a proposal stating the PEAS specification, the method and
+        the measure of success.
+  \item \textbf{Implement} a working solution with a baseline to compare it
+        against.
+  \item \textbf{Report} the result honestly, including what did not work.
+  \item \textbf{Audit} your own system as \chref{responsible} requires.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+The whole course. The project is set in Week~11 and presented in Week~16
+(Appendix~G); the proposal is due the week it is set.
+\end{prereq}
+
+\begin{keyterms}
+problem scoping $\bullet$ PEAS specification $\bullet$ proposal $\bullet$ baseline
+$\bullet$ evaluation measure $\bullet$ ablation $\bullet$ reproducibility $\bullet$
+project report $\bullet$ demonstration $\bullet$ audit
+\end{keyterms}
+
+\section{The Brief}
+
+Build a working AI system for a problem you can describe in one sentence, using one
+or more of the methods from this course. Demonstrate it, report honestly on what it
+does and does not do, and audit it.
+
+\begin{examplebox}[What is being assessed]
+\begin{tabular}{@{}L{4.2cm}L{1.8cm}L{7.8cm}@{}}
+\toprule
+\textbf{Component} & \textbf{Weight} & \textbf{What it means} \\
+\midrule
+Proposal & 10\% & PEAS, method, measure, baseline --- before any code \\
+Implementation & 30\% & It runs, it is reproducible, somebody else can read it \\
+Evaluation & 25\% & Compared against a baseline, on a measure you defined in
+advance \\
+Report & 25\% & Including what failed and why \\
+Demonstration & 10\% & Ten minutes, live, with one hard question answered \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+Note the weights: the code is under a third. A working system with no baseline and
+no honest evaluation scores worse than a modest one with both.
+\end{examplebox}
+
+\section{Choosing a Problem}
+
+The commonest failure is not technical. It is choosing a problem whose difficulty
+lies somewhere this course did not go --- almost always in acquiring data or in
+integrating with something.
+
+\begin{conceptbox}
+Three tests for a candidate problem, in order.
+
+\emph{Can you state the goal in one sentence, without the word ``and''?} ``Schedule
+a sprint respecting precedence and capacity'' passes. ``Predict delays and route
+tickets and suggest owners'' is three projects.
+
+\emph{Do the rules exist, and can you write them down in an afternoon?} This course
+builds agents that are \emph{told} the rules. If the rules would have to be learned
+from data, you have chosen a \emph{Machine Learning} project and you do not yet have
+the machinery.
+
+\emph{Is there a baseline you would be embarrassed to lose to?} First-come
+first-served, a greedy heuristic, or the current manual process. If you cannot name
+one, you will not be able to show that your system helped.
+\end{conceptbox}
+
+\smallskip
+\noindent\begin{longtable}{@{}L{5.0cm}L{2.5cm}L{7.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Problem} & \textbf{Method} & \textbf{Baseline to beat} \\
+\midrule
+\endhead
+Timetable a set of lab sessions against rooms and staff & \chref{csp} &
+Greedy assignment in enrolment order \\
+Plan a deployment from operator descriptions & \chref{planning} & The runbook's
+fixed order \\
+Route service-desk tickets to a queue & \chref{expert} & The current manual
+triage \\
+Diagnose the likely cause of a recurring failure & \chref{bayesnets} & Always blame
+the most common cause \\
+Choose which of a backlog to take into a sprint & \chref{informed} & Highest
+priority first \\
+Rate risk for a portfolio of projects & \chref{fuzzy} & A threshold rule \\
+Play a two-player scheduling game against a tutor & \chref{adversarial} & Random
+legal move \\
+Answer questions about a domain from a knowledge base & \chref{fol} &
+Keyword search \\
+\bottomrule
+\caption{Eight projects that fit the course, each with a baseline you can implement
+in an hour. Your own problem is welcome and must pass the three tests
+above.}\label{tab:projects}
+\end{longtable}
+
+\section{The Proposal}
+
+One page, due the week the project is set. Five headings, and the fifth is the one
+students leave out.
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=3pt, topsep=4pt]
+  \item \textbf{The problem}, in one sentence.
+  \item \textbf{PEAS} (\chref{agents}): performance measure, environment,
+        actuators, sensors. The performance measure must describe the state of the
+        environment, not the activity of your program.
+  \item \textbf{Method}, and why. Name the chapter. If two methods could work, say
+        which you chose and what you gave up.
+  \item \textbf{Baseline}, and how you will implement it.
+  \item \textbf{What would count as failure.} Write down, in advance, the result
+        that would make you say the approach did not work. This is the heading that
+        turns an evaluation into evidence rather than a demonstration.
+\end{enumerate}
+
+\begin{alertbox}[Decide the measure before you build]
+If the measure is chosen afterwards, it will be chosen --- unconsciously and
+honestly --- to be one the system does well on. That is not dishonesty; it is how
+people work, and the only defence is to write the measure down first and then not
+change it.
+
+If you do change it, say so in the report and say why. A report that says ``we
+originally measured X, found it was the wrong question for this reason, and switched
+to Y'' is \emph{stronger} than one that never mentions it, because it shows you
+understood what you were measuring.
+\end{alertbox}
+
+\section{Building It}
+
+\begin{tight}
+  \item \textbf{The baseline first.} It takes an hour and it is the only thing that
+        makes your result interpretable. Build it before the interesting part, or
+        you will not build it at all.
+  \item \textbf{Seed everything.} Any randomness gets an explicit seed, as every lab
+        in this book does. A result nobody can reproduce is not a result.
+  \item \textbf{Keep the domain separate from the algorithm.} The constraints, the
+        operators, the rules go in data. This is \chref{introduction}'s third test,
+        it is what makes the system correctable, and it is visibly assessed.
+  \item \textbf{Log a trace.} Whatever your method, record why it did what it did.
+        You will need it for the report, for the demonstration's hard question, and
+        for the audit.
+  \item \textbf{Measure at the size you will demonstrate at.} \chref{csp},
+        \chref{planning} and \chref{bayesnets} each contained a technique that
+        \emph{lost} on a small instance and won on a large one. Do not tune on a toy.
+\end{tight}
+
+\section{Reporting It}
+
+Eight to twelve pages. The structure below is not a suggestion; reports that depart
+from it lose marks for the sections they omit.
+
+\smallskip
+\noindent\begin{longtable}{@{}L{3.4cm}L{11.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Section} & \textbf{What goes in it} \\
+\midrule
+\endhead
+Problem and PEAS & One page. The same specification as the proposal, corrected if
+it changed \\
+Method & Which chapter's machinery, and why this one. State the alternative you
+rejected \\
+Implementation & Representation first, algorithm second. A figure of the data
+structure is worth a page of prose \\
+Evaluation & The baseline, your system, on the measure you fixed in advance. A
+table and one figure \\
+What did not work & Required. Every project has some, and its absence is read as
+not having looked \\
+Audit & \chref{responsible}: outcomes by group where that applies, and the
+situations your system does not cover \\
+Limits & Where it breaks, and the size at which it stops being usable. Be specific
+and quantitative \\
+\bottomrule
+\caption{The report structure. The last three sections are what separate a project
+from a demonstration.}\label{tab:report}
+\end{longtable}
+
+\begin{conceptbox}
+On the \emph{what did not work} section, since it is the one people resist.
+
+Every project in this course will have a component that failed, an approach
+abandoned, or a measurement that came out the wrong way. Reporting it costs nothing
+--- it is not marked as failure --- and omitting it costs a great deal, because a
+report in which everything worked first time is not believed by anybody who has
+built anything.
+
+This book has tried to model the habit. \chref{csp}'s ordering heuristic made things
+worse; \chref{planning}'s heuristic bought under one per cent; \chref{bayesnets}'
+variable elimination lost on the small network; \chref{responsible}'s ablation was
+fooled by a rule whose removal abolished the outcome. Each of those is a real
+measurement that contradicted the tidy expectation, and each taught more than the
+tidy version would have.
+\end{conceptbox}
+
+\section{The Demonstration}
+
+Ten minutes in Week~16. Run the system live on an input the audience chooses within
+the constraints you state. Show the trace. Then answer one hard question, which will
+be some version of: \emph{how do you know it is right?}
+
+Prepare for that question specifically. The good answer names the baseline, the
+measure and the margin, and says where the system stops working.
+
+\begin{worked}[A proposal that would score well]
+\textbf{Problem.} Assign this department's laboratory sessions to rooms and
+demonstrators without clashes.
+
+\smallskip
+\textbf{PEAS.} \emph{Performance measure:} number of sessions placed, zero hard
+constraint violations, and the spread of load across demonstrators measured by the
+difference between the busiest and least busy. Note this describes the timetable,
+not the program. \emph{Environment:} the session list, room capacities, staff
+availability, the week. Fully observable, deterministic, static for the duration of
+a solve, discrete, single-agent. \emph{Actuators:} assign a session to a
+(room, slot, demonstrator) triple; unassign. \emph{Sensors:} the full session list
+and all constraints.
+
+\smallskip
+\textbf{Method.} Constraint satisfaction (\chref{csp}). Variables are sessions,
+domains are legal triples, constraints are room capacity, no double-booking of a
+room or a person, and precedence where a lab must follow its lecture. Backtracking
+with minimum remaining values and forward checking --- and \chref{csp}'s measured
+result says the propagation is what will make MRV worth having.
+
+\emph{Alternative rejected:} local search (\chref{local}) would produce a good
+timetable faster, and could not \emph{prove} the absence of a clash. A timetable
+with a clash is worthless however good its load balance, so the guarantee matters
+more than the speed here.
+
+\smallskip
+\textbf{Baseline.} Greedy assignment in enrolment order, taking the first legal
+triple. About thirty lines.
+
+\smallskip
+\textbf{What would count as failure.} If the greedy baseline places as many sessions
+with a load spread within two of mine, constraint satisfaction has not earned its
+complexity on this instance and I will say so. If the solver cannot place the full
+set within sixty seconds, I will report the largest instance it does handle.
+
+\smallskip
+\textbf{Why this proposal is good.} The goal is one sentence. The rules exist and
+are already written down in the department handbook. There is an embarrassing
+baseline. The performance measure describes the world. And the failure condition is
+stated in advance, in numbers, so the evaluation cannot be quietly reshaped to
+flatter the result.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Choosing a problem whose difficulty is the data.} If the rules must
+        be learned, it is a \emph{Machine Learning} project.
+  \item \textbf{No baseline.} Then your result has no units. Build it first.
+  \item \textbf{Choosing the measure afterwards.} It will be a measure your system
+        does well on, and you will not notice.
+  \item \textbf{Knowledge inside the algorithm.} Constraints and rules belong in
+        data. This is assessed, and it is what makes your system correctable.
+  \item \textbf{No trace.} You will need it for the report, for the hard question,
+        and for the audit. Retrofitting one is much harder than logging as you go.
+  \item \textbf{Tuning on a toy instance.} Three chapters of this book contain a
+        technique that loses on a small instance and wins on a large one.
+  \item \textbf{Omitting ``what did not work''.} It is required, it costs no marks,
+        and its absence is conspicuous.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[The Project Template]
+The scaffold to start from. It runs as given, with a trivial problem in place, so
+that the structure is working before any of your own code exists.
+\begin{lstlisting}[language=Python]
+"""Chapter 22 -- the project template.
+
+Replace the marked sections. Everything else is the shape every
+project in this course should have: a PEAS specification you can
+print, a baseline, a measure fixed in advance, a trace, an audit and
+a reproducible run.
+"""
+
+import json
+import os
+import random
+
+SEED = 0                      # every random choice, reproducible
+
+# ===================================================================
+# 1. PEAS -- fill this in, and print it in the report
+# ===================================================================
+PEAS = {
+    "performance": "sessions placed; zero clashes; load spread",
+    "environment": "sessions, rooms, staff, slots; static, discrete",
+    "actuators": "assign(session, room, slot, staff); unassign",
+    "sensors": "the full session list and all constraints",
+}
+
+# what would count as FAILURE -- written down BEFORE building
+FAILURE_CONDITION = (
+    "the baseline places as many sessions with a load spread within "
+    "2 of ours"
+)
+
+# ===================================================================
+# 2. The domain, as DATA -- never inside the algorithm
+# ===================================================================
+SESSIONS = ["ai-lab-1", "ai-lab-2", "ds-lab-1", "ml-lab-1"]
+SLOTS = ["mon-am", "mon-pm", "tue-am"]
+STAFF = ["ayesha", "bilal"]
+
+
+def legal(assignment, session, slot, who):
+    """The constraints. Reading this should tell a domain expert
+    exactly what the system believes."""
+    for (s, (sl, w)) in assignment.items():
+        if sl == slot and w == who:
+            return False              # one person, one slot
+    return True
+
+
+# ===================================================================
+# 3. The BASELINE -- build this first, always
+# ===================================================================
+def baseline(sessions):
+    """Greedy: first legal option, in the order given."""
+    assignment = {}
+    for s in sessions:
+        for slot in SLOTS:
+            for who in STAFF:
+                if legal(assignment, s, slot, who):
+                    assignment[s] = (slot, who)
+                    break
+            if s in assignment:
+                break
+    return assignment
+
+
+# ===================================================================
+# 4. YOUR SYSTEM -- replace this with the real method
+# ===================================================================
+def solve(sessions, trace):
+    """Backtracking with minimum remaining values would go here.
+
+    The template uses plain backtracking so the scaffold runs; the
+    point is that it LOGS, and that the log is what the report,
+    the demonstration and the audit are all built from.
+    """
+    assignment = {}
+
+    def bt(remaining):
+        if not remaining:
+            return True
+        # MRV would order 'remaining' here
+        s = remaining[0]
+        for slot in SLOTS:
+            for who in STAFF:
+                if legal(assignment, s, slot, who):
+                    assignment[s] = (slot, who)
+                    trace.append("assign %s -> %s, %s" % (s, slot, who))
+                    if bt(remaining[1:]):
+                        return True
+                    trace.append("undo %s" % s)
+                    del assignment[s]
+        return False
+
+    bt(list(sessions))
+    return assignment
+
+
+# ===================================================================
+# 5. The MEASURE -- fixed in advance, and the same for both
+# ===================================================================
+def measure(assignment):
+    placed = len(assignment)
+    load = {w: 0 for w in STAFF}
+    for (_, who) in assignment.values():
+        load[who] += 1
+    spread = max(load.values()) - min(load.values()) if load else 0
+    return {"placed": placed, "spread": spread, "load": load}
+
+
+# ===================================================================
+# 6. The AUDIT -- Chapter 21
+# ===================================================================
+def audit(assignment):
+    """Outcomes by group, and the situations not covered."""
+    by_course = {}
+    for s, (slot, who) in assignment.items():
+        course = s.split("-")[0]
+        by_course.setdefault(course, []).append(slot)
+    unplaced = [s for s in SESSIONS if s not in assignment]
+    return {"by_course": by_course, "unplaced": unplaced}
+
+
+if __name__ == "__main__":
+    random.seed(SEED)
+    print("=" * 58)
+    print("PEAS")
+    print("=" * 58)
+    for k, v in PEAS.items():
+        print("   %-13s %s" % (k + ":", v))
+    print()
+    print("   fails if:    %s" % FAILURE_CONDITION)
+
+    print()
+    print("=" * 58)
+    print("BASELINE vs SYSTEM")
+    print("=" * 58)
+    base = baseline(SESSIONS)
+    trace = []
+    ours = solve(SESSIONS, trace)
+
+    mb, mo = measure(base), measure(ours)
+    print("   measure      baseline   system")
+    print("   " + "-" * 34)
+    for key in ("placed", "spread"):
+        print("   %-12s %8s %8s" % (key, mb[key], mo[key]))
+    print("   load         %8s %8s" % (mb["load"], mo["load"]))
+
+    # state the verdict against the CONDITION FIXED IN ADVANCE
+    print()
+    beat = (mo["placed"] > mb["placed"]
+            or (mo["placed"] == mb["placed"]
+                and mo["spread"] < mb["spread"] - 2))
+    print("   verdict: %s"
+          % ("the system beat the baseline"
+             if beat else
+             "the system did NOT beat the baseline on the measure "
+             "fixed in advance -- report this"))
+
+    print()
+    print("=" * 58)
+    print("TRACE (first 8 steps)")
+    print("=" * 58)
+    for line in trace[:8]:
+        print("   " + line)
+    print("   ... %d steps total" % len(trace))
+
+    print()
+    print("=" * 58)
+    print("AUDIT")
+    print("=" * 58)
+    a = audit(ours)
+    for course, slots in sorted(a["by_course"].items()):
+        print("   %-6s %d session(s): %s"
+              % (course, len(slots), ", ".join(slots)))
+    print("   unplaced:", a["unplaced"] or "none")
+
+    # reproducibility: the artefact the report cites
+    out = {"seed": SEED, "peas": PEAS,
+           "failure_condition": FAILURE_CONDITION,
+           "baseline": mb, "system": mo, "audit": a,
+           "trace_length": len(trace)}
+    os.makedirs("project_output", exist_ok=True)
+    with open(os.path.join("project_output", "metrics.json"), "w") as f:
+        json.dump(out, f, indent=2, default=str)
+    print()
+    print("wrote project_output/metrics.json -- cite this in the")
+    print("report, and commit it. A result nobody can reproduce is")
+    print("not a result.")
+
+    # the scaffold's own checks
+    assert mo["placed"] == len(SESSIONS), "the system should place all"
+    assert os.path.exists(os.path.join("project_output",
+                                       "metrics.json"))
+\end{lstlisting}
+Run it before writing any of your own code. If the scaffold works, you have a
+baseline, a measure, a trace, an audit and a reproducible artefact on day one --- and
+everything after that is the interesting part.
+
+\smallskip
+Notice what the template prints as it stands: \emph{the system did NOT beat the
+baseline on the measure fixed in advance}. That is correct --- on four sessions the
+greedy baseline is already optimal --- and it is the behaviour to keep. A scaffold
+that congratulated itself before anybody had written a method would be training you
+in exactly the habit this chapter is trying to prevent.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A student proposes ``an AI system that predicts which tickets will breach
+        their service level agreement''. Apply the three tests of this chapter and
+        say what you would advise.
+  \item Why must the measure and the failure condition be written down before the
+        system is built? Give the failure mode that results from not doing so.
+  \item Your system beats the baseline by a small margin. Name three things the
+        report must contain before that claim means anything.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Choose a problem whose goal is one sentence, whose rules already exist, and
+        which has a baseline you would be embarrassed to lose to. If the rules must
+        be learned from data, it is a \emph{Machine Learning} project.
+  \item The proposal is five headings, and the fifth --- \emph{what would count as
+        failure} --- is what turns an evaluation into evidence.
+  \item Build the baseline first, seed everything, keep the domain in data, log a
+        trace, and measure at the size you will demonstrate at.
+  \item The report has seven sections. \emph{What did not work}, the \emph{audit}
+        and the \emph{limits} are what separate a project from a demonstration.
+  \item Decide the measure before building. Chosen afterwards, it will be one the
+        system does well on, and honestly so.
+  \item Prepare for one question at the demonstration: \emph{how do you know it is
+        right?} The good answer names the baseline, the measure, the margin and
+        where the system stops working.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The first thing to build in a project is:
+        (a)~the main algorithm (b)~the baseline (c)~the user interface
+        (d)~the report.
+  \item \textbf{(MCQ)} A performance measure should describe:
+        (a)~how much the program does (b)~the state of the environment
+        (c)~the running time (d)~the number of rules.
+  \item \textbf{(MCQ)} ``What would count as failure'' is written:
+        (a)~in the report (b)~in the proposal, before building
+        (c)~after evaluation (d)~only if the project fails.
+  \item \textbf{(MCQ)} A project whose rules must be learned from examples is:
+        (a)~ideal for this course (b)~a Machine Learning project
+        (c)~a constraint problem (d)~impossible.
+  \item \textbf{(Short)} Give a one-sentence problem statement for a project of
+        your own, and name the chapter whose method you would use and the baseline
+        you would beat.
+  \item \textbf{(Short)} Explain why keeping the domain in data rather than in the
+        algorithm is assessed, referring to \chref{introduction}'s checklist.
+  \item \textbf{(Short)} Your evaluation shows the baseline winning. Describe how to
+        report that so it is a good report rather than a failed project.
+  \item \textbf{(Applied)} Write the full five-heading proposal for one of the
+        problems in Table~\ref{tab:projects}, including the PEAS specification, the
+        alternative method you reject with a reason, the baseline, and a failure
+        condition stated in numbers.
+\end{reviewq}

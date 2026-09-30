@@ -1,0 +1,138 @@
+%=====================================================================
+\chapter{Python Reference for Artificial Intelligence}\label{app:python}
+%=====================================================================
+\normalfigures
+
+Everything the labs use, on a few pages. Each lab is also a runnable file in the
+\texttt{code/} folder, named after its chapter.
+
+\section{Setting Up}
+
+Any Python 3.10 or later will do. Chapters~1--2, 4--5 and~7--13 and~17--22 use the
+standard library only; Chapters~3, 6, 15 and~16 also use NumPy. Check with:
+\begin{lstlisting}[language=Python]
+import sys, numpy
+print(sys.version)
+print(numpy.__version__)
+\end{lstlisting}
+The labs were tested with Python 3.12 and NumPy 2.3. Run one from a terminal with
+\texttt{python ch05\_over\_sprint\_states\_two.py}, or paste it into a notebook
+cell. No lab needs a GPU, a network connection or an account with anybody.
+
+\section{The Four Structures That Matter}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{6.0cm}L{9.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Code} & \textbf{What it does} \\
+\midrule
+\endhead
+\texttt{frozenset(\{"a", "b"\})} & An immutable, hashable set. The state
+representation of Chapters 3--5 and 9 \\
+\texttt{s | \{x\}} & A \emph{new} set with \texttt{x} added. Never
+\texttt{s.add(x)} on a state \\
+\texttt{deps <= done} & Subset test: every dependency is finished \\
+\texttt{a \& b} & Intersection --- non-empty means ``at least one of these is
+done'' \\
+\texttt{Node = namedtuple("Node", "state parent action cost")} & A tuple with
+named fields: hashable, comparable, self-documenting when printed \\
+\texttt{("S1", None, "S3")} & A tuple of slots: a partial assignment, with
+\texttt{None} where a variable is unassigned (Chapters 7, 11) \\
+\texttt{d = \{\}; d.setdefault(k, []).append(v)} & Build an adjacency dictionary
+without checking whether the key exists \\
+\bottomrule
+\end{longtable}
+
+\section{Frontiers}
+
+\begin{lstlisting}[language=Python]
+from collections import deque
+import heapq, itertools
+
+q = deque()          # breadth-first
+q.append(node)
+node = q.popleft()   # O(1). NEVER list.pop(0), which is O(n)
+
+st = []              # depth-first
+st.append(node)
+node = st.pop()
+
+h, tie = [], itertools.count()          # best-first / A*
+heapq.heappush(h, (priority, next(tie), node))
+node = heapq.heappop(h)[2]
+\end{lstlisting}
+The counter in the middle of the heap entry breaks ties by insertion order, so two
+nodes are never compared. Omitting it produces an intermittent
+\texttt{TypeError} --- see \chref{python}.
+
+\section{Generators, Memoisation and Recursion}
+
+\begin{lstlisting}[language=Python]
+def actions(state):              # a successor function
+    for t, (_, deps) in TASKS.items():
+        if t not in state and deps <= state:
+            yield t              # produced one at a time, on demand
+
+from functools import lru_cache
+
+@lru_cache(maxsize=None)         # arguments must be hashable
+def minimax(state, maximising):
+    ...
+
+import sys
+sys.setrecursionlimit(10000)     # deep proof trees, Chapters 11-12
+\end{lstlisting}
+
+\section{Exact Arithmetic for Probability}
+
+Chapters~14 and~15 print probabilities that you should be able to check by hand.
+\texttt{Fraction} keeps them exact:
+\begin{lstlisting}[language=Python]
+from fractions import Fraction as F
+
+p = F(1, 3) + F(1, 6)        # Fraction(1, 2) -- exactly
+print(p, float(p))           # 1/2 0.5
+\end{lstlisting}
+
+\section{NumPy, Where It Earns Its Place}
+
+Only four chapters use it, and only for grids of numbers.
+\begin{lstlisting}[language=Python]
+import numpy as np
+
+x = np.linspace(0, 10, 101)          # 101 points, Chapter 16 memberships
+mu = np.clip((x - 2) / 3, 0, 1)      # a shoulder membership function
+area = np.trapezoid(mu, x)           # centroid numerator/denominator
+rng = np.random.default_rng(0)       # seeded sampler, Chapter 15
+s = rng.random(10000)
+\end{lstlisting}
+
+\section{Reproducibility}
+
+Every lab that samples seeds its generator explicitly, with
+\texttt{random.Random(0)} or with NumPy's \texttt{default\_rng(0)}, so the numbers
+printed in this book are the numbers you will see. If your output differs, check
+the seed before checking the algorithm.
+
+\section{Style Rules the Labs Follow}
+
+\begin{tight}
+  \item \textbf{Pure ASCII.} Write \texttt{AND}, \texttt{NOT}, \texttt{->},
+        \texttt{forall} --- never the Unicode symbols. \texttt{code/sync\_labs.py}
+        rejects any byte above 127, because the handout's listings are typeset by
+        pdf\LaTeX, which cannot set them.
+  \item \textbf{78 columns.} Longer lines are wrapped by the same check.
+  \item \textbf{The handout is the source.} \texttt{sync\_labs.py} extracts each
+        lab from its chapter into \texttt{code/}. Edit the chapter, not the
+        extracted file.
+  \item \textbf{Assertions, not commentary.} Each lab ends by asserting the claims
+        the chapter makes about it, so a broken claim fails loudly.
+\end{tight}
+
+\begin{lstlisting}
+cd code
+python sync_labs.py          # extract every chapter's lab
+python sync_labs.py --run    # ... and run them all
+python sync_labs.py --run 9  # ... run chapter 9 only
+\end{lstlisting}

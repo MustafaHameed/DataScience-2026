@@ -1,0 +1,709 @@
+%=====================================================================
+\chapter{Constraint Satisfaction}\label{ch:csp}
+%=====================================================================
+\locator{3}{Part III --- Constraints, Games and Plans}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Formulate} a problem as variables, domains and constraints, and
+        \textbf{say} when that formulation is better than a search over states.
+  \item \textbf{Apply} backtracking search with the minimum-remaining-values and
+        degree heuristics, and \textbf{explain} what each one orders.
+  \item \textbf{Propagate} constraints by forward checking and by arc consistency
+        (AC-3), and \textbf{measure} what each removes.
+  \item \textbf{Explain} why ordering heuristics and propagation are a package,
+        and why either alone can be worthless.
+  \item \textbf{Recognise} when a constraint problem is over-constrained, and
+        \textbf{report} which constraint is responsible.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{python} (states as values) and \chref{uninformed} (backtracking is
+depth-first search with a commitment at each level). \chref{informed} is not
+needed: this chapter gets its leverage from the \emph{structure} of the problem
+rather than from a heuristic estimate of distance.
+\end{prereq}
+
+\begin{keyterms}
+constraint satisfaction problem $\bullet$ variable $\bullet$ domain $\bullet$
+constraint $\bullet$ constraint graph $\bullet$ assignment $\bullet$ partial
+assignment $\bullet$ consistency $\bullet$ backtracking $\bullet$ minimum
+remaining values $\bullet$ degree heuristic $\bullet$ least constraining value
+$\bullet$ forward checking $\bullet$ arc consistency $\bullet$ AC-3 $\bullet$
+over-constrained
+\end{keyterms}
+
+\section{A Sprint Plan as a Constraint Problem}
+
+Twelve stories must be placed into four sprints. Each sprint has a capacity of
+twelve story points. Some stories cannot start until others have finished. Some
+pairs belong to the same developer and are too large to sit in one sprint
+together. Find a placement that breaks nothing.
+
+\chref{uninformed} could search this: a state is a partial placement, an action
+adds one story. But that formulation throws away the thing that makes the problem
+tractable. A general search algorithm sees an opaque state and an opaque goal test.
+A \term{constraint satisfaction problem} exposes the structure --- which variable
+each constraint touches --- and the algorithms in this chapter exploit exactly that.
+
+\begin{definitionbox}[Constraint satisfaction problem]
+A \term{CSP} is a triple:
+\begin{tight}
+  \item a set of \term{variables} $X_{1}, \ldots, X_{n}$;
+  \item a \term{domain} $D_{i}$ of possible values for each variable;
+  \item a set of \term{constraints}, each restricting the values that some subset
+        of the variables may take simultaneously.
+\end{tight}
+A \term{solution} is a complete assignment that violates no constraint. A
+constraint over two variables is \term{binary}; over more than two, $n$-ary.
+
+The crucial property is that the goal test is not opaque: it is a conjunction of
+constraints, each of which can be checked against a \emph{partial} assignment. That
+is what allows a search to fail early instead of at the leaves.
+\end{definitionbox}
+
+\begin{examplebox}[The sprint problem, formulated]
+\begin{tight}
+  \item \emph{Variables:} the twelve stories \texttt{S1} \ldots \texttt{S12}.
+  \item \emph{Domains:} $\{1,2,3,4\}$, the sprint each is placed in.
+  \item \emph{Precedence} (binary): $\texttt{S1} < \texttt{S4}$,
+        $\texttt{S2} < \texttt{S5}$, $\texttt{S3} < \texttt{S7}$,
+        $\texttt{S6} < \texttt{S8}$, $\texttt{S9} < \texttt{S12}$,
+        $\texttt{S10} < \texttt{S11}$, $\texttt{S4} < \texttt{S12}$.
+  \item \emph{Same developer, too big together} (binary, ``not equal''):
+        $\{\texttt{S1},\texttt{S7}\}$, $\{\texttt{S2},\texttt{S8}\}$,
+        $\{\texttt{S4},\texttt{S6}\}$, $\{\texttt{S9},\texttt{S10}\}$,
+        $\{\texttt{S7},\texttt{S12}\}$.
+  \item \emph{Capacity} ($n$-ary): the points in each sprint total at most $12$.
+        The twelve stories total $45$ points against a capacity of $48$, so there
+        is almost no slack.
+\end{tight}
+There are $4^{12} = 16{,}777{,}216$ assignments and exactly $14$ solutions ---
+about one in a million.
+\end{examplebox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  v/.style={circle, draw=#1, line width=0.9pt, fill=#1!10, text=#1!55!black,
+            font=\tiny\bfseries, minimum size=0.78cm, inner sep=0pt},
+  bef/.style={-{Stealth[length=1.8mm]}, primary!65, line width=0.9pt},
+  apt/.style={accent!65, line width=0.9pt, dash pattern=on 3pt off 2pt}]
+
+\node[v=primary]   (s1)  at (0,1.6)    {S1};
+\node[v=secondary] (s2)  at (1.9,2.5)  {S2};
+\node[v=primary]   (s3)  at (0,0)      {S3};
+\node[v=greenhl]   (s4)  at (2.6,1.1)  {S4};
+\node[v=secondary] (s5)  at (4.2,2.5)  {S5};
+\node[v=greenhl]   (s6)  at (1.9,-1.1) {S6};
+\node[v=primary]   (s7)  at (2.6,-0.2) {S7};
+\node[v=secondary] (s8)  at (4.0,-1.1) {S8};
+\node[v=goldhl]    (s9)  at (5.6,1.1)  {S9};
+\node[v=goldhl]    (s10) at (6.6,-0.4) {S10};
+\node[v=greenhl]   (s11) at (8.2,-0.4) {S11};
+\node[v=primary]   (s12) at (5.0,0.3)  {S12};
+
+\foreach \a/\b in {s1/s4,s2/s5,s3/s7,s6/s8,s9/s12,s10/s11,s4/s12}{
+  \draw[bef] (\a) -- (\b);}
+\foreach \a/\b in {s1/s7,s2/s8,s4/s6,s9/s10,s7/s12}{
+  \draw[apt] (\a) -- (\b);}
+
+\node[anchor=west, font=\scriptsize, text=primary] at (9.3,1.3)
+  {\textbf{---$\blacktriangleright$} must finish earlier};
+\node[anchor=west, font=\scriptsize, text=accent] at (9.3,0.85)
+  {\textbf{- - -} cannot share a sprint};
+\node[anchor=west, font=\scriptsize, text=neutral, text width=4.4cm]
+  at (9.3,0.0)
+  {Node colour is the owning developer. The \emph{capacity} constraint is
+   $n$-ary and touches every variable at once, so it does not appear in this
+   graph --- which matters in Section~\ref{sec:ac3}.};
+\end{tikzpicture}}%
+{The constraint graph. Twelve variables, twelve binary constraints, and one
+$n$-ary capacity constraint that no edge can represent.}{csp-graph}
+
+\section{Backtracking Search}
+
+Assign one variable at a time; after each assignment check it against everything
+already assigned; if nothing is consistent, undo the last choice and try the next
+value. This is \term{backtracking search}, and it is depth-first search with the
+goal test applied incrementally.
+
+The incremental check is the whole gain. A general search must place all twelve
+stories before it can test anything; backtracking discovers that \texttt{S4} cannot
+go in sprint~1 the moment \texttt{S1} is placed there, and never builds any of the
+$4^{10}$ assignments below that choice.
+
+On the sprint problem, plain backtracking finds a solution after $123$ nodes and
+$3{,}784$ consistency checks --- against $16{,}777{,}216$ complete assignments. The
+structure was worth a factor of a hundred thousand before any heuristic was
+applied.
+
+\section{Which Variable Next, and Which Value}
+
+Backtracking leaves two choices open, and they are where the remaining leverage is.
+
+\textbf{Minimum remaining values (MRV).} Assign next the variable with the fewest
+legal values left. The slogan is \emph{fail first}: if some variable is going to
+run out of options, discovering it now costs one dead end, and discovering it ten
+levels later costs a subtree.
+
+\textbf{Degree heuristic.} When several variables tie on MRV, pick the one involved
+in the most constraints on \emph{unassigned} variables. It is a tie-breaker, not a
+strategy in its own right.
+
+\textbf{Least constraining value.} Having chosen a variable, try first the value
+that rules out fewest options for its neighbours. Note that this pulls the opposite
+way from MRV --- fail first on variables, succeed first on values --- and both are
+right, because you must try every variable but only need one value to work.
+
+\begin{alertbox}[MRV on its own does nothing at all]
+Here is a result from the lab that is worth more than the heuristics themselves.
+Adding MRV to plain backtracking on this problem changes the cost by
+\emph{nothing}: $3{,}784$ consistency checks and $123$ nodes, both with it and
+without.
+
+The reason is not that MRV is a bad idea. It is that MRV has no information to act
+on. Every domain starts at four values and \emph{nothing ever shrinks them}, so
+every unassigned variable ties forever and MRV falls back on the first variable in
+the list --- which is what plain backtracking already did.
+
+Domains shrink only when something propagates the consequences of an assignment.
+So MRV and propagation are a package: neither is worth much without the other, and
+together they are worth a factor of nine here. If you take one thing from this
+chapter, take that.
+\end{alertbox}
+
+\section{Propagation: Forward Checking}
+
+\term{Forward checking} is the smallest useful propagation. When a variable is
+assigned, remove from every neighbour's domain the values now inconsistent with it.
+If any domain becomes empty, the assignment has already failed --- backtrack at
+once rather than discovering it later.
+
+Two things happen at the same time. The obvious one is that dead ends are found
+sooner. The important one is that domains now have different sizes, so MRV finally
+has something to compare.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  dom/.style={rounded corners=2pt, draw=#1!60, fill=#1!8, text=#1!55!black,
+              font=\tiny, minimum width=1.55cm, minimum height=0.46cm},
+  hd/.style={font=\tiny\bfseries, text=neutral},
+  a/.style={-{Stealth[length=1.8mm]}, neutral!70, line width=0.8pt}]
+
+\node[hd] at (-1.35,0.75) {before};
+\node[hd] at (-1.35,-0.95) {after};
+\node[hd, text=primary] at (-1.35,0) {assign};
+
+% before
+\foreach \i/\n in {0/S4, 1/S6, 2/S7, 3/S12}{
+  \node[dom=neutral] at (\i*1.85,0.75) {\n: 1 2 3 4};}
+% the assignment
+\node[rounded corners=2pt, fill=primary, text=white, font=\tiny\bfseries,
+      minimum width=1.55cm, minimum height=0.46cm] at (0,0) {S1 := 1};
+% after
+\node[dom=greenhl] at (0,-0.95)    {S4: \phantom{1} 2 3 4};
+\node[dom=neutral] at (1.85,-0.95) {S6: 1 2 3 4};
+\node[dom=accent]  at (3.70,-0.95) {S7: \phantom{1} 2 3 4};
+\node[dom=neutral] at (5.55,-0.95) {S12: 1 2 3 4};
+
+\draw[a] (0,0.52) -- (0,0.18);
+\draw[a] (0,-0.22) -- (0,-0.72);
+\draw[a] (0.78,0) -- (3.70,-0.72);
+
+\node[font=\tiny\itshape, text=greenhl!50!black, anchor=west] at (6.55,-0.72)
+  {\texttt{S1}$<$\texttt{S4} removes sprint 1 from \texttt{S4}};
+\node[font=\tiny\itshape, text=accent!55!black, anchor=west] at (6.55,-1.12)
+  {\texttt{S1}, \texttt{S7} cannot share, so 1 goes from \texttt{S7}};
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!30, line width=0.8pt,
+      text=primary!70!black, font=\scriptsize, text width=13.2cm,
+      align=flush left, inner sep=6pt] at (5.2,-2.35)
+  {\textbf{And now MRV has something to say.} Before the assignment every domain
+   had four values and MRV could not choose. After it, \texttt{S4} and \texttt{S7}
+   have three and the others four --- so MRV picks a constrained variable, fails
+   faster, and the two techniques begin to compound. Neither does this alone.};
+\end{tikzpicture}}%
+{Forward checking after one assignment. The pruning is the visible effect; giving
+the ordering heuristic something to measure is the valuable one.}{csp-forward}
+
+\section{Propagation: Arc Consistency}
+\label{sec:ac3}
+
+Forward checking only looks one step from the variable just assigned. \term{Arc
+consistency} propagates further.
+
+\begin{definitionbox}[Arc consistency and AC-3]
+An arc $X_{i} \to X_{j}$ is \term{consistent} if for \emph{every} value in
+$D_{i}$ there is \emph{some} value in $D_{j}$ satisfying the binary constraint
+between them. A value in $D_{i}$ with no partner can never appear in a solution
+and is removed.
+
+\term{AC-3} enforces this everywhere: keep a queue of arcs; take one, prune $D_{i}$
+against $D_{j}$; if anything was removed, re-queue every arc \emph{into} $X_{i}$,
+because those may now have lost partners. Stop when the queue empties, or fail if
+a domain empties.
+\end{definitionbox}
+
+Run as a preprocessing step on the sprint problem, before any search, AC-3 narrows
+every one of the twelve domains: stories at the head of a precedence chain lose the
+last sprint, stories at the tail lose the first. That is real information obtained
+without a single assignment.
+
+\begin{alertbox}[What AC-3 cannot see, and it is the important constraint]
+Look again at \dsref{csp-graph}: the capacity constraint has no edge, because it is
+$n$-ary and a constraint graph draws binary constraints. AC-3 works on arcs, so it
+never considers capacity at all.
+
+This matters, because capacity is the constraint that actually makes this problem
+hard --- $45$ points into $48$ of capacity. Arc consistency prunes the precedence
+and same-developer structure beautifully and leaves the binding constraint
+untouched. The measurement in Table~\ref{tab:csp} shows the consequence: AC-3
+preprocessing costs $224$ extra consistency checks and removes \emph{no} search
+nodes at all.
+
+The general lesson is not that AC-3 is bad. It is that \emph{propagation only
+propagates what you have expressed in a form it can read}. If the binding
+constraint is $n$-ary, you need a generalised consistency algorithm, or you must
+re-express the constraint --- and knowing which situation you are in is the
+engineering judgement here.
+\end{alertbox}
+
+\section{The Measurement}
+
+All five configurations solve the same instance and find a solution. What differs
+is how much work it costs.
+
+\smallskip
+\noindent\begin{longtable}{@{}L{6.0cm}L{2.3cm}L{2.0cm}L{4.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Configuration} & \textbf{Checks} & \textbf{Nodes} & \textbf{Comment} \\
+\midrule
+\endhead
+Plain backtracking & 3{,}784 & 123 & The baseline. Already $10^{5}$ better than
+enumeration \\
+\quad + MRV & 3{,}784 & 123 & \textbf{No change.} Nothing shrinks the domains, so
+MRV never has a preference \\
+\quad + MRV + degree & 4{,}333 & 436 & \textbf{Worse.} The tie-break imposes an
+ordering that happens to be unlucky here \\
+\quad + MRV + degree + forward checking & \textbf{415} & \textbf{13} &
+\textbf{9$\times$ fewer checks.} Propagation gives MRV information, and the two
+compound \\
+\quad + \ldots + AC-3 preprocessing & 639 & 13 & Same nodes, more checks: AC-3
+cannot see the capacity constraint \\
+\bottomrule
+\caption{Twelve stories into four sprints, counting every constraint check. A
+solution exists (there are $14$) and every configuration finds one.}
+\label{tab:csp}
+\end{longtable}
+
+Three conclusions, and the second is the one students get wrong in examinations.
+
+\textbf{Structure beats search.} Before any heuristic, formulating the problem as a
+CSP turned $16.8$ million assignments into $123$ nodes.
+
+\textbf{An ordering heuristic can make things worse.} The degree tie-breaker
+tripled the node count. Heuristics are informed guesses about a specific problem,
+not improvements in general, and the only way to know is to measure on your
+instance.
+
+\textbf{Propagation is what pays.} Forward checking cut the work ninefold --- and
+about half of that was the pruning and half was making MRV functional.
+
+\section{When There Is No Solution}
+
+An over-constrained problem is the common case in practice: the backlog does not
+fit. Backtracking then explores the whole space and reports failure, which is true
+and useless. A delivery manager needs to know \emph{which} constraint to relax.
+
+Two cheap and honest answers. Record the constraint that emptied a domain most
+often during propagation --- that is usually the binding one. Or re-run with each
+constraint removed in turn and report which removals make the problem solvable.
+For this instance, raising the capacity from $12$ to $13$ turns $14$ solutions into
+hundreds, which tells you at once that capacity, not precedence, is what binds.
+
+\begin{worked}[Tracing forward checking through the first three assignments]
+Start with every domain $\{1,2,3,4\}$. Take the variables in order.
+
+\smallskip
+\textbf{Assign \texttt{S1} $:=$ 1.} Forward checking examines \texttt{S1}'s
+neighbours in \dsref{csp-graph}:
+\begin{tight}
+  \item $\texttt{S1} < \texttt{S4}$: \texttt{S4} must be later than $1$, so
+        $D_{\texttt{S4}} = \{2,3,4\}$.
+  \item $\texttt{S1} \ne \texttt{S7}$: $D_{\texttt{S7}} = \{2,3,4\}$.
+\end{tight}
+Capacity: sprint~1 now holds $3$ points of $12$. Fine.
+
+\smallskip
+\textbf{MRV now chooses.} \texttt{S4} and \texttt{S7} have three values; everything
+else has four. It picks one of those two --- and note that this is the first moment
+in the entire search at which MRV has expressed a preference. Say \texttt{S4}.
+
+\smallskip
+\textbf{Assign \texttt{S4} $:=$ 2.} Propagate:
+\begin{tight}
+  \item $\texttt{S4} < \texttt{S12}$: $D_{\texttt{S12}} = \{3,4\}$.
+  \item $\texttt{S4} \ne \texttt{S6}$: $D_{\texttt{S6}} = \{1,3,4\}$.
+\end{tight}
+Capacity: sprint~2 holds $8$ of $12$; only $4$ points remain there, which will
+matter shortly.
+
+\smallskip
+\textbf{MRV chooses \texttt{S12}}, now down to two values --- the most constrained
+variable in the problem, and it was reached in two steps rather than by luck.
+
+\smallskip
+\textbf{Assign \texttt{S12} $:=$ 3.} Propagate:
+$\texttt{S9} < \texttt{S12}$ gives $D_{\texttt{S9}} = \{1,2\}$;
+$\texttt{S7} \ne \texttt{S12}$ gives $D_{\texttt{S7}} = \{2,4\}$.
+
+\smallskip
+\textbf{What has been bought.} Three assignments, and four other variables have
+already lost values. Plain backtracking at this depth has pruned nothing and will
+discover the same facts one dead end at a time, hundreds of nodes later. The lab
+counts the difference: $13$ nodes against $123$.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Expecting MRV to help on its own.} Without propagation the domains
+        never shrink, so MRV has nothing to order by. Measured here: exactly zero
+        improvement.
+  \item \textbf{Assuming a heuristic cannot hurt.} The degree tie-breaker tripled
+        the node count on this instance.
+  \item \textbf{Expecting AC-3 to enforce an $n$-ary constraint.} It works on arcs.
+        Capacity is invisible to it, and capacity is what binds here.
+  \item \textbf{Re-running AC-3 from scratch at every node.} Propagate
+        incrementally from the variable just assigned; a full re-run usually costs
+        more than it saves, as the last row of Table~\ref{tab:csp} shows even for
+        a single preprocessing pass.
+  \item \textbf{Reporting ``no solution'' and stopping.} True and useless. Report
+        which constraint is binding.
+  \item \textbf{Counting nodes and calling it performance.} A node with
+        propagation costs more than a node without. Count consistency checks, or
+        time, or both --- the same mistake as \chref{local}'s evaluation budget.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[Sprint Scheduling as a CSP]
+The instance of \dsref{csp-graph}, solved five ways, counting every constraint
+check. Reproduces Table~\ref{tab:csp}.
+\begin{lstlisting}[language=Python]
+"""Chapter 7 lab -- sprint scheduling as a constraint problem.
+
+Twelve stories into four sprints under precedence, same-developer and
+capacity constraints. The headline result is the second row: adding
+MRV to plain backtracking changes nothing at all, because nothing has
+shrunk the domains for it to compare.
+"""
+
+import itertools
+
+# story -> (points, owner)
+STORIES = {
+    "S1": (3, "Ayesha"),  "S2": (5, "Bilal"), "S3": (2, "Ayesha"),
+    "S4": (8, "Chen"),    "S5": (3, "Bilal"), "S6": (2, "Chen"),
+    "S7": (5, "Ayesha"),  "S8": (3, "Bilal"), "S9": (5, "Dina"),
+    "S10": (3, "Dina"),   "S11": (2, "Chen"), "S12": (4, "Ayesha"),
+}
+NAMES = list(STORIES)
+SLOTS = (1, 2, 3, 4)
+CAP = 12
+
+# binary: a must finish in an earlier sprint than b
+BEFORE = [("S1", "S4"), ("S2", "S5"), ("S3", "S7"), ("S6", "S8"),
+          ("S9", "S12"), ("S10", "S11"), ("S4", "S12")]
+# binary: same developer, too much combined work for one sprint
+APART = [("S1", "S7"), ("S2", "S8"), ("S4", "S6"), ("S9", "S10"),
+         ("S7", "S12")]
+
+
+class Counter:
+    def __init__(self):
+        self.checks = 0
+        self.nodes = 0
+
+
+def binary_ok(a, va, b, vb, c):
+    """Is the pair (a=va, b=vb) consistent? One consistency check."""
+    c.checks += 1
+    if (a, b) in BEFORE and not va < vb:
+        return False
+    if (b, a) in BEFORE and not vb < va:
+        return False
+    if ((a, b) in APART or (b, a) in APART) and va == vb:
+        return False
+    return True
+
+
+def capacity_ok(assign, c):
+    """The n-ary constraint. No arc can express this."""
+    c.checks += 1
+    load = dict.fromkeys(SLOTS, 0)
+    for n, v in assign.items():
+        load[v] += STORIES[n][0]
+    return all(load[s] <= CAP for s in SLOTS)
+
+
+def consistent(assign, var, val, c):
+    for other, oval in assign.items():
+        if not binary_ok(var, val, other, oval, c):
+            return False
+    trial = dict(assign)
+    trial[var] = val
+    return capacity_ok(trial, c)
+
+
+def select_var(assign, domains, mrv, degree):
+    un = [v for v in NAMES if v not in assign]
+    if not mrv:
+        return un[0]
+    fewest = min(len(domains[v]) for v in un)
+    tied = [v for v in un if len(domains[v]) == fewest]
+    if len(tied) == 1 or not degree:
+        return tied[0]
+
+    def deg(v):
+        return sum(1 for (a, b) in BEFORE + APART
+                   if (a == v and b not in assign)
+                   or (b == v and a not in assign))
+
+    return max(tied, key=deg)
+
+
+def forward_check(var, val, domains, c):
+    """Prune the neighbours. None means a domain emptied."""
+    nd = {k: list(v) for k, v in domains.items()}
+    nd[var] = [val]
+    for other in NAMES:
+        if other == var:
+            continue
+        keep = [x for x in nd[other] if binary_ok(var, val, other, x, c)]
+        if not keep:
+            return None
+        nd[other] = keep
+    return nd
+
+
+def ac3(domains, c):
+    """Arc consistency over the BINARY constraints only."""
+    nd = {k: list(v) for k, v in domains.items()}
+    arcs = []
+    for (a, b) in BEFORE + APART:
+        arcs += [(a, b), (b, a)]
+    queue = list(arcs)
+    while queue:
+        xi, xj = queue.pop(0)
+        keep = [vi for vi in nd[xi]
+                if any(binary_ok(xi, vi, xj, vj, c) for vj in nd[xj])]
+        if len(keep) != len(nd[xi]):
+            nd[xi] = keep
+            if not nd[xi]:
+                return None
+            queue += [(a, b) for (a, b) in arcs if b == xi]
+    return nd
+
+
+def solve(mrv=False, degree=False, fc=False, use_ac3=False):
+    c = Counter()
+    domains = {v: list(SLOTS) for v in NAMES}
+    if use_ac3:
+        domains = ac3(domains, c)
+        if domains is None:
+            return None, c
+    found = []
+
+    def bt(assign, domains):
+        c.nodes += 1
+        if len(assign) == len(NAMES):
+            found.append(dict(assign))
+            return True
+        var = select_var(assign, domains, mrv, degree)
+        for val in domains[var]:
+            if consistent(assign, var, val, c):
+                assign[var] = val
+                if fc:
+                    nd = forward_check(var, val, domains, c)
+                    if nd is not None and bt(assign, nd):
+                        return True
+                elif bt(assign, domains):
+                    return True
+                del assign[var]
+        return False
+
+    bt({}, domains)
+    return (found[0] if found else None), c
+
+
+def count_solutions():
+    """Brute force over all 4^12 assignments, for the record."""
+    c, n = Counter(), 0
+    for combo in itertools.product(SLOTS, repeat=len(NAMES)):
+        a = dict(zip(NAMES, combo))
+        if all(a[x] < a[y] for x, y in BEFORE) \
+           and all(a[x] != a[y] for x, y in APART) \
+           and capacity_ok(a, c):
+            n += 1
+    return n
+
+
+def show(sol):
+    by = {s: [] for s in SLOTS}
+    for n, v in sol.items():
+        by[v].append(n)
+    out = []
+    for s in SLOTS:
+        pts = sum(STORIES[n][0] for n in by[s])
+        out.append("sprint %d: %-18s %2d pts"
+                   % (s, ",".join(sorted(by[s], key=lambda x: int(x[1:]))),
+                      pts))
+    return "\n".join(out)
+
+
+if __name__ == "__main__":
+    total = sum(p for p, _ in STORIES.values())
+    print("stories %d   sprints %d   assignments %d"
+          % (len(NAMES), len(SLOTS), len(SLOTS) ** len(NAMES)))
+    print("points %d against capacity %d -- almost no slack"
+          % (total, CAP * len(SLOTS)))
+    print("solutions:", count_solutions())
+    print()
+    print("configuration                    checks  nodes")
+    print("-" * 50)
+    runs = [
+        ("plain backtracking           ", dict()),
+        ("+ MRV                        ", dict(mrv=True)),
+        ("+ MRV + degree               ", dict(mrv=True, degree=True)),
+        ("+ MRV + degree + FC          ", dict(mrv=True, degree=True,
+                                                fc=True)),
+        ("+ MRV + degree + FC + AC-3   ", dict(mrv=True, degree=True,
+                                                fc=True, use_ac3=True)),
+    ]
+    res = {}
+    for name, kw in runs:
+        sol, c = solve(**kw)
+        assert sol is not None, name
+        res[name.strip()] = (c.checks, c.nodes)
+        print("%s %7d %6d" % (name, c.checks, c.nodes))
+
+    plain = res["plain backtracking"]
+    mrv_only = res["+ MRV"]
+    fc = res["+ MRV + degree + FC"]
+    ac = res["+ MRV + degree + FC + AC-3"]
+
+    # 1. MRV alone changes NOTHING: no propagation, no information
+    assert mrv_only == plain
+    print()
+    print("MRV alone: %d checks, exactly as without it. Nothing has"
+          % mrv_only[0])
+    print("shrunk a domain, so every variable ties and MRV cannot")
+    print("express a preference.")
+
+    # 2. forward checking is the win, and it is large
+    assert fc[0] * 5 < plain[0]
+    print()
+    print("forward checking: %d -> %d checks (%.0fx), %d -> %d nodes"
+          % (plain[0], fc[0], plain[0] / fc[0], plain[1], fc[1]))
+
+    # 3. AC-3 cannot see the capacity constraint, so it buys no nodes
+    assert ac[1] == fc[1] and ac[0] > fc[0]
+    print()
+    print("AC-3 preprocessing: %d extra checks, %d fewer nodes."
+          % (ac[0] - fc[0], fc[1] - ac[1]))
+    print("It prunes the binary structure and never sees capacity,")
+    print("which is the constraint that actually binds.")
+
+    # what AC-3 removes before any search
+    c = Counter()
+    d0 = {v: list(SLOTS) for v in NAMES}
+    d1 = ac3(d0, c)
+    narrowed = [v for v in NAMES if d1[v] != d0[v]]
+    print()
+    print("AC-3 narrowed %d of %d domains before any assignment:"
+          % (len(narrowed), len(NAMES)))
+    for v in narrowed[:4]:
+        print("   %-4s %s -> %s" % (v, d0[v], d1[v]))
+    print("   ...")
+
+    print()
+    sol, _ = solve(mrv=True, degree=True, fc=True)
+    print(show(sol))
+\end{lstlisting}
+Two experiments afterwards. Raise \texttt{CAP} to $13$ and count the solutions
+again --- the problem stops being interesting, which is what ``the binding
+constraint'' means. Then lower it to $11$ and confirm that the search reports
+failure after exploring the whole space; that is the over-constrained case of the
+last section, and it is the one a delivery manager will actually bring you.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Adding MRV to plain backtracking on this problem changed the number of
+        consistency checks by exactly zero. Explain why, and state the one change
+        that makes MRV worth having.
+  \item AC-3 narrowed every domain in the problem and removed no search nodes at
+        all. Explain how both of those can be true at once.
+  \item A delivery manager reports that the backlog does not fit and asks what to
+        do. Your solver returns ``no solution''. Describe two ways to turn that
+        into a useful answer, and say which constraint you would expect to be
+        binding here.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item A \term{CSP} is variables, domains and constraints. Its advantage over a
+        general search is that the goal test is not opaque: constraints can be
+        checked against a \emph{partial} assignment, so the search fails early.
+        That alone turned $16.8$ million assignments into $123$ nodes.
+  \item \term{Backtracking search} assigns one variable at a time and undoes the
+        last choice on failure.
+  \item \term{MRV} assigns the most constrained variable next --- fail first. The
+        \term{degree heuristic} breaks ties; \term{least constraining value}
+        orders values the other way, and both are right.
+  \item \term{Forward checking} prunes neighbours' domains after each assignment.
+        It cut the work ninefold here --- half by pruning, half by giving MRV
+        something to measure. \emph{Ordering and propagation are a package.}
+  \item \term{Arc consistency} (AC-3) propagates further, over binary constraints
+        only. On this problem it narrowed all twelve domains and removed no nodes,
+        because the binding constraint is $n$-ary and invisible to it.
+  \item A heuristic is a guess about a particular problem, not a general
+        improvement: the degree tie-breaker tripled the node count. Measure on
+        your instance, counting consistency checks rather than nodes.
+  \item For an over-constrained problem, report which constraint binds. ``No
+        solution'' is true and useless.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The minimum-remaining-values heuristic chooses:
+        (a)~the value ruling out fewest options (b)~the variable with the fewest
+        legal values left (c)~the variable in the most constraints (d)~the
+        cheapest variable.
+  \item \textbf{(MCQ)} Forward checking prunes: (a)~all variables
+        (b)~the neighbours of the variable just assigned (c)~only the variable
+        just assigned (d)~nothing until a domain empties.
+  \item \textbf{(MCQ)} AC-3 operates on: (a)~$n$-ary constraints (b)~binary
+        constraints (c)~the objective function (d)~the search tree.
+  \item \textbf{(MCQ)} An arc $X_{i} \to X_{j}$ is consistent when:
+        (a)~every value of $X_{i}$ has some consistent partner in $X_{j}$
+        (b)~some value of $X_{i}$ has a partner (c)~$D_{i} = D_{j}$
+        (d)~$X_{i}$ is assigned.
+  \item \textbf{(Short)} Why does MRV need propagation to be useful? Use the
+        measured result from this chapter in your answer.
+  \item \textbf{(Short)} Explain why MRV picks the most constrained variable while
+        least-constraining-value picks the least constraining value, and why that
+        is not a contradiction.
+  \item \textbf{(Short)} Give an $n$-ary constraint from a project you know, and
+        say what goes wrong if you expect arc consistency to enforce it.
+  \item \textbf{(Applied)} Take the constraint graph of \dsref{csp-graph}. By hand,
+        assign $\texttt{S10} := 3$ and apply forward checking. Which domains
+        change, and to what? Then say which variable MRV would select next, and
+        whether the degree heuristic would be consulted.
+\end{reviewq}

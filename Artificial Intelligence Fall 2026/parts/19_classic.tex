@@ -1,0 +1,676 @@
+%=====================================================================
+\chapter{Classic AI Systems and How to Analyse Them}\label{ch:classic}
+%=====================================================================
+\locator{6}{Part VI --- Learning, Language and Responsible AI}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} the General Problem Solver, Eliza, Student and Macsyma,
+        and \textbf{identify} the single mechanism each one rests on.
+  \item \textbf{Reconstruct} each of them in a few dozen lines using machinery from
+        earlier chapters.
+  \item \textbf{Apply} a six-column framework --- task, environment, representation,
+        inference, knowledge source, failure mode --- to analyse any AI system.
+  \item \textbf{Explain} what each system was mistaken for at the time, and why.
+  \item \textbf{Use} the framework on a system you did not build.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{planning} (means--ends analysis), \chref{fol} (unification),
+\chref{expert} (rule rewriting) and \chref{nlp} (pattern substitution). This chapter
+introduces \emph{no new machinery}: everything it builds, you have already built.
+\end{prereq}
+
+\begin{keyterms}
+General Problem Solver $\bullet$ Eliza $\bullet$ Student $\bullet$ Macsyma $\bullet$
+means--ends analysis $\bullet$ pattern substitution $\bullet$ term rewriting
+$\bullet$ microworld $\bullet$ the Eliza effect $\bullet$ system analysis $\bullet$
+failure mode $\bullet$ knowledge source
+\end{keyterms}
+
+\section{Four Systems, Four Mechanisms}
+
+The HEC 2023 outline names four programs as required case studies. They were built
+between 1961 and 1968, they were each spectacular at the time, and each one is
+essentially a single mechanism applied with taste.
+
+That is the point of this chapter, and it is why it comes last. You can now build
+all four --- not simplified versions, but the actual mechanisms --- because you
+already have the parts.
+
+\smallskip
+\noindent\begin{longtable}{@{}L{2.4cm}L{1.5cm}L{4.4cm}L{6.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{System} & \textbf{Year} & \textbf{The mechanism} & \textbf{Where you built
+it} \\
+\midrule
+\endhead
+General Problem Solver & 1961 & Means--ends analysis: reduce the difference between
+where you are and where you want to be & \chref{planning}, where it solved the
+release-planning problem \\
+Eliza & 1966 & Pattern substitution with pronoun reflection & \chref{nlp}, in about
+thirty lines \\
+Student & 1964 & Pattern matching from English into simultaneous equations, then
+algebra & \chref{fol}'s unification, restricted to strings \\
+Macsyma & 1968 & Term rewriting: apply algebraic identities as rules until nothing
+applies & \chref{expert}'s forward chaining, over expressions \\
+\bottomrule
+\caption{The four required case studies, and the chapter of this handout that
+already contains each mechanism.}\label{tab:classic}
+\end{longtable}
+
+\section{The General Problem Solver}
+
+Newell and Simon's GPS (1961) was the first program explicitly intended to be
+\emph{general}: a single solver, given a description of a domain, that would work on
+any problem in it. Its engine was means--ends analysis --- find a difference between
+the current state and the goal, select an operator that reduces that difference,
+and recursively achieve that operator's preconditions.
+
+\chref{planning} built exactly this, and measured it: on the four-component release
+problem it found an optimal plan considering $187$ operators where progression
+search expanded $1{,}163$ states.
+
+\begin{conceptbox}
+GPS was also a claim about \emph{people}. Newell and Simon collected think-aloud
+protocols from human subjects solving puzzles and argued that the traces matched
+what GPS did --- which places it in the \emph{thinking humanly} quadrant of
+\dsref{ai-axes}, not the \emph{acting rationally} one this course otherwise
+inhabits.
+
+That matters for how it should be judged. As a psychological model it was a serious
+and influential contribution. As a general problem solver it failed, and the reason
+is the one \chref{planning} demonstrated: means--ends analysis is sensitive to goal
+ordering and incomplete, and the generality was in the \emph{engine}, while all the
+difficulty turned out to be in describing the domain.
+\end{conceptbox}
+
+\section{Eliza}
+
+\chref{nlp} covered the mechanism and the effect. What belongs here is the analysis.
+
+Eliza had no goal, no representation of the conversation, and no model of the person
+it was talking to. It scored \emph{one} on \chref{introduction}'s five-point
+checklist --- it has a kind of knowledge, in that the patterns are inspectable and a
+non-programmer could edit them --- and zero on goal, search, adaptation and
+explanation.
+
+And it was taken for a therapist. That combination --- lowest possible sophistication,
+highest possible impression --- is why it is the most instructive system in this
+chapter, and why \chref{trends} returns to it.
+
+\section{Student}
+
+Bobrow's Student (1964) read algebra word problems written in English and solved
+them. The example everyone quotes is about ages and uncles; the delivery equivalent
+would be:
+
+\begin{quote}\ttfamily\small
+the sprint has twice as many bugs as stories .\\
+the number of stories is 12 .\\
+how many bugs does the sprint have ?
+\end{quote}
+
+Student worked in two stages. Patterns turned English fragments into equations ---
+\texttt{twice as many X as Y} became $X = 2Y$, \texttt{the number of X is N} became
+$X = N$ --- and then an ordinary equation solver did the algebra. Answer: $24$.
+
+\begin{alertbox}[The microworld, and what it concealed]
+Student worked beautifully inside a tiny fragment of English about arithmetic, and
+that fragment is called a \term{microworld}. The assumption of the era --- stated
+openly --- was that microworlds would be extended and joined until they covered
+ordinary language.
+
+They were not, and the reason is visible in the mechanism. Student's patterns are
+brittle in a specific way: \texttt{twice as many bugs as stories} works, and
+\texttt{the bug count is double the story count} does not, and neither does
+\texttt{there are two bugs for every story}. Each paraphrase needs its own pattern,
+the paraphrases are unbounded, and nothing in the approach makes the next one
+cheaper than the last.
+
+That is the same shape as \chref{expert}'s knowledge acquisition bottleneck, in a
+different subject. Notice it recurring: it is the characteristic failure of
+hand-built symbolic systems, and recognising it in a new project is worth more than
+any individual technique in this book.
+\end{alertbox}
+
+\section{Macsyma}
+
+Macsyma (from 1968, at MIT) did symbolic mathematics: it manipulated algebraic
+expressions as structures rather than evaluating them numerically. It could
+differentiate, integrate, factor and simplify, and it remained in serious scientific
+use for decades. Its descendants are Maxima, Mathematica and SymPy.
+
+The core is \term{term rewriting}: represent an expression as a tree, and repeatedly
+apply identities as rewrite rules until none applies.
+
+\begin{examplebox}[Rewrite rules for effort expressions]
+\begin{tabular}{@{}L{6.0cm}L{8.6cm}@{}}
+\toprule
+\textbf{Rule} & \textbf{Reading} \\
+\midrule
+$x + 0 \to x$ & adding nothing changes nothing \\
+$x \times 1 \to x$ & scaling by one changes nothing \\
+$x \times 0 \to 0$ & scaling by zero gives nothing \\
+$x + x \to 2x$ & collect like terms \\
+$(a \times x) + (b \times x) \to (a+b) \times x$ & distributivity, backwards \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+Applying these to $(3 \times e) + (2 \times e) + 0$ gives $5 \times e$. Each rule is
+a fact about arithmetic that a person can check, the engine is
+\chref{expert}'s forward chaining, and the conflict-resolution question is the same
+one: when two rules apply, which fires?
+\end{examplebox}
+
+\section{A Framework for Analysing an AI System}
+
+The HEC 2017 outline asks for \emph{analysis} of AI systems, not merely description.
+Here is a framework that works on any of them, including ones you did not build and
+whose internals you cannot see.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  col/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!8,
+              text=#1!50!black, text width=2.05cm, align=flush left,
+              inner sep=5pt, minimum height=3.3cm},
+  hd/.style={rounded corners=2pt, fill=#1, text=white,
+             font=\tiny\bfseries, inner sep=2.5pt, text width=2.02cm,
+             align=center}]
+
+\node[col=primary]   (c1) at (0,0)     {\\[2pt]What is it \emph{for}? State the
+  performance measure, as in \chref{agents}.};
+\node[col=secondary] (c2) at (2.45,0)  {\\[2pt]What does it act in? Observable?
+  Static? Adversarial?};
+\node[col=greenhl]   (c3) at (4.90,0)  {\\[2pt]How is the domain written down?
+  This is usually the whole design.};
+\node[col=purplehl]  (c4) at (7.35,0)  {\\[2pt]What does it do with the
+  representation? Search, chain, rewrite, match.};
+\node[col=tealhl]    (c5) at (9.80,0)  {\\[2pt]Where did the knowledge come
+  from --- and who can correct it?};
+\node[col=accent]    (c6) at (12.25,0) {\\[2pt]How does it fail? Gracefully or
+  off a cliff? Does it know?};
+
+\node[hd=primary]   at (c1.north) {TASK};
+\node[hd=secondary] at (c2.north) {ENVIRON\-MENT};
+\node[hd=greenhl]   at (c3.north) {REPRESEN\-TATION};
+\node[hd=purplehl]  at (c4.north) {INFERENCE};
+\node[hd=tealhl]    at (c5.north) {KNOWLEDGE\\SOURCE};
+\node[hd=accent]    at (c6.north) {FAILURE\\MODE};
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!30, line width=0.9pt,
+      text=primary!70!black, font=\scriptsize, text width=13.8cm,
+      align=flush left, inner sep=6pt] at (6.1,-2.35)
+  {\textbf{The last two columns are the ones people skip, and they are the ones that
+   predict what will happen.} \emph{Knowledge source} tells you whether the system
+   can be maintained by the people who understand the domain, or only by its
+   authors --- which decides whether it survives contact with a changing business.
+   \emph{Failure mode} tells you what happens at the edge of competence, and in
+   particular whether the system signals that it has reached one.};
+\end{tikzpicture}}%
+{Six columns for analysing an AI system. Applying them to a system you did not build
+is the skill this chapter is for.}{analysis-framework}
+
+\smallskip
+{\small
+% six narrow columns: let TeX stretch rather than overflow, and make
+% hyphens affordable (the L type deliberately makes them expensive,
+% which is right for two- and three-column tables and not for this)
+\setlength{\emergencystretch}{3em}\hyphenpenalty=100\relax
+% six columns means ten inter-column gaps; at the default 6pt they
+% alone take 2.1cm of the 16.2cm text block
+\setlength{\tabcolsep}{4pt}
+\rowcolors{2}{white}{lightbg}
+\noindent\begin{longtable}{@{}L{1.8cm}L{2.0cm}L{2.4cm}L{2.2cm}L{2.1cm}L{3.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{System} & \textbf{Task} & \textbf{Represen\-tation} &
+\textbf{Inference} & \textbf{Knowledge} & \textbf{Failure mode} \\
+\midrule
+\endhead
+\textbf{GPS} & Reach a goal & Operators: pre, add, delete & Means--ends &
+Hand-written & Incomplete; goal order matters. Reports ``no plan'' on solvable
+problems \\
+\textbf{Eliza} & Converse & Patterns with variables & Match and substitute &
+Hand-written & None detectable. It never fails --- it always has a reply, which is
+the danger \\
+\textbf{Student} & Solve a word problem & Patterns, then algebra & Match, then
+solve & Hand-written & Brittle to paraphrase. Each new phrasing needs a new
+pattern \\
+\textbf{Macsyma} & Simplify & Expression trees & Rewrite to a fixed point &
+Hand-written & Rule interactions; may loop, or stop at a form nobody
+wanted \\
+\bottomrule
+\caption{The four systems through the framework. Note that all four share one
+knowledge source --- a person, writing it down --- which is the single fact that
+most determines their history.}\label{tab:classic-analysis}
+\end{longtable}}
+
+\begin{conceptbox}
+Read down the \emph{knowledge source} column. Every one of the four was hand-built,
+and the same limit appears in all four biographies: the system worked, extending it
+required a person, and the extensions ran out before the domain did.
+
+Now read the \emph{failure mode} column, and notice that Eliza's is the worst of
+the four precisely because it has none. GPS reports failure. Student produces
+nothing on an unmatched phrasing. Macsyma leaves an expression unsimplified. Eliza
+always replies, so its user has no signal at all --- and that is the property that
+\chref{trends} argues is shared by the systems now in production.
+\end{conceptbox}
+
+\begin{worked}[Analysing a system you did not build]
+Apply the framework to something with no published internals: an IDE's code
+completion.
+
+\smallskip
+\textbf{Task.} Suggest the next tokens a developer will type. The performance
+measure is \emph{acceptance rate} --- how often a suggestion is taken --- which is
+worth writing down, because it is a measure of the developer's behaviour, not of
+whether the code was any good. Compare \chref{agents}: a measure of the agent's
+activity rather than of the environment's state, and therefore gameable.
+
+\smallskip
+\textbf{Environment.} Partially observable --- it sees the file and perhaps the
+project, not the developer's intent. Dynamic; the code changes as they type.
+Single-agent. Episodic, approximately.
+
+\smallskip
+\textbf{Representation.} Unknown from the outside, and the framework lets us say
+something anyway. If it completes an identifier defined three files away, it has a
+symbol table --- an explicit representation. If it produces plausible code calling a
+method that does not exist, it does not.
+
+\smallskip
+\textbf{Inference.} Test it. A completion that is always correct about types and
+never invents a name is doing symbolic lookup. One that is usually right and
+occasionally confident and wrong is doing something statistical. Most current tools
+do both, and the two failure signatures are distinguishable from outside.
+
+\smallskip
+\textbf{Knowledge source.} The corpus it was trained on, plus the current project.
+Neither is correctable by the developer, which is a real difference from every
+system in Table~\ref{tab:classic-analysis}: nobody can fix a wrong suggestion, only
+decline it.
+
+\smallskip
+\textbf{Failure mode.} This is the column that decides how to use it. If it fails by
+suggesting nothing, it is safe and occasionally unhelpful. If it fails by suggesting
+something fluent and wrong, it is Eliza with a compiler --- and the mitigation is
+that the compiler and the tests are the failure detector the system does not have.
+
+\smallskip
+\textbf{What the analysis produced.} Not a verdict, but three testable questions and
+one operational rule: never accept a completion that the type checker and the tests
+have not seen. That rule came from the last column, which is why it is the one not
+to skip.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Describing a system instead of analysing it.} ``Eliza simulates a
+        therapist'' is a description. The analysis is that it matches patterns, has
+        no representation, and cannot fail detectably.
+  \item \textbf{Skipping the knowledge-source column.} It predicts whether the
+        system survives a change in the business, and all four classic systems
+        share the same answer.
+  \item \textbf{Skipping the failure-mode column.} A system that always produces an
+        answer has the most dangerous failure mode there is.
+  \item \textbf{Mistaking a microworld result for a general one.} Student worked on
+        a fragment of English and the fragment did not extend. Ask what the
+        demonstration excluded.
+  \item \textbf{Judging GPS as a problem solver when it was offered as a
+        psychological model.} Identify the quadrant of \dsref{ai-axes} first, then
+        choose the evidence.
+  \item \textbf{Assuming you cannot analyse a closed system.} Five of the six
+        columns can be filled from the outside by testing, as the worked example
+        does.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[Four Systems in One File]
+Each of the four reconstructed with machinery from earlier chapters, then the
+analysis table printed from the code.
+\begin{lstlisting}[language=Python]
+"""Chapter 19 lab -- the four classic systems, reconstructed.
+
+Nothing here is new. GPS is Chapter 9's means-ends analysis, Eliza is
+Chapter 18's pattern substitution, Student is Chapter 12's unification
+restricted to strings, and Macsyma is Chapter 13's forward chaining
+over expression trees.
+"""
+
+import re
+
+# ===================================================================
+# 1. GPS (1961): means-ends analysis          -- as in Chapter 9
+# ===================================================================
+OPERATORS = [
+    # (name, preconditions, add, delete)
+    ("code", set(), {"coded"}, set()),
+    ("review", {"coded"}, {"reviewed"}, set()),
+    ("test", {"reviewed", "staging free"},
+     {"tested", "staging busy"}, {"staging free"}),
+    ("deploy", {"tested"}, {"deployed"}, set()),
+    ("release staging", {"staging busy"},
+     {"staging free"}, {"staging busy"}),
+]
+
+
+def gps(state, goals, depth=0, trace=None):
+    """Achieve each goal by reducing differences. Chapter 9's engine."""
+    if trace is None:
+        trace = []
+    if depth > 20:
+        return None, trace
+    for g in goals:
+        if g in state:
+            continue
+        achieved = False
+        for (name, pre, add, dele) in OPERATORS:
+            if g not in add:
+                continue
+            got, trace = gps(state, sorted(pre), depth + 1, trace)
+            if got is None:
+                continue
+            state = got
+            if not pre <= state:
+                continue
+            state = (state - dele) | add
+            trace.append(name)
+            achieved = True
+            break
+        if not achieved:
+            return None, trace
+    return state, trace
+
+
+# ===================================================================
+# 2. Eliza (1966): pattern substitution       -- as in Chapter 18
+# ===================================================================
+REFLECT = {"my": "your", "i": "you", "me": "you", "am": "are"}
+ELIZA_RULES = [
+    (r"^i am (.*)$", "How long have you been {0}?"),
+    (r"^my (\w+) keeps (.*)$", "Tell me more about your {0}."),
+    (r"^because (.*)$", "Is that the real reason?"),
+]
+
+
+def eliza(line):
+    low = line.lower().strip().rstrip(".!?")
+    for pat, tmpl in ELIZA_RULES:
+        m = re.match(pat, low)
+        if m:
+            groups = [" ".join(REFLECT.get(w, w) for w in g.split())
+                      for g in m.groups()]
+            return tmpl.format(*groups)
+    return "Can you tell me more about that?"
+
+
+# ===================================================================
+# 3. Student (1964): English -> equations     -- Chapter 12's matching
+# ===================================================================
+STUDENT_PATTERNS = [
+    # "the sprint has twice as many bugs as stories"
+    (r"^the \w+ has twice as many (\w+) as (\w+)$",
+     lambda m: (m.group(1), ("times", 2, m.group(2)))),
+    # "the number of stories is 12"
+    (r"^the number of (\w+) is (\d+)$",
+     lambda m: (m.group(1), ("const", int(m.group(2))))),
+]
+
+
+def student(sentences, question):
+    """Turn English into equations, then solve them."""
+    eqs = {}
+    for s in sentences:
+        low = s.lower().strip().rstrip(".")
+        for pat, build in STUDENT_PATTERNS:
+            m = re.match(pat, low)
+            if m:
+                var, rhs = build(m)
+                eqs[var] = rhs
+                break
+        else:
+            return None, eqs, "no pattern matched: %r" % s
+
+    def value(var, seen=None):
+        seen = seen or set()
+        if var in seen:
+            return None                 # circular definition
+        rhs = eqs.get(var)
+        if rhs is None:
+            return None
+        if rhs[0] == "const":
+            return rhs[1]
+        if rhs[0] == "times":
+            inner = value(rhs[2], seen | {var})
+            return None if inner is None else rhs[1] * inner
+        return None
+
+    m = re.match(r"^how many (\w+) does the \w+ have$",
+                 question.lower().strip().rstrip("?"))
+    if not m:
+        return None, eqs, "question not understood"
+    return value(m.group(1)), eqs, None
+
+
+# ===================================================================
+# 4. Macsyma (1968): term rewriting          -- Chapter 13's chaining
+# ===================================================================
+# an expression is a nested tuple: ("+", a, b) or ("*", a, b),
+# a number, or a string (a symbol)
+def rewrite_once(e):
+    """One pass of the identities. Returns (expr, rule name or None)."""
+    if not isinstance(e, tuple):
+        return e, None
+    op, a, b = e
+    if op == "+" and b == 0:
+        return a, "x + 0 -> x"
+    if op == "+" and a == 0:
+        return b, "0 + x -> x"
+    if op == "*" and b == 1:
+        return a, "x * 1 -> x"
+    if op == "*" and (a == 0 or b == 0):
+        return 0, "x * 0 -> 0"
+    if op == "+" and a == b:
+        return ("*", 2, a), "x + x -> 2x"
+    # (a*x) + (b*x) -> (a+b)*x
+    if (op == "+" and isinstance(a, tuple) and isinstance(b, tuple)
+            and a[0] == "*" and b[0] == "*" and a[2] == b[2]
+            and isinstance(a[1], int) and isinstance(b[1], int)):
+        return ("*", a[1] + b[1], a[2]), "(a*x)+(b*x) -> (a+b)*x"
+    # recurse
+    na, r = rewrite_once(a)
+    if r:
+        return (op, na, b), r
+    nb, r = rewrite_once(b)
+    if r:
+        return (op, a, nb), r
+    return e, None
+
+
+def simplify(e, limit=25):
+    """Forward chaining to a fixed point -- Chapter 13, over trees."""
+    steps = []
+    for _ in range(limit):
+        e2, rule = rewrite_once(e)
+        if rule is None:
+            return e, steps
+        steps.append(rule)
+        e = e2
+    return e, steps
+
+
+def show(e):
+    if not isinstance(e, tuple):
+        return str(e)
+    return "(%s %s %s)" % (show(e[1]), e[0], show(e[2]))
+
+
+if __name__ == "__main__":
+    print("=" * 62)
+    print("1. GENERAL PROBLEM SOLVER (1961) -- means-ends analysis")
+    print("=" * 62)
+    final, plan = gps(frozenset({"staging free"}), ["deployed"])
+    print("   goal: deployed")
+    print("   plan:", " -> ".join(plan))
+    assert plan == ["code", "review", "test", "deploy"]
+    print("   This is Chapter 9's engine, unchanged.")
+
+    print()
+    print("=" * 62)
+    print("2. ELIZA (1966) -- pattern substitution")
+    print("=" * 62)
+    for line in ("I am worried about the release",
+                 "my deploy keeps failing",
+                 "because the config is wrong",
+                 "the quarterly numbers look fine"):
+        print("   > %-34s %s" % (line, eliza(line)))
+    print("   No representation of the conversation. It cannot fail,")
+    print("   which is the most dangerous failure mode of the four.")
+
+    print()
+    print("=" * 62)
+    print("3. STUDENT (1964) -- English into equations")
+    print("=" * 62)
+    facts = ["the sprint has twice as many bugs as stories",
+             "the number of stories is 12"]
+    q = "how many bugs does the sprint have?"
+    ans, eqs, err = student(facts, q)
+    for f in facts:
+        print("   given: %s" % f)
+    print("   equations:", eqs)
+    print("   question: %s" % q)
+    print("   answer:", ans)
+    assert ans == 24
+
+    print()
+    print("   ... and the brittleness:")
+    for para in ("the bug count is double the story count",
+                 "there are two bugs for every story"):
+        ans2, _, err2 = student([para, facts[1]], q)
+        print("   %-42s -> %s" % (para, err2 or ans2))
+        assert ans2 is None
+    print("   Each paraphrase needs its own pattern, and the")
+    print("   paraphrases are unbounded. This is Chapter 13's")
+    print("   knowledge acquisition bottleneck, in another subject.")
+
+    print()
+    print("=" * 62)
+    print("4. MACSYMA (1968) -- term rewriting")
+    print("=" * 62)
+    expr = ("+", ("+", ("*", 3, "e"), ("*", 2, "e")), 0)
+    print("   before:", show(expr))
+    out, steps = simplify(expr)
+    print("   after: ", show(out))
+    for s in steps:
+        print("      applied  %s" % s)
+    assert out == ("*", 5, "e")
+    print("   Forward chaining to a fixed point, over trees instead")
+    print("   of over facts. Chapter 13's engine, same conflict-")
+    print("   resolution question: when two rules apply, which?")
+
+    print()
+    print("=" * 62)
+    print("THE ANALYSIS")
+    print("=" * 62)
+    ANALYSIS = [
+        ("GPS", "reach a goal", "operators", "means-ends",
+         "hand-written", "incomplete; goal order"),
+        ("Eliza", "converse", "patterns", "match+substitute",
+         "hand-written", "NONE DETECTABLE"),
+        ("Student", "solve a problem", "patterns+algebra", "match, solve",
+         "hand-written", "brittle to paraphrase"),
+        ("Macsyma", "simplify", "expression trees", "rewrite",
+         "hand-written", "loops; wrong fixed point"),
+    ]
+    print("%-9s %-16s %-17s %-17s %-13s %s"
+          % ("SYSTEM", "TASK", "REPRESENTATION", "INFERENCE",
+             "KNOWLEDGE", "FAILURE MODE"))
+    print("-" * 100)
+    for row in ANALYSIS:
+        print("%-9s %-16s %-17s %-17s %-13s %s" % row)
+
+    sources = {r[4] for r in ANALYSIS}
+    assert sources == {"hand-written"}
+    print()
+    print("Every one of the four has the same knowledge source, and")
+    print("that single fact explains all four biographies: each")
+    print("worked, each needed a person to extend it, and each ran")
+    print("out of people before it ran out of domain.")
+\end{lstlisting}
+Then add a Student pattern for one of the two paraphrases that currently fail, and
+notice how long it takes and how little it generalises. That experience --- not the
+argument about it --- is what the chapter is for.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Name the mechanism behind each of the four systems, and the chapter of this
+        handout in which you built it.
+  \item Eliza's failure mode is recorded as ``none detectable''. Explain why that is
+        worse than GPS's ``reports failure on solvable problems'', and relate it to
+        how a modern language system should be evaluated.
+  \item Every one of the four has the same knowledge source. State it, and explain
+        what it predicts about a hand-built symbolic system deployed in a changing
+        business.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item The four required case studies are each a single mechanism applied with
+        taste: \term{GPS} is means--ends analysis (\chref{planning}), \term{Eliza}
+        is pattern substitution (\chref{nlp}), \term{Student} is pattern matching
+        into equations (\chref{fol}), \term{Macsyma} is term rewriting
+        (\chref{expert}).
+  \item GPS was offered as a model of human problem solving --- the \emph{thinking
+        humanly} quadrant --- and should be judged as one. Its generality was in
+        the engine; the difficulty was in describing the domain.
+  \item Student worked inside a \term{microworld} and the microworld did not extend.
+        Each paraphrase needed its own pattern, which is \chref{expert}'s knowledge
+        acquisition bottleneck in another subject.
+  \item Analyse a system on six columns: \emph{task, environment, representation,
+        inference, knowledge source, failure mode}. The last two are the ones people
+        skip and the ones that predict what will happen.
+  \item All four share one knowledge source --- a person writing it down --- and
+        that single fact explains all four biographies.
+  \item Eliza's failure mode is the worst of the four because it has none: it always
+        replies, so its user gets no signal. That property is shared by systems now
+        in production, which is why \chref{trends} returns to it.
+  \item Five of the six columns can be filled from outside a system you did not
+        build, by testing. That is the transferable skill in this chapter.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The General Problem Solver's engine was:
+        (a)~resolution (b)~means--ends analysis (c)~term rewriting (d)~pattern
+        substitution.
+  \item \textbf{(MCQ)} Macsyma's core mechanism is: (a)~numerical evaluation
+        (b)~term rewriting to a fixed point (c)~backward chaining (d)~unification
+        with the occurs check.
+  \item \textbf{(MCQ)} A \emph{microworld} is: (a)~a small computer
+        (b)~a restricted domain in which a technique works, which was expected to
+        extend (c)~a simulation environment (d)~a subset of first-order logic.
+  \item \textbf{(MCQ)} Which failure mode is the most dangerous?
+        (a)~reports failure on solvable problems (b)~brittle to paraphrase
+        (c)~no detectable failure (d)~may loop.
+  \item \textbf{(Short)} Explain why Student's brittleness and the expert-system
+        knowledge acquisition bottleneck are the same phenomenon.
+  \item \textbf{(Short)} GPS was a psychological model and a problem solver. Say how
+        the evidence you would collect differs between those two claims.
+  \item \textbf{(Short)} Give two of the six analysis columns that can be filled
+        from outside a closed system, and describe the test you would run for each.
+  \item \textbf{(Applied)} Apply the six-column framework to a spam filter, a
+        satellite navigation system, or a tool you use daily. Fill every column,
+        and state the one operational rule your analysis of the failure-mode column
+        produces.
+\end{reviewq}

@@ -1,0 +1,719 @@
+%=====================================================================
+\chapter{Learning from Examples}\label{ch:learning}
+%=====================================================================
+\locator{6}{Part VI --- Learning, Language and Responsible AI}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Name} the three learning paradigms and \textbf{give} a delivery
+        example of each.
+  \item \textbf{Train} a perceptron by hand on a small table, applying the learning
+        rule step by step.
+  \item \textbf{Show} that a single perceptron cannot represent exclusive-or, and
+        \textbf{explain} what that result did to the field.
+  \item \textbf{Recognise} non-convergence from a training trace, and
+        \textbf{distinguish} it from slow convergence.
+  \item \textbf{State} precisely where this course stops and \emph{Machine
+        Learning} begins.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{introduction} --- and specifically its claim that learning is one route to
+intelligent behaviour rather than the definition of it. \chref{uncertainty} for the
+probabilistic view of evidence. Nothing in Parts~II to~V depends on this chapter.
+\end{prereq}
+
+\begin{keyterms}
+supervised learning $\bullet$ unsupervised learning $\bullet$ reinforcement learning
+$\bullet$ training example $\bullet$ feature $\bullet$ label $\bullet$ hypothesis
+$\bullet$ generalisation $\bullet$ perceptron $\bullet$ weight $\bullet$ bias
+$\bullet$ learning rate $\bullet$ perceptron learning rule $\bullet$ epoch $\bullet$
+decision boundary $\bullet$ linear separability $\bullet$ exclusive-or $\bullet$
+artificial neural network
+\end{keyterms}
+
+\section{One Chapter, and Why}
+
+Everything so far has been \emph{told} the rules. Constraints, operators, logical
+sentences, conditional probability tables --- somebody wrote them down, and the
+agent's job was to reason with them.
+
+This chapter is about the other case: the rules are not available, and only examples
+are. It exists for three reasons, and it is important to be clear which.
+
+\textbf{The HEC outlines require it.} The 2017 outline names supervised,
+unsupervised and reinforcement learning; the 2023 outline names artificial neural
+networks and learning from examples. This chapter covers all of them, in named
+sections, and the Course Specification traces each clause here.
+
+\textbf{You cannot judge symbolic methods without it.} \chref{expert} argued that
+the expert-system industry collapsed on the knowledge acquisition bottleneck, and
+that machine learning dissolves it. That argument is empty unless you have seen a
+program acquire a rule from data.
+
+\textbf{And it is a signpost.} \emph{Machine Learning} (Semester 6) has this course
+as its published prerequisite and owns the subject entirely. This chapter goes as far
+as the perceptron and the exclusive-or limit --- the exact point at which the
+historical field stalled for fifteen years --- and then stops. Appendix~F states the
+boundary chapter by chapter.
+
+\section{Three Kinds of Learning}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  card/.style={rounded corners=3pt, draw=#1, line width=1.1pt, fill=#1!8,
+               text width=4.3cm, align=flush left, inner sep=6pt,
+               text=#1!50!black, minimum height=3.9cm},
+  hd/.style={rounded corners=2pt, fill=#1, text=white,
+             font=\scriptsize\bfseries, inner sep=3pt, text width=4.1cm,
+             align=center}]
+
+\node[card=primary] (s) at (0,0)
+  {\\[2pt]\textbf{Given:} examples, each with the right answer attached.\\[4pt]
+   \emph{Delivery example:} two hundred past tasks, each labelled \emph{late} or
+   \emph{on time}.\\[4pt]
+   \textbf{Wants:} a rule that labels a task it has never seen.\\[4pt]
+   \textbf{The catch:} fitting the examples is easy; being right about new ones is
+   the whole problem.};
+
+\node[card=goldhl, right=0.5cm of s] (u)
+  {\\[2pt]\textbf{Given:} examples with \emph{no} answers.\\[4pt]
+   \emph{Delivery example:} six months of tickets, and the question ``what kinds of
+   tickets are there?''\\[4pt]
+   \textbf{Wants:} structure --- groups, outliers, dimensions.\\[4pt]
+   \textbf{The catch:} there is no right answer to check against, so ``did it
+   work?'' is itself a research question.};
+
+\node[card=greenhl, right=0.5cm of u] (r)
+  {\\[2pt]\textbf{Given:} an environment, and a reward that arrives late.\\[4pt]
+   \emph{Delivery example:} an escalation policy, judged by how the quarter went.\\[4pt]
+   \textbf{Wants:} a policy --- what to do in each state.\\[4pt]
+   \textbf{The catch:} credit assignment. Which of a thousand decisions caused the
+   outcome?};
+
+\node[hd=primary] at (s.north) {SUPERVISED};
+\node[hd=goldhl]  at (u.north) {UNSUPERVISED};
+\node[hd=greenhl] at (r.north) {REINFORCEMENT};
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!30, line width=0.8pt,
+      text=primary!70!black, font=\scriptsize, text width=14.2cm,
+      align=flush left, inner sep=6pt] at (4.85,-2.65)
+  {\textbf{What all three have in common, and what separates them from Parts II--V.}
+   Every method in this book so far produced an answer that was \emph{correct given
+   what it was told} --- a plan that works, a proof that holds, a posterior that
+   follows. A learned rule comes with no such guarantee. It comes with an
+   \emph{estimate} of how often it will be right on data nobody has seen, and
+   producing an honest estimate turns out to be harder than producing the rule.
+   That is the subject of \emph{Machine Learning}, and it is why that course spends
+   two chapters on evaluation before teaching a single algorithm.};
+\end{tikzpicture}}%
+{The three learning paradigms, with a delivery example of each. This section
+discharges the HEC 2017 outline's \emph{Learning} clause; the sections that follow
+take the first one further.}{paradigms}
+
+\section{Supervised Learning}
+
+Two hundred tasks have been completed. For each, the team recorded the estimated
+effort in days and a clarity score for the requirement, and whether the task
+finished late. The question is whether a rule can be extracted that predicts
+lateness for the next task.
+
+Here are twelve of them, enough to work by hand:
+
+\smallskip
+\noindent\begin{tabular}{@{}L{1.3cm}L{1.8cm}L{1.8cm}L{1.5cm}L{1.3cm}L{1.8cm}L{1.8cm}L{1.5cm}@{}}
+\toprule
+\textbf{Task} & \textbf{Effort} & \textbf{Clarity} & \textbf{Late?} &
+\textbf{Task} & \textbf{Effort} & \textbf{Clarity} & \textbf{Late?} \\
+\midrule
+1 & 2 & 9 & no & 7 & 9 & 3 & yes \\
+2 & 3 & 8 & no & 8 & 8 & 2 & yes \\
+3 & 4 & 9 & no & 9 & 10 & 4 & yes \\
+4 & 3 & 7 & no & 10 & 9 & 1 & yes \\
+5 & 5 & 8 & no & 11 & 7 & 2 & yes \\
+6 & 2 & 6 & no & 12 & 8 & 4 & yes \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+Nobody stated a rule. The rule --- if there is one --- has to come out of the table.
+
+\begin{definitionbox}[The perceptron]
+A \term{perceptron} computes a weighted sum of its inputs and fires if the sum
+exceeds a threshold:
+\[
+  \hat{y} \;=\;
+  \begin{cases}
+    1 & \text{if } \sum_{i} w_{i} x_{i} + b > 0 \\
+    0 & \text{otherwise}
+  \end{cases}
+\]
+The \term{weights} $w_{i}$ say how much each feature counts and in which direction;
+the \term{bias} $b$ shifts the threshold.
+
+Learning means adjusting them. For each example in turn, apply the
+\term{perceptron learning rule}:
+\[
+  w_{i} \;\leftarrow\; w_{i} + \eta\,(y - \hat{y})\, x_{i},
+  \qquad
+  b \;\leftarrow\; b + \eta\,(y - \hat{y})
+\]
+where $y$ is the true label and $\eta$ the \term{learning rate}. If the prediction
+is right, $y - \hat{y} = 0$ and nothing changes. If it is wrong, every weight moves
+in the direction that would have helped, by an amount proportional to the input.
+
+\smallskip
+\noindent\emph{After} F.\ Rosenblatt, ``The Perceptron: A Probabilistic Model for
+Information Storage and Organization in the Brain'', \emph{Psychological Review}
+65, 1958.
+\end{definitionbox}
+
+Trained on the twelve tasks with $\eta = 0.1$, starting from all-zero weights, the
+perceptron converges after \textbf{three passes through the data and only two weight
+updates}, reaching $100\%$ accuracy. The rule it found is
+\[
+  0.70 \times \mathit{effort} \;-\; 0.60 \times \mathit{clarity} \;>\; 0
+\]
+which reads: \emph{a task is predicted late when its effort outweighs its clarity},
+in roughly a $6{:}7$ ratio. Nobody wrote that down. It was extracted from twelve
+rows, and that is the thing \chref{expert}'s knowledge engineer could not do.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=11.0cm, height=6.0cm,
+  xlabel={estimated effort (days)}, ylabel={requirement clarity},
+  xlabel style={font=\scriptsize}, ylabel style={font=\scriptsize},
+  tick label style={font=\tiny},
+  xmin=0, xmax=12, ymin=0, ymax=11,
+  grid=both, major grid style={gray!18}, minor grid style={gray!8},
+  legend style={font=\tiny, at={(0.97,0.97)}, anchor=north east,
+                draw=gray!40, fill=white},
+  legend cell align=left]
+
+\addplot[only marks, mark=*, mark size=2.2pt, greenhl] coordinates {
+  (2,9) (3,8) (4,9) (3,7) (5,8) (2,6)};
+\addlegendentry{finished on time}
+\addplot[only marks, mark=square*, mark size=2.2pt, accent] coordinates {
+  (9,3) (8,2) (10,4) (9,1) (7,2) (8,4)};
+\addlegendentry{finished late}
+
+% boundary: 0.70 e - 0.60 c = 0  ->  c = (0.70/0.60) e
+\addplot[primary, line width=1.3pt, domain=0:9.4] {1.1667*x};
+\addlegendentry{$0.70\,e - 0.60\,c = 0$, learned}
+
+\node[font=\tiny\itshape, text=primary, anchor=west] at (axis cs:0.4,9.6)
+  {learned from the twelve points,};
+\node[font=\tiny\itshape, text=primary, anchor=west] at (axis cs:0.4,8.9)
+  {in 3 epochs and 2 updates};
+\end{axis}
+\end{tikzpicture}}%
+{The twelve tasks and the boundary the perceptron learned. Everything above the line
+is predicted on time, everything below it late.}{perceptron}
+
+\section{Artificial Neural Networks}
+
+A perceptron is a single artificial neuron: inputs, weights, a summation and a
+threshold, loosely modelled on a biological cell. An \term{artificial neural
+network} connects many of them in layers, so that the outputs of one layer are the
+inputs of the next.
+
+The idea is old --- McCulloch and Pitts proposed the artificial neuron in 1943 ---
+and the reason it took until the 1980s to become useful is the subject of the next
+section. What a layered network buys is the ability to represent decision boundaries
+that are not straight lines, and what it costs is a learning rule: the perceptron
+rule works because we know the right answer at the output, and in a hidden layer we
+do not. Solving that is \term{backpropagation}, and it is Chapter~13 of
+\emph{Machine Learning}.
+
+\section{Linear Separability and the Exclusive-Or Limit}
+
+Look again at \dsref{perceptron}. The perceptron found \emph{a straight line}. That
+is all a perceptron can ever find, because $\sum w_{i}x_{i} + b = 0$ is the equation
+of a line (a plane, a hyperplane). A dataset that some line can separate is
+\term{linearly separable}.
+
+Now a small change to the delivery story. Suppose the team observes that tasks go
+late when \emph{exactly one} of two things is true --- the effort is large, or the
+requirement is unclear --- and that when \emph{both} are true everybody knows it is
+hard, plans accordingly, and it lands on time. Four representative tasks:
+
+\smallskip
+\noindent\begin{tabular}{@{}L{2.4cm}L{2.4cm}L{2.4cm}L{6.0cm}@{}}
+\toprule
+\textbf{Effort} & \textbf{Clarity} & \textbf{Late?} & \textbf{Why} \\
+\midrule
+small (2) & high (9) & no & easy, and understood \\
+large (9) & low (2) & no & obviously hard; planned for \\
+large (9) & high (9) & yes & looked easy because it was clear \\
+small (2) & low (2) & yes & looked easy because it was small \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+That is \term{exclusive-or}, and no straight line separates those four points.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=10.4cm, height=5.8cm,
+  xlabel={estimated effort (days)}, ylabel={requirement clarity},
+  xlabel style={font=\scriptsize}, ylabel style={font=\scriptsize},
+  tick label style={font=\tiny},
+  xmin=0, xmax=12, ymin=0, ymax=12,
+  grid=both, major grid style={gray!18}, minor grid style={gray!8},
+  legend style={font=\tiny, at={(0.03,0.97)}, anchor=north west,
+                draw=gray!40, fill=white},
+  legend cell align=left]
+
+\addplot[only marks, mark=*, mark size=3pt, greenhl] coordinates {(2,9) (9,2)};
+\addlegendentry{on time}
+\addplot[only marks, mark=square*, mark size=3pt, accent] coordinates {(9,9) (2,2)};
+\addlegendentry{late}
+
+\addplot[neutral, line width=0.9pt, dash pattern=on 3pt off 2pt,
+         domain=0:12] {12-x};
+\addplot[neutral, line width=0.9pt, dash pattern=on 3pt off 2pt,
+         domain=0:12] {x};
+\addplot[neutral, line width=0.9pt, dash pattern=on 3pt off 2pt,
+         domain=0:12] {5.5};
+
+\node[font=\tiny\itshape, text=neutral, anchor=west] at (axis cs:0.4,11.2)
+  {three candidate lines --- each gets 3 of 4 right};
+\node[font=\tiny\bfseries, text=accent, anchor=west] at (axis cs:3.2,5.9)
+  {no line does better};
+\end{axis}
+\end{tikzpicture}}%
+{The exclusive-or arrangement. The two \emph{late} tasks sit at opposite corners,
+and so do the two \emph{on time} tasks. Any straight line has at least one point on
+the wrong side.}{xor}
+
+Run the perceptron on it and it never stops. The lab allows it $100$, then $1{,}000$,
+then $10{,}000$ epochs and counts $383$, $3{,}983$ and $39{,}983$ weight updates ---
+the count simply grows with the budget, because the weights are still oscillating
+when the budget runs out. Nothing in the trace says ``impossible''; it looks exactly
+like slow convergence.
+
+\begin{alertbox}[Proving the limit, not merely observing it]
+Failing to converge is weak evidence. The learning rate might be wrong, the
+initialisation unlucky, the budget too small --- any practitioner has seen all
+three.
+
+So the lab settles it by brute force: it sweeps a grid of every line
+$w_{0}x + w_{1}y + b = 0$ over a wide range of coefficients and records the best
+accuracy any of them achieves. The answer is \textbf{75\%} --- three points out of
+four --- and no line in the grid does better.
+
+That is the difference between ``my training run failed'' and ``this hypothesis
+class cannot represent this function''. The first is an engineering problem; the
+second is a mathematical fact, and no amount of training fixes it. Learning to tell
+them apart is worth more than the perceptron rule itself.
+\end{alertbox}
+
+\begin{conceptbox}
+In 1969 Minsky and Papert published exactly this analysis --- with more rigour and
+over a wider class of problems --- in \emph{Perceptrons}. The effect on the field was
+severe: funding for neural network research largely stopped, and the line stayed
+closed for roughly fifteen years.
+
+Two things are worth knowing about that episode, because it is routinely retold
+badly.
+
+\emph{The result is correct.} A single-layer perceptron genuinely cannot represent
+exclusive-or, and the lab reproduces the proof.
+
+\emph{The conclusion drawn from it was not.} A network with a hidden layer can
+represent exclusive-or easily; what was missing in 1969 was a way to \emph{train}
+one, and backpropagation supplied it in the mid-1980s. So the field abandoned a
+line of work because a limitation of the simplest case was read as a limitation of
+the approach --- which is \chref{introduction}'s recurring pattern, a true result
+about reach mistaken for a verdict.
+\end{conceptbox}
+
+\section{Unsupervised Learning}
+
+Six months of tickets, no labels, and the question \emph{what kinds of ticket do we
+actually get?}
+
+There is no right answer to check against, which is what makes this different in
+kind rather than in difficulty. A program can group tickets by similarity and the
+groups may be illuminating or useless; nothing in the data says which. Judging the
+result requires a person who knows the domain, and inventing measures that stand in
+for that judgement is an active research area.
+
+That is as far as this course goes. \emph{Machine Learning} Chapters~15 and~16 give
+$k$-means, hierarchical clustering, principal component analysis and
+self-organizing maps, with the evaluation machinery that makes them usable.
+
+\section{Reinforcement Learning}
+
+An escalation policy is not judged ticket by ticket. It is judged by how the quarter
+went --- and a quarter contains a thousand decisions, of which perhaps three
+mattered.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  b/.style={rounded corners=4pt, draw=#1, line width=1.2pt, fill=#1!10,
+            text=#1!55!black, font=\small\bfseries, minimum width=3.0cm,
+            minimum height=1.0cm, align=center},
+  a/.style={-{Stealth[length=2.4mm]}, line width=1.1pt}]
+
+\node[b=primary] (ag) at (0,0)  {agent\\{\scriptsize the escalation policy}};
+\node[b=goldhl]  (en) at (6.2,0){environment\\{\scriptsize the queue, the team,
+  the quarter}};
+
+\draw[a, accent] (ag.north east) .. controls +(1.6,0.9) and +(-1.6,0.9) ..
+  (en.north west) node[midway, above, font=\scriptsize, text=accent]
+  {\textbf{action}: escalate, defer, merge};
+\draw[a, secondary] (en.south west) .. controls +(-1.6,-0.9) and +(1.6,-0.9) ..
+  (ag.south east) node[midway, below, font=\scriptsize, text=secondary]
+  {\textbf{state} and \textbf{reward}};
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!30, line width=0.9pt,
+      text=primary!70!black, font=\scriptsize, text width=13.0cm,
+      align=flush left, inner sep=6pt] at (3.1,-2.2)
+  {\textbf{The hard part is the delay.} The reward for tonight's escalation arrives
+   at the end of the quarter, mixed with the consequences of nine hundred and
+   ninety-nine other decisions. Working out which actions deserve the credit is the
+   \term{credit assignment problem}, and it is the reason reinforcement learning is
+   a separate subject rather than a variation on the previous two.
+
+   \smallskip
+   Note the shape of this diagram: it is \dsref{agent-loop} from \chref{agents},
+   with a reward signal added. The vocabulary of Part~I was chosen to make that
+   continuity visible.};
+\end{tikzpicture}}%
+{The reinforcement learning loop. One figure is all this course gives it;
+\emph{Machine Learning} Chapters 18--20 develop Markov decision processes, Monte
+Carlo methods and Q-learning.}{rl-loop}
+
+\section{Where This Course Hands Over}
+
+\begin{alertbox}[The boundary, stated exactly]
+\textbf{This chapter has taught:} the three paradigms and what distinguishes them; a
+perceptron trained by hand; the fact that it finds a straight line; and a proof that
+some problems have no straight line.
+
+\textbf{This course does not teach, and \emph{Machine Learning} does:} multi-layer
+networks and backpropagation (its Chapter~13); how to tell whether a learned rule
+will work on data it has not seen --- generalisation, overfitting, the bias--variance
+trade-off, cross-validation (Chapters~7 and~8, taught \emph{before} the algorithms,
+deliberately); decision trees, naive Bayes, $k$-nearest neighbours, support vector
+machines, ensembles (Chapters~9--14); clustering and dimensionality reduction
+(15--17); and Markov decision processes and reinforcement learning (18--20).
+
+\textbf{Why not here.} Two reasons, and neither is that the material is too hard.
+It would duplicate a course three semesters later that has the statistical
+prerequisites to do it properly --- and the room it would take comes out of the
+symbolic material, which no other core course in the degree covers at all. A
+graduate who has not met resolution or arc consistency will not meet them anywhere
+else; a graduate who has not met backpropagation meets it in Semester~6.
+\end{alertbox}
+
+\begin{worked}[Training the perceptron by hand]
+Weights start at zero, $\eta = 0.1$, and the rule fires when
+$w_{1}e + w_{2}c + b > 0$. Take the examples in order.
+
+\smallskip
+\textbf{Task 1} $(e,c) = (2,9)$, not late. Sum $= 0$, which is not $> 0$, so
+$\hat{y} = 0$. Correct, and \emph{nothing changes} --- the rule only learns from
+mistakes.
+
+\smallskip
+Tasks 2--6 are all \emph{not late} and all still predicted $0$. No change.
+
+\smallskip
+\textbf{Task 7} $(9,3)$, late. Sum $= 0$, so $\hat{y} = 0$ and
+$y - \hat{y} = 1$. Update:
+\[
+  w_{1} = 0 + 0.1 \times 1 \times 9 = 0.9, \quad
+  w_{2} = 0 + 0.1 \times 1 \times 3 = 0.3, \quad
+  b = 0 + 0.1 = 0.1
+\]
+Now the rule is $0.9e + 0.3c + 0.1 > 0$ --- which predicts \emph{everything} late,
+since all inputs are positive. It has over-corrected, and that is normal.
+
+\smallskip
+\textbf{Tasks 8--12} are all late and now all predicted late. No change. End of the
+first pass: \textbf{one error}.
+
+\smallskip
+\textbf{Second pass, task 1} $(2,9)$, not late. Sum
+$= 0.9(2) + 0.3(9) + 0.1 = 1.8 + 2.7 + 0.1 = 4.6 > 0$, so $\hat{y} = 1$: wrong.
+Now $y - \hat{y} = -1$:
+\[
+  w_{1} = 0.9 - 0.1(2) = 0.7, \quad
+  w_{2} = 0.3 - 0.1(9) = -0.6, \quad
+  b = 0.1 - 0.1 = 0.0
+\]
+\textbf{The clarity weight has gone negative}, which is the moment the rule becomes
+sensible: more clarity now argues \emph{against} lateness. The learning rule was not
+told that; it followed from one mistake on one example.
+
+\smallskip
+Tasks 2--12 in the second pass are all now predicted correctly. End of pass two:
+\textbf{one error}.
+
+\smallskip
+\textbf{Third pass:} zero errors. Converged, after $3$ epochs and $2$ updates, with
+\[
+  0.70\,e \;-\; 0.60\,c \;>\; 0
+\]
+
+\smallskip
+\textbf{What to take from it.} Both updates came from a single misclassified
+example, and the second one produced the insight --- a negative weight on clarity
+--- that a person would have had to think of. That is the appeal of learning, in
+twelve rows and two updates.
+
+\smallskip
+\textbf{And what to be careful about.} The rule has $100\%$ accuracy \emph{on the
+data it was trained on}, which is the least interesting fact about it. Whether it is
+right about the next task is a different question, and this course does not have the
+machinery to answer it. That question is the first thing \emph{Machine Learning}
+takes up.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Reading training accuracy as performance.} $100\%$ on the twelve
+        rows it learned from says almost nothing about the thirteenth task.
+  \item \textbf{Mistaking non-convergence for slow convergence.} The XOR trace looks
+        identical to a run that needs more epochs. Test whether \emph{any}
+        hypothesis in the class can fit before tuning anything.
+  \item \textbf{Concluding that neural networks cannot do exclusive-or.} A single
+        perceptron cannot; a hidden layer can, easily. The 1969 result was correct
+        and the inference drawn from it was not.
+  \item \textbf{Expecting a learned rule to come with a guarantee.} Parts~II to~V
+        produced plans that work and proofs that hold. A learned rule comes with an
+        error estimate, and producing an honest one is harder than producing the
+        rule.
+  \item \textbf{Treating unsupervised learning as supervised learning without
+        labels.} There is no right answer to check against, which changes what
+        ``it worked'' can even mean.
+  \item \textbf{Believing this chapter is a machine learning course.} It is four
+        sections and a signpost. Appendix~F lists what is missing.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[The Perceptron and Its Limit]
+The learning rule from scratch on twelve tasks, then on the exclusive-or
+arrangement, then the brute-force proof that no line can do it.
+\begin{lstlisting}[language=Python]
+"""Chapter 17 lab -- the perceptron, and where this course stops.
+
+Two datasets and one proof. The first converges in three passes. The
+second never converges, and the grid sweep at the end shows that this
+is a fact about straight lines rather than about the training run.
+"""
+
+# twelve past tasks: (effort days, requirement clarity) -> late?
+TASKS = [
+    ((2, 9), 0), ((3, 8), 0), ((4, 9), 0), ((3, 7), 0),
+    ((5, 8), 0), ((2, 6), 0),
+    ((9, 3), 1), ((8, 2), 1), ((10, 4), 1), ((9, 1), 1),
+    ((7, 2), 1), ((8, 4), 1),
+]
+
+# the exclusive-or arrangement: late when EXACTLY ONE of
+# "large effort" and "low clarity" holds
+XOR_TASKS = [
+    ((2, 9), 0),   # small effort, high clarity -> on time
+    ((9, 2), 0),   # large effort, low clarity  -> on time; they planned
+    ((9, 9), 1),   # large effort, high clarity -> late; looked easy
+    ((2, 2), 1),   # small effort, low clarity  -> late; looked small
+]
+
+
+def predict(x, w, b):
+    return 1 if w[0] * x[0] + w[1] * x[1] + b > 0 else 0
+
+
+def accuracy(data, w, b):
+    return sum(predict(x, w, b) == y for x, y in data) / len(data)
+
+
+def train(data, eta=0.1, epochs=100, trace=False):
+    """The perceptron learning rule. Learns only from mistakes."""
+    w, b, updates = [0.0, 0.0], 0.0, 0
+    for ep in range(1, epochs + 1):
+        errors = 0
+        for (x, y) in data:
+            err = y - predict(x, w, b)
+            if err:
+                errors += 1
+                updates += 1
+                w[0] += eta * err * x[0]
+                w[1] += eta * err * x[1]
+                b += eta * err
+        if trace:
+            print("   epoch %2d: %d error(s), w = (%.2f, %.2f), b = %.2f"
+                  % (ep, errors, w[0], w[1], b))
+        if errors == 0:
+            return w, b, ep, updates, True
+    return w, b, epochs, updates, False
+
+
+def best_line_accuracy(data, span=20, step=0.5):
+    """Brute force over a grid of ALL lines w0*x + w1*y + b = 0.
+
+    This is the difference between 'training failed' and 'no line
+    exists'. It is only possible because the problem is tiny.
+    """
+    best, arg = 0.0, None
+    vals = [i * step for i in range(-span * 2, span * 2 + 1)]
+    for w0 in vals:
+        for w1 in vals:
+            for bb in vals:
+                a = accuracy(data, [w0, w1], bb)
+                if a > best:
+                    best, arg = a, (w0, w1, bb)
+    return best, arg
+
+
+if __name__ == "__main__":
+    print("=== twelve past tasks ===")
+    w, b, epochs, updates, converged = train(TASKS, trace=True)
+    print("   converged: %s, after %d epochs and %d weight updates"
+          % (converged, epochs, updates))
+    print("   learned rule:  %.2f*effort %+.2f*clarity %+.2f > 0"
+          % (w[0], w[1], b))
+    print("   accuracy on the training data: %.0f%%"
+          % (100 * accuracy(TASKS, w, b)))
+    assert converged and epochs == 3 and updates == 2
+    assert accuracy(TASKS, w, b) == 1.0
+    # the clarity weight went NEGATIVE: more clarity argues against late
+    assert w[1] < 0
+    print()
+    print("   The weight on clarity is negative. Nobody said that;")
+    print("   it came from one misclassified example in pass two.")
+    print()
+    print("   But 100% here is accuracy on the data it LEARNED from.")
+    print("   Whether it is right about the next task is a different")
+    print("   question, and this course cannot answer it.")
+
+    print()
+    print("=== the exclusive-or arrangement ===")
+    for (x, y) in XOR_TASKS:
+        print("   effort %2d, clarity %2d -> %s"
+              % (x[0], x[1], "late" if y else "on time"))
+
+    print()
+    print("   epochs allowed   converged   weight updates")
+    print("   " + "-" * 44)
+    for budget in (100, 1000, 10000):
+        _, _, _, ups, conv = train(XOR_TASKS, epochs=budget)
+        print("   %14d   %9s   %13d" % (budget, conv, ups))
+    _, _, _, _, conv = train(XOR_TASKS, epochs=10000)
+    assert not conv
+    print()
+    print("   The update count just grows with the budget: the")
+    print("   weights are still oscillating when time runs out.")
+    print("   Nothing here says 'impossible' -- it looks exactly")
+    print("   like slow convergence.")
+
+    # so settle it by brute force
+    print()
+    print("=== can ANY straight line do it? ===")
+    best, arg = best_line_accuracy(XOR_TASKS)
+    print("   best accuracy over a grid of every line: %.0f%%"
+          % (100 * best))
+    print("   achieved by %.1f*effort %+.1f*clarity %+.1f > 0"
+          % arg)
+    assert best == 0.75
+    print()
+    print("   Three of four, and no line does better. This is not a")
+    print("   training failure -- it is a fact about the hypothesis")
+    print("   class. No learning rate, initialisation or patience")
+    print("   fixes it; only a richer class does, and a hidden layer")
+    print("   is exactly that.")
+
+    # and the same sweep on the separable data, for contrast
+    best2, _ = best_line_accuracy(TASKS)
+    assert best2 == 1.0
+    print()
+    print("   (The same sweep on the twelve tasks finds a line with")
+    print("   100% accuracy, which is why the perceptron found one.)")
+
+    print()
+    print("=" * 58)
+    print("Machine Learning Fall 2026, Chapter 13, takes over here.")
+    print("=" * 58)
+\end{lstlisting}
+Two things to try. Set \texttt{eta} to $10$ and re-run the first dataset: it still
+converges, because the perceptron convergence theorem does not depend on the
+learning rate --- only on separability. Then change one label in \texttt{TASKS} to
+make the data non-separable, and watch the first dataset start behaving like the
+second.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item The perceptron made only two weight updates in three passes over twelve
+        examples. Explain why so few, and what the second update changed about the
+        meaning of the rule.
+  \item A colleague's perceptron has run for ten thousand epochs without
+        converging. Give two possible explanations and describe the single cheapest
+        experiment that distinguishes them.
+  \item State what a single perceptron cannot represent, what the 1969 conclusion
+        from that result was, and why the conclusion was wrong.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item \term{Supervised} learning is given labelled examples and wants a rule that
+        generalises; \term{unsupervised} learning is given unlabelled data and wants
+        structure, with no right answer to check against; \term{reinforcement}
+        learning is given delayed reward and must solve \term{credit assignment}.
+  \item A \term{perceptron} fires when $\sum w_{i}x_{i} + b > 0$. The
+        \term{perceptron learning rule} adjusts weights only on mistakes, by
+        $\eta(y - \hat{y})x_{i}$.
+  \item On twelve separable tasks it converged in $3$ epochs and $2$ updates to
+        $0.70\,e - 0.60\,c > 0$. The negative weight on clarity --- the insight in
+        the rule --- came from one misclassified example.
+  \item A perceptron can only ever find a \emph{straight line}. The
+        \term{exclusive-or} arrangement has no separating line, and the lab proves
+        it by sweeping every line and finding that the best reaches $75\%$.
+  \item Distinguish \emph{training failed} from \emph{no hypothesis in the class
+        fits}. The traces look identical; only the second is a mathematical fact,
+        and no tuning fixes it.
+  \item Minsky and Papert's 1969 result was correct and the inference drawn from it
+        was not: a hidden layer represents exclusive-or easily, and what was missing
+        was a way to train one.
+  \item This is a signpost, not a unit. Generalisation, evaluation,
+        backpropagation, trees, kernels, ensembles, clustering and reinforcement
+        learning belong to \emph{Machine Learning} in Semester~6; Appendix~F lists
+        the boundary chapter by chapter.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The perceptron learning rule updates the weights:
+        (a)~after every example (b)~only when the prediction is wrong
+        (c)~once per epoch (d)~only at the end of training.
+  \item \textbf{(MCQ)} A single perceptron can represent exactly the functions that
+        are: (a)~monotone (b)~linearly separable (c)~continuous (d)~boolean.
+  \item \textbf{(MCQ)} The best accuracy any straight line achieves on the
+        exclusive-or arrangement is: (a)~$50\%$ (b)~$75\%$ (c)~$90\%$ (d)~$100\%$.
+  \item \textbf{(MCQ)} Credit assignment is the central difficulty of:
+        (a)~supervised learning (b)~unsupervised learning (c)~reinforcement
+        learning (d)~concept learning.
+  \item \textbf{(Short)} Explain why a training run that has not converged is weak
+        evidence that the problem is unlearnable, and what would be strong evidence.
+  \item \textbf{(Short)} The learned rule scores $100\%$ on its training data. State
+        why that is the least interesting fact about it, and name the course that
+        addresses the interesting question.
+  \item \textbf{(Short)} Give one delivery question that is supervised, one that is
+        unsupervised and one that is reinforcement learning, and say what makes each
+        one that kind.
+  \item \textbf{(Applied)} Work the perceptron by hand on the four exclusive-or
+        tasks for two full passes, starting from zero weights with $\eta = 0.1$.
+        Show the weights after each update, and identify the point at which the
+        sequence begins to repeat.
+\end{reviewq}

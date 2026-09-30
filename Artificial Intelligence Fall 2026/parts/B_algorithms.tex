@@ -1,0 +1,210 @@
+%=====================================================================
+\chapter{Algorithm and Formula Sheet}\label{app:algorithms}
+%=====================================================================
+\normalfigures
+
+Everything worth memorising, on four pages, in the order the course meets it.
+
+\section{Search}
+
+\begin{definitionbox}[A search problem]
+Five things: an initial state; a goal test (a predicate, not necessarily one
+state); an \texttt{actions} function; a \texttt{result} function --- the successor
+function, where the rules of the domain live; and a step cost. The search strategy
+is \emph{not} one of them.
+\end{definitionbox}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.6cm}L{2.05cm}L{1.95cm}L{2.5cm}L{1.85cm}L{1.85cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Strategy} & \textbf{Complete?} & \textbf{Cheapest?} & \textbf{Time} &
+\textbf{Space} & \textbf{Frontier} \\
+\midrule
+\endhead
+Breadth-first & Yes & If costs equal & $O(b^{d})$ & $O(b^{d})$ & \texttt{deque} \\
+Depth-first & No & No & $O(b^{m})$ & $O(bm)$ & \texttt{list} \\
+Depth-limited & No & No & $O(b^{\ell})$ & $O(b\ell)$ & \texttt{list} \\
+Iterative deepening & Yes & If costs equal & $O(b^{d})$ & $O(bd)$ &
+\texttt{list} \\
+Uniform-cost & Yes & \textbf{Yes} & $O(b^{1+C^{*}/\epsilon})$ & same &
+\texttt{heapq} \\
+Greedy best-first & No & No & $O(b^{m})$ & $O(b^{m})$ & \texttt{heapq} \\
+$A^{*}$ & Yes & \textbf{Yes} (admissible $h$) & exponential in general & same &
+\texttt{heapq} \\
+\bottomrule
+\end{longtable}
+
+Iterative deepening's total work at solution depth $d$:
+\[
+  N \;=\; (d+1)b^{0} + d\,b^{1} + (d-1)b^{2} + \cdots + 1\cdot b^{d}
+\]
+which at $b = 10$, $d = 5$ gives $123{,}456$ against breadth-first search's
+$111{,}111$ --- about 11\% more work for exponentially less memory.
+
+\subsection*{Heuristics}
+
+\[
+  f(n) \;=\; g(n) + h(n)
+\]
+\begin{tight}
+  \item \term{Admissible}: $0 \le h(n) \le h^{*}(n)$ for every $n$, and
+        $h(\text{goal}) = 0$. Makes $A^{*}$ optimal for tree search.
+  \item \term{Consistent}: $h(n) \le c(n,n') + h(n')$ for every successor $n'$.
+        Implies admissibility; needed for graph search with an explored set.
+  \item \term{Dominance}: if $h_{2} \ge h_{1}$ everywhere and both are admissible,
+        $A^{*}$ with $h_{2}$ expands no more nodes.
+  \item $\max(h_{1}, h_{2})$ is admissible and dominates both. Never average them.
+  \item To invent one: \term{relax} a constraint and solve the easier problem
+        exactly.
+\end{tight}
+
+\subsection*{Local search}
+
+Simulated annealing accepts a worsening move with probability
+\[
+  p \;=\; \exp\!\left(\frac{\Delta}{T}\right), \qquad \Delta < 0
+\]
+An improving move is always accepted. As $T \to \infty$ the search is a random
+walk; as $T \to 0$ it is hill climbing.
+
+\section{Constraint Satisfaction}
+
+A CSP is variables $X_{i}$, domains $D_{i}$ and constraints. Ordering heuristics,
+in the order to try them:
+\begin{tight}
+  \item \term{Minimum remaining values}: assign the variable with the fewest legal
+        values left. Fails fast.
+  \item \term{Degree heuristic}: break ties by the variable involved in the most
+        constraints on unassigned variables.
+  \item \term{Least constraining value}: try the value that rules out the fewest
+        options for the neighbours.
+\end{tight}
+Propagation: \term{forward checking} removes values inconsistent with the
+assignment just made; \term{arc consistency} (AC-3) enforces, for every arc
+$X_{i} \to X_{j}$, that each value of $X_{i}$ has some consistent partner in
+$X_{j}$.
+
+\section{Adversarial Search}
+
+\[
+  \mathrm{minimax}(n) =
+  \begin{cases}
+    \mathrm{utility}(n) & n \text{ terminal} \\
+    \max_{s \in \mathrm{succ}(n)} \mathrm{minimax}(s) & n \text{ a MAX node} \\
+    \min_{s \in \mathrm{succ}(n)} \mathrm{minimax}(s) & n \text{ a MIN node}
+  \end{cases}
+\]
+Alpha--beta pruning keeps $\alpha$ (the best MAX can guarantee so far) and $\beta$
+(the best MIN can guarantee) and prunes when $\alpha \ge \beta$. With perfect move
+ordering it examines $O(b^{d/2})$ nodes instead of $O(b^{d})$ --- effectively
+doubling the searchable depth.
+
+\section{Planning}
+
+A STRIPS operator is a triple: \emph{preconditions} that must hold, an \emph{add
+list} of facts it makes true, and a \emph{delete list} of facts it makes false.
+Progression search runs the frontier of \chref{uninformed} over states of facts;
+means--ends analysis instead picks a difference between the current state and the
+goal and selects an operator that reduces it.
+
+\section{Logic}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.2cm}L{11.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Notion} & \textbf{Meaning} \\
+\midrule
+\endhead
+$\mathit{KB} \models \alpha$ & \term{Entailment}: $\alpha$ is true in every model
+of $\mathit{KB}$. A fact about meaning \\
+$\mathit{KB} \vdash \alpha$ & \term{Derivation}: $\alpha$ is produced by the
+inference procedure. A fact about the procedure \\
+Sound & Everything derived is entailed: $\vdash$ implies $\models$ \\
+Complete & Everything entailed is derivable: $\models$ implies $\vdash$ \\
+Satisfiable & True in at least one model \\
+Valid & True in every model \\
+\bottomrule
+\end{longtable}
+
+Key equivalence, and the basis of every refutation proof:
+\[
+  \mathit{KB} \models \alpha
+  \quad\text{if and only if}\quad
+  (\mathit{KB} \wedge \neg\alpha) \text{ is unsatisfiable}
+\]
+
+\subsection*{To conjunctive normal form}
+
+Eliminate $\Leftrightarrow$, then $\Rightarrow$ (using
+$a \Rightarrow b \equiv \neg a \vee b$); drive $\neg$ inwards by De~Morgan; in
+first-order logic, standardise variables apart, skolemise existentials, drop
+universals; distribute $\vee$ over $\wedge$.
+
+\subsection*{Resolution}
+
+From $(\alpha \vee \ell)$ and $(\beta \vee \neg\ell)$ infer
+$(\alpha \vee \beta)$. In first-order logic, apply the most general unifier first.
+Derive the empty clause and the original entailment is proved.
+
+\subsection*{Unification}
+
+\texttt{unify(x, y)} returns a substitution $\theta$ with
+$x\theta = y\theta$, or failure. The \term{occurs check} refuses to bind a
+variable to a term containing it; without it, $x$ against $f(x)$ builds an
+infinite term.
+
+\section{Uncertainty}
+
+\begin{align*}
+  P(a \mid b) &= \frac{P(a \wedge b)}{P(b)} \\[4pt]
+  P(a \mid b) &= \frac{P(b \mid a)\,P(a)}{P(b)}
+    \qquad\text{(Bayes' rule)} \\[4pt]
+  P(a) &= \textstyle\sum_{b} P(a \wedge b)
+    \qquad\text{(marginalisation)}
+\end{align*}
+Independence: $P(a \wedge b) = P(a)P(b)$. Conditional independence given $c$:
+$P(a \wedge b \mid c) = P(a \mid c) P(b \mid c)$ --- this is what a Bayesian
+network encodes, and what makes it smaller than the full joint.
+
+A Bayesian network's joint distribution factorises as
+\[
+  P(x_{1},\ldots,x_{n}) \;=\; \prod_{i=1}^{n} P\bigl(x_{i} \mid
+  \mathrm{parents}(x_{i})\bigr)
+\]
+
+Expected utility, and the rule for acting:
+\[
+  \mathrm{EU}(a) = \sum_{s} P(s \mid a)\,U(s),
+  \qquad
+  a^{*} = \arg\max_{a} \mathrm{EU}(a)
+\]
+
+\section{Fuzzy Logic}
+
+Membership $\mu_{A}(x) \in [0,1]$. Operators:
+\[
+  \mu_{A \cap B}(x) = \min\bigl(\mu_{A}(x), \mu_{B}(x)\bigr), \quad
+  \mu_{A \cup B}(x) = \max\bigl(\mu_{A}(x), \mu_{B}(x)\bigr), \quad
+  \mu_{\neg A}(x) = 1 - \mu_{A}(x)
+\]
+Mamdani inference: fuzzify the inputs, take the rule's firing strength as the
+$\min$ over its antecedents, clip the consequent at that strength, aggregate by
+$\max$, then defuzzify by centroid:
+\[
+  x^{*} \;=\; \frac{\int x\,\mu(x)\,dx}{\int \mu(x)\,dx}
+\]
+
+\section{The Perceptron}
+
+Output $\hat{y} = 1$ if $\sum_{i} w_{i}x_{i} + b > 0$, else $0$. Learning rule,
+applied per example:
+\[
+  w_{i} \;\leftarrow\; w_{i} + \eta\,(y - \hat{y})\,x_{i},
+  \qquad
+  b \;\leftarrow\; b + \eta\,(y - \hat{y})
+\]
+It converges in finite time if and only if the data are linearly separable. It
+cannot represent exclusive-or --- which is where this course stops and
+\emph{Machine Learning} begins.

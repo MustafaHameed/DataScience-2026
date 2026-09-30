@@ -1,0 +1,727 @@
+%=====================================================================
+\chapter{First-Order Logic and Resolution}\label{ch:fol}
+%=====================================================================
+\locator{4}{Part IV --- Knowledge, Logic and Reasoning}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why propositional logic cannot state a general rule, and
+        \textbf{quantify} what it costs to try.
+  \item \textbf{Express} statements about objects and relations using quantifiers.
+  \item \textbf{Unify} two expressions, \textbf{apply} the occurs check, and
+        \textbf{say} what goes wrong without it.
+  \item \textbf{Convert} a first-order sentence to clause form, including
+        skolemisation.
+  \item \textbf{Prove} a conclusion by resolution refutation and \textbf{present}
+        the proof as an auditable table.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{propositional} --- entailment and derivation, conjunctive normal form, the
+resolution rule, and the equivalence
+$\mathit{KB} \models \alpha \Leftrightarrow (\mathit{KB} \wedge \neg\alpha)$
+unsatisfiable. Everything here is that machinery with objects added, and
+\chref{python} supplies the recursion that unification needs.
+\end{prereq}
+
+\begin{keyterms}
+first-order logic $\bullet$ constant $\bullet$ variable $\bullet$ function symbol
+$\bullet$ term $\bullet$ predicate $\bullet$ atom $\bullet$ universal
+quantifier $\bullet$ existential quantifier $\bullet$ substitution $\bullet$
+unification $\bullet$ most general unifier $\bullet$ occurs check $\bullet$
+standardising apart $\bullet$ skolemisation $\bullet$ clause form $\bullet$
+resolution refutation $\bullet$ set of support $\bullet$ subsumption
+\end{keyterms}
+
+\section{Where Propositional Logic Runs Out}
+
+\chref{propositional} settled the release gate. Now a rule the delivery team uses
+constantly: \emph{if something you depend on is delayed, you are delayed.}
+
+Propositional logic cannot say that. It has no way to talk about ``something'' ---
+only about specific, named facts. So the rule has to be written out once per pair:
+
+\begin{quote}
+$\mathit{DependsRelease47Payments} \wedge \mathit{DelayedPayments} \Rightarrow
+\mathit{DelayedRelease47}$\\
+$\mathit{DependsPaymentsAuth} \wedge \mathit{DelayedAuth} \Rightarrow
+\mathit{DelayedPayments}$\\
+\ldots and so on
+\end{quote}
+
+With $n$ services that is $n^{2}$ sentences for one rule, each of which must be
+maintained by hand, and a new service means writing $2n$ more. At forty services the
+single rule above becomes $1{,}600$ sentences. The knowledge is not large; the
+\emph{encoding} is, and it is an encoding no domain expert would agree to maintain.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  svc/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!10,
+              text=#1!55!black, font=\scriptsize\bfseries, align=center,
+              minimum width=2.0cm, minimum height=0.62cm},
+  dep/.style={-{Stealth[length=1.9mm]}, primary!60, line width=1pt},
+  el/.style={font=\tiny, text=neutral, inner sep=1.5pt}]
+
+\node[svc=primary] (r47)  at (0,0)    {Release 4.7};
+\node[svc=primary] (pay)  at (3.4,0)  {Payments};
+\node[svc=accent]  (auth) at (6.8,0)  {Auth};
+
+\draw[dep] (r47) -- node[el, above] {depends on} (pay);
+\draw[dep] (pay) -- node[el, above] {depends on} (auth);
+\node[font=\scriptsize\bfseries, text=accent, anchor=west] at (7.9,0)
+  {delayed};
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!30, line width=0.9pt,
+      text=primary!70!black, font=\scriptsize, text width=6.2cm,
+      align=flush left, inner sep=6pt, anchor=north west] at (-0.6,-1.0)
+  {\textbf{Propositional} (\chref{propositional}): one sentence per pair.
+   $n$ services need $n^{2}$ of them, and adding a service means writing $2n$
+   more by hand.};
+
+\node[rounded corners=3pt, fill=greenhl!8, draw=greenhl!55, line width=0.9pt,
+      text=greenhl!45!black, font=\scriptsize, text width=6.8cm,
+      align=flush left, inner sep=6pt, anchor=north west] at (6.4,-1.0)
+  {\textbf{First-order}: one sentence, for every $n$.
+   \smallskip
+   $\forall x, y \; \mathit{depends}(x,y) \wedge \mathit{delayed}(y)
+   \Rightarrow \mathit{delayed}(x)$
+   \smallskip
+   Adding a service means adding a \emph{fact}, and the rule is untouched.};
+\end{tikzpicture}}%
+{The delay chain. Quantifiers buy the ability to state a rule once, which is the
+difference between a knowledge base a team can maintain and one it
+cannot.}{fol-why}
+
+\section{Syntax and Semantics}
+
+First-order logic adds three things to the propositional language.
+
+\begin{tight}
+  \item \term{Terms} denote objects: \term{constants} (\texttt{Auth}),
+        \term{variables} ($x$), and \term{function symbols} applied to terms
+        ($\mathit{owner}(\mathit{Payments})$).
+  \item \term{Predicates} denote relations: $\mathit{depends}(x, y)$ is true or
+        false of a pair of objects.
+  \item \term{Quantifiers}: $\forall x$ (for all) and $\exists x$ (there exists).
+\end{tight}
+
+The two quantifiers pair with different connectives, and getting this wrong is the
+most common beginner's error:
+
+\[
+  \forall x \; \mathit{service}(x) \Rightarrow \mathit{monitored}(x)
+  \qquad\text{but}\qquad
+  \exists x \; \mathit{service}(x) \wedge \mathit{unmonitored}(x)
+\]
+
+Universal with implication; existential with conjunction. Writing
+$\forall x\; \mathit{service}(x) \wedge \mathit{monitored}(x)$ claims that
+\emph{everything in the universe} is a monitored service --- including Ayesha and
+the number seven. Writing
+$\exists x\; \mathit{service}(x) \Rightarrow \mathit{unmonitored}(x)$ is satisfied
+by any object that is not a service, and so says essentially nothing.
+
+\section{Unification}
+
+Resolution needs to know when two atoms can be made identical. That is
+\term{unification}.
+
+\begin{definitionbox}[Unification and the most general unifier]
+A \term{substitution} $\theta$ maps variables to terms. $\mathrm{Unify}(p, q)$
+returns a substitution with $p\theta = q\theta$, or failure.
+
+Among all unifiers there is a \term{most general} one, which commits to as little as
+possible. That matters: a unifier that binds $x$ to \texttt{Auth} when it only
+needed to bind $x$ to $y$ throws away conclusions.
+
+The \term{occurs check} refuses to bind a variable to a term containing it.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  row/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!7,
+              text width=13.4cm, align=flush left, inner sep=6pt,
+              text=#1!50!black},
+  tag/.style={rounded corners=2pt, fill=#1, text=white,
+              font=\tiny\bfseries, inner sep=3pt}]
+
+\node[row=greenhl] (r1) at (0,2.2)
+  {\\[1pt]\texttt{unify( blocks(x, Auth), \ blocks(Release47, y) )}\\[3pt]
+   Match argument by argument: $x$ is a variable, so bind $x
+   \mapsto \texttt{Release47}$; then \texttt{Auth} is a constant and $y$ a
+   variable, so bind $y \mapsto \texttt{Auth}$.\\[3pt]
+   \textbf{Result:} $\theta = \{x/\texttt{Release47},\; y/\texttt{Auth}\}$};
+
+\node[row=accent] (r2) at (0,0.1)
+  {\\[1pt]\texttt{unify( blocks(x, x), \ blocks(Auth, Payments) )}\\[3pt]
+   Bind $x \mapsto \texttt{Auth}$ from the first argument. The second argument
+   then requires \texttt{Auth} to equal \texttt{Payments}, and two distinct
+   constants never unify.\\[3pt]
+   \textbf{Result: failure.} The same variable twice means \emph{the same
+   object} twice.};
+
+\node[row=accent] (r3) at (0,-2.0)
+  {\\[1pt]\texttt{unify( x, \ f(x) )}\\[3pt]
+   Tempting to bind $x \mapsto f(x)$ --- and that substitution describes no finite
+   term. Applying it gives $f(f(f(\ldots)))$, and a prover that accepts it will
+   loop or crash.\\[3pt]
+   \textbf{Result: failure, by the occurs check.} This is the one case people leave
+   out, and it is the one that produces a hang rather than a wrong answer.};
+
+\node[tag=greenhl] at (r1.north west) {SUCCEEDS};
+\node[tag=accent]  at (r2.north west) {FAILS};
+\node[tag=accent]  at (r3.north west) {FAILS --- OCCURS CHECK};
+\end{tikzpicture}}%
+{Three unification problems. The third is why every implementation needs an occurs
+check, and why many production Prolog systems omit it for speed and document the
+risk.}{unify}
+
+\section{Clause Form}
+
+Resolution works on clauses, so first-order sentences must be converted. The
+procedure extends \chref{propositional}'s with two steps for quantifiers.
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=2pt, topsep=4pt]
+  \item Eliminate $\Leftrightarrow$ and $\Rightarrow$ as before.
+  \item Drive $\neg$ inwards. Over quantifiers:
+        $\neg \forall x\, P \equiv \exists x\, \neg P$ and
+        $\neg \exists x\, P \equiv \forall x\, \neg P$.
+  \item \term{Standardise apart}: rename so no two quantifiers bind the same
+        variable name.
+  \item \term{Skolemise}: replace each existentially quantified variable by a new
+        constant, or --- if it lies inside any universal quantifiers --- by a new
+        \emph{function} of those universally quantified variables.
+  \item Drop the universal quantifiers (everything left is implicitly universal)
+        and distribute $\vee$ over $\wedge$.
+\end{enumerate}
+
+\begin{examplebox}[Skolemisation, and why the function is necessary]
+``Every service has an owner'' is
+$\forall x \; \mathit{service}(x) \Rightarrow \exists y \; \mathit{owns}(y, x)$.
+
+\smallskip
+Skolemising $y$ to a \emph{constant} \texttt{Sk} gives
+$\neg\mathit{service}(x) \vee \mathit{owns}(\texttt{Sk}, x)$, which claims one
+person owns every service. That is a different and much stronger statement, and it
+is wrong.
+
+\smallskip
+$y$ depends on $x$, so it must become a \emph{function} of $x$:
+\[
+  \neg \mathit{service}(x) \vee \mathit{owns}(\mathit{owner}(x),\, x)
+\]
+where $\mathit{owner}$ is a new function symbol meaning ``the owner of''. Now each
+service has its own. The rule is mechanical: \emph{skolemise to a function of every
+universal quantifier you are inside}.
+\end{examplebox}
+
+The delay rule needs no skolemisation --- it is purely universal:
+\[
+  \forall x, y \;\; \mathit{depends}(x,y) \wedge \mathit{delayed}(y)
+  \Rightarrow \mathit{delayed}(x)
+\]
+becomes the single clause
+$\neg \mathit{depends}(x,y) \vee \neg \mathit{delayed}(y) \vee
+\mathit{delayed}(x)$.
+
+\section{Resolution Refutation}
+
+The rule is \chref{propositional}'s, with unification doing the matching:
+\[
+  \frac{\alpha \vee \ell \qquad \beta \vee \neg m
+        \qquad \theta = \mathrm{Unify}(\ell, m)}
+       {(\alpha \vee \beta)\theta}
+\]
+Before each resolution the two clauses are \term{standardised apart}, so that an $x$
+in one is not accidentally identified with an $x$ in the other.
+
+\begin{examplebox}[The knowledge base]
+\begin{tight}
+  \item R1 \quad $\neg \mathit{depends}(x,y) \vee \neg \mathit{delayed}(y)
+        \vee \mathit{delayed}(x)$
+  \item F1 \quad $\mathit{depends}(\texttt{Release47}, \texttt{Payments})$
+  \item F2 \quad $\mathit{depends}(\texttt{Payments}, \texttt{Auth})$
+  \item F3 \quad $\mathit{delayed}(\texttt{Auth})$
+\end{tight}
+Query: $\mathit{delayed}(\texttt{Release47})$ --- is the release late?
+\end{examplebox}
+
+\smallskip
+\rowcolors{2}{white}{lightbg}
+\noindent\begin{longtable}{@{}L{0.9cm}L{7.8cm}L{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{\#} & \textbf{Clause} & \textbf{Derived from} \\
+\midrule
+\endhead
+1 & $\neg \mathit{depends}(x,y) \vee \neg \mathit{delayed}(y) \vee
+\mathit{delayed}(x)$ & given (R1) \\
+2 & $\mathit{depends}(\texttt{Release47}, \texttt{Payments})$ & given (F1) \\
+3 & $\mathit{depends}(\texttt{Payments}, \texttt{Auth})$ & given (F2) \\
+4 & $\mathit{delayed}(\texttt{Auth})$ & given (F3) \\
+5 & $\neg \mathit{delayed}(\texttt{Release47})$ & \textbf{assumed}: negated query \\
+6 & $\neg \mathit{depends}(x, \texttt{Auth}) \vee \mathit{delayed}(x)$ &
+1, 4 with $\theta = \{y/\texttt{Auth}\}$ \\
+7 & $\mathit{delayed}(\texttt{Payments})$ &
+3, 6 with $\theta = \{x/\texttt{Payments}\}$ \\
+8 & $\neg \mathit{depends}(x, \texttt{Payments}) \vee \mathit{delayed}(x)$ &
+1, 7 with $\theta = \{y/\texttt{Payments}\}$ \\
+9 & $\mathit{delayed}(\texttt{Release47})$ &
+2, 8 with $\theta = \{x/\texttt{Release47}\}$ \\
+10 & $\square$ \quad (the empty clause) & 5, 9 \\
+\bottomrule
+\caption{A resolution refutation in five derived steps. Each line names its parents
+and its unifier, so the proof can be checked by hand --- which is what makes it an
+audit artefact rather than an assertion.}\label{tab:fol-proof}
+\end{longtable}
+
+\begin{alertbox}[Finding that proof is much harder than checking it]
+Table~\ref{tab:fol-proof} is five derived lines. A naive implementation ---
+resolve every pair, keep everything new, repeat --- reaches the empty clause in
+\textbf{705 resolution steps}.
+
+The standard first remedy is \term{set of support}: require every resolution to
+involve a clause descended from the negated query. Nothing else is relevant to
+proving \emph{this} conclusion, and the restriction preserves refutation
+completeness. It cuts the search to \textbf{202 steps}, a factor of $3.5$.
+
+Even that is far from five, and the reason is visible in the lab's trace: the same
+clause is derived repeatedly with different variable names, because standardising
+apart creates fresh names each time and a set of clauses does not recognise
+alpha-variants as equal. Real provers add \term{subsumption} --- discard a clause
+if a more general one is already present --- along with unit preference and
+indexing. That is the subject of automated theorem proving, and it is where this
+course stops.
+\end{alertbox}
+
+\section{What This Buys, and What It Costs}
+
+First-order logic is strictly more expressive than propositional logic, and the
+price is paid in decidability.
+
+Propositional entailment is \emph{decidable}: model checking always terminates, if
+slowly. First-order entailment is only \emph{semi-decidable}. If the conclusion
+follows, resolution will eventually find a proof. If it does not, the procedure may
+run forever without ever being able to report that fact --- there are infinitely
+many models and it cannot enumerate them to find a countermodel.
+
+So \chref{propositional}'s most practically useful output, the countermodel, is in
+general unavailable here. That is a real loss, and it is one reason production
+systems often restrict themselves to a decidable fragment --- Horn clauses, which
+is what \chref{expert} uses and what makes Prolog work.
+
+\begin{worked}[Following the unifiers through the proof]
+The point of this trace is that the general rule R1 is used \emph{three times} with
+three different substitutions, which is exactly what propositional logic could not
+do.
+
+\smallskip
+\textbf{Step 6: resolve R1 with F3.} R1 contains
+$\neg \mathit{delayed}(y)$ and F3 is $\mathit{delayed}(\texttt{Auth})$. Unifying
+$\mathit{delayed}(y)$ with $\mathit{delayed}(\texttt{Auth})$ gives
+$\theta = \{y/\texttt{Auth}\}$. Remove the complementary pair and apply $\theta$
+to what remains:
+\[
+  \neg \mathit{depends}(x, \texttt{Auth}) \vee \mathit{delayed}(x)
+\]
+Read it in English: \emph{anything that depends on Auth is delayed}. A new general
+rule, derived from a general rule and one fact.
+
+\smallskip
+\textbf{Step 7: resolve that with F2.} $\mathit{depends}(\texttt{Payments},
+\texttt{Auth})$ unifies with $\mathit{depends}(x, \texttt{Auth})$ under
+$\theta = \{x/\texttt{Payments}\}$, leaving
+$\mathit{delayed}(\texttt{Payments})$. The chain has advanced one link.
+
+\smallskip
+\textbf{Step 8: resolve R1 with that.} A \emph{fresh} copy of R1 --- standardised
+apart, so its $x$ and $y$ are new variables --- resolves against
+$\mathit{delayed}(\texttt{Payments})$ under $\theta = \{y/\texttt{Payments}\}$,
+giving $\neg \mathit{depends}(x, \texttt{Payments}) \vee \mathit{delayed}(x)$.
+
+\smallskip
+\textbf{Step 9: resolve with F1}, $\theta = \{x/\texttt{Release47}\}$, giving
+$\mathit{delayed}(\texttt{Release47})$.
+
+\smallskip
+\textbf{Step 10:} that contradicts the assumed $\neg
+\mathit{delayed}(\texttt{Release47})$, so the empty clause follows and the query is
+proved.
+
+\smallskip
+\textbf{Why standardising apart matters.} At step~8, R1's variables must be
+renamed. If the $x$ in the fresh copy were identified with the $x$ already bound to
+\texttt{Payments} at step~7, the copy would be unusable for
+\texttt{Release47} and the proof would fail. The variables in a clause are local to
+it, and forgetting that is a bug whose symptom is proofs that mysteriously do not
+close.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{$\forall$ with $\wedge$.}
+        $\forall x\, \mathit{service}(x) \wedge \mathit{monitored}(x)$ claims
+        everything in the universe is a monitored service. Use $\Rightarrow$ with
+        $\forall$ and $\wedge$ with $\exists$.
+  \item \textbf{Omitting the occurs check.} $\mathrm{Unify}(x, f(x))$ then
+        succeeds with an infinite term, and the symptom is a hang rather than a
+        wrong answer.
+  \item \textbf{Skolemising to a constant inside a universal.} ``Every service has
+        an owner'' becomes ``one person owns every service''.
+  \item \textbf{Forgetting to standardise apart.} Two clauses sharing a variable
+        name become accidentally linked, and proofs fail for reasons invisible in
+        the output.
+  \item \textbf{Expecting a countermodel when the proof fails.} First-order
+        entailment is only semi-decidable: failing to find a proof is not evidence
+        that none exists.
+  \item \textbf{Assuming naive resolution will scale.} $705$ steps for a five-line
+        proof. Set of support, subsumption and indexing are not optional extras.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[Unification and a Resolution Proof]
+A real unifier with the occurs check, first-order resolution, and the set-of-support
+strategy measured against naive saturation.
+\begin{lstlisting}[language=Python]
+"""Chapter 12 lab -- first-order resolution on a delay chain.
+
+Representation: a constant is a string; a variable is ("?", name);
+a compound term is (functor, arg, ...); a literal is
+(sign, predicate, args).
+"""
+
+
+def var(n):
+    return ("?", n)
+
+
+def is_var(t):
+    return isinstance(t, tuple) and len(t) == 2 and t[0] == "?"
+
+
+def is_compound(t):
+    return isinstance(t, tuple) and not is_var(t)
+
+
+def walk(t, s):
+    while is_var(t) and t in s:
+        t = s[t]
+    return t
+
+
+def occurs(v, t, s):
+    """The occurs check: is v inside t? Omit this and unify(x, f(x))
+    succeeds with a term that does not exist."""
+    t = walk(t, s)
+    if t == v:
+        return True
+    if is_compound(t):
+        return any(occurs(v, a, s) for a in t[1:])
+    return False
+
+
+def unify(x, y, s):
+    """Most general unifier, or None."""
+    if s is None:
+        return None
+    x, y = walk(x, s), walk(y, s)
+    if x == y:
+        return s
+    if is_var(x):
+        if occurs(x, y, s):
+            return None
+        s = dict(s)
+        s[x] = y
+        return s
+    if is_var(y):
+        return unify(y, x, s)
+    if is_compound(x) and is_compound(y):
+        if x[0] != y[0] or len(x) != len(y):
+            return None
+        for a, b in zip(x[1:], y[1:]):
+            s = unify(a, b, s)
+            if s is None:
+                return None
+        return s
+    return None
+
+
+def subst(t, s):
+    t = walk(t, s)
+    if is_compound(t):
+        return (t[0],) + tuple(subst(a, s) for a in t[1:])
+    return t
+
+
+def lit_subst(lit, s):
+    sign, pred, args = lit
+    return (sign, pred, tuple(subst(a, s) for a in args))
+
+
+def standardise(clause, n):
+    """Rename every variable, so two clauses never share one."""
+    out = []
+    for (sign, pred, args) in clause:
+        out.append((sign, pred,
+                    tuple(("?", "%s#%d" % (a[1], n)) if is_var(a) else a
+                          for a in args)))
+    return frozenset(out)
+
+
+def resolve(ci, cj, n):
+    ci, cj = standardise(ci, n), standardise(cj, n + 500000)
+    out = []
+    for li in ci:
+        for lj in cj:
+            if li[0] == lj[0] or li[1] != lj[1]:
+                continue
+            if len(li[2]) != len(lj[2]):
+                continue
+            s, ok = {}, True
+            for a, b in zip(li[2], lj[2]):
+                s = unify(a, b, s)
+                if s is None:
+                    ok = False
+                    break
+            if ok:
+                out.append(frozenset(
+                    lit_subst(l, s) for l in (ci - {li}) | (cj - {lj})))
+    return out
+
+
+def show_term(a):
+    if is_var(a):
+        return a[1]
+    if is_compound(a):
+        return "%s(%s)" % (a[0], ",".join(show_term(x) for x in a[1:]))
+    return a
+
+
+def show(clause):
+    if not clause:
+        return "[]  (the empty clause)"
+    parts = []
+    for (sign, pred, args) in clause:
+        parts.append(("" if sign else "-") +
+                     "%s(%s)" % (pred,
+                                 ",".join(show_term(a) for a in args)))
+    return " OR ".join(sorted(parts))
+
+
+# --- the knowledge base -------------------------------------------
+x, y = var("x"), var("y")
+R1 = frozenset({(False, "depends", (x, y)),
+                (False, "delayed", (y,)),
+                (True, "delayed", (x,))})
+F1 = frozenset({(True, "depends", ("Release47", "Payments"))})
+F2 = frozenset({(True, "depends", ("Payments", "Auth"))})
+F3 = frozenset({(True, "delayed", ("Auth",))})
+KB = [R1, F1, F2, F3]
+QUERY = (True, "delayed", ("Release47",))
+
+
+def refute_naive(kb, query, rounds=6):
+    """Resolve every pair, keep everything new, repeat."""
+    clauses = list(kb) + [frozenset({(not query[0], query[1], query[2])})]
+    steps = 0
+    for _ in range(rounds):
+        new = []
+        for i in range(len(clauses)):
+            for j in range(len(clauses)):
+                if i == j:
+                    continue
+                for r in resolve(clauses[i], clauses[j], steps):
+                    steps += 1
+                    if not r:
+                        return True, steps
+                    if r not in clauses and r not in new:
+                        new.append(r)
+        if not new:
+            return False, steps
+        clauses += new
+    return False, steps
+
+
+def refute_sos(kb, query, rounds=8):
+    """Set of support: every resolution must involve a clause
+    descended from the negated query. Nothing else is relevant to
+    proving THIS conclusion, and completeness is preserved."""
+    neg_q = frozenset({(not query[0], query[1], query[2])})
+    base, sos = list(kb), [neg_q]
+    seen = set(base) | {neg_q}
+    steps = 0
+    for _ in range(rounds):
+        new = []
+        for s in sos:
+            for b in base + sos:
+                if b is s:
+                    continue
+                for r in resolve(s, b, steps):
+                    steps += 1
+                    if not r:
+                        return True, steps
+                    if r not in seen:
+                        seen.add(r)
+                        new.append(r)
+        if not new:
+            return False, steps
+        sos += new
+    return False, steps
+
+
+if __name__ == "__main__":
+    print("=== unification ===")
+    cases = [
+        ("blocks(x, Auth) vs blocks(Release47, y)",
+         ("blocks", x, "Auth"), ("blocks", "Release47", y)),
+        ("blocks(x, x)   vs blocks(Auth, Payments)",
+         ("blocks", x, x), ("blocks", "Auth", "Payments")),
+        ("x              vs f(x)   [occurs check]",
+         x, ("f", x)),
+    ]
+    for label, a, b in cases:
+        s = unify(a, b, {})
+        if s is None:
+            print("   %-42s FAIL" % label)
+        else:
+            binding = ", ".join("%s/%s" % (k[1], show_term(v))
+                                for k, v in sorted(s.items()))
+            print("   %-42s {%s}" % (label, binding))
+
+    # the three results the chapter claims
+    assert unify(("blocks", x, "Auth"),
+                 ("blocks", "Release47", y), {}) is not None
+    assert unify(("blocks", x, x),
+                 ("blocks", "Auth", "Payments"), {}) is None
+    assert unify(x, ("f", x), {}) is None
+
+    print()
+    print("=== the proof, by hand ===")
+    # step 6: R1 with F3
+    s6 = unify(("delayed", y), ("delayed", "Auth"), {})
+    c6 = frozenset(lit_subst(l, s6)
+                   for l in R1 - {(False, "delayed", (y,))})
+    print("   6.", show(c6), "   theta = {y/Auth}")
+    # step 7: that with F2
+    got = resolve(c6, F2, 1)
+    c7 = min(got, key=len)
+    print("   7.", show(c7), "   theta = {x/Payments}")
+    assert c7 == frozenset({(True, "delayed", ("Payments",))})
+    # step 8: R1 with step 7
+    c8 = min((c for c in resolve(R1, c7, 2) if len(c) == 2), key=len)
+    print("   8.", show(c8), "   theta = {y/Payments}")
+    # step 9: that with F1
+    c9 = min(resolve(c8, F1, 3), key=len)
+    print("   9.", show(c9), "   theta = {x/Release47}")
+    assert c9 == frozenset({(True, "delayed", ("Release47",))})
+    print("  10. [] -- contradicts the assumed -delayed(Release47)")
+    print()
+    print("   R1 was used three times, with three different unifiers.")
+    print("   That is exactly what propositional logic cannot do.")
+
+    print()
+    print("=== finding it automatically ===")
+    ok1, n1 = refute_naive(KB, QUERY)
+    ok2, n2 = refute_sos(KB, QUERY)
+    print("   naive saturation : proved %s in %4d resolution steps"
+          % (ok1, n1))
+    print("   set of support   : proved %s in %4d resolution steps"
+          % (ok2, n2))
+    print("   set of support is %.1fx cheaper" % (n1 / n2))
+    assert ok1 and ok2 and n2 < n1
+    print()
+    print("   Both find a five-line proof. Checking a proof is easy;")
+    print("   finding one is the hard part, and real provers add")
+    print("   subsumption and indexing on top of this.")
+
+    # and a query that does NOT follow
+    print()
+    print("=== a query that does not follow ===")
+    ok3, n3 = refute_sos(KB, (True, "delayed", ("Billing",)), rounds=4)
+    print("   delayed(Billing): proved %s after %d steps" % (ok3, n3))
+    assert not ok3
+    print("   No proof was found -- but first-order entailment is only")
+    print("   semi-decidable, so 'no proof yet' is not the same as")
+    print("   'no proof exists'. Chapter 11 could hand back a")
+    print("   countermodel here; in general this chapter cannot.")
+\end{lstlisting}
+Then remove the occurs check from \texttt{unify} --- delete the two lines that call
+\texttt{occurs} --- and re-run. The first two cases are unchanged and the third now
+``succeeds'' with a binding that denotes no finite term. That is the bug, and the
+reason it is worth a name.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Write ``every service has an owner'' in first-order logic and convert it to
+        clause form. Explain why the existential variable must become a function of
+        $x$ rather than a constant.
+  \item In the proof of Table~\ref{tab:fol-proof}, rule R1 is used three times.
+        State how many propositional sentences would be needed to say the same
+        thing over $n$ services, and what happens when a service is added.
+  \item \chref{propositional} could return a countermodel when a conclusion did not
+        follow. Explain why this chapter generally cannot, and name the property of
+        first-order entailment responsible.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item First-order logic adds \term{terms} (constants, variables, functions),
+        \term{predicates} and \term{quantifiers}. One quantified sentence replaces
+        the $n^{2}$ propositional ones a general rule would otherwise need.
+  \item Pair $\forall$ with $\Rightarrow$ and $\exists$ with $\wedge$. The other
+        combinations say something much stronger, or nothing at all.
+  \item \term{Unification} finds a substitution making two atoms identical, and the
+        \term{most general} one commits to as little as possible. The \term{occurs
+        check} refuses to bind a variable inside a term containing it; omitting it
+        produces a hang, not a wrong answer.
+  \item Clause form adds \term{standardising apart} and \term{skolemisation} to
+        \chref{propositional}'s procedure. An existential inside a universal must
+        become a \emph{function} of it, or a rule about every service collapses
+        into a claim about one.
+  \item \term{Resolution} lifts to first-order logic by unifying the complementary
+        literals. The proof is an auditable table: each line names its parents and
+        its unifier.
+  \item Checking a proof is easy; finding one is not. Naive saturation took $705$
+        steps for a five-line proof; \term{set of support} reduced it to $202$, and
+        real provers add \term{subsumption} and indexing.
+  \item First-order entailment is only \emph{semi-decidable}. Failing to find a
+        proof is not evidence that none exists, and the countermodel of
+        \chref{propositional} is generally unavailable.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The occurs check prevents: (a)~two constants unifying
+        (b)~binding a variable to a term containing it (c)~skolemisation
+        (d)~variable capture between clauses.
+  \item \textbf{(MCQ)} $\forall x \; \mathit{service}(x) \wedge
+        \mathit{monitored}(x)$ claims that: (a)~every service is monitored
+        (b)~everything is a monitored service (c)~some service is monitored
+        (d)~nothing is monitored.
+  \item \textbf{(MCQ)} An existential variable inside a universal quantifier
+        skolemises to: (a)~a new constant (b)~a new function of the universally
+        quantified variables (c)~the same variable (d)~a predicate.
+  \item \textbf{(MCQ)} First-order entailment is: (a)~decidable
+        (b)~semi-decidable (c)~undecidable in both directions (d)~decidable only
+        for finite domains.
+  \item \textbf{(Short)} Explain why clauses must be standardised apart before
+        resolution, and describe the symptom when they are not.
+  \item \textbf{(Short)} Give the most general unifier of
+        $\mathit{owns}(x, \mathit{svc}(y))$ and
+        $\mathit{owns}(\texttt{Ayesha}, \mathit{svc}(\texttt{Auth}))$, and say what
+        a less general unifier would throw away.
+  \item \textbf{(Short)} Set of support cut the search from $705$ steps to $202$.
+        State the restriction it imposes and why it does not lose completeness.
+  \item \textbf{(Applied)} Add the fact $\mathit{depends}(\texttt{Billing},
+        \texttt{Payments})$ to the knowledge base and prove
+        $\mathit{delayed}(\texttt{Billing})$ by resolution. Present the proof as a
+        table with parents and unifiers, and say which earlier derived clause you
+        were able to reuse.
+\end{reviewq}

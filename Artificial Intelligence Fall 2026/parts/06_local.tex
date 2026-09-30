@@ -1,0 +1,781 @@
+%=====================================================================
+\chapter{Local Search and Optimisation}\label{ch:local}
+%=====================================================================
+\locator{2}{Part II --- Problem Solving by Search}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Recognise} the problems for which local search is appropriate ---
+        those where the goal is a good final state and the path to it is of no
+        interest.
+  \item \textbf{Implement} steepest-ascent hill climbing, and \textbf{diagnose}
+        the three landscape features that defeat it: local maxima, plateaus and
+        ridges.
+  \item \textbf{Explain} simulated annealing's acceptance rule, and \textbf{say}
+        what the temperature schedule controls at each end.
+  \item \textbf{Describe} a genetic algorithm's four operators, and
+        \textbf{identify} the assumption about the problem that crossover relies
+        on.
+  \item \textbf{Compare} local search methods at an \emph{equal evaluation budget},
+        and \textbf{explain} why any other comparison is meaningless.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{uninformed} and \chref{informed} (the systematic searches this chapter
+abandons, and the objective-function thinking it keeps). \chref{python} for
+representing a state as a tuple. This chapter needs no explored set and no
+frontier, and that is the point.
+\end{prereq}
+
+\begin{keyterms}
+local search $\bullet$ objective function $\bullet$ state-space landscape $\bullet$
+global maximum $\bullet$ local maximum $\bullet$ plateau $\bullet$ shoulder
+$\bullet$ ridge $\bullet$ hill climbing $\bullet$ steepest ascent $\bullet$
+sideways move $\bullet$ random-restart hill climbing $\bullet$ simulated annealing
+$\bullet$ temperature schedule $\bullet$ local beam search $\bullet$ genetic
+algorithm $\bullet$ selection $\bullet$ crossover $\bullet$ mutation $\bullet$
+evaluation budget
+\end{keyterms}
+
+\section{When the Path Does Not Matter}
+
+Every search so far returned a \emph{path}: do this, then this, then this. For the
+release plan that was exactly right --- the order is the deliverable.
+
+Now a different question. Nine developers must be assigned to four workstreams.
+Each developer is better at some streams than others, and each stream wants a
+particular headcount. There is no sequence here; there is only an assignment, and it
+is either good or bad. Nobody cares in what order you decided it.
+
+For problems of that shape, keeping a frontier and an explored set is pure waste.
+\term{Local search} keeps a single current state and tries to improve it, using no
+memory of how it got there. It gives up completeness and optimality, and in exchange
+it handles spaces that systematic search cannot approach at all.
+
+\begin{examplebox}[The staffing problem]
+Nine developers, four streams (\texttt{api}, \texttt{ui}, \texttt{data},
+\texttt{infra}). Each developer has a skill from $1$ to $5$ on each stream. The
+target headcount is $(3,2,2,2)$.
+
+A state is a tuple of nine stream indices, e.g.\ $(0,0,1,2,3,2,1,3,0)$. The
+objective to maximise is
+\[
+  \mathrm{score}(s) \;=\;
+  \underbrace{\sum_{i} \mathrm{skill}(d_{i}, s_{i})}_{\text{skill match}}
+  \;-\;
+  4 \sum_{j} \bigl| \mathrm{count}_{j}(s) - \mathrm{target}_{j} \bigr|
+\]
+The space has $4^{9} = 262{,}144$ states, small enough that the lab can find the
+true optimum by exhaustive enumeration --- it is $\mathbf{42}$ --- and then check
+how close each method gets. That is the only reason the problem is this small.
+Twelve developers and six streams would be $6^{12} \approx 2.2$ billion.
+\end{examplebox}
+
+\section{The State-Space Landscape}
+
+Picture the objective as a surface over the space of states: every state is a point
+on the floor and its score is the height. Local search is a climber on that surface
+who can see only the immediately adjacent ground. \dsref{landscape} names the
+features that decide the outcome.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize, x=1.25cm, y=1.0cm]
+
+% --- axes ------------------------------------------------------------
+\draw[gray!55, line width=0.8pt, -{Stealth[length=1.8mm]}] (0,0) -- (0,5.4)
+  node[above, font=\scriptsize, text=neutral] {objective};
+\draw[gray!55, line width=0.8pt, -{Stealth[length=1.8mm]}] (0,0) -- (9.9,0)
+  node[right, font=\scriptsize, text=neutral, align=left] {state space};
+
+% --- the landscape ---------------------------------------------------
+\draw[primary, line width=1.3pt, smooth]
+  plot coordinates {
+  (0,1.2) (0.6,2.4) (1.2,2.9) (1.8,2.5) (2.4,1.6) (3.0,1.9)
+  (3.6,2.6) (4.2,2.6) (4.8,2.6) (5.4,2.6) (6.0,3.4) (6.6,4.6)
+  (7.2,4.9) (7.8,4.3) (8.4,2.8) (9.0,2.0) (9.6,2.3)};
+
+% --- global maximum --------------------------------------------------
+\draw[greenhl, line width=1pt, -{Stealth[length=1.8mm]}] (7.2,5.35) -- (7.2,5.05);
+\node[font=\scriptsize\bfseries, text=greenhl!50!black, anchor=south]
+  at (7.2,5.35) {global maximum};
+
+% --- local maximum ---------------------------------------------------
+\draw[accent, line width=1pt, -{Stealth[length=1.8mm]}] (1.2,3.95) -- (1.2,3.1);
+\node[font=\scriptsize\bfseries, text=accent!55!black, anchor=south]
+  at (1.2,3.95) {local maximum};
+\node[font=\tiny\itshape, text=accent!55!black, anchor=north, align=center]
+  at (1.2,1.05) {hill climbing};
+\node[font=\tiny\itshape, text=accent!55!black, anchor=north, align=center]
+  at (1.2,0.72) {stops here};
+
+% --- shoulder --------------------------------------------------------
+\draw[goldhl, line width=1pt, decorate,
+      decoration={brace, amplitude=4pt, mirror}] (3.6,2.45) -- (5.4,2.45);
+\node[font=\scriptsize\bfseries, text=goldhl!55!black, anchor=north]
+  at (4.5,2.25) {shoulder: flat, but it leads up};
+
+% --- the dip ---------------------------------------------------------
+\node[font=\tiny\itshape, text=neutral, anchor=north, align=center]
+  at (2.42,1.42) {the dip that};
+\node[font=\tiny\itshape, text=neutral, anchor=north, align=center]
+  at (2.42,1.09) {stops a climber};
+
+\end{tikzpicture}}%
+{The state-space landscape. Local search sees only the ground next to it. A
+\emph{local maximum} has no better neighbour but is not the best state; a
+\emph{plateau} is flat, so there is no gradient to follow, and a \emph{shoulder} is
+a plateau that does lead upward --- which is why forbidding flat moves loses
+solutions and allowing them without limit loops forever. A \emph{ridge} is a run of
+local maxima along which no single move goes up, though a combination of two
+would.}{landscape}
+
+\section{Hill Climbing}
+
+Look at every neighbour, move to the best one, stop when no neighbour is better.
+That is \term{steepest-ascent hill climbing}, and it is about eight lines long.
+
+It is also, on this problem, close to useless: from a random start it reaches the
+optimum of $42$ in roughly one run in two hundred, and its average final score is
+$30.3$. The landscape is full of local maxima because the headcount penalty and the
+skill match pull against each other --- moving a developer to the stream she is best
+at often unbalances two streams at once, and no \emph{single} move repairs it.
+
+That is a ridge, and it is the characteristic failure. Hill climbing is not a bad
+implementation of a good idea; it is a correct implementation of an idea that does
+not work unaided.
+
+\begin{alertbox}[The plateau dilemma]
+If hill climbing stops when no neighbour is \emph{strictly} better, it halts on
+every shoulder --- flat ground that would have led upward. If it allows sideways
+moves onto equal-scoring neighbours, it can circle a genuine plateau forever.
+
+The standard compromise is to allow sideways moves up to a fixed limit (a hundred,
+say) and then stop. It is a hack, it works, and it is worth knowing that this is
+what the literature does rather than assuming there is something more elegant.
+\end{alertbox}
+
+\section{Three Ways Out}
+
+\subsection{Random-restart hill climbing}
+
+Run hill climbing from a random start; keep the best result; repeat until the budget
+is gone. It is three extra lines, it has no parameters, it is trivially parallel, and
+it is a far stronger baseline than its reputation suggests --- on this problem it
+lifts the mean from $30.3$ to $39.5$ and finds the optimum in $37$ runs out of $200$.
+
+Remember that figure while reading the rest of the chapter. Any more sophisticated
+method must beat random restart \emph{at the same budget}, or it is not earning its
+complexity.
+
+\subsection{Simulated annealing}
+
+Instead of always climbing, pick a random neighbour and accept it if it is an
+improvement --- but if it is worse, accept it anyway with probability
+\[
+  p \;=\; \exp\!\left(\frac{\Delta}{T}\right),
+  \qquad \Delta = \mathrm{score}(\text{new}) - \mathrm{score}(\text{current}) < 0,
+\]
+where $T$ is a \term{temperature} that starts high and is lowered to zero on a
+schedule. The name is from metallurgy: cool a metal slowly and its atoms settle into
+a low-energy crystal; cool it fast and they freeze into whatever disordered state
+they happened to be in.
+
+Read the formula at its two extremes. When $T$ is large, $\Delta/T$ is near zero and
+$p$ is near $1$ --- almost anything is accepted, and the search wanders freely,
+ignoring the landscape. When $T$ approaches zero, $p$ approaches zero for any
+negative $\Delta$, and the method becomes hill climbing. The schedule therefore
+interpolates between a random walk and a greedy climb, and the art is all in how
+fast. \dsref{annealing} plots the acceptance probability.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=11.8cm, height=5.6cm,
+  xlabel={how much worse the candidate is, $-\Delta$},
+  ylabel={probability of accepting it},
+  xlabel style={font=\scriptsize}, ylabel style={font=\scriptsize},
+  tick label style={font=\tiny},
+  xmin=0, xmax=10, ymin=0, ymax=1.05,
+  grid=both, major grid style={gray!18}, minor grid style={gray!8},
+  legend style={font=\tiny, at={(0.97,0.97)}, anchor=north east,
+                draw=gray!40, fill=white},
+  legend cell align=left, domain=0:10, samples=80]
+
+\addplot[accent, line width=1.2pt]   {exp(-x/8)};
+\addlegendentry{$T=8$ (start: almost anything goes)}
+\addplot[goldhl, line width=1.2pt]   {exp(-x/4)};
+\addlegendentry{$T=4$}
+\addplot[secondary, line width=1.2pt]{exp(-x/2)};
+\addlegendentry{$T=2$}
+\addplot[primary, line width=1.2pt]  {exp(-x/0.5)};
+\addlegendentry{$T=0.5$ (end: effectively hill climbing)}
+
+\node[font=\tiny\itshape, text=neutral, anchor=west, align=left]
+  at (axis cs:4.6,0.78)
+  {a big step downhill is\\ accepted early, rarely late};
+\end{axis}
+\end{tikzpicture}}%
+{Simulated annealing's acceptance probability $\exp(\Delta/T)$. High temperature
+accepts almost any move; as $T$ falls the method converges on hill climbing. Note
+that an \emph{improving} move is always accepted, at every
+temperature.}{annealing}
+
+There is a theoretical result worth knowing and not over-trusting: if the
+temperature is lowered slowly enough, simulated annealing finds the global optimum
+with probability approaching one. ``Slowly enough'' is slower than enumerating the
+space, so the guarantee is of no operational use. What matters in practice is that
+the method is robust, needs one parameter, and does well.
+
+\subsection{Local beam search}
+
+Keep $k$ states rather than one; generate all their successors; keep the best $k$.
+This is not the same as $k$ parallel hill climbs, because the $k$ slots are
+reallocated globally --- useful information passes between the threads, and the
+population tends to concentrate in the promising region. With randomised selection
+of which successors to keep, it is \term{stochastic beam search}, and it is the
+direct ancestor of the next idea.
+
+\section{Genetic Algorithms}
+
+A genetic algorithm is stochastic beam search with one extra operator: states are
+strings, and new states are made by \emph{combining two parents} rather than
+mutating one. Four operators:
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=2pt, topsep=4pt]
+  \item \textbf{Selection} --- choose parents with a bias toward high scores. The
+        lab uses tournament selection: sample three at random, keep the best.
+  \item \textbf{Crossover} --- cut both parents at the same random point and splice.
+        With nine developers, cut after developer $4$ and take the first four
+        assignments from one parent and the last five from the other.
+  \item \textbf{Mutation} --- with small probability, reassign a developer at
+        random. This is what stops the population collapsing to one state.
+  \item \textbf{Elitism} --- carry the best few unchanged into the next generation,
+        so a good solution is never lost.
+\end{enumerate}
+
+\begin{conceptbox}
+Crossover is the whole claim of a genetic algorithm, and it rests on an assumption:
+that the string decomposes into \emph{blocks that are independently good}. Splicing
+the first four developers' assignments from one parent onto the last five from
+another helps only if those are meaningful units that can be judged apart from each
+other.
+
+On the staffing problem the assumption holds reasonably well, and it is worth seeing
+why. Most of a developer's contribution is her own skill score, which depends on her
+assignment alone --- that part decomposes perfectly. The headcount penalty is the
+only coupling, and it is a mild global correction rather than a pairwise tangle. So
+inherited blocks mostly keep their value, and the measurement below shows the
+genetic algorithm winning clearly.
+
+That is a happy outcome and not a general law. On a problem where the objective
+depends on \emph{pairs} of positions --- who is rostered alongside whom, which two
+services must not share a host --- crossover routinely destroys exactly the
+structure it inherits, and the same code performs badly. Crossover is a claim about
+your problem. Check it; do not assume it.
+\end{conceptbox}
+
+\section{Comparing Them Honestly}
+
+Almost every published comparison of these methods is worthless, for one reason: the
+methods are given different amounts of work. A genetic algorithm with a population
+of $100$ over $500$ generations has evaluated the objective $50{,}000$ times; hill
+climbing from one start evaluates it a few hundred times. Declaring the former
+better is not a finding.
+
+The only fair comparison fixes the \term{evaluation budget}: every method may call
+the objective function the same number of times. \dsref{local-compare} and
+Table~\ref{tab:local} do that at $4{,}000$ calls, over $200$ independent runs with
+seeds $0$ to $199$.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=12.6cm, height=5.2cm,
+  xbar, y=0.72cm,
+  xmin=0, xmax=46,
+  xlabel={mean final score over 200 runs (the optimum is 42)},
+  xlabel style={font=\scriptsize},
+  tick label style={font=\scriptsize},
+  ytick=data,
+  yticklabels={Hill climbing (one start), Random restart,
+               Simulated annealing, Genetic algorithm},
+  yticklabel style={align=right, font=\scriptsize},
+  nodes near coords, nodes near coords style={font=\tiny, text=neutral},
+  point meta=explicit symbolic,
+  enlarge y limits=0.18,
+  axis lines=left, xmajorgrids, grid style={gray!18}]
+
+\addplot[draw=primary!70, fill=primary!20] coordinates {
+  (30.34,0) [30.3]
+  (39.45,1) [39.5]
+  (39.99,2) [40.0]
+  (41.54,3) [41.5]};
+
+\draw[greenhl, line width=1.1pt, dash pattern=on 3pt off 2pt]
+  (axis cs:42,-0.6) -- (axis cs:42,3.6);
+\node[font=\tiny\bfseries, text=greenhl!50!black, anchor=south, rotate=90]
+  at (axis cs:42.7,0.6) {optimum 42};
+\end{axis}
+\end{tikzpicture}}%
+{Mean final score at an equal budget of $4{,}000$ objective evaluations per run.
+Hill climbing alone is far behind; the three escape strategies are close together,
+with the genetic algorithm ahead.}{local-compare}
+
+\smallskip
+\noindent\begin{longtable}{@{}L{4.3cm}L{2.5cm}L{2.2cm}L{2.0cm}L{2.4cm}@{}}
+\toprule
+\textbf{Method} & \textbf{Found optimum} & \textbf{Mean score} &
+\textbf{Worst run} & \textbf{Parameters} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Method} & \textbf{Found optimum} & \textbf{Mean score} &
+\textbf{Worst run} & \textbf{Parameters} \\
+\midrule
+\endhead
+Hill climbing, one start & 1 / 200 & 30.34 & 22 & none \\
+Random-restart hill climbing & 37 / 200 & 39.45 & 36 & none \\
+Simulated annealing & 51 / 200 & 39.99 & 37 & initial temperature \\
+Genetic algorithm & \textbf{160 / 200} & \textbf{41.54} & 37 &
+population, mutation rate, tournament size \\
+\bottomrule
+\caption{Local search on the staffing problem at $4{,}000$ evaluations per run,
+$200$ runs, seeds $0$--$199$. The exhaustive optimum is $42$.}\label{tab:local}
+\end{longtable}
+
+Four things to take from the table.
+
+\textbf{Escaping local maxima is what matters, and almost any escape works.} The gap
+from hill climbing to the \emph{weakest} escape strategy is $9.1$ points of mean
+score; the gap from the weakest escape to the best is $2.1$. Nearly all the available
+improvement comes from not being a pure hill climber, and very little from which
+alternative you pick.
+
+\textbf{Random restart is a serious baseline.} No parameters, three lines, perfect
+parallelism, and it comes within $2.1$ points of the winner. Measure it before
+reaching for anything more interesting; if your sophisticated method cannot beat it,
+you have learned something useful cheaply.
+
+\textbf{The genetic algorithm wins here, on a problem whose structure suits it.} It
+reached the optimum in four runs out of five. Section~\ref{sec:accounting} shows how
+easily that result can be reversed by an apparently innocent change to how the
+budget is counted --- which is the real lesson of this section.
+
+\textbf{None of them is reliable on a single run.} Even the winner missed the optimum
+in $40$ of $200$ runs. If you need \emph{the} optimum rather than a good answer,
+local search is the wrong tool and \chref{csp} is the right one.
+
+\subsection{How you count an evaluation can reverse the ranking}
+\label{sec:accounting}
+
+\begin{alertbox}[The same four methods, two defensible accountings]
+A genetic algorithm evaluates fitness in two places: once per individual per
+generation, and again inside each tournament when it compares candidate parents. The
+standard --- and correct --- practice is to evaluate each individual \emph{once} per
+generation and cache the value for every selection decision, so a generation costs
+exactly \texttt{pop} evaluations. That is what Table~\ref{tab:local} does, and the
+genetic algorithm comes first with a mean of $41.54$.
+
+Charge each tournament comparison as a fresh evaluation instead --- two tournaments
+of three per child, so roughly six times as many --- and the same code, same seeds,
+same budget, produces a mean of $38.25$ and $29/200$ optima. \emph{The genetic
+algorithm moves from first place to last.} Nothing about the algorithm changed; only
+the bookkeeping did.
+
+\smallskip
+Which accounting is right? Caching is right, because in any real application the
+objective is the expensive part and no competent implementation would recompute a
+fitness it already holds. But notice how little the question announces itself, and
+how completely the answer changes the published conclusion. When you read a
+comparison of metaheuristics, the first question is not which method won --- it is
+what the authors counted.
+\end{alertbox}
+
+\begin{worked}[Why one developer cannot be moved to fix a ridge]
+Take the state in which every developer is assigned to the stream she is
+individually best at. Reading the skill table: Ayesha $\to$ \texttt{api} ($5$),
+Bilal $\to$ \texttt{api} ($4$), Chen $\to$ \texttt{ui} ($5$), Dina $\to$
+\texttt{data} ($5$), Emre $\to$ \texttt{infra} ($5$), Farah $\to$ \texttt{data}
+($5$), Gul $\to$ \texttt{ui} ($5$), Hassan $\to$ \texttt{infra} ($5$), Iqra $\to$
+tied at $3$, say \texttt{api}.
+
+\smallskip
+\textbf{Skill match:} $5+4+5+5+5+5+5+5+3 = 42$.
+\textbf{Headcount:} \texttt{api} $3$, \texttt{ui} $2$, \texttt{data} $2$,
+\texttt{infra} $2$ --- exactly the target $(3,2,2,2)$, so the imbalance penalty is
+zero.
+\textbf{Score:} $42 - 0 = 42$. This is the global optimum, and the lab confirms it
+by enumeration.
+
+\smallskip
+\textbf{Now start one move away from it} --- swap Iqra to \texttt{ui}. Headcount
+becomes $(2,3,2,2)$: two streams are off target by one each, so the imbalance is
+$2$ and the penalty is $8$. Skill match becomes $42-3+3 = 42$. Score $34$.
+
+\smallskip
+\textbf{The trap.} From that state, consider every single move. Moving Iqra back to
+\texttt{api} recovers $42$ --- so this particular state is \emph{not} a local
+maximum, and hill climbing escapes it. The genuine traps are states where two
+developers are each in the wrong stream in a way that balances the headcount. Move
+either one alone and the headcount goes off target, costing $8$, while the skill
+gain is at most $4$. So both single moves go \emph{down}, and only the simultaneous
+pair goes up.
+
+\smallskip
+\textbf{That is a ridge}, and it is why hill climbing reaches $42$ only once in two
+hundred starts. It also explains why simulated annealing helps: accepting the first
+of the two moves, at a cost of $4$, is exactly the kind of temporary worsening that
+a positive temperature permits and a hill climber forbids.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Comparing methods at unequal budgets.} The most common error in this
+        area, and it always flatters the method with the largest population. Fix the
+        number of objective evaluations.
+  \item \textbf{Using local search when you need a guarantee.} It gives a good
+        state, never a proof. ``No engineer is double-booked'' is not something to
+        establish by annealing --- use \chref{csp}.
+  \item \textbf{Allowing unlimited sideways moves.} An infinite loop on a plateau.
+        Cap them.
+  \item \textbf{Reaching for a genetic algorithm first.} It has the most parameters
+        and the strongest assumption --- that crossover recombines meaningful blocks.
+        It won here, but only $2.1$ mean points ahead of parameterless random
+        restart, and on a problem with pairwise structure it would lose. Establish
+        the baseline first.
+  \item \textbf{Not stating what an ``evaluation'' means in a comparison.} Charging
+        a genetic algorithm per tournament comparison instead of per individual per
+        generation moved it from first place to last on this problem, with no change
+        to the code (Section~\ref{sec:accounting}).
+  \item \textbf{An annealing schedule that cools too fast.} At $T \approx 0$ from
+        the second iteration it \emph{is} hill climbing, with extra code. Print the
+        acceptance rate over time; if it is near zero early, the schedule is wrong.
+  \item \textbf{Reporting the best of many runs as the method's performance.} Report
+        the mean and the worst as well, or you are describing your luck.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[Staffing by Annealing and by Evolution]
+Four methods, one objective, one budget. The lab finds the true optimum by
+enumeration first, so every method can be scored against the truth rather than
+against each other.
+\begin{lstlisting}[language=Python]
+"""Chapter 6 lab -- local search on the staffing problem.
+
+Nine developers, four workstreams. Reproduces Table 6.1. Every method
+gets exactly the same number of objective-function evaluations, which
+is the only comparison that means anything.
+"""
+
+import itertools
+import math
+import random
+
+DEVS = ("Ayesha", "Bilal", "Chen", "Dina", "Emre",
+        "Farah", "Gul", "Hassan", "Iqra")
+STREAMS = ("api", "ui", "data", "infra")
+
+# skill of each developer on each stream, 1 (weak) to 5 (strong)
+SKILL = {
+    "Ayesha": (5, 2, 3, 1),
+    "Bilal":  (4, 3, 2, 2),
+    "Chen":   (2, 5, 1, 2),
+    "Dina":   (1, 4, 5, 2),
+    "Emre":   (3, 1, 4, 5),
+    "Farah":  (2, 2, 5, 3),
+    "Gul":    (1, 5, 2, 3),
+    "Hassan": (4, 1, 2, 5),
+    "Iqra":   (3, 3, 3, 3),
+}
+TARGET = (3, 2, 2, 2)      # headcount wanted per stream
+PENALTY = 4                # cost per developer away from target
+NS = len(STREAMS)
+BUDGET = 4000              # objective evaluations allowed per run
+
+
+def raw_score(state):
+    fit = sum(SKILL[DEVS[i]][s] for i, s in enumerate(state))
+    counts = [0] * NS
+    for s in state:
+        counts[s] += 1
+    off = sum(abs(counts[j] - TARGET[j]) for j in range(NS))
+    return fit - PENALTY * off
+
+
+class Budget:
+    """Counts objective evaluations, so no method can cheat."""
+
+    def __init__(self, cap):
+        self.cap, self.n = cap, 0
+
+    def score(self, state):
+        self.n += 1
+        return raw_score(state)
+
+    def left(self):
+        return self.n < self.cap
+
+
+def neighbours(state):
+    for i in range(len(state)):
+        for s in range(NS):
+            if s != state[i]:
+                yield state[:i] + (s,) + state[i + 1:]
+
+
+def random_state(rng):
+    return tuple(rng.randrange(NS) for _ in DEVS)
+
+
+def one_neighbour(state, rng):
+    i = rng.randrange(len(state))
+    s = rng.randrange(NS)
+    while s == state[i]:
+        s = rng.randrange(NS)
+    return state[:i] + (s,) + state[i + 1:]
+
+
+# --- 1. steepest-ascent hill climbing ------------------------------
+def hill_climb(b, rng, start=None):
+    st = start if start is not None else random_state(rng)
+    while b.left():
+        cur = b.score(st)
+        best, bestv = None, cur
+        for n in neighbours(st):
+            if not b.left():
+                break
+            v = b.score(n)
+            if v > bestv:
+                best, bestv = n, v
+        if best is None:
+            return st, cur          # no better neighbour: stuck
+        st = best
+    return st, raw_score(st)
+
+
+# --- 2. random-restart hill climbing -------------------------------
+def random_restart(b, rng):
+    best, bestv = None, None
+    while b.left():
+        st, v = hill_climb(b, rng)
+        if bestv is None or v > bestv:
+            best, bestv = st, v
+    return best, bestv
+
+
+# --- 3. simulated annealing ----------------------------------------
+def anneal(b, rng, t0=8.0):
+    st = random_state(rng)
+    cur = b.score(st)
+    best, bestv = st, cur
+    while b.left():
+        T = t0 * (1 - b.n / b.cap) + 1e-9      # linear cooling
+        cand = one_neighbour(st, rng)
+        v = b.score(cand)
+        d = v - cur
+        if d > 0 or rng.random() < math.exp(d / T):
+            st, cur = cand, v
+            if cur > bestv:
+                best, bestv = st, cur
+    return best, bestv
+
+
+# --- 4. genetic algorithm ------------------------------------------
+def genetic(b, rng, pop=30, mut=0.12):
+    """Standard fitness accounting: every individual is evaluated once
+    per generation and the value is then cached for every selection
+    decision in that generation. So one generation costs exactly `pop`
+    evaluations -- no selection is ever free.
+
+    This matters more than it looks. Charging each tournament
+    comparison separately instead costs about six times as much per
+    generation, and the method drops from first place to last. See the
+    alertbox in Section 6.6.
+    """
+    P = [random_state(rng) for _ in range(pop)]
+    bestx, bestv = None, None
+    while b.n + pop <= b.cap:
+        fit = [b.score(x) for x in P]          # pop evaluations, once
+        order = sorted(range(pop), key=lambda i: -fit[i])
+        if bestv is None or fit[order[0]] > bestv:
+            bestv, bestx = fit[order[0]], P[order[0]]
+        elite = [P[i] for i in order[: pop // 5]]
+        nxt = list(elite)
+
+        def tournament():
+            """Best of three, judged on the cached fitness."""
+            picked = rng.sample(range(pop), 3)
+            return P[max(picked, key=lambda i: fit[i])]
+
+        while len(nxt) < pop:
+            a, c = tournament(), tournament()
+            cut = rng.randrange(1, len(DEVS))
+            child = a[:cut] + c[cut:]
+            child = tuple(rng.randrange(NS) if rng.random() < mut else g
+                          for g in child)
+            nxt.append(child)
+        P = nxt
+    return bestx, bestv
+
+
+def exhaustive():
+    """4^9 = 262144 states: small enough to know the truth."""
+    best, arg = None, None
+    for st in itertools.product(range(NS), repeat=len(DEVS)):
+        v = raw_score(st)
+        if best is None or v > best:
+            best, arg = v, st
+    return best, arg
+
+
+def show(state):
+    by = {j: [] for j in range(NS)}
+    for i, s in enumerate(state):
+        by[s].append(DEVS[i])
+    return "  ".join("%s: %s" % (STREAMS[j], ", ".join(by[j]))
+                     for j in range(NS))
+
+
+if __name__ == "__main__":
+    opt, arg = exhaustive()
+    print("states: %d      exhaustive optimum: %d" % (NS ** len(DEVS), opt))
+    print(show(arg))
+    print()
+    print("budget: %d evaluations per run, 200 runs, seeds 0-199" % BUDGET)
+    print()
+    print("method                        optimum    mean   worst")
+    print("-" * 56)
+
+    methods = (("hill climbing, one start", hill_climb),
+               ("random restart          ", random_restart),
+               ("simulated annealing     ", anneal),
+               ("genetic algorithm       ", genetic))
+    table = {}
+    for name, fn in methods:
+        hits, total, worst = 0, 0, None
+        for seed in range(200):
+            rng = random.Random(seed)
+            _, v = fn(Budget(BUDGET), rng)
+            total += v
+            worst = v if worst is None else min(worst, v)
+            if v == opt:
+                hits += 1
+        table[name.strip()] = (hits, total / 200, worst)
+        print("%s  %4d/200 %7.2f %6d"
+              % (name, hits, total / 200, worst))
+
+    hc = table["hill climbing, one start"]
+    rr = table["random restart"]
+    sa = table["simulated annealing"]
+    ga = table["genetic algorithm"]
+    escapes = (rr, sa, ga)
+
+    # 1. plain hill climbing is hopeless here: the landscape is a ridge
+    assert hc[0] <= 5
+    # 2. every escape strategy is far better than no escape
+    for m in escapes:
+        assert m[1] > hc[1] + 5
+    # 3. the gap to no-escape dwarfs the gap between the escapes
+    spread = max(m[1] for m in escapes) - min(m[1] for m in escapes)
+    gain = min(m[1] for m in escapes) - hc[1]
+    assert spread < gain
+    # 4. even the winner is unreliable on any single run
+    assert max(m[0] for m in escapes) < 200
+
+    print()
+    print("escaping local maxima is worth %.1f points of mean score;"
+          % gain)
+    print("choosing the best escape is worth only %.1f more." % spread)
+    print()
+    print("random restart has no parameters at all and reaches %.2f."
+          % rr[1])
+    print("measure it before reaching for anything more interesting.")
+    print()
+    best = max(escapes, key=lambda m: m[1])
+    print("the best method still missed the optimum in %d of 200 runs."
+          % (200 - best[0]))
+\end{lstlisting}
+Two experiments to run afterwards. Set the annealing temperature \texttt{t0} to
+$0.01$ and confirm that it degenerates into hill climbing --- the mean drops back
+towards $30$. Then raise \texttt{PENALTY} from $4$ to $20$ and watch every method
+get worse together: a harder penalty makes the ridges steeper, and no amount of
+cleverness in the search compensates for a landscape that has been made hostile by
+the modelling.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Explain the difference between a plateau and a shoulder, and say what goes
+        wrong if hill climbing (a)~forbids sideways moves and (b)~allows unlimited
+        sideways moves.
+  \item Simulated annealing is offered a neighbour that is $6$ points worse. Compute
+        the acceptance probability at $T = 8$ and at $T = 0.5$, and say what the
+        two numbers mean for the method's behaviour early and late in a run.
+  \item Name the assumption crossover makes about a problem, say why the staffing
+        objective largely satisfies it, and give one change to the objective that
+        would break it.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item \term{Local search} keeps one current state and no path. Use it when the
+        answer is a good final state and the route to it is of no interest --- and
+        never when you need a guarantee.
+  \item The \term{state-space landscape} explains every failure: \term{local
+        maxima}, \term{plateaus} (flat, possibly a \term{shoulder} that leads up)
+        and \term{ridges} (no single move improves, though a combination would).
+  \item \term{Hill climbing} moves to the best neighbour and stops when there is
+        none. On the staffing problem it reaches the optimum once in $200$ starts,
+        because the skill match and the headcount penalty form a ridge.
+  \item \term{Random restart} costs three lines, has no parameters, parallelises
+        perfectly and lifted the mean from $30.3$ to $39.5$. It is the baseline
+        every other method must beat.
+  \item \term{Simulated annealing} accepts a worsening move with probability
+        $\exp(\Delta/T)$, interpolating from a random walk at high $T$ to hill
+        climbing at $T \to 0$. One parameter, mean $40.0$, $51/200$ optima.
+  \item A \term{genetic algorithm} adds \term{crossover} to stochastic beam search.
+        Crossover assumes the state decomposes into independently good blocks; the
+        staffing problem largely satisfies that, and the method led the table with
+        $160/200$ optima and a mean of $41.5$.
+  \item Compare methods only at an \emph{equal evaluation budget}, say exactly what
+        an evaluation is, and report the mean and the worst run rather than the best.
+        Charging the genetic algorithm per tournament comparison rather than per
+        individual per generation moves it from first place to last on this problem
+        without touching its code.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Local search is appropriate when: (a)~the path to the goal is
+        the answer (b)~only the final state matters (c)~optimality must be proved
+        (d)~the space is small enough to enumerate.
+  \item \textbf{(MCQ)} A \emph{ridge} defeats hill climbing because:
+        (a)~all neighbours are equal (b)~no single move improves, though a
+        combination would (c)~the objective is undefined (d)~the space is
+        continuous.
+  \item \textbf{(MCQ)} In simulated annealing, as $T \to 0$ the method becomes:
+        (a)~a random walk (b)~breadth-first search (c)~hill climbing (d)~a genetic
+        algorithm.
+  \item \textbf{(MCQ)} The assumption behind crossover is that:
+        (a)~the objective is linear (b)~the state decomposes into independently good
+        blocks (c)~mutation is unnecessary (d)~the population is large.
+  \item \textbf{(Short)} Why is comparing a genetic algorithm to hill climbing
+        without fixing the evaluation budget meaningless? Describe the comparison
+        you would run instead.
+  \item \textbf{(Short)} Give the acceptance rule of simulated annealing and explain
+        what each of its two extremes reduces to.
+  \item \textbf{(Short)} The genetic algorithm led Table~\ref{tab:local} on the
+        standard accounting and came last when each tournament comparison was charged
+        separately. Say which accounting is correct and why, and what the episode
+        implies about published comparisons of metaheuristics.
+  \item \textbf{(Applied)} Iqra has skill $3$ on all four streams. Show that the
+        optimal assignment puts her on \texttt{api}, by computing the score of
+        moving her to each of the other three streams from the optimum. Then explain
+        what her uniform skill row contributes to the difficulty of the landscape.
+\end{reviewq}

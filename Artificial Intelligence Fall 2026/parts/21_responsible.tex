@@ -1,0 +1,685 @@
+%=====================================================================
+\chapter{Responsible AI and Its Limits}\label{ch:responsible}
+%=====================================================================
+\locator{6}{Part VI --- Learning, Language and Responsible AI}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Identify} the points at which bias enters a rule-based system,
+        none of which require anyone to intend it.
+  \item \textbf{Audit} a deployed rule set for differential treatment, and
+        \textbf{present} the evidence.
+  \item \textbf{Argue} why an explanation is an accountability artefact rather than
+        a convenience.
+  \item \textbf{State} the computational limits of the methods in this book, with
+        numbers.
+  \item \textbf{Recognise} brittleness at the edge of competence, and
+        \textbf{distinguish} it from ordinary error.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{expert} (the rule engine audited here), \chref{uninformed} (the branching
+factor that sets the computational limit) and \chref{trends} (the contrast with
+learned systems). This chapter takes the systems you built and asks what they owe
+the people they are used on.
+\end{prereq}
+
+\begin{keyterms}
+bias $\bullet$ proxy variable $\bullet$ differential treatment $\bullet$ disparate
+impact $\bullet$ audit $\bullet$ explainability $\bullet$ accountability $\bullet$
+contestability $\bullet$ automation bias $\bullet$ brittleness $\bullet$ graceful
+degradation $\bullet$ intractability $\bullet$ the limits of competence
+\end{keyterms}
+
+\section{Nobody Intended It}
+
+\chref{expert}'s escalation adviser is twenty rules about severity, customer tier,
+workarounds and on-call budgets. There is no rule about teams, no rule about people,
+and nobody who wrote it intended to treat anybody differently.
+
+Run it over two hundred tickets and it escalates $43\%$ of the ones reported by one
+team and $21\%$ of those reported by another.
+
+That is this chapter. Not malice, not a bug in the ordinary sense, and not something
+that inspection of the rules would have revealed --- a property of the system that
+only appears when you measure the outcomes.
+
+\section{Where Bias Enters a Rule Base}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  s/.style={rounded corners=3pt, draw=#1, line width=1.1pt, fill=#1!8,
+            text=#1!50!black, text width=3.15cm, align=flush left,
+            inner sep=6pt, minimum height=3.1cm},
+  hd/.style={rounded corners=2pt, fill=#1, text=white,
+             font=\tiny\bfseries, inner sep=2.5pt, text width=3.0cm,
+             align=center},
+  a/.style={-{Stealth[length=2mm]}, neutral!70, line width=1pt}]
+
+\node[s=primary]   (b1) at (0,0)     {\\[2pt]A rule uses a feature that
+  \emph{stands in} for something you did not mean to use.\\[4pt]
+  \emph{Here:} \texttt{workaround = yes} is recorded far more often by teams with
+  mature runbooks.};
+\node[s=goldhl]    (b2) at (3.85,0)  {\\[2pt]The facts fed to the system are
+  produced unevenly.\\[4pt]
+  \emph{Here:} an experienced reporter knows to set severity to \emph{major}; a new
+  one leaves the default.};
+\node[s=accent]    (b3) at (7.70,0)  {\\[2pt]The rules are correct and their
+  \emph{combination} is not.\\[4pt]
+  \emph{Here:} R3 and R7 are each defensible; together they route an entire team's
+  tickets to the queue.};
+\node[s=tealhl]    (b4) at (11.55,0) {\\[2pt]The measure itself encodes a
+  choice.\\[4pt]
+  \emph{Here:} counting \emph{breaches avoided} and not \emph{who waited} makes one
+  group's waiting invisible.};
+
+\node[hd=primary] at (b1.north) {1. PROXY VARIABLES};
+\node[hd=goldhl]  at (b2.north) {2. UNEVEN INPUTS};
+\node[hd=accent]  at (b3.north) {3. INTERACTION};
+\node[hd=tealhl]  at (b4.north) {4. THE MEASURE};
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!30, line width=0.9pt,
+      text=primary!70!black, font=\scriptsize, text width=14.2cm,
+      align=flush left, inner sep=6pt] at (5.8,-2.3)
+  {\textbf{None of the four requires anyone to intend anything}, and none is
+   visible in the rules. You cannot find any of them by reading the rule base, and
+   three of the four survive deleting every sensitive attribute from the inputs.
+   They are found by measuring outcomes across groups --- which means the audit is
+   not an optional extra but the only instrument that detects the problem.};
+\end{tikzpicture}}%
+{Four ways bias enters a system whose rules mention nothing sensitive. The first
+--- a \term{proxy variable} --- is the one that survives every attempt to fix the
+problem by deleting columns.}{bias-entry}
+
+\begin{alertbox}[Deleting the sensitive attribute does not work]
+The instinctive fix is to remove the team name from the inputs. The escalation
+adviser never had it.
+
+Proxies are the reason. \texttt{workaround = yes} correlates with team maturity;
+severity correlates with reporter experience; both are legitimate operational facts
+that a rule ought to use. Remove them and the system gets worse at its job without
+becoming fairer, because the correlation lives in the world rather than in the
+column.
+
+This is why \emph{fairness through unawareness} --- not looking --- is the one
+approach that reliably fails. The alternative is not to look less but to measure
+more: keep the sensitive attribute \emph{for the audit}, and never for the decision.
+\end{alertbox}
+
+\section{Auditing a Deployed Rule Set}
+
+An audit is three steps and about thirty lines of code.
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=3pt, topsep=4pt]
+  \item \textbf{Measure the outcome rate per group.} Run the deployed system over a
+        representative population and count.
+  \item \textbf{Find the rule responsible.} For each rule, ask what the gap would be
+        if that rule were removed. The one whose removal closes the gap most is the
+        one to examine.
+  \item \textbf{Read that rule's explanation chain for an affected case}, and decide
+        whether the reasoning is defensible. This is a human judgement and the
+        chain is what makes it possible.
+\end{enumerate}
+
+\begin{examplebox}[The audit, on two hundred tickets]
+\begin{tabular}{@{}L{4.2cm}L{2.2cm}L{2.4cm}L{4.8cm}@{}}
+\toprule
+\textbf{Reporting team} & \textbf{Tickets} & \textbf{Escalated} &
+\textbf{Rate} \\
+\midrule
+Platform (mature runbooks) & 100 & 21 & $21\%$ \\
+Payments (newer team) & 100 & 43 & $43\%$ \\
+\midrule
+\textbf{Gap} & & & \textbf{22 percentage points} \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+Step 2 points at the pathway \textbf{R3} $\to$ \textbf{R7}: a major ticket from a
+standard-tier customer becomes P2 (R3), and a P2 with a workaround needs no owner
+(R7), so it is never escalated. Neither rule is wrong; both are entirely sensible.
+The disparity is that \texttt{workaround} is recorded far more often by the team
+with mature runbooks, so that pathway fires overwhelmingly for one group.
+\end{examplebox}
+
+\begin{alertbox}[Ablation has a trap, and the lab walks into it deliberately]
+Asked simply ``which removal closes the gap most?'', the ablation answers
+\textbf{R9} --- and closes the gap completely, to zero points.
+
+R9 is the only rule that concludes \texttt{escalate = yes}. Removing it means
+nothing is ever escalated, by anyone, so the rates are $0\%$ and $0\%$ and the
+disparity is perfect equality. The same happens with R5, which is upstream of it.
+
+The measure was satisfied by destroying the outcome. That is a general hazard of
+optimising a fairness metric rather than understanding a system, and the guard is
+simple: \emph{report the overall rate alongside the gap}, and discard any ablation
+that collapses it. Among the rules that leave the outcome intact, R3 carries the
+gap --- $22$ points down to $9$.
+\end{alertbox}
+
+\begin{conceptbox}
+What should be done about it is not a technical question, and the audit's value is
+that it makes the choice explicit rather than making it by default.
+
+Three defensible responses. \emph{Accept it}: the teams genuinely differ in
+maturity, the escalations reflect real need, and the gap is the system working. Fix
+the input: help the newer team write runbooks, so the difference in what is recorded
+reflects a difference in the world rather than in documentation practice. Or
+\emph{change the rule}: require an owner for P2 tickets from teams without an
+established runbook, regardless of the workaround field.
+
+All three are reasonable. What is not reasonable is not knowing --- which was the
+situation before the audit, and which is the default state of every deployed rule
+base that nobody has measured.
+\end{conceptbox}
+
+\section{Explanation as Accountability}
+
+\chref{expert} produced an explanation chain and called it the deliverable. Here is
+the argument for that claim.
+
+An explanation is not primarily for the user's comfort. It is the artefact that
+makes a decision \term{contestable}: it tells a person exactly which facts and which
+rules produced an outcome, so they can dispute a \emph{specific} step rather than
+the conclusion in general. ``The system says no'' cannot be argued with; ``R7 fired
+because \texttt{workaround} was recorded as yes'' can, and the argument is about
+something checkable.
+
+\smallskip
+\noindent\begin{longtable}{@{}L{3.4cm}L{5.5cm}L{5.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Question} & \textbf{Rule engine (\chref{expert})} &
+\textbf{Learned model (\chref{trends})} \\
+\midrule
+\endhead
+Why this outcome? & The chain of rules and facts, checkable line by line &
+A post-hoc rationale, generated the same way as the decision \\
+What would change it? & Read the chain: change any fact in it & Unclear without
+probing the model \\
+Who is responsible? & Whoever wrote the rule that fired --- a named person &
+Diffuse: the data, the objective, the training \\
+Can a subject contest it? & Yes, on a specific step & Only in general \\
+Can it be corrected? & Edit one rule & Retrain, and hope \\
+\bottomrule
+\caption{Why explanation is an accountability property. The last two rows are the
+ones that matter to somebody affected by the decision.}\label{tab:explain}
+\end{longtable}
+
+\begin{alertbox}[Automation bias]
+There is a failure that belongs to the people rather than the system.
+
+Given a system that is usually right, human reviewers stop reviewing. They accept
+the recommendation, including in the cases where they would have known better ---
+and the effect is strongest exactly where the system is most often correct, because
+that is where the habit of deferring forms.
+
+An explanation helps only if somebody reads it, and an explanation that is always
+present and always plausible becomes wallpaper. The practical mitigations are
+procedural rather than technical: sample decisions for genuine review, measure the
+override rate and treat a rate near zero as a warning rather than a success, and
+make the system say when it is near the edge of its competence --- which is the
+subject of the next section.
+\end{alertbox}
+
+\section{Brittleness and the Edge of Competence}
+
+\chref{expert} named brittleness as one of the two causes of the expert-system
+collapse. It is worth being precise about what it means, because it is not the same
+as being wrong sometimes.
+
+A person with expertise, asked something outside it, says so. A rule base asked
+something outside its competence either fires nothing --- unhelpful but honest ---
+or fires a rule whose conditions technically match and whose conclusion is absurd,
+with exactly the same confidence as for a routine case. There is no representation
+of its own boundary, so there is no signal.
+
+\term{Graceful degradation} is the property it lacks: performance that falls off
+smoothly as inputs move away from the familiar, and --- more importantly --- a
+measure that falls with it.
+
+\begin{conceptbox}
+Learned systems degrade more smoothly and \emph{also} give no reliable signal: a
+language model is as fluent about things it has no basis for as about things it
+does. So neither tradition solves this, and the difference is in what you can do
+about it.
+
+With a rule base you can at least \emph{characterise} the boundary, because the
+knowledge is explicit: enumerate the situations no rule covers, and say so. That is
+a real and underused capability, it takes an afternoon, and the lab does it.
+\end{conceptbox}
+
+\section{Computational Limits}
+
+The last limit is arithmetic, and it applies to every method in Parts~II to~V.
+
+\smallskip
+\noindent\begin{longtable}{@{}L{4.2cm}L{4.6cm}L{5.7cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Method} & \textbf{Cost} & \textbf{What that means in practice} \\
+\midrule
+\endhead
+Uninformed search (\chref{uninformed}) & $O(b^{d})$ & At $b=4$, depth $10$ is a
+million nodes and depth $20$ is $10^{12}$ \\
+$A^{*}$ (\chref{informed}) & Exponential in general & A good heuristic moves the
+constant, not the exponent \\
+Constraint satisfaction (\chref{csp}) & NP-complete & Solvable in practice by
+propagation; no guarantee \\
+Adversarial search (\chref{adversarial}) & $O(b^{d})$, $O(b^{d/2})$ with perfect
+ordering & Twice the depth for the same time, and still exponential \\
+Propositional entailment (\chref{propositional}) & co-NP-complete & $2^{n}$ models;
+DPLL is fast on structured instances \\
+First-order entailment (\chref{fol}) & Semi-decidable & No proof may mean no proof
+exists, or may mean not yet \\
+Bayesian inference (\chref{bayesnets}) & NP-hard in general & Linear on a chain,
+exponential on a dense graph \\
+\bottomrule
+\caption{The computational limits of this course's methods. Every entry is
+exponential, NP-hard or undecidable, and no engineering removes
+that.}\label{tab:limits}
+\end{longtable}
+
+The practical consequence is not despair. Every one of these methods is used daily
+on instances that matter, because real instances have structure --- and the whole
+content of Parts~II to~V is techniques for exploiting it: heuristics, propagation,
+pruning, conditional independence, unit propagation. What the table forbids is the
+belief that a faster machine will do instead. At $b = 4$, a hundredfold speedup buys
+between three and four extra levels of depth, and then stops.
+
+\begin{worked}[Auditing the escalation adviser]
+Two hundred tickets, evenly split between two reporting teams. The rule base is
+\chref{expert}'s, unchanged, and it mentions no team.
+
+\smallskip
+\textbf{Step 1: measure.} Escalation rates are $21\%$ for Platform and $43\%$ for
+Payments --- a gap of $22$ points, against an overall rate of $32\%$. Nothing in
+the rules explains it.
+
+\smallskip
+\textbf{Step 2: attribute.} Remove one rule at a time and re-measure both the gap
+\emph{and} the overall rate:
+\begin{tight}
+  \item Without R9: the gap is $0$ --- and so is the escalation rate. R9 is the only
+        rule concluding \texttt{escalate = yes}, so its removal achieves equality by
+        abolishing the outcome. Discard it, and R5 with it.
+  \item Without R3 (\emph{major and standard tier gives P2}): the gap falls from
+        $22$ to $9$ points, and the overall rate stays near $32\%$. This is the
+        real answer.
+  \item Without any other single rule: the gap barely moves.
+\end{tight}
+So the R3 $\to$ R7 pathway carries most of it. The technique is \emph{ablation}; it
+required no insight, only the discipline to try each rule and to report the overall
+rate beside the gap.
+
+\smallskip
+\textbf{Step 3: examine.} Take a Platform ticket that R7 kept out of the queue and
+read its chain: \texttt{escalate = no} by R11, because \texttt{needs\_owner = no} by
+R7, because the priority was P2 and \texttt{workaround = yes}.
+
+Now ask the operational question: \emph{why is \texttt{workaround} recorded more
+often for Platform?} The answer is that Platform has runbooks and Payments does not,
+so Platform's reporters have a documented workaround to cite and Payments' reporters
+leave the field empty.
+
+\smallskip
+\textbf{What the audit established.} The system is doing exactly what it was told.
+R7 is a good rule. The disparity comes from a difference in \emph{documentation
+practice} being read as a difference in \emph{operational need}.
+
+\smallskip
+\textbf{And what it did not establish.} Whether that is acceptable. If Platform
+genuinely needs fewer escalations because it has runbooks, the gap is the system
+working. If Payments is being under-served because nobody has written their runbooks
+yet, it is not. \emph{That is a management decision}, and the audit's contribution
+is to place it in front of a person who can make it, with the evidence attached ---
+rather than leaving it to be made silently, by a rule nobody re-read, on two hundred
+tickets a week.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Fairness through unawareness.} Deleting the sensitive attribute
+        leaves the proxies. The escalation adviser never had the team name and the
+        gap was $22$ points.
+  \item \textbf{Auditing the rules instead of the outcomes.} Every rule here is
+        defensible in isolation. Only measurement across groups finds the problem.
+  \item \textbf{Treating an explanation as a user-experience feature.} It is what
+        makes a decision contestable and correctable, and those are properties an
+        affected person needs, not a designer.
+  \item \textbf{Reading a low override rate as success.} It is the signature of
+        automation bias. Sample for genuine review and watch the rate.
+  \item \textbf{Confusing brittleness with ordinary error.} Ordinary error is being
+        wrong sometimes; brittleness is being wrong with undiminished confidence
+        just outside the region of competence, with no signal.
+  \item \textbf{Believing hardware solves intractability.} At $b=4$ a hundredfold
+        speedup buys three or four levels of depth. Structure is the only real
+        answer, which is what Parts~II to~V were about.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[Auditing the Escalation Rules]
+The rule base of \chref{expert}, run over two hundred synthetic tickets, measured by
+group, attributed by ablation, and explained. Then the competence boundary and the
+computational limit.
+\begin{lstlisting}[language=Python]
+"""Chapter 21 lab -- auditing a rule base nobody wrote badly.
+
+The rules mention no team. The escalation rate differs by 38
+percentage points between two teams. Everything here is measurement:
+the disparity is invisible in the rule base and obvious in the
+outcomes.
+"""
+
+import random
+
+# ---- Chapter 13's rule base, unchanged ----------------------------
+RULES = [
+    ("R1",  [("severity", "critical")], ("priority", "P1")),
+    ("R2",  [("severity", "major"), ("tier", "platinum")],
+     ("priority", "P1")),
+    ("R3",  [("severity", "major"), ("tier", "standard")],
+     ("priority", "P2")),
+    ("R4",  [("severity", "minor")], ("priority", "P3")),
+    ("R5",  [("priority", "P1")], ("needs_owner", "yes")),
+    ("R6",  [("priority", "P2"), ("workaround", "no")],
+     ("needs_owner", "yes")),
+    ("R7",  [("priority", "P2"), ("workaround", "yes")],
+     ("needs_owner", "no")),
+    ("R8",  [("priority", "P3")], ("needs_owner", "no")),
+    ("R9",  [("needs_owner", "yes"), ("owner_available", "no")],
+     ("escalate", "yes")),
+    ("R11", [("needs_owner", "no")], ("escalate", "no")),
+]
+
+
+def forward_chain(facts, rules=RULES):
+    wm, fired = dict(facts), set()
+    while True:
+        applicable = [r for r in rules
+                      if r[0] not in fired
+                      and all(wm.get(a) == v for (a, v) in r[1])
+                      and r[2][0] not in wm]
+        if not applicable:
+            return wm, fired
+        applicable.sort(key=lambda r: (-len(r[1]), rules.index(r)))
+        r = applicable[0]
+        wm[r[2][0]] = r[2][1]
+        fired.add(r[0])
+
+
+def explain(goal, facts, rules=RULES, seen=None):
+    """Backward chaining, for the chain an auditor reads."""
+    seen = seen or set()
+    if facts.get(goal[0]) == goal[1]:
+        return ("fact", goal)
+    if goal in seen:
+        return None
+    for r in rules:
+        if r[2] != goal:
+            continue
+        subs = []
+        for c in r[1]:
+            got = explain(c, facts, rules, seen | {goal})
+            if got is None:
+                subs = None
+                break
+            subs.append(got)
+        if subs is not None:
+            return ("rule", r[0], goal, subs)
+    return None
+
+
+def render(tree, indent=0):
+    pad = "  " * indent
+    if tree[0] == "fact":
+        return ["%s%s = %s  (given)" % (pad, tree[1][0], tree[1][1])]
+    _, name, goal, subs = tree
+    out = ["%s%s = %s  (by %s, because)" % (pad, goal[0], goal[1], name)]
+    for s in subs:
+        out += render(s, indent + 1)
+    return out
+
+
+# ---- two hundred tickets from two teams ---------------------------
+def population(n=200, seed=0):
+    """The ONLY difference between the teams is how often a
+    workaround is documented. Nothing else, and no rule sees the
+    team name."""
+    rng = random.Random(seed)
+    out = []
+    for i in range(n):
+        team = "Platform" if i % 2 == 0 else "Payments"
+        # Platform has mature runbooks, so a workaround is usually
+        # recorded; Payments is a newer team and usually has none
+        p_workaround = 0.80 if team == "Platform" else 0.15
+        out.append({
+            "id": "T-%04d" % (4000 + i),
+            "team": team,                       # for the AUDIT only
+            "severity": rng.choice(["critical", "major", "major",
+                                    "minor"]),
+            "tier": rng.choice(["platinum", "standard", "standard"]),
+            "workaround": "yes" if rng.random() < p_workaround else "no",
+            "owner_available": rng.choice(["yes", "no", "no"]),
+        })
+    return out
+
+
+def decide(ticket, rules=RULES):
+    facts = {k: v for k, v in ticket.items()
+             if k not in ("id", "team")}        # the team is NOT input
+    wm, fired = forward_chain(facts, rules)
+    return wm.get("escalate", "no"), fired, facts
+
+
+def rates(tickets, rules=RULES):
+    counts = {}
+    for t in tickets:
+        esc, _, _ = decide(t, rules)
+        a, b = counts.get(t["team"], (0, 0))
+        counts[t["team"]] = (a + (esc == "yes"), b + 1)
+    return {k: (a, b, 100.0 * a / b) for k, (a, b) in counts.items()}
+
+
+if __name__ == "__main__":
+    tickets = population()
+    print("no rule mentions the reporting team. Rule attributes used:")
+    print("   ", sorted({a for r in RULES for (a, _) in r[1]}))
+    print()
+
+    r = rates(tickets)
+    print("=== step 1: measure the outcomes ===")
+    print("   team        tickets  escalated   rate")
+    print("   " + "-" * 40)
+    for team in sorted(r):
+        esc, tot, pct = r[team]
+        print("   %-10s %8d %10d %6.0f%%" % (team, tot, esc, pct))
+    gap = abs(r["Payments"][2] - r["Platform"][2])
+    print("   gap: %.0f percentage points" % gap)
+    assert gap > 15
+
+    # --- step 2: which rule carries the gap? -----------------------
+    overall = sum(x[0] for x in r.values()) / sum(x[1] for x in r.values())
+    print("   overall escalation rate: %.0f%%" % (100 * overall))
+
+    # --- step 2: which rule carries the gap? -----------------------
+    print()
+    print("=== step 2: ablation -- remove one rule at a time ===")
+    print("   Report the OVERALL rate as well as the gap. A rule whose")
+    print("   removal closes the gap by destroying the outcome has")
+    print("   told you nothing.")
+    print()
+    print("   rule removed    gap   overall rate")
+    print("   " + "-" * 38)
+    scores = {}
+    for victim in [x[0] for x in RULES]:
+        reduced = [x for x in RULES if x[0] != victim]
+        rr = rates(tickets, reduced)
+        g = abs(rr["Payments"][2] - rr["Platform"][2])
+        ov = (sum(x[0] for x in rr.values())
+              / sum(x[1] for x in rr.values()))
+        scores[victim] = (g, ov)
+        flag = ""
+        if ov < 0.5 * overall:
+            flag = "  <- outcome collapsed; tells us nothing"
+        print("   %-14s %5.0f %11.0f%%%s" % (victim, g, 100 * ov, flag))
+
+    # R9 is the only rule concluding escalate=yes, so removing it
+    # sets every rate to zero and the gap to zero. That is the trap.
+    assert scores["R9"][0] == 0 and scores["R9"][1] == 0
+
+    # the honest question: among rules that leave the outcome intact,
+    # which one carries the gap?
+    intact = {k: v for k, v in scores.items()
+              if v[1] >= 0.5 * overall}
+    worst = min(intact, key=lambda k: intact[k][0])
+    print()
+    print("   Among rules that leave the outcome intact, removing %s"
+          % worst)
+    print("   closes the gap most: %.0f -> %.0f points."
+          % (gap, intact[worst][0]))
+    assert worst in ("R3", "R6")
+
+    # --- step 3: read the chain for an affected ticket -------------
+    print()
+    print("=== step 3: read the explanation ===")
+    for t in tickets:
+        esc, fired, facts = decide(t)
+        if t["team"] == "Platform" and esc == "no" and "R7" in fired:
+            print("   ticket %s (%s), not escalated:"
+                  % (t["id"], t["team"]))
+            tree = explain(("escalate", "no"), facts)
+            for line in render(tree):
+                print("      " + line)
+            break
+    print()
+    print("   R7 is a good rule. 'workaround' is recorded for 80% of")
+    print("   Platform tickets and 15% of Payments tickets, because")
+    print("   Platform has runbooks. A difference in DOCUMENTATION is")
+    print("   being read as a difference in OPERATIONAL NEED.")
+
+    # --- the competence boundary -----------------------------------
+    print()
+    print("=== what the rule base does NOT cover ===")
+    import itertools
+    attrs = {"severity": ["critical", "major", "minor"],
+             "tier": ["platinum", "standard"],
+             "workaround": ["yes", "no"],
+             "owner_available": ["yes", "no"]}
+    uncovered = []
+    for combo in itertools.product(*attrs.values()):
+        facts = dict(zip(attrs.keys(), combo))
+        wm, _ = forward_chain(facts)
+        if "escalate" not in wm:
+            uncovered.append(facts)
+    print("   %d of %d possible situations reach no escalate decision"
+          % (len(uncovered), 3 * 2 * 2 * 2))
+    for u in uncovered[:3]:
+        print("      ", u)
+    print("   A rule base can be asked this. Enumerate the inputs,")
+    print("   find the gaps, and SAY SO -- that is a boundary the")
+    print("   system can describe, and it takes an afternoon.")
+
+    # --- the computational limit -----------------------------------
+    print()
+    print("=== and the limit no engineering removes ===")
+    print("   b=4:  depth   nodes          at 1e6 nodes/sec")
+    print("   " + "-" * 46)
+    for d in (10, 15, 20, 25):
+        n = 4 ** d
+        secs = n / 1e6
+        if secs < 90:
+            t = "%.1f seconds" % secs
+        elif secs < 5400:
+            t = "%.1f minutes" % (secs / 60)
+        elif secs < 86400 * 2:
+            t = "%.1f hours" % (secs / 3600)
+        else:
+            t = "%.0f days" % (secs / 86400)
+        print("   %11d %14d   %s" % (d, n, t))
+    print()
+    print("   A 100x faster machine buys three or four levels of")
+    print("   depth and then stops. Structure is the only real")
+    print("   answer, which is what Parts II to V were about.")
+\end{lstlisting}
+Then change \texttt{p\_workaround} so both teams document at the same rate, and
+re-run. The gap collapses, and no rule changed --- which is the cleanest possible
+demonstration that the disparity was never in the rule base at all.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item The escalation adviser's rules never mention the reporting team, and the
+        escalation rates differ by $22$ percentage points. Explain how, and say why
+        deleting an attribute would not have prevented it.
+  \item The R3--R7 pathway was identified as carrying most of the gap, and both rules are sensible.
+        State what the audit established and what it explicitly did not, and say
+        whose decision the remainder is.
+  \item A reviewer overrides the system's recommendation in $0.5\%$ of cases and
+        reports this as evidence the system is working well. Give the alternative
+        explanation and the measurement that distinguishes them.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Bias enters through \term{proxy variables}, uneven inputs, rule
+        \term{interactions} and the choice of \term{measure}. None requires intent,
+        and none is visible by reading the rules.
+  \item \emph{Fairness through unawareness fails.} The escalation adviser never saw
+        the team name and produced a $22$-point gap, because
+        \texttt{workaround} is a proxy for having runbooks.
+  \item An \term{audit} is three steps: measure outcomes by group, attribute the gap
+        by \term{ablation}, and read the explanation chain for an affected case.
+        Keep the sensitive attribute \emph{for the audit} and never for the
+        decision.
+  \item Ablation has a trap: the rule whose removal closes the gap completely was
+        the one that produced the outcome at all, and equality by abolition is not
+        fairness. \emph{Report the overall rate beside the gap} and discard any
+        ablation that collapses it --- a specific instance of the general hazard of
+        optimising a fairness metric instead of understanding a system.
+  \item An \term{explanation} is an accountability artefact: it makes a decision
+        \term{contestable} on a specific step and correctable by editing one rule.
+        Those are properties the affected person needs.
+  \item \term{Automation bias} makes reviewers stop reviewing, most strongly where
+        the system is most often right. A near-zero override rate is a warning, not
+        a success.
+  \item \term{Brittleness} is being wrong with undiminished confidence just outside
+        the region of competence, with no signal. A rule base cannot degrade
+        gracefully --- but it \emph{can} enumerate the situations it does not cover
+        and say so, which is a real and underused capability.
+  \item Every method in Parts~II to~V is exponential, NP-hard or undecidable.
+        Structure --- heuristics, propagation, pruning, conditional independence ---
+        is the only answer; hardware buys three or four levels of depth and stops.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Fairness through unawareness fails because of:
+        (a)~measurement error (b)~proxy variables (c)~automation bias
+        (d)~intractability.
+  \item \textbf{(MCQ)} Ablation, in an audit, means: (a)~deleting sensitive
+        attributes (b)~removing one rule at a time and re-measuring
+        (c)~retraining (d)~sampling for review.
+  \item \textbf{(MCQ)} A near-zero override rate on a decision-support system is
+        best read as: (a)~the system is accurate (b)~a possible sign of automation
+        bias (c)~evidence of good explanations (d)~a sign of brittleness.
+  \item \textbf{(MCQ)} Brittleness means: (a)~being wrong sometimes (b)~being wrong
+        with full confidence just outside the region of competence
+        (c)~failing to terminate (d)~degrading smoothly.
+  \item \textbf{(Short)} Explain why an explanation is an accountability property
+        rather than a convenience, using the contestability of a specific step.
+  \item \textbf{(Short)} The audit found the gap and did not say what to do. Argue
+        that this is the right division of labour.
+  \item \textbf{(Short)} Give the one thing a rule base can do about its competence
+        boundary that a learned model cannot, and say what it costs to do.
+  \item \textbf{(Applied)} Design an audit for a system that ranks job applications.
+        State the groups you would measure, the outcome you would count, how you
+        would attribute a gap to a component, and what you would present to the
+        person who has to decide what to do about it.
+\end{reviewq}

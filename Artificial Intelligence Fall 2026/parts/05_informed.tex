@@ -1,0 +1,739 @@
+%=====================================================================
+\chapter{Informed Search and Heuristics}\label{ch:informed}
+%=====================================================================
+\locator{2}{Part II --- Problem Solving by Search}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} a heuristic function and \textbf{distinguish} greedy
+        best-first search from $A^{*}$ by the term each one minimises.
+  \item \textbf{State} admissibility and consistency precisely, and
+        \textbf{explain} which one $A^{*}$ needs for tree search and which for
+        graph search.
+  \item \textbf{Prove} that $A^{*}$ with an admissible heuristic returns an optimal
+        solution, and \textbf{identify} the step of the proof that fails when the
+        heuristic overestimates.
+  \item \textbf{Invent} an admissible heuristic for a new problem by relaxing a
+        constraint, and \textbf{compare} two heuristics by dominance.
+  \item \textbf{Measure} the trade-off between nodes expanded and solution quality,
+        and \textbf{choose} greedy or $A^{*}$ with a justification.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{uninformed} (uniform-cost search, the explored set, goal-testing on
+popping, and why every uninformed strategy is exponential) and \chref{python} (the
+\texttt{heapq} frontier with a tie-breaking counter). $A^{*}$ is uniform-cost
+search with one term added, so the previous chapter's code is the starting point.
+\end{prereq}
+
+\begin{keyterms}
+heuristic function $\bullet$ greedy best-first search $\bullet$ $A^{*}$ $\bullet$
+evaluation function $\bullet$ path cost $g$ $\bullet$ heuristic estimate $h$
+$\bullet$ admissibility $\bullet$ consistency $\bullet$ monotonicity $\bullet$
+dominance $\bullet$ relaxed problem $\bullet$ critical path $\bullet$ effective
+branching factor $\bullet$ optimally efficient
+\end{keyterms}
+
+\section{A Sprint Where the Cost Matters}
+
+\chref{uninformed} ended on an awkward note: every complete plan for the release
+cost the same twenty-seven days, because every task was mandatory. Cost-based
+search had nothing to choose between. Real sprints are not like that --- there is
+almost always more than one way to get a thing done.
+
+So this chapter uses a slightly larger network with one genuine choice in it. The
+team must get a release out, and the testing can be done either way:
+
+\begin{itemize}[leftmargin=2.2em, itemsep=2pt, topsep=4pt]
+  \item \textbf{Manual testing} --- six days, needs only the API and authentication
+        finished.
+  \item \textbf{Automated testing} --- two days, but it needs a test harness built
+        first, which is three days. Five days in total, and the harness needs the
+        schema.
+\end{itemize}
+
+Automation wins by one day, and the whole point of this chapter is that finding out
+\emph{which} route is cheaper is a search problem, and that a good heuristic finds
+it while doing a third less work. \dsref{sprint-net} is the network.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize, >={Stealth[length=1.8mm]},
+  t/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!8,
+            text=#1!50!black, font=\scriptsize\bfseries, align=center,
+            minimum width=1.75cm, minimum height=0.72cm},
+  d/.style={->, primary!45, line width=0.8pt},
+  alt/.style={->, accent!70, line width=1.1pt},
+  dur/.style={font=\tiny, text=neutral, inner sep=1pt}]
+
+\node[t=primary]   (spec)    at (0,0)      {spec};
+\node[t=primary]   (schema)  at (2.1,0)    {schema};
+\node[t=primary]   (api)     at (4.2,0.75) {api};
+\node[t=primary]   (auth)    at (4.2,-0.5) {auth};
+\node[t=primary]   (ui)      at (2.1,2.0)  {ui};
+\node[t=goldhl]    (harness) at (4.2,-1.85){harness};
+\node[t=greenhl]   (auto)    at (6.5,-1.15){auto\_test};
+\node[t=accent]    (manual)  at (6.5,0.3)  {manual\_test};
+\node[t=primary]   (docs)    at (6.5,1.7)  {docs};
+\node[t=primary]   (uat)     at (8.8,0.75) {uat};
+\node[t=tealhl]    (rel)     at (11.0,0.75){release};
+
+\node[dur, below=1pt of spec]    {3 d};
+\node[dur, below=1pt of schema]  {2 d};
+\node[dur, above=1pt of api]     {5 d};
+\node[dur, below=1pt of auth]    {3 d};
+\node[dur, above=1pt of ui]      {4 d};
+\node[dur, below=1pt of harness] {3 d};
+\node[dur, below=1pt of auto]    {2 d};
+\node[dur, above=1pt of manual]  {6 d};
+\node[dur, above=1pt of docs]    {2 d};
+\node[dur, below=1pt of uat]     {3 d};
+\node[dur, below=1pt of rel]     {1 d};
+
+\draw[d] (spec) -- (schema);
+\draw[d] (spec) -- (ui);
+\draw[d] (schema) -- (api);
+\draw[d] (schema) -- (auth);
+\draw[d] (schema) -- (harness);
+\draw[d] (api) -- (docs);
+\draw[d] (api) -- (manual);
+\draw[d] (auth) -- (manual);
+\draw[d] (api) to[bend right=12] (auto);
+\draw[d] (auth) -- (auto);
+\draw[d] (harness) -- (auto);
+\draw[alt] (auto) -- (uat);
+\draw[alt] (manual) -- (uat);
+\draw[d] (ui) to[bend left=18] (uat);
+\draw[d] (docs) -- (rel);
+\draw[d] (uat) -- (rel);
+
+\node[rounded corners=3pt, fill=accent!7, draw=accent!60, line width=0.9pt,
+      text=accent!55!black, font=\scriptsize, text width=5.1cm,
+      align=flush left, inner sep=5pt] at (2.4,-2.55)
+  {\textbf{The one choice.} \texttt{uat} needs \emph{either}
+   \texttt{auto\_test} \emph{or} \texttt{manual\_test}. Automated: $3+2=5$ days.
+   Manual: $6$ days. Everything else is mandatory.};
+
+\node[font=\tiny\itshape, text=neutral, align=flush left, text width=4.0cm,
+      anchor=north west] at (7.4,-2.0)
+  {Mandatory work: $23$ days.\\
+   Cheapest plan: $\mathbf{28}$ days.\\
+   Manual route: $29$ days.\\
+   $55$ reachable states.};
+\end{tikzpicture}}%
+{The sprint network. Ten of the eleven tasks are unavoidable; the testing step can
+be reached two ways, and the cheaper route is not the shorter one in number of
+tasks.}{sprint-net}
+
+\section{Heuristics: Telling the Search Where the Goal Is}
+
+Uniform-cost search spreads outwards in every direction equally, because it has no
+idea which direction the goal is in. A \term{heuristic} gives it one.
+
+\begin{definitionbox}[Heuristic function]
+A \term{heuristic} $h(n)$ estimates the cheapest cost from the state at node $n$ to
+a goal state. By convention $h(n) = 0$ for every goal state.
+
+$h$ is \term{admissible} if it never overestimates:
+\[
+  0 \;\le\; h(n) \;\le\; h^{*}(n) \quad\text{for every } n,
+\]
+where $h^{*}(n)$ is the true cheapest completion cost from $n$.
+
+$h$ is \term{consistent} (or \term{monotonic}) if for every node $n$ and every
+successor $n'$ reached by an action of cost $c(n,n')$:
+\[
+  h(n) \;\le\; c(n,n') + h(n').
+\]
+Consistency implies admissibility. The reverse does not hold.
+\end{definitionbox}
+
+Two heuristics for the sprint, both of which a delivery manager would recognise.
+
+\textbf{Mandatory work remaining.} Eight of the eleven tasks appear in every plan
+that reaches a release: \texttt{spec}, \texttt{schema}, \texttt{api},
+\texttt{auth}, \texttt{ui}, \texttt{docs}, \texttt{uat} and \texttt{release}. Sum
+the durations of those not yet done. At the start this is $23$ days. It is
+admissible because the tasks it counts genuinely must be done and it ignores the
+testing work entirely, so it can only under-count.
+
+\textbf{Critical path remaining.} The longest chain of dependencies still to be
+traversed, taking the cheaper branch at the choice. At the start this is $16$ days.
+It is admissible because every task on a chain must be done in order, so the chain
+length is a lower bound on the total.
+
+The mandatory-work estimate is much the larger of the two at the start --- $23$
+against $16$ --- but, as Section~\ref{sec:dominance} shows by measurement, it is
+\emph{not} larger everywhere, and that turns out to matter.
+
+\section{Greedy Best-First Search, and Why It Is Not Enough}
+
+Order the frontier by $h$ alone: always expand whatever \emph{looks} closest to the
+goal. This is \term{greedy best-first search}, and it is fast --- on the sprint it
+finds a plan after expanding ten or eleven states, against uniform-cost search's
+forty-six.
+
+It is also not optimal, and the sprint shows exactly how it fails. With the
+mandatory-work heuristic, greedy search returns the \emph{manual testing} plan at
+$29$ days instead of the automated one at $28$. The reason is instructive: the
+harness is three days of work that reduces $h$ by nothing at all, because the
+harness is not mandatory and the heuristic only counts mandatory work. Greedy search
+therefore sees the harness as pure delay and refuses to build it --- which is a
+recognisable human failure mode as well as an algorithmic one.
+
+\begin{alertbox}[Greedy search ignores the road already travelled]
+The defect is structural, not a matter of a better heuristic. Greedy search
+minimises $h$, the estimated cost \emph{remaining}. It never consults $g$, the cost
+already \emph{incurred}. So it cannot trade a more expensive first step against a
+cheaper remainder --- which is precisely what investing in a test harness is.
+
+Any decision of the form ``spend more now to spend less later'' is invisible to
+greedy search. That covers tooling, automation, refactoring and nearly every
+technical-debt decision in software delivery.
+\end{alertbox}
+
+\section{A* Search}
+
+Add the two terms:
+\[
+  f(n) \;=\; g(n) + h(n)
+\]
+where $g(n)$ is the cost of the path from the start to $n$ and $h(n)$ the estimate
+from $n$ to a goal. Expand the node of lowest $f$. That is \term{$A^{*}$}, and it is
+the single most useful algorithm in this book.
+
+Read $f(n)$ as \emph{the estimated cost of the cheapest complete solution that goes
+through $n$}. Uniform-cost search is $A^{*}$ with $h = 0$, and greedy search is the
+same frontier with $g = 0$. \dsref{fg-split} shows the two routes competing on $f$.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  bar/.style={draw=#1!70, fill=#1!22, line width=0.7pt},
+  lbl/.style={font=\tiny, text=neutral},
+  hd/.style={font=\scriptsize\bfseries, text=#1}]
+
+% scale: 1 day = 0.34 cm
+\def\s{0.34}
+
+% --- route A: automated ------------------------------------------------
+\node[hd=greenhl, anchor=west] at (0,1.55) {AUTOMATED ROUTE};
+\draw[bar=primary] (0,0.85) rectangle (23*\s,1.35);
+\node[font=\tiny, text=primary!60!black] at (23*\s/2,1.1)
+  {mandatory work \;23 d};
+\draw[bar=goldhl] (23*\s,0.85) rectangle (26*\s,1.35);
+\node[lbl, anchor=south] at (24.5*\s,1.38) {harness 3};
+\draw[bar=greenhl] (26*\s,0.85) rectangle (28*\s,1.35);
+\node[lbl, anchor=south] at (27*\s,1.38) {auto 2};
+\node[font=\scriptsize\bfseries, text=greenhl!50!black, anchor=west]
+  at (28*\s+0.12,1.1) {$= 28$ d};
+
+% --- route B: manual ---------------------------------------------------
+\node[hd=accent, anchor=west] at (0,-0.35) {MANUAL ROUTE};
+\draw[bar=primary] (0,-1.05) rectangle (23*\s,-0.55);
+\node[font=\tiny, text=primary!60!black] at (23*\s/2,-0.8)
+  {mandatory work \;23 d};
+\draw[bar=accent] (23*\s,-1.05) rectangle (29*\s,-0.55);
+\node[lbl, anchor=north] at (26*\s,-1.08) {manual\_test 6};
+\node[font=\scriptsize\bfseries, text=accent!55!black, anchor=west]
+  at (29*\s+0.12,-0.8) {$= 29$ d};
+
+\draw[gray!45, dash pattern=on 2pt off 1.6pt] (23*\s,-1.35) -- (23*\s,1.55);
+
+% --- the decision point -----------------------------------------------
+\node[rounded corners=3pt, fill=lightbg, draw=primary!35, line width=0.9pt,
+      text=primary!70!black, font=\scriptsize, text width=6.0cm,
+      align=flush left, inner sep=6pt, anchor=north west] at (0,-1.75)
+  {\textbf{Greedy search ($h$ only).} The harness reduces the
+   mandatory-work estimate by zero, so it looks like three wasted days. Greedy
+   takes the manual route: \textbf{29 days}.};
+
+\node[rounded corners=3pt, fill=greenhl!8, draw=greenhl!50, line width=0.9pt,
+      text=greenhl!45!black, font=\scriptsize, text width=6.6cm,
+      align=flush left, inner sep=6pt, anchor=north west] at (6.4,-1.75)
+  {\textbf{$A^{*}$ ($f = g + h$).} Both routes are carried in the frontier
+   until their totals can be compared. The automated route's higher $g$ is paid
+   back, and $A^{*}$ returns \textbf{28 days} --- provably the cheapest.};
+\end{tikzpicture}}%
+{The two routes as cost. Only an algorithm that adds the cost already spent to the
+cost still expected can see that three days of harness buys four days of
+testing.}{fg-split}
+
+\subsection{Why A* Is Optimal}
+
+\begin{worked}[The optimality argument, and where it breaks]
+\textbf{Claim.} With an admissible $h$, the first goal node $A^{*}$ pops is on an
+optimal path.
+
+\smallskip
+\textbf{Proof.} Let $G$ be the goal node popped, and suppose for contradiction that
+its cost $g(G)$ exceeds the optimal cost $C^{*}$. Since $h(G) = 0$ for a goal,
+\[
+  f(G) \;=\; g(G) \;>\; C^{*}.
+\]
+Now consider any optimal solution path. At the moment $G$ was popped, some node $n$
+on that optimal path was still in the frontier (the start is on it, and the path has
+not been fully expanded, so an unexpanded node on it exists). For that $n$,
+admissibility gives
+\[
+  f(n) \;=\; g(n) + h(n) \;\le\; g(n) + h^{*}(n) \;=\; C^{*}.
+\]
+So $f(n) \le C^{*} < f(G)$, and $n$ had a strictly smaller $f$ than $G$. But
+$A^{*}$ pops the smallest $f$ in the frontier, so it would have popped $n$, not
+$G$. Contradiction, and therefore $g(G) = C^{*}$. \hfill$\blacksquare$
+
+\smallskip
+\textbf{The step that fails when $h$ overestimates.} It is the inequality
+$h(n) \le h^{*}(n)$. If $h$ overestimates at $n$, then $f(n)$ can exceed $C^{*}$;
+the node on the optimal path is then buried behind $G$ in the frontier, and $A^{*}$
+returns the worse answer without noticing. Concretely: give the harness a
+pessimistic estimate of $10$ days remaining and $A^{*}$ reproduces greedy search's
+$29$-day plan.
+
+\smallskip
+\textbf{Why graph search needs consistency as well.} The argument above assumes a
+node on the optimal path is available in the frontier. With an explored set, a state
+can be reached first by a dearer path, be marked explored, and then be reached again
+more cheaply --- and refused. If $h$ is merely admissible, that discards the optimal
+path. Consistency, $h(n) \le c(n,n') + h(n')$, guarantees $f$ never decreases along
+a path, so the first time a state is popped it is already by its cheapest path. Both
+heuristics in this chapter are consistent; the lab checks the weaker property,
+admissibility, over all $55$ reachable states.
+\end{worked}
+
+\subsection{Dominance}
+\label{sec:dominance}
+
+If $h_{2}(n) \ge h_{1}(n)$ for every $n$, and both are admissible, then $h_{2}$
+\term{dominates} $h_{1}$, and $A^{*}$ with $h_{2}$ expands no more nodes than with
+$h_{1}$. The reason is direct: $A^{*}$ must expand every node with
+$f(n) < C^{*}$, and a larger $h$ pushes more nodes over that threshold.
+
+So among admissible heuristics, bigger is better --- as long as it stays admissible
+and stays cheap to compute. Those are competing pressures, and the balance is a
+judgement call: a heuristic that is perfect but takes as long to evaluate as solving
+the subproblem has bought nothing.
+
+Now the measurement, which is more interesting than the tidy version of this story.
+At the root, mandatory work is worth $23$ and the critical path $16$, so it is
+tempting to conclude that mandatory work dominates. It does not. The lab checks all
+$55$ reachable states and finds $6$ on which the critical path is the \emph{larger}
+of the two --- states late in the sprint where almost all the mandatory work is
+finished but the testing chain still has to be walked. For instance with
+\texttt{spec}, \texttt{schema}, \texttt{api}, \texttt{auth}, \texttt{docs} and
+\texttt{ui} done, mandatory work is $4$ while the critical path is $9$.
+
+So \emph{neither heuristic dominates the other}, which is the ordinary situation and
+not a defect. It is also exactly the situation in which the maximum earns its keep:
+$\max(h_{1},h_{2})$ is admissible, dominates both by construction, and costs one
+extra comparison.
+
+\begin{conceptbox}
+Dominance is a claim about \emph{every} state, and the root is a sample of size one.
+Two heuristics almost always cross somewhere, because they are usually relaxations
+of different constraints and each is strongest where the constraint it kept is the
+binding one.
+
+The practical consequence: do not choose between admissible heuristics, take their
+maximum. The only reason not to is evaluation cost, and a comparison is free.
+\end{conceptbox}
+
+\section{Inventing a Heuristic}
+
+The standard technique is \term{relaxation}: delete a constraint from the problem,
+solve the easier problem exactly, and use that as the estimate. It is admissible
+automatically, because any solution to the real problem is also a solution to the
+relaxed one, so the relaxed optimum cannot be larger.
+
+Both heuristics here are relaxations:
+
+\begin{itemize}[leftmargin=2.2em, itemsep=2pt, topsep=4pt]
+  \item \emph{Mandatory work} relaxes away the testing requirement entirely. The
+        relaxed problem --- do the eight unavoidable tasks --- is solved by adding
+        up durations.
+  \item \emph{Critical path} relaxes away the fact that only one task happens at a
+        time, i.e.\ it assumes unlimited parallelism. The relaxed problem is the
+        longest path in a directed acyclic graph.
+\end{itemize}
+
+And as Section~\ref{sec:dominance} argued, their maximum is admissible too and
+dominates both. Taking the maximum of several admissible heuristics is always safe
+and is the cheapest route to a stronger one.
+
+\smallskip
+\noindent\begin{longtable}{@{}L{3.9cm}L{1.5cm}L{2.1cm}L{1.9cm}L{3.9cm}@{}}
+\toprule
+\textbf{Algorithm} & \textbf{Cost} & \textbf{Optimal?} &
+\textbf{Expanded} & \textbf{Route chosen} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Algorithm} & \textbf{Cost} & \textbf{Optimal?} &
+\textbf{Expanded} & \textbf{Route chosen} \\
+\midrule
+\endhead
+Uniform-cost ($h=0$) & 28 & Yes & 46 & automated \\
+$A^{*}$, critical path & 28 & Yes & 35 & automated \\
+$A^{*}$, mandatory work & 28 & Yes & \textbf{33} & automated \\
+$A^{*}$, max of the two & 28 & Yes & \textbf{33} & automated \\
+Greedy, critical path & 28 & Not guaranteed & 11 & automated \\
+Greedy, mandatory work & \textbf{29} & \textbf{No} & \textbf{10} & manual \\
+\bottomrule
+\caption{Measured on the network of \dsref{sprint-net}. $A^{*}$ keeps
+uniform-cost search's guarantee while doing 28\% less work; greedy search does a
+quarter of the work and, with one of the two heuristics, returns the wrong plan.}
+\label{tab:informed}
+\end{longtable}
+
+The fourth row is worth a remark. Taking the maximum guarantees no \emph{more}
+expansions, and here it delivers no fewer either --- $33$ both ways. The six states
+where the critical path is the stronger estimate are simply not states that $A^{*}$
+had to decide about. That is the normal return on a dominance improvement: a
+guarantee that you will not do worse, and an empirical gain that depends on the
+instance.
+
+Read the last two rows together. Greedy search with the critical-path heuristic
+happens to find the optimal plan --- and that is luck, not a property. Nothing in
+the algorithm tells you which of the two rows you are in on a problem whose answer
+you do not already know. That asymmetry is the whole case for $A^{*}$.
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Forgetting the $g$ term.} Ordering the frontier by $h$ alone is
+        greedy search, and it cannot recognise an investment. If your search refuses
+        to build tooling, this is why.
+  \item \textbf{An inadmissible heuristic.} Anything ``tuned'' upward to speed the
+        search up --- multiplying a lower bound by $1.5$, say --- forfeits
+        optimality. That may be a reasonable trade, but make it deliberately and
+        say so.
+  \item \textbf{Assuming admissibility is enough for graph search.} With an explored
+        set you want consistency. Otherwise a state reached cheaply on the second
+        visit is silently discarded.
+  \item \textbf{A heuristic that costs more than it saves.} Expanding $30\%$ fewer
+        nodes is a loss if evaluating $h$ takes twice as long. Measure time as well
+        as expansions.
+  \item \textbf{$h > 0$ at a goal state.} Breaks the optimality proof at its first
+        line. Always check $h(\text{goal}) = 0$.
+  \item \textbf{Averaging two admissible heuristics.} The average is admissible but
+        is dominated by the maximum. Take $\max$, never the mean.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[A* Over Sprint States, Two Heuristics]
+Uniform-cost, $A^{*}$ and greedy search on the network of \dsref{sprint-net}, with
+both heuristics, plus an exhaustive admissibility check over every reachable state.
+\begin{lstlisting}[language=Python]
+"""Chapter 5 lab -- informed search on the sprint network.
+
+Reproduces Table 5.1. The headline result is the last row: greedy
+search with the mandatory-work heuristic returns a 29-day plan when a
+28-day plan exists, because a test harness reduces its estimate by
+nothing at all.
+"""
+
+import heapq
+import itertools
+from collections import deque
+
+# duration, then a conjunction of disjunctions: a task is ready when
+# every group has at least one member already finished.
+TASKS = {
+    "spec":        (3, []),
+    "schema":      (2, [{"spec"}]),
+    "api":         (5, [{"schema"}]),
+    "ui":          (4, [{"spec"}]),
+    "auth":        (3, [{"schema"}]),
+    "harness":     (3, [{"schema"}]),
+    "auto_test":   (2, [{"api"}, {"auth"}, {"harness"}]),
+    "manual_test": (6, [{"api"}, {"auth"}]),
+    "docs":        (2, [{"api"}]),
+    "uat":         (3, [{"ui"}, {"auto_test", "manual_test"}]),
+    "release":     (1, [{"uat"}, {"docs"}]),
+}
+GOAL = "release"
+
+# The eight tasks that appear in every plan. Everything except the two
+# testing routes and the harness that one of them needs.
+MANDATORY = ("spec", "schema", "api", "auth", "ui", "docs", "uat",
+             "release")
+
+
+def dur(t):
+    return TASKS[t][0]
+
+
+def ready(state):
+    """Legal actions: the successor function, as a generator."""
+    for t, (_, groups) in TASKS.items():
+        if t not in state and all(g & state for g in groups):
+            yield t
+
+
+# --- the two heuristics, both relaxations --------------------------
+def h_zero(state):
+    return 0
+
+
+def h_mandatory(state):
+    """Relax away the testing requirement: just add up the work that
+    cannot be avoided. 23 days at the root."""
+    return sum(dur(t) for t in MANDATORY if t not in state)
+
+
+def h_chain(state):
+    """Relax away the one-task-at-a-time constraint: the longest
+    remaining dependency chain. 16 days at the root."""
+    memo = {}
+
+    def chain(t):
+        if t in state:
+            return 0
+        if t in memo:
+            return memo[t]
+        need = 0
+        for g in TASKS[t][1]:
+            need = max(need, min(chain(x) for x in g))
+        memo[t] = need + dur(t)
+        return memo[t]
+
+    return chain(GOAL)
+
+
+def h_max(state):
+    """Admissible, and dominates both by construction."""
+    return max(h_mandatory(state), h_chain(state))
+
+
+# --- best-first search; the priority decides the algorithm ---------
+def best_first(h, use_g=True):
+    """use_g=True  -> A*      (f = g + h)
+       use_g=False -> greedy  (f = h)
+
+    The heap entry is (priority, counter, g, state, plan). The counter
+    sits immediately after the priority so that ties are broken by
+    insertion order alone. Putting g there instead would quietly let
+    the cost leak into greedy search's ordering -- and greedy search
+    would then find the optimal plan and the point of the lab would
+    be lost.
+    """
+    start = frozenset()
+    tie = itertools.count()
+    frontier = [(h(start), next(tie), 0, start, ())]
+    best = {start: 0}
+    expanded = 0
+    while frontier:
+        _, _, g, state, plan = heapq.heappop(frontier)
+        if GOAL in state:
+            return g, list(plan), expanded
+        if use_g and g > best.get(state, 1 << 30):
+            continue                    # a cheaper path already went
+        expanded += 1
+        for t in ready(state):
+            nxt, ng = state | {t}, g + dur(t)
+            if use_g:
+                if ng >= best.get(nxt, 1 << 30):
+                    continue
+                best[nxt] = ng
+                pri = ng + h(nxt)
+            else:
+                if nxt in best:
+                    continue
+                best[nxt] = ng
+                pri = h(nxt)
+            heapq.heappush(frontier,
+                           (pri, next(tie), ng, nxt, plan + (t,)))
+    return None, None, expanded
+
+
+def reachable():
+    seen, q = {frozenset()}, deque([frozenset()])
+    while q:
+        s = q.popleft()
+        for t in ready(s):
+            n = s | {t}
+            if n not in seen:
+                seen.add(n)
+                q.append(n)
+    return seen
+
+
+def cheapest_from(state):
+    """True remaining cost h*, by uniform-cost search from state."""
+    tie = itertools.count()
+    fr = [(0, next(tie), state)]
+    best = {state: 0}
+    while fr:
+        g, _, st = heapq.heappop(fr)
+        if GOAL in st:
+            return g
+        if g > best.get(st, 1 << 30):
+            continue
+        for t in ready(st):
+            n, ng = st | {t}, g + dur(t)
+            if ng < best.get(n, 1 << 30):
+                best[n] = ng
+                heapq.heappush(fr, (ng, next(tie), n))
+    return None
+
+
+def route(plan):
+    return "automated" if "auto_test" in plan else "manual"
+
+
+if __name__ == "__main__":
+    print("h at the root:  zero=%d  chain=%d  mandatory=%d"
+          % (h_zero(frozenset()), h_chain(frozenset()),
+             h_mandatory(frozenset())))
+    print()
+    print("algorithm                cost  expanded  route")
+    print("-" * 52)
+    runs = [
+        ("uniform-cost (h=0)   ", h_zero, True),
+        ("A* critical path     ", h_chain, True),
+        ("A* mandatory work    ", h_mandatory, True),
+        ("A* max of the two    ", h_max, True),
+        ("greedy critical path ", h_chain, False),
+        ("greedy mandatory work", h_mandatory, False),
+    ]
+    results = {}
+    for name, h, use_g in runs:
+        c, plan, exp = best_first(h, use_g)
+        results[name.strip()] = (c, plan, exp)
+        print("%s %5d %9d  %s" % (name, c, exp, route(plan)))
+
+    opt = results["uniform-cost (h=0)"][0]
+    print()
+    print("optimal cost:", opt)
+
+    # 1. A* is optimal with every heuristic here
+    astars = ("A* critical path", "A* mandatory work",
+              "A* max of the two")
+    for n in astars:
+        assert results[n][0] == opt, n
+    # 2. and expands strictly fewer nodes than uniform-cost search
+    ucs_exp = results["uniform-cost (h=0)"][2]
+    for n in astars:
+        assert results[n][2] < ucs_exp, n
+
+    # 3. NEITHER heuristic dominates the other -- the interesting part
+    states = reachable()
+    mand_bigger = [s for s in states if h_mandatory(s) > h_chain(s)]
+    chain_bigger = [s for s in states if h_chain(s) > h_mandatory(s)]
+    print()
+    print("reachable states: %d" % len(states))
+    print("  mandatory work is the larger estimate on %d"
+          % len(mand_bigger))
+    print("  critical path  is the larger estimate on %d"
+          % len(chain_bigger))
+    assert mand_bigger and chain_bigger, "expected them to cross"
+    # so max dominates both, by construction
+    assert all(h_max(s) >= h_mandatory(s) for s in states)
+    assert all(h_max(s) >= h_chain(s) for s in states)
+    assert results["A* max of the two"][2] <= min(
+        results["A* critical path"][2],
+        results["A* mandatory work"][2])
+    ex = min(chain_bigger, key=len)
+    print("  e.g. %s: mandatory=%d, critical path=%d"
+          % (" ".join(sorted(ex)), h_mandatory(ex), h_chain(ex)))
+
+    # 4. greedy with the mandatory heuristic is NOT optimal
+    assert results["greedy mandatory work"][0] > opt
+    print()
+    print("greedy with the mandatory heuristic returns %d, not %d"
+          % (results["greedy mandatory work"][0], opt))
+
+    # 5. all three heuristics are admissible on every reachable state
+    bad = []
+    for s in states:
+        if GOAL in s:
+            continue
+        true = cheapest_from(s)
+        if true is None:
+            continue
+        for nm, h in (("mandatory", h_mandatory), ("chain", h_chain),
+                      ("max", h_max)):
+            if h(s) > true:
+                bad.append((nm, sorted(s), h(s), true))
+    print("admissibility violations:", len(bad))
+    assert not bad
+    print()
+    print("A* kept the guarantee and did %d%% less work than"
+          % round(100 * (ucs_exp - results["A* mandatory work"][2])
+                  / ucs_exp))
+    print("uniform-cost search. Greedy did a quarter of the work and")
+    print("got the answer wrong.")
+\end{lstlisting}
+The admissibility check is the part worth keeping. It is easy to invent a heuristic
+that is plausible, fast and wrong, and the symptom --- a sub-optimal answer on
+problems whose optimum you do not know --- is invisible in production. Checking
+$h(s) \le h^{*}(s)$ exhaustively is only possible on a small instance, which is
+exactly why you should do it while the instance is still small.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item The mandatory-work heuristic values the root at $23$ and the true optimum is
+        $28$. Is it admissible? Would a heuristic returning $30$ at the root be
+        admissible, and what would $A^{*}$ do with it?
+  \item Explain in one sentence why greedy best-first search will never choose to
+        build a test harness, however good the harness is.
+  \item You have two admissible heuristics, $h_{1}$ and $h_{2}$, neither
+        dominating the other. Give a third admissible heuristic that dominates both,
+        and say why the average of the two would be a worse choice.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item A \term{heuristic} $h(n)$ estimates the remaining cost. It is
+        \term{admissible} if it never overestimates and \term{consistent} if
+        $h(n) \le c(n,n') + h(n')$; consistency implies admissibility and is what
+        graph search with an explored set needs.
+  \item \term{Greedy best-first search} orders the frontier by $h$ alone. It is
+        fast and not optimal, and its structural blind spot is any investment ---
+        it cannot trade a dearer step now against a cheaper remainder.
+  \item \term{$A^{*}$} orders by $f(n) = g(n) + h(n)$ and returns an optimal
+        solution whenever $h$ is admissible. Uniform-cost search is $A^{*}$ with
+        $h=0$.
+  \item The optimality proof turns on $h(n) \le h^{*}(n)$: an overestimate buries
+        the optimal path behind a worse goal node, and $A^{*}$ returns the worse
+        answer without any sign that it has done so.
+  \item Among admissible heuristics, larger is better --- $h_{2} \ge h_{1}$
+        everywhere means no more expansions --- provided it stays cheap to compute.
+        The maximum of several admissible heuristics is admissible and dominates
+        each.
+  \item \term{Relaxation} is the way to invent one: drop a constraint, solve the
+        easier problem exactly. Dropping the testing requirement gives mandatory
+        work; dropping the one-task-at-a-time rule gives the critical path.
+  \item Measured on the sprint: $A^{*}$ matched uniform-cost search's $28$-day
+        optimum while expanding $33$ states instead of $46$; greedy search expanded
+        $10$ and returned a $29$-day plan.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} $A^{*}$ orders its frontier by: (a)~$h(n)$ (b)~$g(n)$
+        (c)~$g(n)+h(n)$ (d)~depth.
+  \item \textbf{(MCQ)} A heuristic is admissible if it: (a)~never underestimates
+        (b)~never overestimates (c)~is always zero at the root (d)~is consistent.
+  \item \textbf{(MCQ)} Uniform-cost search is $A^{*}$ with: (a)~$h=0$
+        (b)~$g=0$ (c)~$h=h^{*}$ (d)~a depth limit.
+  \item \textbf{(MCQ)} Given admissible $h_{1}$ and $h_{2}$, which is guaranteed
+        admissible and at least as strong as both? (a)~$h_{1}+h_{2}$
+        (b)~$(h_{1}+h_{2})/2$ (c)~$\max(h_{1},h_{2})$ (d)~$\min(h_{1},h_{2})$.
+  \item \textbf{(Short)} State the step of the $A^{*}$ optimality proof that fails
+        when $h$ overestimates, and describe the observable symptom.
+  \item \textbf{(Short)} Why does graph search with an explored set want consistency
+        rather than mere admissibility?
+  \item \textbf{(Short)} Explain relaxation as a technique, and use it to invent an
+        admissible heuristic for the problem of assigning nine developers to four
+        workstreams.
+  \item \textbf{(Applied)} Suppose the harness took $6$ days instead of $3$. By
+        hand, compute the cost of both routes, say which is now optimal, and predict
+        whether greedy search with the mandatory-work heuristic would now be
+        \emph{right} by accident. Then state what that tells you about relying on
+        greedy search.
+\end{reviewq}

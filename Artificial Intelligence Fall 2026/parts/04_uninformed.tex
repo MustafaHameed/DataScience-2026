@@ -1,0 +1,643 @@
+%=====================================================================
+\chapter{Problem Formulation and Uninformed Search}\label{ch:uninformed}
+%=====================================================================
+\locator{2}{Part II --- Problem Solving by Search}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Formulate} an informal task as a search problem, choosing a state
+        representation and \textbf{justifying} what it leaves out.
+  \item \textbf{Distinguish} the state space from the search tree, and
+        \textbf{explain} why the tree can be infinite when the space is finite.
+  \item \textbf{Trace} breadth-first, depth-first, depth-limited, iterative
+        deepening and uniform-cost search by hand on a small graph.
+  \item \textbf{Compare} the five strategies on completeness, optimality, time and
+        space, and \textbf{choose} one for a given problem with a reason.
+  \item \textbf{Explain} why uninformed search cannot scale, and \textbf{quantify}
+        the growth that defeats it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{python} (the \texttt{Problem} interface, nodes, the three frontiers,
+\texttt{frozenset} states) and \chref{agents} (the goal-based agent, whose
+deliberation is exactly the search of this chapter). Every algorithm here is the
+same twelve-line body with a different frontier.
+\end{prereq}
+
+\begin{keyterms}
+problem formulation $\bullet$ state space $\bullet$ search tree $\bullet$ node
+expansion $\bullet$ frontier $\bullet$ explored set $\bullet$ redundant path
+$\bullet$ branching factor $\bullet$ depth $\bullet$ completeness $\bullet$
+optimality $\bullet$ breadth-first search $\bullet$ depth-first search $\bullet$
+depth-limited search $\bullet$ iterative deepening $\bullet$ uniform-cost search
+$\bullet$ combinatorial explosion
+\end{keyterms}
+
+\section{From a Task to a State Space}
+
+A delivery manager says: \emph{get the release out, and don't start anything before
+the things it depends on are finished.} That is a task, not a problem. Turning it
+into a problem means deciding five things --- the five of \chref{python} --- and
+the decisions are not mechanical.
+
+\begin{examplebox}[Formulating the release-ordering task]
+\begin{tight}
+  \item \emph{States.} The set of finished tasks. A \texttt{frozenset}, so that two
+        routes that finished the same work collapse to one state.
+  \item \emph{Initial state.} The empty set.
+  \item \emph{Actions.} In state $s$, the tasks not yet done whose dependencies are
+        all in $s$ --- the \texttt{ready} function of \chref{python}.
+  \item \emph{Result.} $s \cup \{t\}$. A new set; the old one is never touched.
+  \item \emph{Goal test.} Is every task in $s$?
+  \item \emph{Step cost.} The task's duration in days.
+\end{tight}
+\end{examplebox}
+
+Notice what the formulation \emph{throws away}: who does each task, the calendar,
+holidays, the fact that two tasks by the same person cannot overlap. Each omission
+is a modelling decision that makes the problem solvable and the answer less
+directly useful. \chref{csp} puts the people back in, and it costs a different
+algorithm to do it.
+
+\begin{conceptbox}
+The single most valuable habit in this part of the course: \emph{write the
+formulation down before writing the search}, and beside each state component write
+why the goal test needs it. Anything the goal test cannot see is a candidate for
+deletion, and every deletion shrinks the space multiplicatively.
+
+Beginners reach for a cleverer algorithm when a search is too slow. Professionals
+reach for the formulation first, because that is where the factors of a hundred
+are. \chref{python}'s worked example measured one such factor; this chapter's lab
+measures another.
+\end{conceptbox}
+
+\section{The State Space and the Search Tree}
+
+These are two different objects and confusing them causes both of the classic bugs.
+
+The \term{state space} is a graph: nodes are states, edges are actions. It is a
+property of the problem. For this project it has $22$ reachable states.
+
+The \term{search tree} is what the algorithm builds as it explores. Its root is the
+initial state, and its branches are paths. The same state appears in it once for
+every distinct path that reaches it --- so the tree has $184$ nodes where the graph
+has $22$. \dsref{space-vs-tree} shows both for a three-task fragment.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  st/.style={circle, draw=primary, line width=0.9pt, fill=primary!8,
+             text=primary!55!black, font=\tiny, inner sep=1.4pt,
+             minimum size=0.95cm, align=center},
+  tn/.style={circle, draw=secondary, line width=0.9pt, fill=secondary!8,
+             text=secondary!50!black, font=\tiny, inner sep=1.4pt,
+             minimum size=0.95cm, align=center},
+  dup/.style={circle, draw=accent, line width=1.2pt, fill=accent!12,
+              text=accent!55!black, font=\tiny, inner sep=1.4pt,
+              minimum size=0.95cm, align=center},
+  e/.style={-{Stealth[length=1.6mm]}, primary!50, line width=0.8pt},
+  f/.style={-{Stealth[length=1.6mm]}, secondary!50, line width=0.8pt},
+  lb/.style={font=\tiny, text=neutral, inner sep=1pt}]
+
+% ---- the state space: a graph
+\node[font=\scriptsize\bfseries, text=primary] at (-4.3,1.5)
+  {STATE SPACE (a graph)};
+\node[st] (e0) at (-6.0,0.4)  {$\varnothing$};
+\node[st] (a)  at (-4.4,1.0)  {a};
+\node[st] (b)  at (-4.4,-0.2) {b};
+\node[st] (ab) at (-2.7,0.4)  {ab};
+\node[st] (abc) at (-1.1,0.4) {abc};
+\draw[e] (e0) -- node[lb, above left] {a} (a);
+\draw[e] (e0) -- node[lb, below left] {b} (b);
+\draw[e] (a)  -- node[lb, above right] {b} (ab);
+\draw[e] (b)  -- node[lb, below right] {a} (ab);
+\draw[e] (ab) -- node[lb, above] {c} (abc);
+\node[font=\tiny\itshape, text=primary, align=center] at (-3.5,-1.4)
+  {5 states, 5 edges.\\ Two ways into \texttt{ab}; it is \emph{one} state.};
+
+% ---- the search tree
+\node[font=\scriptsize\bfseries, text=secondary] at (3.1,1.5)
+  {SEARCH TREE (paths)};
+\node[tn] (r)   at (3.1,0.75)  {$\varnothing$};
+\node[tn] (ta)  at (1.7,-0.35) {a};
+\node[tn] (tb)  at (4.5,-0.35) {b};
+\node[dup] (tab1) at (1.7,-1.6) {ab};
+\node[dup] (tab2) at (4.5,-1.6) {ab};
+\node[tn] (tc1) at (1.7,-2.85) {abc};
+\node[tn] (tc2) at (4.5,-2.85) {abc};
+\draw[f] (r) -- node[lb, above left] {a} (ta);
+\draw[f] (r) -- node[lb, above right] {b} (tb);
+\draw[f] (ta) -- node[lb, left] {b} (tab1);
+\draw[f] (tb) -- node[lb, right] {a} (tab2);
+\draw[f] (tab1) -- node[lb, left] {c} (tc1);
+\draw[f] (tab2) -- node[lb, right] {c} (tc2);
+
+\draw[accent, line width=1pt, dash pattern=on 2pt off 1.6pt]
+  (tab1) to[bend right=32] (tab2);
+\node[font=\tiny\bfseries, text=accent, align=center] at (3.1,-1.98)
+  {same state, twice};
+
+\node[rounded corners=3pt, fill=accent!8, draw=accent, line width=0.9pt,
+      text=accent!55!black, font=\scriptsize, text width=13.4cm,
+      align=flush left, inner sep=6pt] at (-0.4,-4.3)
+  {\textbf{The explored set is what turns the tree back into the graph.} Keep a
+   set of states already generated and refuse to add one twice, and the search
+   visits $5$ nodes instead of $7$ --- here a small saving, on the real project the
+   difference between $22$ and $184$. Omit it and a state space with a cycle gives
+   an \emph{infinite} search tree, which is the first classic bug.};
+\end{tikzpicture}}%
+{The state space and the search tree for a three-task fragment where \texttt{c}
+depends on both \texttt{a} and \texttt{b}. The tree repeats every state once per
+path that reaches it.}{space-vs-tree}
+
+\begin{alertbox}[The two classic bugs, and their symptoms]
+\textbf{No explored set.} Symptom: the search never terminates, or returns a path
+that revisits a state. Cause: the search tree of a cyclic space is infinite. Fix:
+a \texttt{set} of states, tested before pushing.
+
+\smallskip
+\textbf{Goal-testing on generation instead of on expansion.} Symptom: breadth-first
+search returns a correct shallowest path (fine), but uniform-cost search returns a
+\emph{sub-optimal} one. Cause: when a node is generated, a cheaper path to the same
+state may still be in the frontier. Breadth-first search may test on generation
+because all edges cost the same; uniform-cost search must test when the node is
+\emph{popped}. This is the subtlest distinction in the chapter and
+Section~\ref{sec:ucs} returns to it.
+\end{alertbox}
+
+\section{Breadth-First Search}
+
+Expand the shallowest unexpanded node: a first-in first-out frontier, so
+\texttt{deque.popleft()}.
+
+Breadth-first search is \term{complete} --- if a solution exists at finite depth it
+will be found --- and it returns the \emph{shallowest} solution. That is an optimal
+solution only when every action costs the same. With durations of $1$ to $5$ days,
+the shallowest plan is not the cheapest, and it is a mistake to call breadth-first
+search optimal without that qualification.
+
+Its cost is the problem. With branching factor $b$ and solution depth $d$, it
+generates $O(b^{d})$ nodes and --- fatally --- must \emph{store} $O(b^{d})$ of them,
+because the whole frontier is one level wide.
+
+\section{Depth-First and Depth-Limited Search}
+
+Expand the deepest unexpanded node: a last-in first-out frontier, so
+\texttt{list.pop()}, or simple recursion.
+
+The gain is memory: only the current path and its siblings need to be held, which
+is $O(bm)$ for maximum depth $m$ rather than $O(b^{d})$. The loss is both
+completeness and optimality --- in a space with cycles and no explored set,
+depth-first search follows one branch forever.
+
+\term{Depth-limited search} fixes the infinite descent by refusing to go below
+depth $\ell$. Now it terminates, but it is incomplete in a new way: if the shallowest
+solution is deeper than $\ell$ it reports failure on a solvable problem, which is
+the worst possible answer.
+
+\section{Iterative Deepening}
+
+Run depth-limited search with $\ell = 0$, then $1$, then $2$, and so on until a
+solution is found. This sounds wasteful and is the standard answer for large
+uninformed problems, because it has breadth-first search's completeness and
+shallowest-solution guarantee with depth-first search's memory.
+
+The apparent waste is small. The work is dominated by the deepest level, because
+the levels grow geometrically:
+\[
+  N(\text{IDS}) = (d+1)b^{0} + d\,b^{1} + (d-1)b^{2} + \cdots + 1\cdot b^{d}
+\]
+and for $b = 10$, $d = 5$ this is $123{,}456$ nodes against breadth-first search's
+$111{,}111$ --- about 11\% more work, in exchange for storing $50$ nodes instead of
+$100{,}000$. \dsref{ids-growth} shows why the ratio improves as $b$ grows.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=11.6cm, height=6.0cm,
+  xlabel={branching factor $b$}, ylabel={nodes generated},
+  xlabel style={font=\scriptsize}, ylabel style={font=\scriptsize},
+  tick label style={font=\tiny},
+  ymode=log, log basis y=10,
+  xmin=2, xmax=12, ymin=10, ymax=4e6,
+  grid=both, major grid style={gray!18}, minor grid style={gray!8},
+  legend style={font=\tiny, at={(0.03,0.97)}, anchor=north west,
+                draw=gray!40, fill=white},
+  legend cell align=left]
+
+% breadth-first: (b^(d+1)-1)/(b-1) for d=5, i.e. nodes to depth 5
+\addplot[primary, line width=1.2pt, mark=*, mark size=1.3pt] coordinates {
+  (2,63) (3,364) (4,1365) (5,3906) (6,9331) (7,19608) (8,37449)
+  (9,66430) (10,111111) (11,177156) (12,271453)};
+\addlegendentry{breadth-first, nodes stored $\approx b^{d}$}
+
+% iterative deepening total work, d=5
+\addplot[greenhl, line width=1.2pt, mark=square*, mark size=1.3pt,
+         dash pattern=on 3pt off 2pt] coordinates {
+  (2,120) (3,543) (4,1818) (5,4881) (6,11196) (7,22875) (8,42798)
+  (9,74733) (10,123456) (11,194871) (12,296130)};
+\addlegendentry{iterative deepening, total work}
+
+% memory: b*d
+\addplot[accent, line width=1.2pt, mark=triangle*, mark size=1.6pt] coordinates {
+  (2,10) (3,15) (4,20) (5,25) (6,30) (7,35) (8,40) (9,45) (10,50)
+  (11,55) (12,60)};
+\addlegendentry{iterative deepening, nodes stored $= bd$}
+\end{axis}
+\end{tikzpicture}}%
+{Iterative deepening against breadth-first search at solution depth $d=5$. The
+repeated work is a modest overhead that shrinks as the tree widens --- 91\% extra
+at $b=2$, 11\% at $b=10$, 9\% at $b=12$ --- while the memory requirement falls from
+exponential to linear.}{ids-growth}
+
+\section{Uniform-Cost Search}
+\label{sec:ucs}
+
+Expand the node with the lowest \emph{path cost} $g(n)$, not the shallowest: a
+priority-queue frontier, so \texttt{heapq}.
+
+This is the first algorithm in the book that is genuinely optimal in cost, and it
+is optimal for a reason worth stating precisely: when a node is \emph{popped}, every
+remaining path to it costs at least as much, because the frontier is ordered by
+cost and costs are non-negative. So the first time the goal is popped, it is popped
+by its cheapest path.
+
+That argument is exactly why the goal test must happen on \emph{popping} and not on
+generating, and why every edge cost must be non-negative. Break either condition
+and uniform-cost search quietly returns sub-optimal answers.
+
+Uniform-cost search is breadth-first search when all costs are equal, and it is
+Dijkstra's algorithm. In \chref{informed} it becomes $A^{*}$ by adding one term.
+
+\smallskip
+\noindent\begin{longtable}{@{}L{2.6cm}L{2.05cm}L{1.95cm}L{2.5cm}L{1.85cm}L{1.85cm}@{}}
+\toprule
+\textbf{Strategy} & \textbf{Complete?} & \textbf{Cheapest?} & \textbf{Time} &
+\textbf{Space} & \textbf{Frontier} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Strategy} & \textbf{Complete?} & \textbf{Cheapest?} & \textbf{Time} &
+\textbf{Space} & \textbf{Frontier} \\
+\midrule
+\endhead
+Breadth-first & Yes & Only if costs equal & $O(b^{d})$ & $O(b^{d})$ &
+\texttt{deque} \\
+Depth-first & No (cycles) & No & $O(b^{m})$ & $O(bm)$ & \texttt{list} \\
+Depth-limited & No (if $\ell<d$) & No & $O(b^{\ell})$ & $O(b\ell)$ &
+\texttt{list} \\
+Iterative deepening & Yes & Only if costs equal & $O(b^{d})$ & $O(bd)$ &
+\texttt{list} \\
+Uniform-cost & Yes & \textbf{Yes} & $O(b^{1+C^{*}/\epsilon})$ &
+same as time & \texttt{heapq} \\
+\bottomrule
+\caption{The five uninformed strategies. $b$ is the branching factor, $d$ the
+solution depth, $m$ the maximum depth, $C^{*}$ the optimal cost and $\epsilon$ the
+smallest edge cost. Note that only uniform-cost search is optimal in cost.}
+\label{tab:uninformed}
+\end{longtable}
+
+\section{Why Uninformed Search Cannot Scale}
+
+Every entry in the time column of Table~\ref{tab:uninformed} is exponential, and no
+choice of frontier changes that. The reason is arithmetic: at branching factor $10$,
+depth $10$ is $10^{10}$ nodes. At a million nodes per second that is about three
+hours, and depth $12$ is twelve days.
+
+This is the \term{combinatorial explosion} that ended the first wave of AI research
+(\chref{introduction}), and it is not an implementation problem. These algorithms
+are \emph{uninformed}: they know nothing about the problem except how to generate
+successors and recognise a goal, so they cannot prefer a promising branch. The only
+escape is to give the search a way to estimate how far a state is from the goal,
+which is \chref{informed}.
+
+\begin{worked}[Tracing all four strategies on one small graph]
+The three-task fragment of \dsref{space-vs-tree}, with costs: \texttt{a} costs $3$,
+\texttt{b} costs $1$, \texttt{c} costs $2$, and \texttt{c} requires both. Goal:
+\texttt{abc}. Expansion order, with the frontier shown after each step.
+
+\smallskip
+\textbf{Breadth-first} (first-in first-out, explored set on).
+\begin{tight}
+  \item Pop $\varnothing$. Push \texttt{a}, \texttt{b}. Frontier:
+        [\texttt{a}, \texttt{b}].
+  \item Pop \texttt{a}. Push \texttt{ab}. Frontier: [\texttt{b}, \texttt{ab}].
+  \item Pop \texttt{b}. Its only successor is \texttt{ab}, already in the explored
+        set --- \emph{not} pushed. Frontier: [\texttt{ab}].
+  \item Pop \texttt{ab}. Push \texttt{abc}. Frontier: [\texttt{abc}].
+  \item Pop \texttt{abc}. Goal. Path \texttt{a},\texttt{b},\texttt{c}, depth $3$,
+        cost $3+1+2=6$.
+\end{tight}
+Nodes expanded: $4$. Without the explored set, step~3 would have pushed a second
+\texttt{ab} and everything below it would be built twice.
+
+\smallskip
+\textbf{Depth-first} (last-in first-out).
+Pop $\varnothing$, push \texttt{a}, \texttt{b}; pop \texttt{b} (the newest); push
+\texttt{ab}; pop \texttt{ab}; push \texttt{abc}; pop \texttt{abc}. Goal in $4$
+expansions, path \texttt{b},\texttt{a},\texttt{c}. Same cost here by coincidence;
+on the full project it is worse.
+
+\smallskip
+\textbf{Iterative deepening.}
+$\ell=0$: expand $\varnothing$, fail ($1$ node). $\ell=1$: $\varnothing$,
+\texttt{a}, \texttt{b}, fail ($3$). $\ell=2$: $\varnothing$, \texttt{a},
+\texttt{ab}, \texttt{b}, fail ($4$). $\ell=3$: reaches \texttt{abc}. Total about
+$12$ node generations against breadth-first search's $5$ --- but the deepest
+frontier ever held is $2$ nodes, not $2$ levels.
+
+\smallskip
+\textbf{Uniform-cost} (cheapest first). Frontier as
+$(\text{cost},\text{state})$.
+\begin{tight}
+  \item Pop $(0,\varnothing)$. Push $(3,\texttt{a})$, $(1,\texttt{b})$.
+  \item Pop $(1,\texttt{b})$ --- cheaper than \texttt{a}, so the order differs from
+        breadth-first search. Push $(4,\texttt{ab})$.
+  \item Pop $(3,\texttt{a})$. Successor \texttt{ab} at cost $3+1=4$, no better than
+        the $4$ already in the frontier, so nothing improves.
+  \item Pop $(4,\texttt{ab})$. Push $(6,\texttt{abc})$.
+  \item Pop $(6,\texttt{abc})$. Goal, cost $6$, and now \emph{provably} cheapest.
+\end{tight}
+
+\smallskip
+\textbf{The point of the trace.} All four found a solution; only uniform-cost
+search knows its answer is the cheapest. And notice step~3: had the goal been
+tested when \texttt{ab} was \emph{generated} rather than when it was popped, the
+search would have committed to whichever path reached it first, which is the bug
+the alertbox warns about.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Omitting the explored set.} An infinite search tree on a finite
+        space. The symptom is a hang, and the cause is two lines away.
+  \item \textbf{Calling breadth-first search optimal.} It returns the
+        \emph{shallowest} solution. That is the cheapest only when every action
+        costs the same --- which, with task durations, it does not.
+  \item \textbf{Goal-testing on generation in uniform-cost search.} Silently
+        sub-optimal answers, and the tests pass because the answer is still
+        \emph{a} solution.
+  \item \textbf{Negative step costs.} Uniform-cost search's optimality proof needs
+        non-negative costs. ``Refactoring saves two days'' modelled as a negative
+        cost breaks the algorithm, not just the estimate.
+  \item \textbf{Depth-limited search reporting failure as impossibility.} It means
+        ``no solution within $\ell$''. Treating that as ``no solution'' is a
+        reporting bug with real consequences.
+  \item \textbf{Believing a faster language will fix $b^{d}$.} A hundredfold speedup
+        buys two more levels of depth at $b=10$. Change the formulation or add a
+        heuristic.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[Task Ordering Four Ways]
+One problem, four strategies, one table. The search body is the one from
+\chref{python}; only the frontier changes. The lab also measures the cost of
+dropping the explored set.
+\begin{lstlisting}[language=Python]
+"""Chapter 4 lab -- uninformed search on the project graph.
+
+Breadth-first, depth-first, iterative deepening and uniform-cost over
+the same task-ordering problem. The search body never changes: the
+frontier decides the strategy, exactly as Chapter 3 claimed.
+"""
+
+import heapq
+import itertools
+from collections import deque, namedtuple
+
+# duration in days, and the tasks that must finish first
+TASKS = {
+    "spec":    (3, set()),
+    "schema":  (2, {"spec"}),
+    "api":     (5, {"schema"}),
+    "ui":      (4, {"spec"}),
+    "auth":    (3, {"schema"}),
+    "tests":   (4, {"api", "auth"}),
+    "docs":    (2, {"api"}),
+    "uat":     (3, {"tests", "ui"}),
+    "release": (1, {"uat", "docs"}),
+}
+ALL = frozenset(TASKS)
+Node = namedtuple("Node", "state parent action cost depth")
+
+
+def actions(state):
+    for t, (_, deps) in TASKS.items():
+        if t not in state and deps <= state:
+            yield t
+
+
+def result(state, action):
+    return state | {action}
+
+
+def cost_of(action):
+    return TASKS[action][0]
+
+
+def path(node):
+    out = []
+    while node.parent is not None:
+        out.append(node.action)
+        node = node.parent
+    return list(reversed(out))
+
+
+def graph_search(pop_which, explored=True):
+    """One body. pop_which selects the strategy.
+
+    'fifo'  -> breadth-first      'lifo' -> depth-first
+    'cheap' -> uniform-cost
+    """
+    start = Node(frozenset(), None, None, 0, 0)
+    tie = itertools.count()
+    if pop_which == "cheap":
+        frontier = [(0, next(tie), start)]
+    else:
+        frontier = deque([start])
+    seen = {start.state} if explored else None
+    expanded = 0
+    peak = 1
+    while frontier:
+        if pop_which == "cheap":
+            node = heapq.heappop(frontier)[2]
+        elif pop_which == "fifo":
+            node = frontier.popleft()
+        else:
+            node = frontier.pop()
+
+        if node.state == ALL:           # goal test on POPPING
+            return path(node), node.cost, expanded, peak
+        expanded += 1
+        for a in actions(node.state):
+            nxt = result(node.state, a)
+            if explored:
+                if nxt in seen:
+                    continue
+                seen.add(nxt)
+            child = Node(nxt, node, a, node.cost + cost_of(a),
+                         node.depth + 1)
+            if pop_which == "cheap":
+                heapq.heappush(frontier, (child.cost, next(tie), child))
+            else:
+                frontier.append(child)
+        peak = max(peak, len(frontier))
+    return None, None, expanded, peak
+
+
+def depth_limited(node, limit, seen, stats):
+    """Recursive depth-limited search. Returns a node or None."""
+    if node.state == ALL:
+        return node
+    if node.depth >= limit:
+        return None
+    stats["expanded"] += 1
+    for a in actions(node.state):
+        nxt = result(node.state, a)
+        if nxt in seen:
+            continue
+        seen.add(nxt)
+        child = Node(nxt, node, a, node.cost + cost_of(a),
+                     node.depth + 1)
+        found = depth_limited(child, limit, seen, stats)
+        if found is not None:
+            return found
+        seen.discard(nxt)          # allow other branches to reuse it
+    return None
+
+
+def iterative_deepening():
+    stats = {"expanded": 0}
+    for limit in range(1, len(TASKS) + 2):
+        start = Node(frozenset(), None, None, 0, 0)
+        found = depth_limited(start, limit, {start.state}, stats)
+        if found is not None:
+            return path(found), found.cost, stats["expanded"], limit
+    return None, None, stats["expanded"], None
+
+
+def legal(plan):
+    done = set()
+    for t in plan:
+        if not TASKS[t][1] <= done:
+            return False
+        done.add(t)
+    return done == set(TASKS)
+
+
+if __name__ == "__main__":
+    print("tasks: %d   total duration: %d days"
+          % (len(TASKS), sum(d for d, _ in TASKS.values())))
+    print()
+    print("strategy             len  days  expanded  peak")
+    print("-" * 49)
+    rows = {}
+    for name, key in (("breadth-first ", "fifo"),
+                      ("depth-first   ", "lifo"),
+                      ("uniform-cost  ", "cheap")):
+        plan, cost, exp, peak = graph_search(key)
+        rows[name.strip()] = (plan, cost, exp, peak)
+        assert legal(plan), name
+        print("%s %6d %5d %9d %5d"
+              % (name, len(plan), cost, exp, peak))
+    plan, cost, exp, depth = iterative_deepening()
+    assert legal(plan)
+    print("%s %6d %5d %9d %5s"
+          % ("iter. deepening", len(plan), cost, exp, "-"))
+
+    # every task must be done, so every complete plan costs the same
+    costs = {c for (_, c, _, _) in rows.values()}
+    assert costs == {sum(d for d, _ in TASKS.values())}
+    print()
+    print("Every plan costs %d days: all nine tasks are mandatory, so"
+          % costs.pop())
+    print("cost cannot discriminate. Chapter 5 gives it something to")
+    print("discriminate on.")
+
+    # what the explored set is worth
+    _, _, with_set, _ = graph_search("fifo", explored=True)
+    _, _, without, _ = graph_search("fifo", explored=False)
+    print()
+    print("breadth-first expansions with explored set:    %d" % with_set)
+    print("breadth-first expansions without explored set: %d" % without)
+    print("factor: %.1fx more work" % (without / with_set))
+    assert without > with_set
+\end{lstlisting}
+Read the output against Table~\ref{tab:uninformed}: depth-first search holds the
+smallest frontier and breadth-first search the largest, every complete plan costs
+the same $27$ days, and removing the explored set multiplies the work. The last
+number is the one to remember --- it is the whole argument of
+\dsref{space-vs-tree}, measured.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A state space has $22$ states and its search tree has $184$ nodes. Explain
+        in one sentence where the other $162$ come from, and what single data
+        structure removes them.
+  \item Why must uniform-cost search test for the goal when a node is popped
+        rather than when it is generated? Give the smallest graph on which the
+        difference shows.
+  \item Iterative deepening re-expands the top of the tree on every iteration. Why
+        is the total work still the same order as breadth-first search, and what is
+        bought with the repetition?
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item Formulating a problem means choosing states, initial state, actions,
+        result, goal test and step cost --- and deciding what to leave out. The
+        omissions are where the factors of a hundred live.
+  \item The \term{state space} is a graph and belongs to the problem; the
+        \term{search tree} is built by the algorithm and repeats each state once
+        per path. An \term{explored set} turns the tree back into the graph and is
+        what makes search on a cyclic space terminate.
+  \item Breadth-first search is complete and returns the shallowest solution ---
+        cheapest only when all actions cost the same. It needs $O(b^{d})$ memory,
+        which is what defeats it.
+  \item Depth-first search needs only $O(bm)$ memory but is neither complete nor
+        optimal. Depth-limited search terminates but reports failure on solvable
+        problems.
+  \item Iterative deepening has breadth-first search's guarantees with depth-first
+        search's memory, for about 11\% more work at $b=10$, $d=5$.
+  \item Uniform-cost search expands the cheapest path first and is genuinely
+        cost-optimal, provided the goal test happens on popping and every step cost
+        is non-negative. It is Dijkstra's algorithm, and \chref{informed} turns it
+        into $A^{*}$.
+  \item All five are exponential in time, because none of them knows anything about
+        the problem beyond generating successors. That is what ``uninformed''
+        means, and why the next chapter exists.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which strategy is guaranteed to return the cheapest
+        solution when action costs differ? (a)~breadth-first (b)~depth-first
+        (c)~iterative deepening (d)~uniform-cost.
+  \item \textbf{(MCQ)} Depth-first search's space complexity is:
+        (a)~$O(b^{d})$ (b)~$O(bm)$ (c)~$O(d)$ (d)~$O(b^{m})$.
+  \item \textbf{(MCQ)} Omitting the explored set on a state space with cycles makes
+        the search: (a)~slower but still correct (b)~non-optimal only
+        (c)~potentially non-terminating (d)~unable to find shallow solutions.
+  \item \textbf{(MCQ)} Uniform-cost search is equivalent to breadth-first search
+        when: (a)~the graph is a tree (b)~all step costs are equal (c)~the
+        heuristic is zero (d)~the goal is unique.
+  \item \textbf{(Short)} State the difference between the state space and the
+        search tree, and give the size of each for the three-task fragment of
+        \dsref{space-vs-tree}.
+  \item \textbf{(Short)} Explain why iterative deepening is preferred to
+        breadth-first search on large problems despite doing more work.
+  \item \textbf{(Short)} Why does uniform-cost search require non-negative step
+        costs? Describe what goes wrong with a negative edge.
+  \item \textbf{(Applied)} On the project graph, add a task \texttt{perf} of
+        duration $2$ depending on \texttt{api} and \texttt{ui}, required before
+        \texttt{release}. By hand, give the depth of the shallowest complete plan
+        and the total cost of every complete plan. Then say which of the five
+        strategies would now be the right choice, and why cost-based search is
+        still not useful on this problem.
+\end{reviewq}

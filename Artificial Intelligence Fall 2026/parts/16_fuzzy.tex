@@ -1,0 +1,618 @@
+%=====================================================================
+\chapter{Fuzzy Logic}\label{ch:fuzzy}
+%=====================================================================
+\locator{5}{Part V --- Reasoning Under Uncertainty}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} vagueness from uncertainty, and \textbf{say} which of
+        the two fuzzy logic addresses.
+  \item \textbf{Define} membership functions and \textbf{apply} the fuzzy
+        operators.
+  \item \textbf{Run} a Mamdani inference by hand: fuzzify, evaluate the rules,
+        clip, aggregate, defuzzify.
+  \item \textbf{Explain} why a fuzzy controller's output is smooth where a
+        threshold rule's is not, and why that matters.
+  \item \textbf{State} the limitations of centroid defuzzification and of the
+        method generally.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{uncertainty} --- and specifically the idea of a degree of belief, which is
+what a degree of \emph{membership} is repeatedly confused with. This chapter branches
+from Chapter~14 rather than following \chref{bayesnets}: it answers a different
+question.
+\end{prereq}
+
+\begin{keyterms}
+vagueness $\bullet$ fuzzy set $\bullet$ membership function $\bullet$ degree of
+membership $\bullet$ linguistic variable $\bullet$ fuzzy partition $\bullet$ fuzzy
+operators $\bullet$ fuzzification $\bullet$ firing strength $\bullet$ Mamdani
+inference $\bullet$ clipping $\bullet$ aggregation $\bullet$ defuzzification
+$\bullet$ centroid
+\end{keyterms}
+
+\section{Vagueness Is Not Uncertainty}
+
+Two sentences that sound alike and are not:
+
+\begin{quote}
+\emph{This project is probably high-risk.}\\
+\emph{This project is fairly high-risk.}
+\end{quote}
+
+The first is \term{uncertainty}. There is a fact of the matter --- the project either
+is or is not high-risk --- and the speaker does not know which.
+\chref{uncertainty} is about that, and evidence resolves it: learn enough and the
+probability goes to $0$ or $1$.
+
+The second is \term{vagueness}. The speaker knows everything there is to know about
+the project. The trouble is that ``high-risk'' has no sharp boundary, and no amount
+of evidence will produce one. A project at $70$ effort-days with moderate
+uncertainty is high-risk to a degree, and that is the whole truth about it.
+
+\begin{definitionbox}[Fuzzy set and membership]
+A \term{fuzzy set} $A$ over a domain is given by a \term{membership function}
+$\mu_{A}(x) \in [0,1]$ saying to what degree $x$ belongs to $A$.
+
+$\mu_{\mathit{high}}(70) = 0.4$ does \emph{not} mean ``a $40\%$ chance the project is
+high-risk''. It means the project is high-risk to degree $0.4$ --- a statement about
+the \emph{word}, not about the world, and it does not change when more evidence
+arrives.
+\end{definitionbox}
+
+\begin{alertbox}[The confusion this chapter exists to prevent]
+A probability and a membership are both numbers in $[0,1]$ and they mean entirely
+different things.
+
+$P(\mathit{defect}) = 0.3$ describes ignorance about a sharp fact; test the release
+and it resolves to $0$ or $1$. $\mu_{\mathit{high}}(70) = 0.4$ describes a sharp
+fact about a blurry word; measure the project more carefully and it stays $0.4$.
+
+Probabilities over a partition sum to one and memberships do not. Combining
+probabilities uses multiplication and Bayes' rule; combining memberships uses
+$\min$ and $\max$. And Russell and Norvig are openly sceptical that the second
+apparatus is ever necessary --- their position is that a well-specified
+probabilistic model can do this work. It is worth reading their argument, and
+worth knowing that fuzzy controllers run production systems from cement kilns to
+camera autofocus, which is an argument of a different kind.
+\end{alertbox}
+
+\section{Membership Functions and Linguistic Variables}
+
+A \term{linguistic variable} takes values that are words --- \emph{low}, \emph{medium},
+\emph{high} --- each defined by a membership function over the underlying numeric
+domain.
+
+The usual construction is a \term{fuzzy partition}: overlapping triangles whose peaks
+sit at evenly spaced points and whose memberships sum to one everywhere. Two
+consequences: every input is described by at most two words, and the description
+changes continuously as the input moves.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=12.4cm, height=5.0cm,
+  xlabel={requirement uncertainty (team's 0--10 scale)},
+  ylabel={degree of membership $\mu$},
+  xlabel style={font=\scriptsize}, ylabel style={font=\scriptsize},
+  tick label style={font=\tiny},
+  xmin=0, xmax=10, ymin=0, ymax=1.15,
+  grid=both, major grid style={gray!18}, minor grid style={gray!8},
+  legend style={font=\tiny, at={(0.5,1.24)}, anchor=north, legend columns=3,
+                draw=gray!40, fill=white},
+  legend cell align=left]
+
+\addplot[primary, line width=1.3pt] coordinates {(0,1) (5,0) (10,0)};
+\addlegendentry{low}
+\addplot[goldhl, line width=1.3pt] coordinates {(0,0) (5,1) (10,0)};
+\addlegendentry{medium}
+\addplot[accent, line width=1.3pt] coordinates {(0,0) (5,0) (10,1)};
+\addlegendentry{high}
+
+\draw[greenhl, line width=1pt, dash pattern=on 3pt off 2pt]
+  (axis cs:4,0) -- (axis cs:4,1.05);
+\addplot[only marks, mark=*, mark size=1.7pt, primary]
+  coordinates {(4,0.2)};
+\addplot[only marks, mark=*, mark size=1.7pt, goldhl]
+  coordinates {(4,0.8)};
+\node[font=\tiny, text=greenhl!50!black, anchor=west, align=left]
+  at (axis cs:4.2,1.0) {uncertainty 4 is};
+\node[font=\tiny, text=greenhl!50!black, anchor=west, align=left]
+  at (axis cs:4.2,0.86) {\emph{low} to degree 0.2,};
+\node[font=\tiny, text=greenhl!50!black, anchor=west, align=left]
+  at (axis cs:4.2,0.72) {\emph{medium} to degree 0.8};
+\end{axis}
+\end{tikzpicture}}%
+{A fuzzy partition of the uncertainty scale. The memberships sum to one at every
+point, so each input is described by at most two words and the description moves
+smoothly as the input does.}{memberships}
+
+\section{The Fuzzy Operators}
+
+Conjunction, disjunction and negation extend to memberships in the standard way:
+\[
+  \mu_{A \cap B}(x) = \min\bigl(\mu_{A}(x), \mu_{B}(x)\bigr), \quad
+  \mu_{A \cup B}(x) = \max\bigl(\mu_{A}(x), \mu_{B}(x)\bigr), \quad
+  \mu_{\neg A}(x) = 1 - \mu_{A}(x)
+\]
+
+Note what is \emph{not} true. In classical logic $A \cap \neg A = \varnothing$; here
+$\min(\mu, 1-\mu)$ is $0.5$ when $\mu = 0.5$, so a borderline project is in
+``high-risk and not high-risk'' to degree $0.5$. That is a feature of the intended
+reading --- a genuinely borderline case is half in and half out of a vague category
+--- and it is also why fuzzy logic is not a logic in the sense of
+\chref{propositional}: there is no entailment relation and no soundness theorem.
+
+\section{Mamdani Inference}
+
+The classical fuzzy controller, in five steps. The example is the team's risk model:
+inputs are \emph{effort} (person-days) and \emph{requirement uncertainty}, the
+output is \emph{risk}, and there are nine rules --- one for each combination of two
+linguistic variables with three values each.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  st/.style={rounded corners=3pt, draw=#1, line width=1.1pt, fill=#1!8,
+             text=#1!50!black, text width=2.45cm, align=flush left,
+             inner sep=5pt, minimum height=2.4cm},
+  hd/.style={rounded corners=2pt, fill=#1, text=white,
+             font=\tiny\bfseries, inner sep=2.5pt, text width=2.3cm,
+             align=center},
+  a/.style={-{Stealth[length=2mm]}, neutral!70, line width=1pt}]
+
+\node[st=primary]   (s1) at (0,0)     {\\[2pt]effort $=45$\\ uncertainty $=4$\\[4pt]
+  become\\[2pt] \emph{low} 0.1,\\ \emph{medium} 0.9\\[2pt]
+  \emph{low} 0.2,\\ \emph{medium} 0.8};
+\node[st=secondary] (s2) at (3.1,0)   {\\[2pt]each rule's strength is the
+  $\min$ of its conditions\\[4pt]
+  4 of the 9 rules have non-zero strength};
+\node[st=goldhl]    (s3) at (6.2,0)   {\\[2pt]each rule \emph{clips} its
+  output word at its own strength\\[4pt]
+  \emph{low} at 0.2\\ \emph{medium} at 0.8};
+\node[st=greenhl]   (s4) at (9.3,0)   {\\[2pt]aggregate the clipped shapes
+  by $\max$\\[4pt] one combined shape over the risk scale};
+\node[st=accent]    (s5) at (12.4,0)  {\\[2pt]take the centroid of that
+  shape\\[4pt] \textbf{risk $=49.04$}};
+
+\node[hd=primary]   at (s1.north) {1. FUZZIFY};
+\node[hd=secondary] at (s2.north) {2. FIRE RULES};
+\node[hd=goldhl]    at (s3.north) {3. CLIP};
+\node[hd=greenhl]   at (s4.north) {4. AGGREGATE};
+\node[hd=accent]    at (s5.north) {5. DEFUZZIFY};
+
+\foreach \x/\y in {s1/s2,s2/s3,s3/s4,s4/s5}{\draw[a] (\x) -- (\y);}
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!30, line width=0.8pt,
+      text=primary!70!black, font=\scriptsize, text width=13.6cm,
+      align=flush left, inner sep=6pt] at (6.2,-2.1)
+  {\textbf{Steps 1 and 5 are the interface; steps 2 to 4 are the reasoning.} The
+   inputs and the output are ordinary numbers, so the controller drops into an
+   existing system unchanged --- and in between, the knowledge is nine sentences a
+   delivery lead wrote in English. That combination is why fuzzy control was
+   adopted in industry far more widely than in research.};
+\end{tikzpicture}}%
+{Mamdani inference on the project \emph{Beacon}, effort $45$ and uncertainty $4$.
+Four of the nine rules fire, and the output is a single number.}{mamdani}
+
+\begin{examplebox}[The nine rules]
+\begin{tabular}{@{}L{4.5cm}L{4.5cm}L{5.4cm}@{}}
+\toprule
+\textbf{Effort} & \textbf{Uncertainty} & \textbf{Risk} \\
+\midrule
+low & low & low \\
+low & medium & low \\
+low & high & medium \\
+medium & low & low \\
+medium & medium & medium \\
+medium & high & high \\
+high & low & medium \\
+high & medium & high \\
+high & high & high \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+Nine rules for two inputs with three values each. Note how this scales: three inputs
+would need $27$, four would need $81$. \emph{Rule explosion} is the practical limit
+on fuzzy control, and it is why these systems typically have two or three inputs.
+\end{examplebox}
+
+\section{Defuzzification}
+
+Aggregation leaves a shape; a controller needs a number. The \term{centroid} method
+takes the shape's centre of area:
+\[
+  x^{*} \;=\; \frac{\int x\, \mu(x)\, dx}{\int \mu(x)\, dx}
+\]
+computed in practice by summing over a grid.
+
+\begin{alertbox}[Centroid defuzzification cannot reach the extremes]
+Run the risk model across its whole input range and the output never leaves roughly
+$[16.6, 83.4]$ --- it never says $0$ and never says $100$, even for a project with
+minimum effort and minimum uncertainty.
+
+The reason is geometric rather than conceptual: the centroid of a shape clipped from
+a triangle centred at $0$ still has area to the right of $0$, so its centre of area
+is positive. The output range is compressed towards the middle, always.
+
+Three responses, all used in practice: rescale the output afterwards; use
+\emph{mean of maxima} instead, which does reach the extremes but is discontinuous;
+or accept it, on the grounds that a risk score is compared against other risk scores
+rather than read as an absolute. Whichever you choose, know that the numbers a
+Mamdani controller emits are not on the scale you think they are, and do not label
+the output ``percent''.
+\end{alertbox}
+
+\section{Why Smoothness Is the Point}
+
+Everything above could have been done with a threshold rule: \textsc{if} effort
+$> 70$ \textsc{and} uncertainty $> 7$ \textsc{then} risk is high. It would be
+shorter, and it has one fatal property.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{axis}[
+  width=12.2cm, height=5.6cm,
+  xlabel={requirement uncertainty, with effort held at 45},
+  ylabel={risk score},
+  xlabel style={font=\scriptsize}, ylabel style={font=\scriptsize},
+  tick label style={font=\tiny},
+  xmin=0, xmax=10, ymin=-5, ymax=105,
+  grid=both, major grid style={gray!18}, minor grid style={gray!8},
+  legend style={font=\tiny, at={(0.03,0.97)}, anchor=north west,
+                draw=gray!40, fill=white},
+  legend cell align=left]
+
+\addplot[greenhl, line width=1.4pt, mark=*, mark size=1.4pt] coordinates {
+  (0,16.79) (1,32.71) (2,41.19) (3,46.21) (4,49.04) (5,49.75)
+  (6,50.71) (7,53.50) (8,58.46) (9,66.81) (10,73.86)};
+\addlegendentry{Mamdani controller}
+
+\addplot[accent, line width=1.4pt] coordinates {
+  (0,10) (7,10) (7,90) (10,90)};
+\addlegendentry{threshold rule: high if uncertainty $>7$}
+
+\node[font=\tiny\itshape, text=accent, anchor=west, align=left]
+  at (axis cs:2.1,86)
+  {one unit of measurement error here\\ changes the answer by 80 points};
+\draw[accent!70, line width=0.7pt, -{Stealth[length=1.6mm]}]
+  (axis cs:5.0,80) -- (axis cs:6.85,62);
+\end{axis}
+\end{tikzpicture}}%
+{The same knowledge as a fuzzy controller and as a threshold rule. The fuzzy output
+moves continuously; the threshold output is flat, flat, and then an eighty-point
+jump between two adjacent inputs.}{fuzzy-smooth}
+
+The threshold rule says the same thing at uncertainty $1$ and at $6$, and something
+completely different between $7$ and $8$. If the uncertainty score is a judgement
+with a unit of noise in it --- and it is, because a person assigned it --- then two
+assessors will disagree wildly about projects near the boundary and not at all about
+the rest. That is not a property anybody wants in a risk register.
+
+The fuzzy controller's output moves a little when the input moves a little,
+everywhere. \emph{That is the engineering reason fuzzy control was adopted}: not
+because vagueness is philosophically interesting, but because interpolating between
+rules gives a smooth response surface from a handful of sentences that domain
+experts can actually write.
+
+\begin{worked}[Beacon, by hand]
+Effort $45$ person-days, requirement uncertainty $4$.
+
+\smallskip
+\textbf{Step 1 --- fuzzify.} With triangles peaking at $0$, $50$, $100$ for effort:
+\[
+  \mu_{\mathit{low}}(45) = \frac{50-45}{50} = 0.1, \qquad
+  \mu_{\mathit{medium}}(45) = \frac{45-0}{50} = 0.9, \qquad
+  \mu_{\mathit{high}}(45) = 0
+\]
+and with triangles peaking at $0$, $5$, $10$ for uncertainty:
+\[
+  \mu_{\mathit{low}}(4) = \frac{5-4}{5} = 0.2, \qquad
+  \mu_{\mathit{medium}}(4) = \frac{4-0}{5} = 0.8, \qquad
+  \mu_{\mathit{high}}(4) = 0
+\]
+Each input is described by exactly two words, as the partition guarantees.
+
+\smallskip
+\textbf{Step 2 --- rule strengths, by $\min$.} Five of the nine rules involve a word
+with membership zero and contribute nothing. The other four:
+\begin{tight}
+  \item low effort, low uncertainty $\to$ \emph{low} risk: $\min(0.1, 0.2) = 0.1$
+  \item low effort, medium uncertainty $\to$ \emph{low} risk: $\min(0.1, 0.8) = 0.1$
+  \item medium effort, low uncertainty $\to$ \emph{low} risk: $\min(0.9, 0.2) = 0.2$
+  \item medium effort, medium uncertainty $\to$ \emph{medium} risk:
+        $\min(0.9, 0.8) = 0.8$
+\end{tight}
+
+\smallskip
+\textbf{Step 3 --- clip.} Three rules conclude \emph{low} risk, with strengths
+$0.1$, $0.1$ and $0.2$; aggregating by $\max$ means the \emph{low} triangle is
+clipped at $0.2$. One rule concludes \emph{medium} risk, so that triangle is clipped
+at $0.8$.
+
+\smallskip
+\textbf{Step 4 --- aggregate.} The combined shape is the pointwise maximum: a
+plateau at height $0.2$ over the low-risk region and a larger plateau at $0.8$ over
+the middle.
+
+\smallskip
+\textbf{Step 5 --- defuzzify.} The centre of area of that shape is
+$\mathbf{49.04}$.
+
+\smallskip
+\textbf{Sanity check.} The dominant rule concluded \emph{medium}, whose triangle
+peaks at $50$; the weaker \emph{low} contribution drags the answer slightly below
+it. $49.04$ is exactly where it should be, and the arithmetic is worth doing once by
+hand because it is the only way to believe the pipeline.
+
+\smallskip
+\textbf{Now move one input.} At uncertainty $9$ instead of $4$ the answer is
+$66.81$; at uncertainty $0$ it is $16.79$. Every intermediate value appears ---
+no jumps, and no rule had to be written for the cases in between.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Reading a membership as a probability.} $\mu = 0.4$ is not ``a
+        $40\%$ chance''. Memberships do not sum to one, do not update on evidence,
+        and combine by $\min$ and $\max$ rather than by Bayes' rule.
+  \item \textbf{Membership functions that do not overlap.} Then only one rule ever
+        fires, there is no interpolation, and you have written a slow lookup table.
+        Build a partition whose memberships sum to one.
+  \item \textbf{Believing the output range.} Centroid defuzzification cannot reach
+        the extremes --- here the output never leaves roughly $[16.6, 83.4]$. Never label
+        it ``percent''.
+  \item \textbf{Adding inputs.} Three linguistic variables with three values each
+        need $27$ rules, four need $81$. Fuzzy controllers stay small for a reason.
+  \item \textbf{Expecting entailment.} There is no soundness theorem here and
+        $A \cap \neg A \ne \varnothing$. This is a control technique, not a logic in
+        \chref{propositional}'s sense.
+  \item \textbf{Using it where probability belongs.} If the question is ``will this
+        release fail?'' the answer is uncertain, not vague, and \chref{uncertainty}
+        is the right chapter.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[Risk Rating by Mamdani Inference]
+The full pipeline on five projects, the hand-checkable trace for \emph{Beacon}, the
+smoothness comparison of \dsref{fuzzy-smooth}, and the output-range limitation.
+\begin{lstlisting}[language=Python]
+"""Chapter 16 lab -- rating project risk by Mamdani inference.
+
+Two inputs, nine rules, one number out. The interesting outputs are
+the smoothness table and the range check: a centroid defuzzifier
+cannot reach the ends of its own scale.
+"""
+
+import numpy as np
+
+
+def tri(x, a, b, c):
+    """Triangular membership: 0 at a, 1 at b, 0 at c."""
+    x = np.asarray(x, dtype=float)
+    return np.clip(np.minimum((x - a) / (b - a), (c - x) / (c - b)), 0, 1)
+
+
+# Fuzzy partitions: peaks evenly spaced, memberships summing to one,
+# so every input is described by at most two words.
+EFFORT = {                                   # person-days, 0..100
+    "low":    lambda x: tri(x, -50, 0, 50),
+    "medium": lambda x: tri(x, 0, 50, 100),
+    "high":   lambda x: tri(x, 50, 100, 150),
+}
+UNCERTAINTY = {                              # the team's 0..10 scale
+    "low":    lambda x: tri(x, -5, 0, 5),
+    "medium": lambda x: tri(x, 0, 5, 10),
+    "high":   lambda x: tri(x, 5, 10, 15),
+}
+RISK = {                                     # score, 0..100
+    "low":    lambda x: tri(x, -50, 0, 50),
+    "medium": lambda x: tri(x, 0, 50, 100),
+    "high":   lambda x: tri(x, 50, 100, 150),
+}
+
+# (effort word, uncertainty word) -> risk word
+RULES = [
+    ("low", "low", "low"), ("low", "medium", "low"),
+    ("low", "high", "medium"),
+    ("medium", "low", "low"), ("medium", "medium", "medium"),
+    ("medium", "high", "high"),
+    ("high", "low", "medium"), ("high", "medium", "high"),
+    ("high", "high", "high"),
+]
+
+GRID = np.linspace(0, 100, 1001)
+
+
+def mamdani(effort, uncertainty, trace=False):
+    # 1. fuzzify
+    me = {k: float(f(effort)) for k, f in EFFORT.items()}
+    mu = {k: float(f(uncertainty)) for k, f in UNCERTAINTY.items()}
+    if trace:
+        print("   effort %g      -> %s" % (effort,
+              {k: round(v, 3) for k, v in me.items() if v > 0}))
+        print("   uncertainty %g -> %s" % (uncertainty,
+              {k: round(v, 3) for k, v in mu.items() if v > 0}))
+
+    # 2. firing strength = min of the conditions
+    # 3. clip the consequent at that strength
+    # 4. aggregate by max
+    aggregate = np.zeros_like(GRID)
+    fired = []
+    for (e, u, r) in RULES:
+        w = min(me[e], mu[u])
+        if w > 1e-9:
+            fired.append((e, u, r, w))
+            aggregate = np.maximum(aggregate, np.minimum(w, RISK[r](GRID)))
+    if trace:
+        for (e, u, r, w) in fired:
+            print("   %-6s x %-6s -> %-6s   strength %.3f"
+                  % (e, u, r, w))
+
+    # 5. defuzzify by centroid
+    area = aggregate.sum()
+    crisp = float((GRID * aggregate).sum() / area) if area else 0.0
+    return crisp, fired
+
+
+def threshold_rule(effort, uncertainty):
+    """The same knowledge as a crisp rule, for contrast."""
+    return 90 if (effort > 40 and uncertainty > 7) else 10
+
+
+PROJECTS = {
+    "Atlas":  (20, 2),
+    "Beacon": (45, 4),
+    "Cobalt": (85, 9),
+    "Delta":  (45, 9),
+    "Echo":   (90, 2),
+}
+
+if __name__ == "__main__":
+    print("project   effort  uncert    risk   rules fired")
+    print("-" * 50)
+    for name, (e, u) in PROJECTS.items():
+        risk, fired = mamdani(e, u)
+        print("%-9s %6d %7d %7.2f %8d" % (name, e, u, risk, len(fired)))
+        assert len(fired) == 4, "a partition should fire 2x2 rules"
+
+    print()
+    print("=== Beacon in full (effort 45, uncertainty 4) ===")
+    risk, fired = mamdani(45, 4, trace=True)
+    print("   crisp risk = %.2f" % risk)
+    assert abs(risk - 49.04) < 0.01
+
+    # the memberships are exactly the hand calculation
+    assert abs(float(EFFORT["low"](45)) - 0.1) < 1e-9
+    assert abs(float(EFFORT["medium"](45)) - 0.9) < 1e-9
+    assert abs(float(UNCERTAINTY["low"](4)) - 0.2) < 1e-9
+    assert abs(float(UNCERTAINTY["medium"](4)) - 0.8) < 1e-9
+
+    # --- smoothness ------------------------------------------------
+    print()
+    print("=== effort fixed at 45, uncertainty swept ===")
+    print("   unc   fuzzy    threshold rule")
+    print("   " + "-" * 34)
+    curve = []
+    for u in range(11):
+        r, _ = mamdani(45, u)
+        curve.append(r)
+        print("   %3d %8.2f %12d" % (u, r, threshold_rule(45, u)))
+
+    # the fuzzy output is monotone and moves in small steps
+    steps = [curve[i + 1] - curve[i] for i in range(len(curve) - 1)]
+    assert all(s > 0 for s in steps), "should be monotone increasing"
+    print()
+    print("   fuzzy: largest single step %.2f points" % max(steps))
+    print("   threshold rule: one step of 80 points, at u = 7 -> 8")
+    assert max(steps) < 20
+
+    # --- the range limitation --------------------------------------
+    print()
+    print("=== what range can the output actually reach? ===")
+    lo, hi = 1e9, -1e9
+    for e in range(0, 101, 5):
+        for u in range(0, 11):
+            r, _ = mamdani(e, u)
+            lo, hi = min(lo, r), max(hi, r)
+    print("   across the whole input space, risk lies in [%.2f, %.2f]"
+          % (lo, hi))
+    print("   a minimum-effort, minimum-uncertainty project scores")
+    print("   %.2f, not 0. Centroid defuzzification cannot reach the"
+          % mamdani(0, 0)[0])
+    print("   ends of its own scale, so never label this 'percent'.")
+    assert lo > 5 and hi < 95
+
+    # --- and the confusion this chapter exists to prevent ----------
+    print()
+    print("=== membership is not probability ===")
+    print("   mu_high(effort=70) = %.3f" % float(EFFORT["high"](70)))
+    print("   This does NOT mean a 40% chance the project is high")
+    print("   effort. It is 70 person-days -- we are certain of that.")
+    print("   The number describes the word 'high', not our ignorance,")
+    print("   and no further measurement will change it.")
+    total = sum(float(f(70)) for f in EFFORT.values())
+    print("   memberships at 70 sum to %.3f (probabilities would sum"
+          % total)
+    print("   to 1 only by coincidence; here it is by construction)")
+\end{lstlisting}
+Then widen the \emph{medium} risk triangle to \texttt{tri(x, -25, 50, 125)} and
+re-run. Beacon's score barely moves, but the reachable range narrows further: the
+defuzzified output depends on the \emph{shape} of the output sets as much as on the
+rules, which is the part of a fuzzy controller that is tuned rather than derived.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item A project is measured at exactly $70$ person-days and
+        $\mu_{\mathit{high}}(70) = 0.4$. Explain why gathering more information
+        about the project will not change that number, and what would.
+  \item Four of nine rules fired for \emph{Beacon}, and the same four would fire for
+        any input in a neighbourhood of it. Explain what property of the membership
+        functions guarantees ``at most four'', and what goes wrong if the
+        membership functions do not overlap.
+  \item The controller's output never leaves roughly $[16.6, 83.4]$. Give the reason,
+        and one consequence for how the score should be reported to a project
+        board.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item \term{Vagueness} is not \term{uncertainty}. A probability describes
+        ignorance about a sharp fact and resolves with evidence; a \term{degree of
+        membership} describes a blurry word and does not.
+  \item A \term{fuzzy set} is a membership function $\mu_{A}(x) \in [0,1]$. A
+        \term{fuzzy partition} --- overlapping triangles whose memberships sum to
+        one --- means each input is described by at most two words and the
+        description moves continuously.
+  \item The operators are $\min$, $\max$ and $1-\mu$. Note that
+        $A \cap \neg A \neq \varnothing$: there is no entailment relation and no
+        soundness theorem, and this is a control technique rather than a logic.
+  \item \term{Mamdani inference}: fuzzify, take each rule's strength as the $\min$
+        of its conditions, clip its consequent at that strength, aggregate by
+        $\max$, and defuzzify by \term{centroid}. For \emph{Beacon} four of nine
+        rules fired and the answer was $49.04$.
+  \item Centroid defuzzification \emph{cannot reach the extremes} --- the output
+        here lives in roughly $[16.6, 83.4]$ whatever the input. Do not call it a
+        percentage.
+  \item The engineering justification is \emph{smoothness}: the output moves a
+        little when the input moves a little, everywhere, where a threshold rule
+        jumps eighty points between two adjacent inputs. A handful of sentences
+        from a domain expert becomes a continuous response surface.
+  \item Rules grow as $v^{n}$ in the number of inputs --- nine here, $81$ for four
+        inputs --- which is why fuzzy controllers stay small.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A degree of membership $\mu_{A}(x) = 0.4$ means:
+        (a)~a $40\%$ chance $x$ is in $A$ (b)~$x$ belongs to $A$ to degree $0.4$
+        (c)~$40\%$ of objects like $x$ are in $A$ (d)~$A$ is $40\%$ certain.
+  \item \textbf{(MCQ)} In Mamdani inference a rule's firing strength is:
+        (a)~the product of its condition memberships (b)~the $\min$ of them
+        (c)~the $\max$ of them (d)~their average.
+  \item \textbf{(MCQ)} Aggregation across rules combines the clipped consequents
+        by: (a)~$\min$ (b)~$\max$ (c)~addition (d)~multiplication.
+  \item \textbf{(MCQ)} Centroid defuzzification: (a)~always reaches the extremes of
+        the output range (b)~compresses the output towards the middle
+        (c)~is discontinuous (d)~requires probabilities.
+  \item \textbf{(Short)} Give one question about a software release that is a
+        matter of uncertainty and one that is a matter of vagueness, and say which
+        chapter handles each.
+  \item \textbf{(Short)} Explain why membership functions must overlap, and what a
+        fuzzy controller degenerates into if they do not.
+  \item \textbf{(Short)} State the engineering argument for a fuzzy controller over
+        a threshold rule, using \dsref{fuzzy-smooth}.
+  \item \textbf{(Applied)} Compute by hand the fuzzy output for a project with
+        effort $75$ and uncertainty $6$: give the memberships, the firing strengths
+        of every rule that fires, which output words are clipped and at what level,
+        and say whether the crisp result should be above or below $50$, with a
+        reason.
+\end{reviewq}

@@ -1,0 +1,624 @@
+%=====================================================================
+\chapter{Intelligent Agents and Task Environments}\label{ch:agents}
+%=====================================================================
+\locator{1}{Part I --- Foundations of Intelligent Systems}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} an agent in terms of percepts, actions, an agent function
+        and an agent program, and \textbf{explain} why the distinction between the
+        last two matters.
+  \item \textbf{Specify} any task for an agent as a \textbf{PEAS} description ---
+        performance measure, environment, actuators, sensors --- before writing a
+        line of code.
+  \item \textbf{Classify} a task environment on the six standard properties, and
+        \textbf{predict} which agent architectures the classification rules out.
+  \item \textbf{Distinguish} the five kinds of agent program and \textbf{choose}
+        the simplest one that can do a given job.
+  \item \textbf{Explain} rationality as doing the best that can be expected given
+        the percepts so far, and \textbf{separate} it from omniscience and from
+        perfection.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{introduction} (the definition of an agent, the acting-rationally quadrant,
+the five-point checklist). The agent vocabulary set up here is used by every later
+chapter: search is what a goal-based agent does to choose its action
+(\chref{uninformed}), and utility appears again as expected utility in
+\chref{uncertainty}.
+\end{prereq}
+
+\begin{keyterms}
+agent $\bullet$ percept $\bullet$ percept sequence $\bullet$ actuator $\bullet$
+sensor $\bullet$ agent function $\bullet$ agent program $\bullet$ PEAS $\bullet$
+performance measure $\bullet$ rational agent $\bullet$ fully and partially
+observable $\bullet$ deterministic and stochastic $\bullet$ episodic and
+sequential $\bullet$ static and dynamic $\bullet$ discrete and continuous
+$\bullet$ single- and multi-agent $\bullet$ simple reflex agent $\bullet$
+model-based reflex agent $\bullet$ goal-based agent $\bullet$ utility-based agent
+$\bullet$ state estimation
+\end{keyterms}
+
+\section{Agent, Environment, Percept, Action}
+
+Everything in this course is an agent doing one thing: taking in what it can see
+and choosing what to do. \dsref{agent-loop} is the picture, and it is worth
+looking at carefully, because four of its labels are technical terms that get used
+precisely from here on.
+
+\dsfig{%
+\begin{tikzpicture}[font=\small,
+  ag/.style={rounded corners=4pt, draw=primary, line width=1.4pt, fill=primary!8,
+             minimum width=5.4cm, minimum height=3.5cm},
+  env/.style={rounded corners=4pt, draw=goldhl, line width=1.4pt, fill=goldhl!8,
+              minimum width=3.6cm, minimum height=3.5cm, align=center,
+              text=goldhl!50!black},
+  slot/.style={rounded corners=3pt, fill=white, draw=primary!45, line width=0.8pt,
+               font=\scriptsize\bfseries, text=primary!70!black, align=center,
+               minimum width=4.4cm, minimum height=0.72cm},
+  a/.style={-{Stealth[length=2.6mm]}, line width=1.2pt}]
+
+\node[ag] (agent) at (0,0) {};
+\node[font=\scriptsize\bfseries, text=primary] at (0,1.52) {AGENT};
+\node[slot] (prog) at (0,0.55) {agent program};
+\node[slot] (fn)   at (0,-0.45)
+  {\emph{agent function}\\[-1pt]{\tiny percept sequence $\mapsto$ action}};
+\node[font=\tiny\itshape, text=neutral, text width=4.6cm, align=center]
+  at (0,-1.3) {the program \emph{implements} the function\\ in bounded time and
+  memory};
+
+% Every \\ in a node stays at the top level of the node text: a \\ inside a
+% nested {...} group breaks the alignment (see the README's risks section).
+\node[env, right=3.4cm of agent] (world) {ENVIRONMENT\\[3pt]
+  {\scriptsize the three hundred}\\
+  {\scriptsize open tickets, the}\\
+  {\scriptsize engineers on shift,}\\
+  {\scriptsize the clock}};
+
+\draw[a, secondary] (world.north west) -- ++(-1.0,0)
+  node[midway, above, font=\scriptsize, text=secondary]
+  {\textbf{percept}} -- (agent.north east);
+\draw[a, accent] (agent.south east) -- ++(1.0,0)
+  node[midway, below, font=\scriptsize, text=accent]
+  {\textbf{action}} -- (world.south west);
+
+\node[font=\tiny, text=secondary, align=center] at (3.62,0.46)
+  {\emph{via} sensors};
+\node[font=\tiny, text=accent, align=center] at (3.62,-0.5)
+  {\emph{via} actuators};
+
+\node[rounded corners=3pt, fill=greenhl!10, draw=greenhl, line width=0.9pt,
+      text=greenhl!45!black, font=\scriptsize, text width=12.2cm,
+      align=flush left, inner sep=6pt] at (1.7,-3.1)
+  {\textbf{The escalation adviser, in these terms.} \emph{Percepts:} the ticket
+   queue, each ticket's age, severity and service level agreement, the shift
+   roster, each engineer's current load. \emph{Actions:} escalate a ticket to a
+   named engineer, or leave it. \emph{Agent function:} the mapping from any
+   possible queue-and-roster situation to a set of escalations. \emph{Agent
+   program:} the two hundred lines of Chapter~13 that compute one of those
+   mappings tonight, in under a second.};
+\end{tikzpicture}}%
+{The agent and its environment. The \emph{agent function} is the mathematical
+object --- what the agent ought to do in every situation it could ever be in. The
+\emph{agent program} is the code that runs on the machine.}{agent-loop}
+
+\begin{definitionbox}[Agent function and agent program]
+The \term{agent function} maps every possible \term{percept sequence} to an
+action:
+\[
+  f:\; \mathcal{P}^{*} \longrightarrow \mathcal{A}
+\]
+where $\mathcal{P}^{*}$ is the set of all finite sequences of percepts and
+$\mathcal{A}$ the set of available actions. It is an abstract object, usually
+infinite, and it is what we are trying to specify.
+
+The \term{agent program} is a concrete implementation of $f$ that runs inside the
+agent, with finite memory and a deadline.
+\end{definitionbox}
+
+The distinction looks pedantic and is not. The agent function for the escalation
+problem could be written as an enormous table: every possible state of the queue in
+the left column, the right set of escalations in the right column. That table would
+be a complete, correct specification --- and with three hundred tickets it has more
+rows than there are atoms in the observable universe. So the interesting work of AI
+is never ``what is the right answer in every case''; it is ``what program computes
+a good enough answer in the time available''. Every method in this book is an
+answer to that second question.
+
+\begin{conceptbox}
+Notice also that the agent function takes the whole percept \emph{sequence}, not
+the latest percept. That single choice is the difference between the first two
+agent architectures in Section~\ref{sec:agent-kinds}. An agent that reacts only to
+what it can see right now cannot escalate ``the ticket that has been quiet
+suspiciously long'', because quietness is not visible in a snapshot --- it is a
+property of the history.
+\end{conceptbox}
+
+\section{PEAS: Specify the Task Before You Build the Agent}
+
+Before any code, write down four things. The mnemonic is \term{PEAS}.
+
+\begin{itemize}[leftmargin=2.4em, itemsep=3pt, topsep=4pt]
+  \item \textbf{P}erformance measure --- what counts as success, stated so that two
+        people would score the same run identically.
+  \item \textbf{E}nvironment --- what the agent operates in, including the parts it
+        cannot see.
+  \item \textbf{A}ctuators --- what the agent can do.
+  \item \textbf{S}ensors --- what the agent can perceive.
+\end{itemize}
+
+The performance measure comes first and is the one people get wrong. It must be a
+measure of the \emph{environment's} state, not of the agent's behaviour. An
+escalation adviser scored on ``number of escalations made'' will escalate
+everything. Scored on ``breached service level agreements, plus a penalty for each
+escalation that turned out to be unnecessary'', it has to make a judgement --- and
+now the problem is interesting.
+
+\smallskip
+\noindent\begin{longtable}{@{}L{2.9cm}L{3.5cm}L{3.5cm}L{4.1cm}@{}}
+\toprule
+\textbf{Task} & \textbf{Performance measure} & \textbf{Environment} &
+\textbf{Actuators / Sensors} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Task} & \textbf{Performance measure} & \textbf{Environment} &
+\textbf{Actuators / Sensors} \\
+\midrule
+\endhead
+Escalation adviser \newline \emph{(Ch.\ 13)} &
+Breached service level agreements; penalty per unnecessary escalation; on-call
+hours consumed &
+Ticket queue, shift roster, the clock; other engineers acting independently &
+\emph{Act:} escalate to a named engineer, defer, close as duplicate.
+\emph{Sense:} ticket fields, roster, current loads \\
+Sprint scheduler \newline \emph{(Ch.\ 7)} &
+Stories placed; zero constraint violations; developer load balance &
+The backlog, three sprint slots, capacity and precedence rules &
+\emph{Act:} assign a story to a slot, unassign.
+\emph{Sense:} the full backlog and all constraints \\
+Release planner \newline \emph{(Ch.\ 9)} &
+Plan length; whether the goal state is actually reached &
+Code, review, test and deploy states of each component &
+\emph{Act:} apply an operator (code, review, test, deploy, roll back).
+\emph{Sense:} the current state of every component \\
+Contract negotiator \newline \emph{(Ch.\ 8)} &
+Value of the agreed slot to us, given that they are maximising theirs &
+Two parties, alternating offers, a deadline &
+\emph{Act:} offer, accept, walk away.
+\emph{Sense:} their last offer and the history \\
+Defect diagnoser \newline \emph{(Ch.\ 15)} &
+Probability mass placed on the true cause; cost of wrong remediation &
+A live system; causes not directly observable &
+\emph{Act:} report a posterior over causes, order one test.
+\emph{Sense:} symptoms, logs, test outcomes \\
+\bottomrule
+\caption{PEAS descriptions for five tasks from one project office. Each row names
+the chapter that builds the agent.}\label{tab:peas}
+\end{longtable}
+
+\section{Six Properties of a Task Environment}
+
+Once the task is specified, classify the environment. The classification is not
+academic bookkeeping: each property rules some architectures in and others out, and
+getting it wrong is how projects fail in month four.
+
+\smallskip
+\noindent\begin{longtable}{@{}L{3.3cm}L{5.5cm}L{6.2cm}@{}}
+\toprule
+\textbf{Property} & \textbf{The question} & \textbf{Where it bites} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Property} & \textbf{The question} & \textbf{Where it bites} \\
+\midrule
+\endhead
+Fully \emph{vs.} partially observable &
+Do the sensors give the complete state relevant to the choice? &
+Partially observable means the agent must \emph{maintain} state --- an internal
+model updated over time. This is the single most consequential property: it is the
+whole difference between the two reflex agents of
+Section~\ref{sec:agent-kinds}. \\
+Deterministic \emph{vs.} stochastic &
+Does the current state plus the action fix the next state? &
+Deterministic lets you search for a plan once and execute it
+(\chref{planning}). Stochastic forces probability (\chref{uncertainty}) or
+re-planning after every step. \\
+Episodic \emph{vs.} sequential &
+Is each decision independent, or does it constrain later ones? &
+Episodic problems can be handled one case at a time. Sequential ones need
+lookahead: escalating your only free engineer at 21:00 is what makes the 23:00
+decision hard. \\
+Static \emph{vs.} dynamic &
+Can the world change while the agent is deliberating? &
+Dynamic environments put a deadline on thinking, which is why
+\chref{adversarial} spends as much effort on cutting search off as on searching. \\
+Discrete \emph{vs.} continuous &
+Are states, time and actions countable or real-valued? &
+Discrete gives you the graph of \chref{uninformed}. Continuous needs the local
+search of \chref{local}. \\
+Single- \emph{vs.} multi-agent &
+Is anything else in the environment choosing its actions? &
+If another party's best move depends on yours, you need
+\chref{adversarial}; treating a negotiator as weather is the classic error. \\
+\bottomrule
+\caption{The six properties, and the design decision each one forces.}
+\label{tab:envprops}
+\end{longtable}
+
+\begin{alertbox}[Classify honestly, not conveniently]
+The escalation problem is \emph{partially observable} (you cannot see which
+tickets are about to become urgent), \emph{stochastic} (whether an escalation
+helps depends on the engineer), \emph{sequential}, \emph{dynamic} (tickets arrive
+while you think), \emph{discrete} and \emph{multi-agent} (engineers make their own
+choices). That is the hard corner of every one of the six.
+
+The standard mistake is to notice this, find it discouraging, and quietly build
+for the easy corner anyway --- a fully observable, deterministic, episodic model
+--- because that is what the tutorial did. The resulting system works in
+demonstrations and fails on a Friday night. The honest response is to
+\emph{simplify deliberately and write the simplification down}: this is exactly
+what \chref{csp} does when it treats a sprint as static for the duration of the
+solve, and says so.
+\end{alertbox}
+
+\section{Five Kinds of Agent Program}
+\label{sec:agent-kinds}
+
+\dsref{agent-kinds} shows the five architectures in increasing order of what they
+keep inside. The professional skill is to choose the \emph{simplest} one that can
+do the job, because each step up costs code, state and ways to be wrong.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  box/.style={rounded corners=3pt, draw=#1, line width=1.1pt, fill=#1!8,
+              text width=2.55cm, align=flush left, inner sep=5pt,
+              text=#1!50!black, minimum height=3.2cm},
+  hd/.style={rounded corners=2pt, fill=#1, text=white, font=\scriptsize\bfseries,
+             inner sep=2.5pt, text width=2.4cm, align=center},
+  a/.style={-{Stealth[length=2mm]}, neutral!70, line width=0.9pt}]
+
+\node[box=primary] (k1) at (0,0)
+  {\\[2pt]Condition--action rules on the \emph{current} percept only.\\[3pt]
+   \emph{Keeps:} nothing.\\[3pt]
+   {\itshape Escalate any ticket already past its deadline.}\\[3pt]
+   Fails the moment the right action depends on history.};
+
+\node[box=secondary, right=0.42cm of k1] (k2)
+  {\\[2pt]Same rules, plus an internal \emph{model} of the unobserved state,
+   updated each cycle.\\[3pt]
+   \emph{Keeps:} an estimate of the world.\\[3pt]
+   {\itshape Track each engineer's load, which no percept reports directly.}};
+
+\node[box=greenhl, right=0.42cm of k2] (k3)
+  {\\[2pt]Holds an explicit \emph{goal} and searches for an action sequence that
+   reaches it.\\[3pt]
+   \emph{Keeps:} model + goal.\\[3pt]
+   {\itshape Reach a state where no service level agreement is breached.}\\[3pt]
+   This is Chapters~4--9.};
+
+\node[box=tealhl, right=0.42cm of k3] (k4)
+  {\\[2pt]Replaces the yes/no goal with a \emph{utility} over outcomes, and
+   maximises expected utility.\\[3pt]
+   \emph{Keeps:} model + utility.\\[3pt]
+   {\itshape Trade two minor breaches against one major one.}\\[3pt]
+   This is Chapter~14.};
+
+\node[box=purplehl, right=0.42cm of k4] (k5)
+  {\\[2pt]Any of the above, plus a component that \emph{improves} it from
+   experience.\\[3pt]
+   \emph{Keeps:} everything + a critic.\\[3pt]
+   {\itshape Learn which escalations were worth making.}\\[3pt]
+   Chapter~17, then \emph{Machine Learning}.};
+
+\node[hd=primary]   at (k1.north) {1. SIMPLE REFLEX};
+\node[hd=secondary] at (k2.north) {2. MODEL-BASED REFLEX};
+\node[hd=greenhl]   at (k3.north) {3. GOAL-BASED};
+\node[hd=tealhl]    at (k4.north) {4. UTILITY-BASED};
+\node[hd=purplehl]  at (k5.north) {5. LEARNING};
+
+\foreach \x/\y in {k1/k2,k2/k3,k3/k4,k4/k5}{\draw[a] (\x.east) -- (\y.west);}
+
+\draw[decorate, decoration={brace, amplitude=5pt, mirror}, neutral, line width=0.9pt]
+  ($(k1.south west)+(0,-0.15)$) -- ($(k4.south east)+(0,-0.15)$)
+  node[midway, below=6pt, font=\scriptsize\itshape, text=neutral]
+  {the four architectures this course builds};
+\end{tikzpicture}}%
+{Five agent architectures. Each keeps more state than the one before it. Choose the
+leftmost one that can do the job.}{agent-kinds}
+
+\section{Rationality Is Not Omniscience}
+
+A \term{rational agent}, for every percept sequence, selects the action expected to
+maximise its performance measure, given the evidence the percept sequence provides
+and whatever built-in knowledge it has.
+
+Three things this definition deliberately excludes.
+
+It does not require \emph{omniscience}. An agent that escalates ticket~114 on
+excellent evidence, and turns out to have been wrong because the customer had
+already withdrawn the complaint by e-mail that nobody had read, was rational and
+unlucky. Rationality is a property of the decision procedure, judged against the
+information available, not a property of the outcome. This distinction is what
+lets you review a bad night fairly.
+
+It does not require \emph{perfection}. Perfection maximises actual performance;
+rationality maximises expected performance. Only the second is achievable, and
+demanding the first produces agents that stall.
+
+And it does not forbid \emph{information gathering}. If the agent can act to
+improve its own percepts --- run a test, ask the customer, look at the log --- then
+doing so is often the rational action. \chref{uncertainty} puts a number on
+exactly how much such an act is worth.
+
+\begin{worked}[PEAS and a full classification for one night's triage]
+\textbf{The task.} At 21:00 the queue holds three hundred open tickets. One
+engineer, Ayesha, is on call until 07:00. Tickets breach at different times.
+Escalating wakes Ayesha, which costs something, and there is a limit to how often
+it can be done in a night.
+
+\smallskip
+\textbf{PEAS.}
+\begin{tight}
+  \item \emph{Performance measure:} $-10$ per breached major service level
+        agreement, $-3$ per breached minor one, $-1$ per escalation that turned
+        out unnecessary, $-4$ per hour of Ayesha's sleep lost. Note it is a
+        measure of the world's state at 07:00, not of how busy the agent was.
+  \item \emph{Environment:} the queue, the roster, the clock, the customers
+        (who are also acting), Ayesha (who is also acting).
+  \item \emph{Actuators:} escalate ticket $t$ to Ayesha; defer $t$ to the morning;
+        merge $t$ into another ticket.
+  \item \emph{Sensors:} every ticket's fields; Ayesha's current task; the clock.
+        \emph{Not} sensed: which quiet ticket is about to escalate itself into a
+        major incident.
+\end{tight}
+
+\smallskip
+\textbf{Classification.} Partially observable (that last point), stochastic,
+sequential (waking Ayesha at 21:00 changes what is possible at 03:00), dynamic,
+discrete, multi-agent.
+
+\smallskip
+\textbf{What the classification rules out.} Partially observable kills agent~1 ---
+a simple reflex agent cannot represent ``Ayesha has already been woken twice''.
+Sequential kills the purely episodic treatment: you cannot score each ticket
+independently and take the top five. Stochastic and multi-agent together mean the
+plan will be wrong by 23:00, so any plan must be cheap enough to recompute.
+
+\smallskip
+\textbf{The design that follows.} A model-based agent that maintains Ayesha's
+accumulated cost, using a goal-based search over the next few hours
+(\chref{informed}), with the utility trade-off of \chref{uncertainty} to weigh a
+major breach against lost sleep, recomputed every fifteen minutes. \emph{Every
+one of those four choices was forced by a line of the classification}, which is
+why the classification is done before the code.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{A performance measure that scores the agent instead of the world.}
+        ``Number of escalations'' rewards noise; ``tickets processed'' rewards
+        haste. Score the state of the environment at the end.
+  \item \textbf{Confusing the agent function with the agent program.} The function
+        can be an infinite table; the program has a deadline. Interview questions
+        about ``the optimal policy'' are usually about the function, and
+        implementation questions are always about the program.
+  \item \textbf{Building a simple reflex agent for a partially observable world.}
+        It will work on every test case you can construct by hand, because you can
+        see the state that it cannot.
+  \item \textbf{Treating another agent as weather.} If the other party's choice
+        depends on yours, a stochastic model of them is not merely inaccurate --- it
+        is exploitable. \chref{adversarial} is the fix.
+  \item \textbf{Calling an agent irrational because the outcome was bad.} Judge the
+        decision against the percepts available at the time. This is also how to
+        run a blameless incident review.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[A Reflex Agent on a Ticket Queue]
+Forty tickets arrive over one night. Two agents see exactly the same percepts: a
+simple reflex agent, and a model-based agent that remembers what it has already
+done. The performance measure is the one from the worked example. The point of the
+lab is that the second agent wins \emph{on identical information}, purely because
+it keeps state.
+\begin{lstlisting}[language=Python]
+"""Chapter 2 lab -- a reflex agent and a model-based agent.
+
+Two agent programs, the same percepts, the same performance measure.
+The simple reflex agent cannot represent how often it has already woken
+the on-call engineer, because no percept reports it. That single
+missing piece of state is the whole difference.
+"""
+
+import random
+from collections import namedtuple
+
+random.seed(0)
+
+# PEAS, as code. A percept is one ticket as the agent sees it.
+Ticket = namedtuple("Ticket", "tid hour severity hours_to_breach")
+
+WAKE_LIMIT = 3          # more than this and Ayesha is useless tomorrow
+COST = {"major": 10, "minor": 3}
+UNNECESSARY = 1
+SLEEP = 4
+
+
+def night(n=40):
+    """One night's percept sequence: n tickets, 21:00 to 07:00."""
+    out = []
+    for tid in range(1, n + 1):
+        out.append(Ticket(
+            tid=tid,
+            hour=21 + (tid * 10) // n,
+            severity=random.choice(["major", "minor", "minor"]),
+            hours_to_breach=random.choice([1, 2, 4, 8, 12]),
+        ))
+    return out
+
+
+def simple_reflex(t, state):
+    """Condition-action rules on the current percept only."""
+    return t.hours_to_breach <= 4 or t.severity == "major"
+
+
+def model_based(t, state):
+    """Same rules, plus a model of what has already been spent.
+
+    state["wakes"] is not in any percept: the agent maintains it.
+    """
+    if state["wakes"] >= WAKE_LIMIT:
+        # budget gone: escalate only what will certainly breach badly
+        return t.severity == "major" and t.hours_to_breach <= 2
+    if t.hours_to_breach > 10:
+        return False                    # cannot breach tonight; defer
+    return t.hours_to_breach <= 4 or t.severity == "major"
+
+
+def run(agent, tickets):
+    """One night. The environment, not the agent, decides what an
+    escalation achieves: past WAKE_LIMIT the engineer is too tired to
+    fix anything, but the sleep is lost all the same.
+    """
+    state = {"wakes": 0}
+    breach = sleep = waste = woke = 0
+    for t in tickets:
+        act = agent(t, state)
+        fixed = False
+        if act:
+            state["wakes"] += 1
+            woke += 1
+            sleep += SLEEP
+            if state["wakes"] <= WAKE_LIMIT:
+                fixed = True            # still sharp enough to help
+            if t.hours_to_breach > 10:
+                waste += UNNECESSARY    # would not have breached tonight
+        if not fixed and t.hours_to_breach <= 10:
+            breach += COST[t.severity]
+    return breach + sleep + waste, breach, sleep + waste, woke
+
+
+if __name__ == "__main__":
+    tickets = night()
+    print("tickets:", len(tickets),
+          " major:", sum(1 for t in tickets if t.severity == "major"),
+          " wake limit:", WAKE_LIMIT)
+    print()
+    print("agent             total   breaches   on-call   escalations")
+    print("-" * 58)
+    rows = {}
+    for name, agent in (("simple reflex", simple_reflex),
+                        ("model-based  ", model_based)):
+        rows[name.strip()] = run(agent, tickets)
+        tot, br, oc, woke = rows[name.strip()]
+        print("%-16s %6d %10d %9d %13d" % (name, tot, br, oc, woke))
+
+    t1, b1, o1, w1 = rows["simple reflex"]
+    t2, b2, o2, w2 = rows["model-based"]
+    assert t2 < t1, "the model-based agent should cost less"
+    assert w2 < w1, "and should wake the engineer less often"
+    print()
+    print("total cost  %d -> %d  (%.0f%% lower)" %
+          (t1, t2, 100 * (t1 - t2) / t1))
+    print("escalations %d -> %d  (%.1fx fewer)" % (w1, w2, w1 / w2))
+    print()
+    print("The model-based agent saw no extra percepts. It kept one")
+    print("number -- how often it had already woken her -- that no")
+    print("percept reports and the simple agent cannot represent.")
+\end{lstlisting}
+The output is worth reading carefully, because the interesting column is the one
+that does \emph{not} change:
+
+\smallskip
+\noindent\begin{tabular}{@{}L{3.4cm}rrrr@{}}
+\toprule
+\textbf{Agent} & \textbf{Total} & \textbf{Breaches} & \textbf{On-call} &
+\textbf{Escalations} \\
+\midrule
+Simple reflex & 259 & 136 & 123 & 30 \\
+Model-based   & 156 & 136 &  20 &  5 \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+The breach cost is \emph{identical}: $136$ either way. The simple reflex agent's
+extra twenty-five escalations bought nothing at all, because past the third one
+Ayesha was too tired to fix anything --- and the sleep was lost regardless. The
+total falls by 40\% purely by not doing the useless work, and the escalations fall
+sixfold.
+
+Now change \texttt{WAKE\_LIMIT} to $40$ and re-run. The two agents converge,
+because with an unlimited budget the number being tracked no longer constrains
+anything. That is the test of whether internal state is earning its keep: state is
+worth maintaining exactly when it represents a limit the environment imposes and
+the percepts do not report.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Write a PEAS description for an agent that decides which of a day's pull
+        requests to review first. Make sure the performance measure describes the
+        state of the repository, not the activity of the agent.
+  \item A vending machine dispenses a drink when the right coins are inserted.
+        Classify its environment on all six properties, and say which of the five
+        agent architectures it needs.
+  \item An agent escalates a ticket on strong evidence and the escalation turns
+        out to have been unnecessary. Was it rational? Justify your answer in one
+        sentence using the definition in this chapter.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item An agent perceives through sensors and acts through actuators. The
+        \term{agent function} maps every percept sequence to an action; the
+        \term{agent program} is a bounded implementation of it. AI is the search
+        for good programs, because the functions are too large to tabulate.
+  \item Specify every task as \term{PEAS} before building anything. The
+        performance measure must describe the state of the environment, and must
+        be written so that two people would score the same run identically.
+  \item Classify the environment on six properties: observable, deterministic,
+        episodic, static, discrete, single-agent. Each one forces a design
+        decision, and partial observability is the most consequential --- it is
+        what makes internal state necessary.
+  \item There are five agent architectures: simple reflex, model-based reflex,
+        goal-based, utility-based and learning. Use the simplest that can do the
+        job. This course builds the middle three; \chref{learning} signposts the
+        fifth.
+  \item Rationality is maximising \emph{expected} performance given the percepts
+        so far. It is not omniscience, not perfection, and it positively
+        recommends gathering information when information is cheap.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The agent function maps: (a)~states to actions (b)~percept
+        sequences to actions (c)~actions to utilities (d)~percepts to goals.
+  \item \textbf{(MCQ)} An agent must keep internal state principally because the
+        environment is: (a)~stochastic (b)~dynamic (c)~partially observable
+        (d)~multi-agent.
+  \item \textbf{(MCQ)} Which is \emph{not} part of a PEAS description?
+        (a)~performance measure (b)~environment (c)~algorithm (d)~sensors.
+  \item \textbf{(MCQ)} Chess played against a clock is: (a)~fully observable,
+        deterministic, static (b)~fully observable, deterministic, dynamic
+        (c)~partially observable, stochastic, dynamic (d)~fully observable,
+        stochastic, static.
+  \item \textbf{(Short)} Explain the difference between rationality and
+        omniscience, and say why the distinction matters when reviewing an
+        incident.
+  \item \textbf{(Short)} Give one task for which a simple reflex agent is the
+        right choice, and one superficially similar task for which it is not.
+  \item \textbf{(Short)} Why must the performance measure describe the environment
+        rather than the agent? Give a measure that fails this test and say how it
+        would be exploited.
+  \item \textbf{(Applied)} Take the sprint scheduler of Table~\ref{tab:peas}. Write its
+        full PEAS description, classify the environment on all six properties, and
+        state which agent architecture the classification forces. Then name the
+        single simplification that \chref{csp} makes in order to solve it at all,
+        and what is lost by making it.
+\end{reviewq}

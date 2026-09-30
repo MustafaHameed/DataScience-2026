@@ -1,0 +1,596 @@
+%=====================================================================
+\chapter{Answers to Checkpoints}\label{app:answers}
+%=====================================================================
+\normalfigures
+
+Answers to the three-question Checkpoint box in each chapter. Attempt them before
+reading. Where an answer requires judgement, the reasoning matters more than the
+conclusion.
+
+\newcommand{\ansch}[1]{\subsection*{\color{primary}Chapter #1}}
+\newenvironment{ans}{\begin{enumerate}[leftmargin=*, itemsep=4pt, topsep=3pt,
+  label=\textbf{\arabic*.}]}{\end{enumerate}}
+
+%---------------------------------------------------------------------
+\ansch{1 --- What Artificial Intelligence Is}
+\begin{ans}
+  \item \textbf{Goal} is passed on the description alone: ``minimise total project
+        delay'' is an objective, not a procedure. \textbf{Knowledge} is arguably
+        passed too --- the task list with durations and dependencies is an
+        explicit, inspectable representation that a delivery manager could correct
+        without touching the algorithm. \textbf{Search}, \textbf{adaptation} and
+        \textbf{explanation} cannot be judged without seeing the implementation: a
+        program with this brief might enumerate alternatives or might compute one
+        critical path directly, and the description does not say.
+  \item It is succeeding in \emph{acting humanly} --- the bottom-left quadrant, the
+        Turing test standard, where indistinguishability from a person is the whole
+        criterion. It is failing in \emph{acting rationally}: with no
+        representation of the service catalogue it cannot be relied on to give the
+        right answer, and with no explanation its answers cannot be checked. It is
+        also failing \emph{thinking rationally}, since there is no inference to
+        inspect. This is exactly the Eliza pattern of \chref{classic}.
+  \item \chref{expert} builds one. Such a system fails the \textbf{adaptation}
+        test: its rules are elicited from experts by hand and it does not improve
+        with experience. That is precisely the knowledge acquisition bottleneck
+        which ended the expert-system boom --- and note that it fails the one test
+        this course does not teach, while passing the other four.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{2 --- Intelligent Agents and Task Environments}
+\begin{ans}
+  \item A reasonable answer: \emph{Performance measure} --- total time pull
+        requests spend waiting, weighted by urgency, plus a penalty for defects
+        that reach the main branch. Note that this describes the state of the
+        repository. Measures such as ``number of reviews performed'' describe the
+        agent and would be gamed by skimming. \emph{Environment} --- the open pull
+        requests, their size, age and author, the reviewers and their load, the
+        build status. \emph{Actuators} --- assign a pull request to a reviewer,
+        defer it, request changes. \emph{Sensors} --- the repository API: diffs,
+        timestamps, build results, reviewer availability.
+  \item Fully observable (the coins inserted are the whole relevant state),
+        deterministic, episodic (each sale is independent), static, discrete, and
+        single-agent. All six are the easy case, which is why a \textbf{simple
+        reflex agent} is sufficient --- and why a vending machine is not usually
+        described as intelligent.
+  \item Yes, it was rational. Rationality is maximising \emph{expected} performance
+        given the percept sequence available at the time, not achieving the best
+        outcome. The agent acted on strong evidence; the outcome was unlucky. This
+        distinction is what makes a blameless incident review possible: you judge
+        the decision procedure against what was knowable, and you change the
+        procedure only if the evidence was misread.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{3 --- Representations and Search in Python}
+\begin{ans}
+  \item A list is mutable, and Python makes mutable built-in types unhashable,
+        because an object whose hash could change while it sits in a set would
+        become unfindable. Without a usable explored set the search cannot ask
+        ``have I seen this state?''. Every state is then re-expanded once for each
+        distinct path that reaches it, so the search explores the search
+        \emph{tree} rather than the state \emph{graph} --- and on a space with a
+        cycle that tree is infinite, so the search never terminates.
+  \item The heap entries are tuples such as \texttt{(cost, node)}. When two costs
+        are equal Python moves on to compare the second elements, and \texttt{Node}
+        defines no ordering, so it raises \texttt{TypeError}. It is intermittent
+        because it needs a tie, which most inputs do not produce. The fix is one
+        element: push \texttt{(cost, next(counter), node)} with a monotonically
+        increasing counter, so ties are broken by insertion order and two nodes are
+        never compared.
+  \item It multiplies the state space by the number of distinct step counts at
+        which each situation can be reached. Two searches that arrive at the same
+        set of finished tasks after $7$ and after $9$ steps now hold
+        \emph{different} states, so the explored set never matches, nothing is
+        pruned, and the search degenerates towards enumerating paths. The rule is
+        in the chapter: if the goal test cannot see it, it does not belong in the
+        state.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{4 --- Problem Formulation and Uninformed Search}
+\begin{ans}
+  \item They are repeated states: the same set of finished tasks reached by
+        different orderings. The search tree contains one node per \emph{path}, the
+        state graph one node per \emph{situation}. An \term{explored set} --- a set
+        of states already generated, tested before pushing --- removes them, and on
+        a space containing a cycle it is also what makes the search terminate at
+        all.
+  \item Because when a node is \emph{generated}, a cheaper path to the same state
+        may still be sitting unexpanded in the frontier; only when a node is
+        \emph{popped} does the frontier ordering guarantee that nothing cheaper
+        remains. The smallest graph showing it: start $S$, goal $G$, and one
+        intermediate $A$, with $S \to G$ costing $10$, $S \to A$ costing $1$ and
+        $A \to G$ costing $2$. Testing on generation returns the direct path at
+        cost $10$; testing on popping returns $S,A,G$ at cost $3$.
+  \item Because the number of nodes grows geometrically with depth, so the deepest
+        level dominates the total: the nodes above it sum to roughly
+        $1/(b-1)$ of it. At $b=10$, $d=5$ the repetition costs about 11\% extra
+        work. What it buys is memory: $O(bd)$ instead of $O(b^{d})$ --- $50$ nodes
+        rather than $100{,}000$ --- while keeping completeness and the
+        shallowest-solution guarantee.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{5 --- Informed Search and Heuristics}
+\begin{ans}
+  \item Yes, it is admissible: $23 \le 28$, and the lab verifies
+        $h(s) \le h^{*}(s)$ on all $55$ reachable states. A heuristic returning
+        $30$ at the root would \emph{not} be admissible, because it exceeds the
+        true optimal completion cost of $28$. With it, $A^{*}$ loses its optimality
+        guarantee: the node on the optimal path can be buried behind a worse goal
+        node in the frontier, and the search returns the worse plan with no
+        indication that it has done so.
+  \item Because greedy best-first search orders its frontier by $h$ alone and never
+        consults $g$. Building the harness costs three days --- an increase in $g$
+        --- while reducing the mandatory-work estimate by nothing at all, since the
+        harness is not mandatory work. So it looks like pure delay. Any decision of
+        the form ``spend more now to spend less later'' is structurally invisible
+        to greedy search.
+  \item $\max(h_{1}, h_{2})$. It is admissible, because at every state it equals
+        one of two values that are each at most $h^{*}$; and it dominates both by
+        construction. The \emph{average} is also admissible but is dominated by the
+        maximum --- it is never larger and usually smaller, so it expands at least
+        as many nodes for the same evaluation cost. Take the maximum, never the
+        mean.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{6 --- Local Search and Optimisation}
+\begin{ans}
+  \item A \term{plateau} is a flat region of the landscape; a \term{shoulder} is a
+        plateau with rising ground beyond it. (a)~Forbidding sideways moves means
+        halting on every shoulder, so solutions that lie just beyond flat ground
+        are never reached. (b)~Allowing them without limit means the search can
+        circle a genuine plateau forever. The standard compromise is a cap ---
+        allow sideways moves up to a fixed count, then stop.
+  \item With $\Delta = -6$: at $T = 8$, $p = e^{-6/8} = e^{-0.75} \approx 0.472$,
+        so a move six points worse is accepted almost half the time. At $T = 0.5$,
+        $p = e^{-12} \approx 6.1 \times 10^{-6}$, which is effectively never. Early
+        in the run the search wanders and can cross a ridge; late in the run it is
+        hill climbing and only consolidates.
+  \item Crossover assumes the state decomposes into \emph{blocks that are
+        independently good}, so that splicing part of one parent onto part of
+        another preserves value. The staffing objective largely satisfies this:
+        most of a developer's contribution is her own skill score, which depends on
+        her assignment alone. What would break it is an objective depending on
+        \emph{pairs} of positions --- who is rostered alongside whom, or two
+        services that must not share a host --- because then a block's value
+        depends on the block it is spliced next to.
+\end{ans}
+
+%---------------------------------------------------------------------
+% Chapters 7-22: answers are written with each chapter.
+%---------------------------------------------------------------------
+\ansch{7 --- Constraint Satisfaction}
+\begin{ans}
+  \item Because nothing in plain backtracking ever shrinks a domain. Every
+        unassigned variable still has all four sprints available, so they all tie
+        on the minimum-remaining-values count and the heuristic falls back on the
+        first variable in the list --- which is exactly what plain backtracking was
+        already doing. The change that makes MRV worth having is \emph{propagation}:
+        forward checking removes values from neighbours after each assignment, and
+        from that moment the domains have different sizes and MRV has something to
+        compare. Measured: $3{,}784$ checks with MRV alone, $415$ with MRV and
+        forward checking together.
+  \item Both are true because AC-3 works only on \emph{binary} constraints. The
+        precedence and same-developer constraints are binary, and AC-3 prunes them
+        thoroughly --- every one of the twelve domains loses at least one sprint.
+        But the constraint that actually binds this problem is capacity: $45$
+        points into $48$, an $n$-ary constraint over all twelve variables at once,
+        which no arc can express and AC-3 never examines. So the preprocessing
+        removes values that the search was not going to waste much time on anyway,
+        at a cost of $224$ extra consistency checks and a saving of zero nodes.
+  \item Either: instrument the propagation to record which constraint emptied a
+        domain most often, and report that one; or re-run the solver with each
+        constraint (or constraint class) relaxed in turn and report which
+        relaxations make the problem solvable. Here you would expect
+        \emph{capacity} to bind, and the lab confirms it --- raising the cap from
+        $12$ to $13$ takes the solution count from $14$ into the hundreds, while
+        the precedence constraints have plenty of slack.
+\end{ans}
+
+\ansch{8 --- Adversarial Search and Game Playing}
+\begin{ans}
+  \item Because alpha--beta only ever declines to evaluate leaves that
+        \emph{provably} cannot change the answer: a cutoff happens exactly when the
+        player above already has a better alternative and will therefore never
+        choose the branch being examined. The two searches must agree on every
+        instance, not just this one --- pruning is exact, and what it approximates
+        is nothing at all.
+  \item First, the right-hand MIN node has already found a child worth $2$, so it
+        can hold us to at most $2$ whatever its remaining child contains. Second,
+        the root has already secured $5$ from the left subtree. Since $2 < 5$ we
+        will never play into this branch, so the value of its unexamined child
+        cannot affect the root --- and alpha--beta never learns it.
+  \item The probes are themselves evaluations, and on a shallow tree they cost more
+        than the cutoffs they buy: the lab measures $506$ leaf evaluations with a
+        depth-1 probe ordering against $75$ with natural ordering. For ordering to
+        pay, the tree must be deep enough that a better ordering saves an
+        exponential amount, and the probe results must be cached --- a
+        transposition table --- so that the work done to order one search is reused
+        by the next. That is the situation in a chess engine at twenty ply, and not
+        the situation at five.
+\end{ans}
+
+\ansch{9 --- Planning}
+\begin{ans}
+  \item \texttt{test A} has \texttt{staging free} in its \emph{delete} list, so
+        testing the first component takes the staging environment away. But
+        \texttt{test B} has \texttt{staging free} in its \emph{preconditions}, so
+        the second component cannot be tested until something restores it, and
+        \texttt{release staging} is the only operator that does. It is there purely
+        to undo interference caused by an earlier step. Removing
+        \texttt{staging free} from \texttt{test}'s delete list makes it disappear:
+        actions can then no longer interfere, and the problem collapses into the
+        topological sort of \chref{uninformed}.
+  \item Because $A^{*}$ saves work only by refusing to expand nodes with
+        $f(n) \ge C^{*}$, and in this domain almost every reachable state lies on
+        \emph{some} optimal plan --- nearly every action is necessary and their
+        order is largely free --- so $f$ is close to $C^{*}$ nearly everywhere and
+        there is almost nothing to rule out. The same heuristic would pay well on a
+        planning problem with many \emph{dead ends or wasted actions}: irreversible
+        mistakes, resources that can be spent on the wrong thing, or a much larger
+        operator set of which only a few are relevant. Heuristics pay in proportion
+        to how much of the state space is wasted effort.
+  \item Completeness. Breadth-first progression search will find a plan whenever one
+        exists; means--ends analysis takes the goals in some order and can destroy,
+        while achieving an early goal, a condition a later goal needs. The two-operator
+        example of \dsref{clobber} is solvable, and means--ends analysis reports
+        failure on it when the goals are taken in one of the two possible orders.
+        (Breadth-first search also guarantees a \emph{shortest} plan; means--ends
+        analysis found optimal plans here but is not obliged to.)
+\end{ans}
+
+\ansch{10 --- Knowledge Representation}
+\begin{ans}
+  \item The walk starts at \texttt{Release 4.7}, finds no local
+        \texttt{regression-pass}, moves to \texttt{Hotfix}, finds \texttt{smoke},
+        and \emph{stops}. \texttt{Release} is never consulted, so its \texttt{full}
+        never competes. ``Most specific wins'' does not have to be stated as a rule
+        because it is a consequence of the search order: the walk goes from
+        specific to general and halts at the first hit.
+  \item \term{Non-monotonicity} --- adding knowledge removed a conclusion.
+        Classical logic does not have it: entailment is defined as truth in every
+        model of the knowledge base, and adding a sentence can only rule models
+        out, so the set of entailed conclusions can only grow. That is exactly the
+        trade \chref{propositional} makes --- it gains soundness and loses the
+        ability to say ``normally''.
+  \item A semantic network with defaults can express \emph{normally}: ``releases go
+        out on Thursdays'' with hotfixes excepted, without the exception making the
+        knowledge base inconsistent. Written as a universally quantified sentence
+        that claim is simply false, and adding one hotfix makes the knowledge base
+        contradictory. What logic can do and the network cannot is \emph{derive
+        guaranteed consequences}: a sound procedure over logic gives conclusions
+        that hold in every model, whereas an inheritance walk gives whatever the
+        nearest ancestor happened to say, with no guarantee it is consistent with
+        anything else in the network.
+\end{ans}
+
+\ansch{11 --- Propositional Logic and Inference}
+\begin{ans}
+  \item $\mathit{KB} \models \alpha$ is about \emph{meaning}: $\alpha$ is true in
+        every model in which the knowledge base is true, and no algorithm is
+        mentioned. $\mathit{KB} \vdash \alpha$ is about a \emph{procedure}: that
+        procedure can produce $\alpha$. A procedure that derives every sentence is
+        \emph{complete} --- it certainly derives everything entailed --- but wildly
+        \emph{unsound}, since it derives a great many things that are not entailed.
+        Soundness is the property it violates, and it is the one that matters:
+        completeness alone is worthless.
+  \item F1--F3 force $\mathit{Reviewed}$, $\mathit{Tested}$ and
+        $\mathit{SignedOff}$; R1 then forces $\mathit{Staged}$; R2 then forces
+        $\mathit{Deploy}$. R3 says $\mathit{Blocker} \Rightarrow \neg
+        \mathit{Deploy}$, and since $\mathit{Deploy}$ is true, $\mathit{Blocker}$
+        must be false or R3 is violated. Exactly one model survives, so both
+        $\mathit{Deploy}$ and $\neg\mathit{Blocker}$ are entailed.
+        It is \emph{not} a bug in the inference procedure --- the procedure drew a
+        correct consequence of what it was given. It is a bug in the \emph{axioms}:
+        the team meant ``deployment is permitted provided there is no blocker'',
+        and R2 as written does not say that. Adding $\neg\mathit{Blocker}$ to R2's
+        antecedent makes the entailment disappear, which the lab demonstrates.
+  \item First, resolution produces an \emph{auditable proof} --- a numbered list of
+        clauses each derived from two earlier ones, which a person can check line by
+        line and an auditor will accept. A model count proves nothing a human can
+        read. Second, and decisively, resolution \emph{lifts to first-order logic}
+        (\chref{fol}), where the domain may be infinite, there are infinitely many
+        models, and enumerating them is not slow but impossible. DPLL's speed is
+        confined to the propositional case.
+\end{ans}
+
+\ansch{12 --- First-Order Logic and Resolution}
+\begin{ans}
+  \item $\forall x \; \mathit{service}(x) \Rightarrow \exists y \;
+        \mathit{owns}(y, x)$. Eliminating $\Rightarrow$ gives
+        $\forall x \; \neg\mathit{service}(x) \vee \exists y \;
+        \mathit{owns}(y,x)$; skolemising $y$ and dropping the universal gives
+        $\neg\mathit{service}(x) \vee \mathit{owns}(\mathit{owner}(x), x)$.
+        The existential variable lies \emph{inside} the universal quantifier over
+        $x$, so the owner depends on which service we are talking about. Skolemising
+        to a constant \texttt{Sk} would give
+        $\neg\mathit{service}(x) \vee \mathit{owns}(\texttt{Sk}, x)$ --- ``one
+        particular person owns every service'' --- which is a different and much
+        stronger claim.
+  \item $n^{2}$ sentences: one for each ordered pair of services, since the rule
+        relates a depender to a dependee. Adding one service means writing $2n$ more
+        by hand and getting none of them wrong. In first-order logic the rule is a
+        single sentence and adding a service means adding a \emph{fact}; the rule is
+        untouched. That is the difference between a knowledge base a team can
+        maintain and one it cannot.
+  \item Because first-order entailment is only \term{semi-decidable}. If the
+        conclusion follows, resolution will eventually derive the empty clause; if
+        it does not, the procedure may search forever, and it cannot in general
+        report that no proof exists. A countermodel would require exhibiting an
+        interpretation in which the knowledge base holds and the query fails, and
+        first-order interpretations can have infinite domains --- there are
+        infinitely many to consider and no way to enumerate them. Propositional
+        logic has finitely many models, which is exactly why
+        \chref{propositional} could hand one back.
+\end{ans}
+
+\ansch{13 --- Rule-Based Expert Systems}
+\begin{ans}
+  \item \texttt{wake\_budget}: \texttt{available} for T-4471 and \texttt{spent} for
+        T-4473. It is \emph{not} a fact about the ticket --- it is a fact about the
+        on-call engineer and what has already been asked of her tonight. Both
+        tickets reach \texttt{escalate = yes}; they differ only at R14 against R15,
+        which consult that fact. This is precisely the internal state
+        \chref{agents} showed a model-based reflex agent must maintain because no
+        percept reports it, and here it costs one entry in working memory and one
+        pair of rules.
+  \item The nine is right for a monitoring dashboard or an alerting pipeline, where
+        a newly arrived fact should trigger \emph{everything} that follows from it
+        --- notify finance, attach the payments runbook, set the page severity ---
+        without anybody having to ask for each one. The six is right when an
+        engineer or an auditor has a single question (``why was this escalated?''),
+        because forward chaining would derive a great deal that is irrelevant to it
+        and would still not produce a proof tree.
+  \item They get the backward-chaining explanation: \texttt{escalate = no} by R11
+        because \texttt{needs\_owner = no} by R7, because the priority is P2 by R3
+        (major severity, standard tier) and there was a workaround. Every step names
+        the rule and the fact it used, so the auditor can check each line and, if
+        they disagree, point at the specific rule that is wrong. A probability
+        satisfies none of this: it cannot be checked, it identifies nothing to
+        correct, and it does not say which of the ticket's properties mattered. See
+        also \chref{responsible}, where this is argued as accountability rather than
+        convenience.
+\end{ans}
+
+\ansch{14 --- Uncertainty and Decision Making}
+\begin{ans}
+  \item Of a thousand releases, a hundred are defective and the test catches ninety
+        of them --- but nine hundred are sound and the test cries wolf on a fifth of
+        those, which is a hundred and eighty false alarms. So of the two hundred and
+        seventy alarms, only ninety are real. The test is good; there are simply far
+        more sound releases for it to be wrong about, and that is the base rate
+        doing the work.
+  \item The lesson is that \emph{a change of belief is not a change of decision}.
+        The recommendation depends only on which side of the flip point $p^{*}$ the
+        probability falls, and $1/3$ is below $10/29 \approx 0.345$. What an
+        engineer should report is the \emph{action} and the \emph{margin}: ``still
+        ship, but only by $1.67$ utility units, which is close enough that better
+        evidence is now worth having'' --- which is both the decision and the case
+        for the next step.
+  \item Because the value of information is proportional to how likely it is to
+        \emph{change the action}, not to how interesting it is. Before the test the
+        decision was comfortable --- ship, by $35$ units --- so certainty could
+        rarely have flipped it. After the alarm the two options differ by under two
+        units, so the same certainty now flips the decision often. Information is
+        worth most exactly where the decision is hardest, and the function peaks at
+        the flip point itself.
+\end{ans}
+
+\ansch{15 --- Bayesian Networks}
+\begin{ans}
+  \item It asserts that \emph{each variable is conditionally independent of its
+        non-descendants given its parents}. That licenses the chain rule, so the
+        joint factorises into one small table per node. An assertion in
+        \dsref{bayesnet} that could easily be false: there is no edge between
+        \emph{Rushed} and \emph{Junior}, which claims they are independent. In many
+        organisations rushed work is precisely what gets handed to the least
+        experienced developer, and if that is true here the network is wrong and
+        will give confidently wrong answers.
+  \item Both are consequences of the arithmetic of a common effect.
+        \emph{Defect} needs explaining, and a rushed specification is one of the
+        available explanations, so its probability rises. Learning that a junior
+        developer was involved supplies a \emph{different} sufficient explanation,
+        so less explanatory work is left over and the probability of the first cause
+        falls. A forward-chaining rule base cannot reproduce this because it would
+        need a rule whose conclusion becomes \emph{weaker} when a condition is
+        added --- and \chref{expert}'s specificity strategy would do the opposite,
+        preferring the rule with more conditions and thus strengthening it.
+  \item It becomes useless when the evidence is rare: it keeps only the fraction of
+        samples that happen to match, so evidence of probability $0.01$ throws away
+        $99\%$ of the work, and diagnostic evidence is usually rare because that is
+        what makes it worth reasoning about. Likelihood weighting does not sample
+        the evidence variables at all --- it fixes them to their observed values and
+        weights each sample by the probability of the evidence given what was
+        sampled --- so every sample contributes.
+\end{ans}
+
+\ansch{16 --- Fuzzy Logic}
+\begin{ans}
+  \item Because a membership is a fact about the \emph{word}, not about our
+        knowledge of the project. We know exactly how big the project is: seventy
+        person-days. The number $0.4$ says that seventy days is ``high effort'' to
+        degree $0.4$, and no further measurement of the project can change that.
+        What \emph{would} change it is redefining the membership function --- that
+        is, agreeing with the team on what ``high'' should mean, which is a
+        conversation about vocabulary rather than about evidence.
+  \item The membership functions form a \term{fuzzy partition}: overlapping
+        triangles whose memberships sum to one everywhere, so at most two words are
+        active for each input and therefore at most $2 \times 2 = 4$ rules fire.
+        If the functions do not overlap, only one word is active per input, only one
+        rule fires, and there is no interpolation at all --- the controller
+        degenerates into a lookup table with the smoothness that motivated the whole
+        approach thrown away.
+  \item Centroid defuzzification returns the centre of area of the aggregated shape.
+        Even when only the lowest output set is active, that set is a triangle
+        centred at zero with area extending to its right, so its centre of area is
+        strictly positive; the same argument at the top end keeps it below the
+        maximum. The consequence for reporting is that the number must never be
+        presented as a percentage or as an absolute risk. It is an ordinal score,
+        useful for comparing projects with each other, and a board told ``$83\%$
+        risk'' has been misled by an artefact of the defuzzifier.
+\end{ans}
+
+\ansch{17 --- Learning from Examples}
+\begin{ans}
+  \item Because the rule learns \emph{only from mistakes}: when the prediction is
+        correct, $y - \hat{y} = 0$ and every weight is unchanged. Ten of the twelve
+        examples were already classified correctly when they were seen, so they
+        contributed nothing. The second update changed the meaning of the rule: it
+        drove the weight on clarity negative, so that higher clarity now argues
+        \emph{against} lateness. Nobody told the perceptron that; it followed from a
+        single misclassified example in the second pass.
+  \item Either the data are separable and it simply needs more epochs, or no line in
+        the hypothesis class fits the data at all --- and the two traces look
+        identical, because in both cases the weights are still moving when the
+        budget expires. The cheapest experiment that distinguishes them is a brute
+        force sweep over the hypothesis class: on a small problem, enumerate a grid
+        of lines and record the best accuracy any of them achieves. On the
+        exclusive-or arrangement that answer is $75\%$, which settles the question;
+        no learning rate or initialisation can beat a bound over the whole class.
+  \item A single perceptron cannot represent exclusive-or, because it computes a
+        linear threshold and no straight line separates those four points. The 1969
+        conclusion was that neural network research was a dead end, and funding
+        largely stopped for fifteen years. It was wrong because the limitation
+        applies to a \emph{single layer}: a network with one hidden layer represents
+        exclusive-or easily, and what was actually missing was a way to \emph{train}
+        such a network, supplied by backpropagation in the mid-1980s. A correct
+        result about the simplest case was read as a verdict on the approach.
+\end{ans}
+
+\ansch{18 --- Natural Language Processing}
+\begin{ans}
+  \item Reading~1 attaches \texttt{after the timeout} to the verb phrase:
+        \emph{restart the server, and do it after the timeout occurs}. Reading~2
+        attaches it to the noun phrase: \emph{restart the server that handles
+        timeouts}. They are different instructions. A routing system should not
+        choose --- it should recognise that the subject line supports both and ask
+        the reporter, which is a capability the grammar provides for free and which
+        a system returning one confident parse throws away.
+  \item That fluency is not evidence of understanding. Eliza had no representation
+        of the conversation, no model of the person and no goal, and it still
+        produced responses people found so apt that they disclosed things to it they
+        would not tell a colleague --- including people who had read its source. So
+        your impression of a transcript tells you about your own response, not about
+        the system, and the instrument to use instead is
+        \chref{introduction}'s checklist: is there a goal, a search, an inspectable
+        representation, adaptation, an explanation?
+  \item Sparsity is the problem that most possible n-grams never appear in any
+        finite corpus, so unseen ones receive probability zero. It is an estimation
+        problem, and smoothing solves it by reserving probability mass for the
+        unseen. The fixed window is a \emph{representational} limit: in
+        \emph{the server that the engineer who wrote the runbook maintained was
+        restarted}, the subject of \emph{was restarted} is nine words back. No
+        $n$-gram with a practical $n$ can span that, and raising $n$ makes sparsity
+        exponentially worse --- so the two limitations pull against each other and
+        no corpus size resolves the second.
+\end{ans}
+
+\ansch{19 --- Classic AI Systems and How to Analyse Them}
+\begin{ans}
+  \item GPS is means--ends analysis (\chref{planning}); Eliza is pattern
+        substitution (\chref{nlp}); Student is pattern matching into equations,
+        which is \chref{fol}'s unification restricted to strings; Macsyma is term
+        rewriting, which is \chref{expert}'s forward chaining applied to expression
+        trees rather than to facts.
+  \item Because GPS's failure is \emph{legible}: it stops and says it has no plan,
+        so a person knows to look. Eliza always has a reply, so nothing distinguishes
+        a case it handled well from one it did not handle at all, and the user has
+        no signal to act on. The consequence for evaluating a modern language system
+        is direct: it too always produces output, so the fluency of a response
+        carries no information about whether it is grounded, and evaluation must
+        come from an external check --- a test suite, a type checker, a retrieved
+        source --- rather than from reading the answer.
+  \item A person, writing it down by hand. It predicts that the system will work
+        well in the region somebody took the trouble to encode and will need a
+        person for every extension --- so as the business changes, the system's
+        coverage falls behind at whatever rate knowledge engineers can be hired and
+        briefed. That is the knowledge acquisition bottleneck, and it is the reason
+        all four of these systems have the biographies they do.
+\end{ans}
+
+\ansch{20 --- Recent Trends and Applications}
+\begin{ans}
+  \item Because \chref{expert}'s chain is a \emph{record} of the inference that
+        actually occurred: each line names the rule that fired and the facts it
+        matched, and the conclusion was produced by exactly those steps. A language
+        model's explanation is generated by the same next-token process as the
+        answer itself --- it is text that resembles a derivation, produced
+        independently of whatever computation led to the answer. In
+        \chref{propositional}'s terms, it may display something shaped like
+        $\vdash$ while carrying no guarantee of any relation to $\models$; a
+        plausible-looking derivation is not a derivation.
+  \item The other five are the loop itself, the tools, the step budget, the
+        termination test and the state the agent keeps between steps. Removing the
+        \emph{policy's handling of a failed tool call} causes the commonest deployed
+        failure: a tool returns nothing, no rule notices, and the \texttt{None}
+        travels until it reaches arithmetic and crashes --- or, with a policy that
+        cannot terminate, the loop spins until the step budget stops it. Both
+        failures live in the engineering around the model, not in the model.
+  \item First, \emph{what did the demonstration exclude?} --- every impressive
+        demonstration is a microworld until shown otherwise, and the answer tells you
+        what the vendor chose not to show. Second, \emph{how would anyone find out
+        when it is wrong?} --- the failure-mode column. If the answer is that a
+        human notices, ask how they notice when the output is fluent; if it is a
+        test or a type checker, the system is safe in proportion to that checker's
+        coverage.
+\end{ans}
+
+\ansch{21 --- Responsible AI and Its Limits}
+\begin{ans}
+  \item Through a \term{proxy}: \texttt{workaround} is recorded for about $80\%$ of
+        one team's tickets and $15\%$ of the other's, because the first team has
+        mature runbooks to cite. R3 makes those tickets P2 and R7 then decides a P2
+        with a workaround needs no owner, so that team's tickets are systematically
+        not escalated. Deleting an attribute would not have prevented it, and could
+        not have: the team name was never an input. The correlation lives in the
+        world rather than in a column, which is why \emph{fairness through
+        unawareness} is the one approach that reliably fails.
+  \item It established \emph{what} produced the gap --- a difference in
+        documentation practice being read by the rules as a difference in
+        operational need --- and that no rule is individually wrong. It explicitly
+        did not establish whether the gap is acceptable. If the first team really
+        does need fewer escalations because its runbooks work, the gap is the system
+        functioning correctly; if the second team is being under-served because
+        nobody has written its runbooks, it is not. That is a management decision,
+        and the audit's contribution is to put it in front of somebody who can make
+        it, with evidence attached, instead of leaving it to be made silently two
+        hundred times a week.
+  \item The alternative explanation is \term{automation bias}: the reviewer has
+        stopped reviewing and is deferring to the system, which produces a near-zero
+        override rate whether the system is right or not. The measurement that
+        distinguishes them is to sample decisions for genuine independent review ---
+        have a second person decide without seeing the recommendation --- and
+        compare. If the independent decisions disagree materially more often than
+        the override rate suggests, the low rate was deference rather than
+        agreement.
+\end{ans}
+
+\ansch{22 --- The Artificial Intelligence Project}
+\begin{ans}
+  \item It fails the second test: the rules do not exist and would have to be learned
+        from historical tickets, which makes it a \emph{Machine Learning} project
+        rather than one this course has the machinery for. The advice is to keep the
+        domain and change the question to one whose rules can be written down --- for
+        example \emph{decide which open tickets to escalate tonight given a stated
+        escalation policy} (\chref{expert}), or \emph{schedule this sprint's stories
+        without violating capacity or precedence} (\chref{csp}). Both are one
+        sentence, both have rules an operations lead can state in an afternoon, and
+        both have an embarrassing baseline.
+  \item Because a measure chosen after the results are in will be chosen --- honestly
+        and without anyone noticing --- to be one the system does well on. The
+        failure mode is a report that demonstrates rather than evaluates: it shows
+        the system succeeding at whatever it happens to be good at, and provides no
+        evidence about the question that was originally asked. Writing the measure
+        and the failure condition down in advance is the only practical defence, and
+        changing them later is acceptable provided the change and its reason are
+        reported.
+  \item The baseline it was compared against, the measure it was compared on with
+        evidence that the measure was fixed in advance, and the size of the margin
+        relative to the variability --- a small margin on one instance with a seeded
+        run is not a result. Ideally also the ablation showing which component of
+        the system produced the margin, since without it the claim is about the
+        whole program rather than about the method being taught.
+\end{ans}

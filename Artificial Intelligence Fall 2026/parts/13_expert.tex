@@ -1,0 +1,767 @@
+%=====================================================================
+\chapter{Rule-Based Expert Systems}\label{ch:expert}
+%=====================================================================
+\locator{4}{Part IV --- Knowledge, Logic and Reasoning}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Build} a production system: working memory, a rule base and an
+        inference engine running the match--resolve--act cycle.
+  \item \textbf{Apply} forward and backward chaining, and \textbf{choose} between
+        them for a given task.
+  \item \textbf{Resolve} conflicts between applicable rules, and \textbf{justify}
+        the strategy chosen.
+  \item \textbf{Produce} an explanation of a conclusion, and \textbf{argue} why it
+        is the artefact an auditor accepts.
+  \item \textbf{Describe} the knowledge acquisition bottleneck and brittleness, and
+        \textbf{say} what they did to the expert-system industry.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{propositional} and \chref{fol} (inference, Horn clauses, chaining as
+resolution under a restriction) and \chref{kr} (the representation the rules act
+on). This chapter is where Part~IV becomes a product.
+\end{prereq}
+
+\begin{keyterms}
+production rule $\bullet$ working memory $\bullet$ rule base $\bullet$ inference
+engine $\bullet$ match--resolve--act $\bullet$ forward chaining $\bullet$ backward
+chaining $\bullet$ conflict set $\bullet$ conflict resolution $\bullet$ specificity
+$\bullet$ recency $\bullet$ refraction $\bullet$ explanation $\bullet$ knowledge
+acquisition bottleneck $\bullet$ brittleness $\bullet$ graceful degradation
+\end{keyterms}
+
+\section{The Escalation Adviser}
+
+\chref{agents} introduced it and deferred it: at 21:00 the queue holds three hundred
+open tickets, one engineer is on call, and something must decide what to do with
+each one. The decision depends on severity, customer tier, whether there is a
+workaround, how much of the service level agreement is left, whether the service
+owner is reachable, and how often the on-call engineer has already been woken.
+
+Nobody can write that as a formula, and everybody in the operations team can state
+the individual rules. That combination --- many small, separately intelligible
+conditions and no closed form --- is exactly what a \term{rule-based expert system}
+is for, and it is still the commonest deployed form of symbolic AI.
+
+\begin{definitionbox}[Production system]
+A \term{production system} has three parts:
+\begin{tight}
+  \item a \term{working memory} of facts currently believed;
+  \item a \term{rule base} of \term{production rules}, each a condition--action
+        pair, conventionally written \textsc{if} conditions \textsc{then}
+        conclusion;
+  \item an \term{inference engine} that repeatedly runs the
+        \term{match--resolve--act} cycle: find every rule whose conditions hold
+        (the \term{conflict set}), choose one, and apply its conclusion to working
+        memory.
+\end{tight}
+The rules do not call each other. Each fires when the facts happen to satisfy it,
+so a rule can be added or corrected without anyone tracing control flow --- which
+is the property that lets a domain expert maintain the system.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  box/.style={rounded corners=3pt, draw=#1, line width=1.1pt, fill=#1!8,
+              text=#1!50!black, text width=3.5cm, align=flush left,
+              inner sep=6pt, minimum height=2.3cm},
+  hd/.style={rounded corners=2pt, fill=#1, text=white,
+             font=\scriptsize\bfseries, inner sep=3pt, text width=3.3cm,
+             align=center},
+  eng/.style={rounded corners=3pt, draw=primary, line width=1.4pt,
+              fill=primary!12, text=primary!65!black,
+              font=\scriptsize\bfseries, minimum width=2.5cm,
+              minimum height=0.62cm, align=center},
+  a/.style={-{Stealth[length=2.2mm]}, neutral!75, line width=1pt},
+  cyc/.style={-{Stealth[length=2mm]}, primary!60, line width=1pt}]
+
+\node[box=secondary] (wm) at (-4.9,0)
+  {\\[2pt]\texttt{severity = critical}\\
+   \texttt{tier = platinum}\\
+   \texttt{service = payments}\\
+   \texttt{workaround = no}\\
+   \texttt{owner\_available = no}\\[3pt]
+   {\itshape and everything derived, added as it is derived}};
+
+\node[box=goldhl] (rb) at (4.9,0)
+  {\\[2pt]\texttt{R1: severity=critical}\\
+   \quad\texttt{-> priority=P1}\\[2pt]
+   \texttt{R5: priority=P1}\\
+   \quad\texttt{-> needs\_owner=yes}\\[3pt]
+   {\itshape 20 working rules, each separately readable and
+   separately correctable --- plus one deliberately bad one}};
+
+\node[hd=secondary] at (wm.north) {WORKING MEMORY};
+\node[hd=goldhl]    at (rb.north) {RULE BASE};
+
+\node[eng] (m) at (0,0.85)  {1. MATCH};
+\node[eng] (r) at (0,0.0)   {2. RESOLVE};
+\node[eng] (c) at (0,-0.85) {3. ACT};
+\node[font=\tiny\itshape, text=neutral, align=center, text width=3.0cm]
+  at (0,-1.7) {the inference engine, until no rule is applicable};
+
+\draw[a] (wm.east) -- (m.west);
+\draw[a] (rb.west) -- (m.east);
+\draw[cyc] (m) -- (r);
+\draw[cyc] (r) -- (c);
+\draw[a] (c.west) .. controls +(-1.6,0) and +(0,-1.6) .. (wm.south)
+  node[midway, below, font=\tiny\itshape, text=neutral] {assert the conclusion};
+
+\node[font=\tiny, text=neutral, anchor=west, align=left] at (0.95,0.85)
+  {which rules apply now?};
+\node[font=\tiny, text=neutral, anchor=west, align=left] at (0.95,0.0)
+  {several do --- which first?};
+\node[font=\tiny, text=neutral, anchor=west, align=left] at (0.95,-0.85)
+  {add its conclusion};
+\end{tikzpicture}}%
+{The architecture. Working memory grows as conclusions are asserted, which makes
+further rules applicable, and the cycle repeats until nothing new can be
+derived.}{rule-engine}
+
+\section{Forward Chaining}
+
+Start from the facts and derive everything that follows. This is
+\term{forward chaining}, and it is \emph{data-driven}: the arrival of a new fact
+triggers whatever it triggers.
+
+On ticket T-4471 --- critical, platinum, payments, under two hours of service level
+agreement left, owner unreachable, on-call budget available --- the engine fires
+nine rules in ten cycles, testing $188$ conditions, and reaches
+\texttt{action = wake\_on\_call}. Along the way it also derives that the account
+team must be notified, that finance must be notified because the service is
+payments, that the payments incident runbook applies, and that the page is urgent
+--- none of which anybody asked about.
+
+That is the character of forward chaining. It is the right choice for monitoring
+and alerting, where you want every consequence of an arriving fact. It is the wrong
+choice when you have one question, because it derives a great deal you did not ask
+for.
+
+\section{Backward Chaining}
+
+Start from the question and work backwards to the facts. To establish a goal, find a
+rule concluding it and recursively establish that rule's conditions.
+
+Asked only \emph{why is T-4471 escalated?}, backward chaining visits six goals
+against forward chaining's nine firings, and --- far more importantly --- it
+produces a proof tree rather than a set of conclusions.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  g/.style={rounded corners=3pt, draw=primary, line width=1pt, fill=primary!10,
+            text=primary!60!black, font=\ttfamily\scriptsize,
+            align=center, inner sep=4pt},
+  f/.style={rounded corners=3pt, draw=greenhl, line width=1pt, fill=greenhl!12,
+            text=greenhl!45!black, font=\ttfamily\scriptsize,
+            align=center, inner sep=4pt},
+  e/.style={-{Stealth[length=1.8mm]}, neutral!70, line width=0.9pt},
+  rl/.style={font=\tiny\bfseries, text=accent, inner sep=1.5pt}]
+
+\node[g] (esc)  at (0,2.6)    {escalate = yes};
+\node[g] (need) at (-2.5,1.3) {needs\_owner = yes};
+\node[f] (own)  at (2.4,1.3)  {owner\_available = no};
+\node[g] (pri)  at (-2.5,0.0) {priority = P1};
+\node[f] (sev)  at (-2.5,-1.3){severity = critical};
+
+\draw[e] (esc) -- node[rl, above left] {R9} (need);
+\draw[e] (esc) -- node[rl, above right] {R9} (own);
+\draw[e] (need) -- node[rl, left] {R5} (pri);
+\draw[e] (pri) -- node[rl, left] {R1} (sev);
+
+\node[font=\tiny\itshape, text=greenhl!45!black, anchor=west] at (3.6,1.3)
+  {given in the ticket};
+\node[font=\tiny\itshape, text=greenhl!45!black, anchor=west] at (-1.5,-1.3)
+  {given in the ticket};
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!30, line width=0.9pt,
+      text=primary!70!black, font=\scriptsize, text width=13.0cm,
+      align=flush left, inner sep=6pt] at (0,-2.7)
+  {\textbf{Read it upward and it is an argument in English:} the severity is
+   critical, so by R1 the priority is P1; a P1 needs its service owner, by R5; the
+   owner is not available; therefore by R9 the ticket is escalated.
+
+   \smallskip
+   That is the artefact. It names every rule and every fact it relied on, a person
+   can check each line, and if the conclusion is wrong it identifies exactly which
+   rule to correct. No probability and no learned model produces this, and
+   \chref{responsible} argues it is an accountability instrument rather than a
+   convenience.};
+\end{tikzpicture}}%
+{The proof tree for \emph{why is T-4471 escalated?} Rounded green boxes are facts
+from the ticket; blue boxes are derived, each labelled with the rule that derived
+it.}{explanation}
+
+\smallskip
+\noindent\begin{longtable}{@{}L{3.0cm}L{5.8cm}L{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+ & \textbf{Forward chaining} & \textbf{Backward chaining} \\
+\midrule
+\endhead
+Driven by & the data: a new fact triggers rules & the goal: a question triggers
+subgoals \\
+Derives & everything that follows & only what bears on the question \\
+On T-4471 & 9 rules fired, 188 condition tests & 6 goals visited \\
+Natural output & a set of conclusions & a proof tree \\
+Good for & monitoring, alerting, updating a dashboard & diagnosis, advice,
+answering ``why?'' \\
+Wasteful when & you have one specific question & you want every consequence \\
+\bottomrule
+\caption{The two directions. Most deployed systems use both: forward chaining to
+maintain state, backward chaining to answer questions about
+it.}\label{tab:chaining}
+\end{longtable}
+
+\section{Conflict Resolution}
+
+At most cycles several rules apply at once, and the order changes the outcome ---
+sometimes only in efficiency, sometimes in the conclusion. Choosing is \term{conflict
+resolution}, and the standard strategies are:
+
+\begin{tight}
+  \item \term{Specificity} --- prefer the rule with more conditions. A rule that
+        mentions \emph{major severity and platinum tier} is about a narrower
+        situation than one mentioning \emph{major severity} alone, and the narrower
+        rule is the one the expert meant to apply. This is the workhorse.
+  \item \term{Recency} --- prefer the rule matching the most recently added facts,
+        which keeps the system on one line of reasoning instead of drifting.
+  \item \term{Refraction} --- never fire the same rule on the same facts twice. Not
+        an optimisation: without it the engine loops forever.
+  \item \term{Explicit priority} --- a numeric salience on each rule. Always
+        available, and a warning sign: if a rule base needs many priorities, the
+        rules are probably overlapping in ways nobody has thought through.
+\end{tight}
+
+\begin{alertbox}[Specificity is worth a night's sleep]
+The rule base contains one deliberately over-general rule, R0: \emph{a major
+ticket is P1}. It is listed first.
+
+Ticket T-4472 is major severity on a \emph{standard}-tier customer with a
+workaround. Under plain rule-order resolution the engine reaches R0 first, makes
+the ticket P1, and ends at \texttt{wake\_on\_call} --- an engineer woken at three in
+the morning for a ticket that has a workaround. Under specificity the
+two-condition R3 is preferred, the ticket is P2, and the action is
+\texttt{leave\_in\_queue}.
+
+Same rules, same facts, different conflict-resolution strategy, and the difference
+is somebody's night. That is why a rule base is not a list of \textsc{if}
+statements: a list has the order whoever typed it chose, while specificity derives
+the order from how specific each rule's claim is --- which is a property of the
+knowledge rather than of the file.
+\end{alertbox}
+
+\section{What Conflict Resolution Does Not Fix}
+
+Now run the two directions against each other on that same ticket, and something
+uncomfortable happens.
+
+Forward chaining, with specificity, concludes \texttt{escalate = no}. Backward
+chaining, asked to prove \texttt{escalate = yes}, \emph{succeeds} --- via R5 from
+$\mathit{priority} = \text{P1}$, which it obtains from R0. The two directions
+disagree about the same ticket in the same rule base.
+
+\begin{conceptbox}
+Backward chaining has no conflict set. It asks ``is there \emph{any} rule
+concluding this goal?'', and R0 is one. Forward chaining never used R0 only because
+specificity reached R3 first.
+
+So specificity was not repairing the rule base; it was \emph{masking} a bad rule.
+R0 asserts that every major ticket is P1, which is simply false, and no
+conflict-resolution strategy makes a false rule true --- it merely arranges for
+something else to be consulted first, on the inputs you happened to test.
+
+The fix is to delete R0, whose work is already done correctly by R2 and R3. With it
+gone the two directions agree, and the lab checks that they do.
+
+\smallskip
+The general lesson is worth carrying beyond rule engines: \emph{when two correct
+procedures give different answers from the same knowledge, the knowledge is
+inconsistent}. Do not tune the procedure. And note how the inconsistency was found
+--- not by inspection, but by asking the same question two ways and comparing.
+That is a cheap and underused test for any rule base.
+\end{conceptbox}
+
+\section{Why the Industry Collapsed}
+
+Rule engines work. MYCIN diagnosed bacterial infections in the 1970s at the level of
+faculty specialists; XCON configured VAX systems and saved Digital tens of millions
+of dollars a year. By the mid-1980s there was a substantial commercial industry, and
+by 1993 it had collapsed. Two causes, and both are still live.
+
+\textbf{The knowledge acquisition bottleneck.} Every rule has to be elicited from an
+expert, by an engineer, one at a time. Experts are busy, and --- worse --- they are
+frequently unable to state what they do: the knowledge is compiled into judgement.
+A thousand-rule system represents years of interviews and cannot be assembled any
+faster. Meanwhile, nothing in the system learns; it fails
+\chref{introduction}'s fourth test and it will still be failing it next year.
+
+\textbf{Brittleness.} A rule base is confident inside its competence and gives no
+signal at the edge. Present a ticket whose situation nobody anticipated and the
+system does not degrade gracefully --- it either fires nothing, or fires a rule
+whose conditions technically match and whose conclusion is absurd. A human
+specialist says ``I have not seen this before''; a rule base has no representation
+of its own boundary.
+
+\begin{conceptbox}
+The historical lesson is the one from \chref{introduction}: what failed was a claim
+about \emph{reach}, not the method. Rule engines are running in production today in
+every bank, insurer and operations centre, generally under a name like ``business
+rules engine'' or ``decision tables'', and generally with exactly the architecture of
+\dsref{rule-engine}.
+
+And the two failures are precisely the two strengths of what came next. Machine
+learning acquires its knowledge from data instead of from interviews, which dissolves
+the bottleneck; and it degrades smoothly rather than falling off a cliff. It gives up
+the explanation tree of \dsref{explanation} to do so. That trade --- explicability
+for scale --- is the central tension of \chref{responsible}, and it is worth
+noticing that this course has now built both sides of the argument.
+\end{conceptbox}
+
+\begin{worked}[One ticket, two budgets, two different actions]
+Tickets T-4471 and T-4473 differ in only one fact, and the difference is not about
+the ticket at all.
+
+\smallskip
+\textbf{T-4471:} critical, platinum, payments, under two hours left, owner
+unavailable, \texttt{wake\_budget = available}.
+
+\smallskip
+The engine fires, in order: R17 (critical and platinum, so notify the account team),
+R1 (critical, so P1), R18 (payments and P1, so notify finance), R5 (P1, so needs the
+owner), R9 (needs the owner, who is unavailable, so escalate), R15 (escalate with
+budget available, so \emph{wake the on-call engineer}), R19 (escalate on payments,
+so the payments runbook applies), R20 (waking someone for a platinum customer, so
+the page is urgent), R12 (under two hours, so the risk is high). Nine rules, and
+the answer is \texttt{wake\_on\_call}.
+
+\smallskip
+\textbf{T-4473:} major, platinum, auth, over two hours left, owner unavailable,
+\texttt{wake\_budget = spent}.
+
+\smallskip
+R2 (major and platinum, so P1 --- note the two-condition rule, chosen by
+specificity over the one-condition major rule), R5 (P1, so needs the owner), R9
+(escalate), R14 (escalate but \emph{the budget is spent}, so
+\texttt{queue\_for\_morning}), R13 (over two hours, so risk is low). Five rules, and
+the answer is \texttt{queue\_for\_morning}.
+
+\smallskip
+\textbf{What to notice.} Both tickets are escalated --- \texttt{escalate = yes} in
+both working memories. They receive different \emph{actions} because R14 and R15
+consult a fact about the \emph{engineer}, not about the ticket. That is exactly the
+internal state \chref{agents} showed a model-based agent must maintain, and here it
+is one more fact in working memory and one more pair of rules.
+
+\smallskip
+\textbf{And notice what it costs to change.} Suppose the operations lead decides
+that platinum customers may wake the engineer even past the budget. That is one new
+rule, with three conditions so specificity puts it ahead of R14, and \emph{no
+existing rule is touched}. Compare making the same change inside nested
+\texttt{if} statements, where the modification is entangled with everything around
+it and nobody can be sure what else moved.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Omitting refraction.} The engine re-fires the same rule on the same
+        facts forever. The symptom is a hang on the first realistic input.
+  \item \textbf{Relying on rule order.} If the answer changes when the rules are
+        rearranged, the rule base is under-specified; add the missing condition
+        rather than reordering.
+  \item \textbf{Forward chaining to answer one question.} It derived nine
+        conclusions where six goals would have done, and none of the extras was
+        asked for.
+  \item \textbf{Treating explanation as a feature to add later.} The proof tree is
+        a by-product of backward chaining and nearly impossible to bolt on
+        afterwards. It is also the reason the system will be allowed into
+        production.
+  \item \textbf{Many explicit priorities.} A salience number is a patch over
+        overlapping rules. More than a handful means the rule base needs
+        restructuring, not more numbers.
+  \item \textbf{Expecting graceful degradation.} At the edge of its competence a
+        rule base is confidently wrong rather than uncertain, and it will not tell
+        you which.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[A Twenty-Rule Escalation Shell That Explains Itself]
+Forward chaining with conflict resolution, backward chaining with an explanation
+tree, and the measurement of what each costs.
+\begin{lstlisting}[language=Python]
+"""Chapter 13 lab -- a rule-based escalation adviser.
+
+Twenty rules an operations lead could read and correct. The engine
+fires until nothing new follows; the explanation tree is what makes
+the result auditable, and it is a by-product of backward chaining
+rather than something added afterwards.
+"""
+
+# (name, [conditions], conclusion); each is an (attribute, value) pair
+RULES = [
+    # R0 is a deliberately general fallback, and it is listed FIRST.
+    # Plain rule-order resolution therefore reaches it before the
+    # narrower R2 and R3, and gets the wrong answer. Specificity does
+    # not, which is the point of the comparison below.
+    ("R0",  [("severity", "major")], ("priority", "P1")),
+    ("R1",  [("severity", "critical")], ("priority", "P1")),
+    ("R2",  [("severity", "major"), ("tier", "platinum")],
+     ("priority", "P1")),
+    ("R3",  [("severity", "major"), ("tier", "standard")],
+     ("priority", "P2")),
+    ("R4",  [("severity", "minor")], ("priority", "P3")),
+    ("R5",  [("priority", "P1")], ("needs_owner", "yes")),
+    ("R6",  [("priority", "P2"), ("workaround", "no")],
+     ("needs_owner", "yes")),
+    ("R7",  [("priority", "P2"), ("workaround", "yes")],
+     ("needs_owner", "no")),
+    ("R8",  [("priority", "P3")], ("needs_owner", "no")),
+    ("R9",  [("needs_owner", "yes"), ("owner_available", "no")],
+     ("escalate", "yes")),
+    ("R10", [("priority", "P1"), ("sla_risk", "high")],
+     ("escalate", "yes")),
+    ("R11", [("needs_owner", "no")], ("escalate", "no")),
+    ("R12", [("sla_hours_left", "under2")], ("sla_risk", "high")),
+    ("R13", [("sla_hours_left", "over2")], ("sla_risk", "low")),
+    ("R14", [("escalate", "yes"), ("wake_budget", "spent")],
+     ("action", "queue_for_morning")),
+    ("R15", [("escalate", "yes"), ("wake_budget", "available")],
+     ("action", "wake_on_call")),
+    ("R16", [("escalate", "no")], ("action", "leave_in_queue")),
+    ("R17", [("severity", "critical"), ("tier", "platinum")],
+     ("notify_account_team", "yes")),
+    ("R18", [("service", "payments"), ("priority", "P1")],
+     ("notify_finance", "yes")),
+    ("R19", [("escalate", "yes"), ("service", "payments")],
+     ("runbook", "payments_incident")),
+    ("R20", [("action", "wake_on_call"), ("tier", "platinum")],
+     ("page_severity", "urgent")),
+]
+
+TICKETS = {
+    "T-4471": {"severity": "critical", "tier": "platinum",
+               "service": "payments", "workaround": "no",
+               "sla_hours_left": "under2", "owner_available": "no",
+               "wake_budget": "available"},
+    "T-4472": {"severity": "major", "tier": "standard",
+               "service": "search", "workaround": "yes",
+               "sla_hours_left": "over2", "owner_available": "no",
+               "wake_budget": "available"},
+    "T-4473": {"severity": "major", "tier": "platinum",
+               "service": "auth", "workaround": "no",
+               "sla_hours_left": "over2", "owner_available": "no",
+               "wake_budget": "spent"},
+}
+
+
+class Trace:
+    def __init__(self):
+        self.fired = []
+        self.tests = 0
+        self.cycles = 0
+
+
+def matches(rule, wm, t):
+    for (attr, val) in rule[1]:
+        t.tests += 1
+        if wm.get(attr) != val:
+            return False
+    return True
+
+
+def forward_chain(facts, resolve="specificity", rules=None):
+    """Match, resolve, act -- until nothing new follows.
+
+    The 'fired' set is REFRACTION: without it the engine re-fires the
+    same rule on the same facts forever.
+
+    'r[2][0] not in wm' means each attribute is DECIDED ONCE, by the
+    rule conflict resolution picks. Without it a less specific rule
+    that fires later would quietly overwrite a more specific rule's
+    conclusion, and conflict resolution would be pointless.
+    """
+    rules = RULES if rules is None else rules
+    wm, t, fired = dict(facts), Trace(), set()
+    while True:
+        t.cycles += 1
+        conflict = [r for r in rules
+                    if r[0] not in fired
+                    and matches(r, wm, t)
+                    and r[2][0] not in wm]
+        if not conflict:
+            return wm, t
+        if resolve == "specificity":
+            # more conditions first; ties broken by rule order
+            conflict.sort(key=lambda r: (-len(r[1]), rules.index(r)))
+        else:
+            conflict.sort(key=lambda r: rules.index(r))
+        r = conflict[0]
+        wm[r[2][0]] = r[2][1]
+        fired.add(r[0])
+        t.fired.append(r[0])
+
+
+def backward_chain(goal, facts, seen=None):
+    """Prove an (attribute, value) goal. Returns a proof tree."""
+    if seen is None:
+        seen = set()
+    if facts.get(goal[0]) == goal[1]:
+        return ("fact", goal)
+    if goal in seen:
+        return None                 # a cycle in the rule base
+    seen = seen | {goal}
+    for r in RULES:
+        if r[2] != goal:
+            continue
+        subs = []
+        for c in r[1]:
+            got = backward_chain(c, facts, seen)
+            if got is None:
+                subs = None
+                break
+            subs.append(got)
+        if subs is not None:
+            return ("rule", r[0], goal, subs)
+    return None
+
+
+def explain(tree, indent=0):
+    pad = "  " * indent
+    if tree[0] == "fact":
+        return ["%s%s = %s   (given in the ticket)"
+                % (pad, tree[1][0], tree[1][1])]
+    _, name, goal, subs = tree
+    out = ["%s%s = %s   (by %s, because)" % (pad, goal[0], goal[1], name)]
+    for s in subs:
+        out += explain(s, indent + 1)
+    return out
+
+
+def goals_visited(goal, facts, seen=None, count=None):
+    """How much work backward chaining does for ONE question."""
+    if count is None:
+        count = [0]
+    count[0] += 1
+    if seen is None:
+        seen = set()
+    if facts.get(goal[0]) == goal[1]:
+        return True, count[0]
+    if goal in seen:
+        return False, count[0]
+    seen = seen | {goal}
+    for r in RULES:
+        if r[2] != goal:
+            continue
+        if all(goals_visited(c, facts, seen, count)[0] for c in r[1]):
+            return True, count[0]
+    return False, count[0]
+
+
+if __name__ == "__main__":
+    print("rule base: %d rules" % len(RULES))
+    print()
+    print("ticket    action              rules  tests  cycles")
+    print("-" * 52)
+    results = {}
+    for tid, facts in TICKETS.items():
+        wm, t = forward_chain(facts)
+        results[tid] = (wm, t)
+        print("%-9s %-19s %5d %6d %7d"
+              % (tid, wm.get("action"), len(t.fired), t.tests, t.cycles))
+
+    # the three actions differ, and only one fact separates the last two
+    assert results["T-4471"][0]["action"] == "wake_on_call"
+    assert results["T-4472"][0]["action"] == "leave_in_queue"
+    assert results["T-4473"][0]["action"] == "queue_for_morning"
+    print()
+    print("T-4471 firing order:", " ".join(results["T-4471"][1].fired))
+    print("T-4473 firing order:", " ".join(results["T-4473"][1].fired))
+    print()
+    print("Both are escalated; they differ only in wake_budget, and")
+    print("that is a fact about the ENGINEER, not about the ticket.")
+    assert results["T-4471"][0]["escalate"] == "yes"
+    assert results["T-4473"][0]["escalate"] == "yes"
+
+    # --- specificity is doing real work --------------------------
+    print()
+    print("=== specificity against plain rule order ===")
+    print("ticket    specificity         rule order")
+    print("-" * 46)
+    for tid, facts in TICKETS.items():
+        a, _ = forward_chain(facts, "specificity")
+        b, _ = forward_chain(facts, "order")
+        flag = "  <-- DIFFER" if a["action"] != b["action"] else ""
+        print("%-9s %-19s %-19s%s"
+              % (tid, a["action"], b["action"], flag))
+
+    spec, _ = forward_chain(TICKETS["T-4472"], "specificity")
+    order, _ = forward_chain(TICKETS["T-4472"], "order")
+    assert spec["priority"] == "P2" and spec["action"] == "leave_in_queue"
+    assert order["priority"] == "P1" and order["action"] == "wake_on_call"
+    print()
+    print("T-4472 is major severity on a STANDARD tier customer.")
+    print("R0 ('major -> P1') is general and listed first, so plain")
+    print("rule order reaches it and wakes an engineer at 3 a.m. for")
+    print("a standard-tier ticket with a workaround. Specificity")
+    print("prefers the two-condition R3, gets P2, and leaves it in")
+    print("the queue. That is a real engineer's night, decided by the")
+    print("conflict-resolution strategy alone.")
+
+    # --- the explanation ------------------------------------------
+    print()
+    print("=== why is T-4471 escalated? ===")
+    tree = backward_chain(("escalate", "yes"), TICKETS["T-4471"])
+    assert tree is not None
+    for line in explain(tree):
+        print("   " + line)
+
+    # --- the two directions DISAGREE, and that is a real bug -----
+    print()
+    print("=== and is T-4472 escalated? ===")
+    fwd_wm, _ = forward_chain(TICKETS["T-4472"])
+    up = backward_chain(("escalate", "yes"), TICKETS["T-4472"])
+    print("   forward chaining says escalate =", fwd_wm["escalate"])
+    print("   backward chaining proves escalate = yes:", up is not None)
+    assert fwd_wm["escalate"] == "no" and up is not None
+    print()
+    print("   They disagree. Backward chaining's proof:")
+    for line in explain(up):
+        print("      " + line)
+    print()
+    print("   Backward chaining has no conflict resolution: it asks")
+    print("   'is there ANY rule concluding this?' and R0 is one.")
+    print("   Forward chaining never used R0 because specificity")
+    print("   preferred R3 -- so specificity was MASKING a bad rule,")
+    print("   not fixing it. R0 says every major ticket is P1, which")
+    print("   is simply false, and no resolution strategy makes a")
+    print("   false rule true.")
+
+    # the fix is to delete the over-general rule, not to tune the
+    # conflict-resolution strategy
+    print()
+    print("=== delete R0 and ask both directions again ===")
+    fixed = [r for r in RULES if r[0] != "R0"]
+    fwd2, _ = forward_chain(TICKETS["T-4472"], rules=fixed)
+    globals()["RULES"], saved = fixed, RULES
+    up2 = backward_chain(("escalate", "yes"), TICKETS["T-4472"])
+    down2 = backward_chain(("escalate", "no"), TICKETS["T-4472"])
+    globals()["RULES"] = saved
+    print("   forward says escalate =", fwd2["escalate"])
+    print("   backward proves escalate = yes:", up2 is not None)
+    assert fwd2["escalate"] == "no" and up2 is None and down2 is not None
+    print("   They now agree. The explanation:")
+    for line in explain(down2):
+        print("      " + line)
+
+    # --- what each direction costs --------------------------------
+    fwd = len(results["T-4471"][1].fired)
+    _, bwd = goals_visited(("escalate", "yes"), TICKETS["T-4471"])
+    print()
+    print("forward chaining : %d rules fired to derive everything" % fwd)
+    print("backward chaining: %d goals visited to answer one question"
+          % bwd)
+    assert bwd < fwd
+    print()
+    print("Forward chaining also concluded notify_finance, runbook and")
+    print("page_severity -- useful for a dashboard, wasted for a")
+    print("single question.")
+
+    # --- adding a rule changes nothing else -----------------------
+    print()
+    print("=== the operations lead changes the policy ===")
+    extended = RULES + [("R21", [("escalate", "yes"),
+                                 ("wake_budget", "spent"),
+                                 ("tier", "platinum")],
+                         ("action", "wake_on_call"))]
+    wm_new, t_new = forward_chain(TICKETS["T-4473"], rules=extended)
+    print("   'platinum may wake the engineer past the budget'")
+    print("   T-4473 action was queue_for_morning, now:",
+          wm_new["action"])
+    print("   firing order:", " ".join(t_new.fired))
+    assert wm_new["action"] == "wake_on_call"
+    print("   One rule added. No existing rule was touched, and")
+    print("   specificity put it ahead of R14 automatically.")
+\end{lstlisting}
+Then remove the \texttt{fired} set from \texttt{forward\_chain} --- that is
+refraction --- and re-run. The engine never terminates, because R1 is applicable
+forever once the severity is critical. It is worth seeing once.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item T-4471 and T-4473 are both escalated and receive different actions. Name the
+        single fact that separates them, say whether it is a fact about the ticket,
+        and relate it to the agent architectures of \chref{agents}.
+  \item Forward chaining fired nine rules on T-4471; backward chaining answered
+        ``why escalated?'' in six goals. Give one task for which the nine is the
+        right answer and the five is the wrong one.
+  \item An auditor asks why a particular customer's ticket was left in the queue
+        overnight. Explain what your system hands them, and why a model that merely
+        output a probability would not satisfy the request.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item A \term{production system} is working memory, a rule base and an inference
+        engine running \term{match--resolve--act}. Rules do not call each other, so
+        one can be added or corrected without tracing control flow --- which is what
+        lets a domain expert maintain it.
+  \item \term{Forward chaining} is data-driven and derives everything that follows:
+        nine rules and $188$ condition tests on one ticket. Right for monitoring;
+        wasteful for a single question.
+  \item \term{Backward chaining} is goal-driven, visits only what bears on the
+        question --- six goals here --- and produces a \term{proof tree}.
+  \item \term{Conflict resolution} chooses among applicable rules.
+        \term{Specificity} is the workhorse and encodes a real property of the
+        knowledge; \term{refraction} is not an optimisation but the thing that makes
+        the engine terminate.
+  \item The \term{explanation} is the deliverable. It names every rule and fact the
+        conclusion rests on, a person can check it line by line, and it identifies
+        which rule to correct when the answer is wrong.
+  \item Conflict resolution can \emph{mask} a bad rule without fixing it. Asking the
+        same question forwards and backwards made the two directions disagree on
+        T-4472 and exposed an over-general rule that specificity had been hiding.
+        When two correct procedures differ on the same knowledge, the knowledge is
+        inconsistent --- fix the rules, not the strategy.
+  \item The industry collapsed on the \term{knowledge acquisition bottleneck} ---
+        rules elicited one at a time from busy experts, and nothing learns --- and
+        on \term{brittleness}, confident wrongness at the edge of competence.
+  \item Both failures are the strengths of machine learning, which acquires
+        knowledge from data and degrades smoothly, and which gives up the
+        explanation tree to do it. That trade is the subject of
+        \chref{responsible}.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The conflict set is: (a)~rules that contradict each other
+        (b)~rules whose conditions currently hold (c)~facts that disagree
+        (d)~goals not yet proved.
+  \item \textbf{(MCQ)} Refraction prevents: (a)~two rules firing at once
+        (b)~a rule firing twice on the same facts (c)~backward chaining looping
+        (d)~conflicting conclusions.
+  \item \textbf{(MCQ)} Backward chaining is preferable when:
+        (a)~a new fact has arrived and you want its consequences
+        (b)~you have one specific question (c)~working memory is large
+        (d)~the rules have many conditions.
+  \item \textbf{(MCQ)} The knowledge acquisition bottleneck is:
+        (a)~slow inference (b)~too many rules to store (c)~rules must be elicited
+        from experts one at a time (d)~working memory overflow.
+  \item \textbf{(Short)} Explain specificity as a conflict-resolution strategy and
+        why it encodes something real about the knowledge rather than being an
+        arbitrary tie-break.
+  \item \textbf{(Short)} Why is an explanation tree difficult to add to a system
+        afterwards, and easy to obtain from backward chaining?
+  \item \textbf{(Short)} State the two causes of the expert-system collapse and,
+        for each, say how machine learning addresses it and what is given up.
+  \item \textbf{(Applied)} Write a rule implementing ``a P1 on a platinum customer
+        with no workaround must notify the account team even if the owner is
+        available''. Give its conditions and conclusion, say where specificity
+        places it relative to R17, and trace what T-4473 would do with it added.
+\end{reviewq}

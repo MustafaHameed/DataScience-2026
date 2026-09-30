@@ -1,0 +1,724 @@
+%=====================================================================
+\chapter{Planning}\label{ch:planning}
+%=====================================================================
+\locator{3}{Part III --- Constraints, Games and Plans}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Represent} actions as STRIPS operators with preconditions, an add
+        list and a delete list, and \textbf{explain} what the delete list is for.
+  \item \textbf{Solve} a planning problem by progression search, reusing the
+        frontier of \chref{uninformed} unchanged.
+  \item \textbf{Apply} means--ends analysis, and \textbf{relate} it to the General
+        Problem Solver that HEC names as a required case study.
+  \item \textbf{Identify} goal clobbering, and \textbf{explain} why it makes
+        means--ends analysis sensitive to the order in which goals are taken.
+  \item \textbf{Say} what the operator representation buys that an opaque
+        successor function does not.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{uninformed} and \chref{informed} (the frontier, breadth-first search and
+$A^{*}$ --- this chapter reuses them without modification) and \chref{python}
+(states as sets). \chref{csp} is useful background: like a CSP, a planning problem
+exposes structure that a general search cannot see.
+\end{prereq}
+
+\begin{keyterms}
+planning $\bullet$ STRIPS $\bullet$ operator $\bullet$ precondition $\bullet$ add
+list $\bullet$ delete list $\bullet$ ground operator $\bullet$ progression search
+$\bullet$ regression $\bullet$ means--ends analysis $\bullet$ difference $\bullet$
+General Problem Solver $\bullet$ goal clobbering $\bullet$ goal ordering $\bullet$
+partial-order planning $\bullet$ frame problem
+\end{keyterms}
+
+\section{From a Task List to Operators}
+
+\chref{uninformed} planned a release by searching over sets of finished tasks. The
+successor function was a Python function: opaque, and the only thing the search
+could do with it was call it.
+
+Now a harder version of the same problem. Two components must each be coded,
+reviewed, tested and deployed. Testing requires the staging environment, and there
+is only one --- so testing one component \emph{takes staging away} from the other
+until it is released.
+
+That last clause is what makes this a planning problem rather than a search
+problem. An action no longer just adds things to the world; it can take things
+away, and an action taken to achieve one goal can destroy the conditions another
+goal depended on.
+
+\begin{definitionbox}[STRIPS operator]
+A \term{STRIPS} operator is a named action described by three sets of literals:
+\begin{tight}
+  \item \term{preconditions} --- what must be true for the action to be applicable;
+  \item the \term{add list} --- what it makes true;
+  \item the \term{delete list} --- what it makes false.
+\end{tight}
+Applying operator $o$ in state $s$ gives
+\[
+  s' \;=\; (s \setminus \mathrm{delete}(o)) \cup \mathrm{add}(o)
+\]
+and $o$ is applicable only when $\mathrm{pre}(o) \subseteq s$.
+
+Everything not mentioned in the add or delete list is unchanged. That convention is
+the \term{STRIPS assumption}, and it is what makes the representation usable: you
+describe what an action changes, not the vastly larger set of things it leaves
+alone. Stating the latter explicitly is the \term{frame problem}.
+
+\smallskip
+\noindent\emph{After} R.\,E. Fikes and N.\,J. Nilsson, ``STRIPS: A New Approach to
+the Application of Theorem Proving to Problem Solving'', \emph{Artificial
+Intelligence} 2, 1971.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  band/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!8,
+               text=#1!50!black, text width=3.9cm, align=flush left,
+               inner sep=6pt, minimum height=1.55cm},
+  hd/.style={rounded corners=2pt, fill=#1, text=white,
+             font=\scriptsize\bfseries, inner sep=3pt, text width=3.7cm,
+             align=center},
+  a/.style={-{Stealth[length=2.2mm]}, neutral!70, line width=1pt}]
+
+\node[rounded corners=3pt, fill=primary, text=white, font=\small\bfseries,
+      minimum width=3.0cm, minimum height=0.8cm] (op) at (0,1.9)
+      {test A};
+
+\node[band=secondary] (pre) at (-4.4,0) {\\[2pt]
+  \texttt{reviewed A}\\
+  \texttt{staging free}};
+\node[band=greenhl]   (add) at (0,0) {\\[2pt]
+  \texttt{tested A}\\
+  \texttt{staging busy}};
+\node[band=accent]    (del) at (4.4,0) {\\[2pt]
+  \texttt{staging free}};
+
+\node[hd=secondary] at (pre.north) {PRECONDITIONS};
+\node[hd=greenhl]   at (add.north) {ADD LIST};
+\node[hd=accent]    at (del.north) {DELETE LIST};
+
+\draw[a] (op) -- (pre.north east);
+\draw[a] (op) -- (add.north);
+\draw[a] (op) -- (del.north west);
+
+\node[rounded corners=3pt, fill=accent!7, draw=accent!55, line width=0.9pt,
+      text=accent!55!black, font=\scriptsize, text width=13.2cm,
+      align=flush left, inner sep=6pt] at (0,-1.85)
+  {\textbf{The delete list is the whole point.} Without it, this is
+   \chref{uninformed}'s task graph again: actions only ever add, so no action can
+   ever interfere with another and any order that respects the preconditions works.
+   With it, \texttt{test A} seizes a resource that \texttt{test B} needs, and only
+   \texttt{release staging} gives it back. Planning is the study of what that
+   interference costs.};
+\end{tikzpicture}}%
+{One STRIPS operator. Applying it removes the delete list and then adds the add
+list; everything else in the state is untouched.}{strips-op}
+
+\begin{examplebox}[The release domain]
+Four operator schemas, instantiated once per component, plus one for the shared
+environment. With two components that is nine ground operators.
+
+\smallskip
+\noindent\begin{tabular}{@{}L{2.7cm}L{4.3cm}L{3.9cm}L{2.7cm}@{}}
+\toprule
+\textbf{Operator} & \textbf{Preconditions} & \textbf{Add} & \textbf{Delete} \\
+\midrule
+\texttt{code c} & --- & \texttt{coded c} & --- \\
+\texttt{review c} & \texttt{coded c} & \texttt{reviewed c} & --- \\
+\texttt{test c} & \texttt{reviewed c}, \texttt{staging free} &
+\texttt{tested c}, \texttt{staging busy} & \texttt{staging free} \\
+\texttt{deploy c} & \texttt{tested c} & \texttt{deployed c} & --- \\
+\texttt{release staging} & \texttt{staging busy} & \texttt{staging free} &
+\texttt{staging busy} \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+Initial state: $\{\texttt{staging free}\}$. Goal:
+$\{\texttt{deployed A}, \texttt{deployed B}\}$.
+\end{examplebox}
+
+\section{Planning as Progression Search}
+
+A plan is a sequence of operators leading from the initial state to a state
+satisfying the goal. So a planning problem \emph{is} a search problem, and
+\chref{python}'s \texttt{Problem} interface fits it without modification:
+
+\begin{tight}
+  \item \emph{State} --- a \texttt{frozenset} of literals currently true.
+  \item \emph{Actions} --- the operators whose preconditions are a subset of the
+        state.
+  \item \emph{Result} --- $(s \setminus \mathrm{delete}) \cup \mathrm{add}$.
+  \item \emph{Goal test} --- is the goal a subset of the state?
+\end{tight}
+
+This is \term{progression} (or forward) search: start at the initial state and move
+towards the goal. Running \chref{uninformed}'s breadth-first search over it finds a
+nine-step plan after expanding $37$ of the $41$ reachable states:
+
+\begin{center}\ttfamily\small
+code A \textrm{$\rightarrow$} review A \textrm{$\rightarrow$} test A
+\textrm{$\rightarrow$} deploy A \textrm{$\rightarrow$} code B\\
+review B \textrm{$\rightarrow$} release staging \textrm{$\rightarrow$} test B
+\textrm{$\rightarrow$} deploy B
+\end{center}
+
+Note step seven. Nothing in the goal mentions staging; \texttt{release staging} is
+there purely to undo the interference that \texttt{test A} caused. That step is the
+signature of a planning problem, and no ordering of \chref{uninformed}'s tasks
+could have produced it.
+
+\begin{alertbox}[Why a heuristic barely helps here, and when that happens]
+\chref{informed} would suggest adding a heuristic. A good admissible one is
+available: for each component count the actions it still needs --- four if
+untouched, three if coded, two if reviewed, one if tested, none if deployed --- and
+sum. Those actions are specific to their component, so they cannot be shared and
+the sum is a lower bound. At the initial state with four components it estimates
+$16$ against a true optimum of $19$: a strong heuristic.
+
+It buys almost nothing. $A^{*}$ expands $1{,}152$ states where breadth-first search
+expands $1{,}163$ --- under one per cent.
+
+The reason is worth understanding, because it generalises. $A^{*}$ must expand every
+node with $f(n) < C^{*}$, and it saves work only where $f$ is large enough to rule
+states out. In this domain almost every reachable state lies on \emph{some} optimal
+plan --- nearly all the actions are necessary, and their order is largely free ---
+so $f$ is close to $C^{*}$ nearly everywhere and there is nothing to prune.
+
+\emph{Heuristics pay when most of the state space is wasted effort.} Here very
+little of it is. The lesson is not that $A^{*}$ is weak; it is that measuring
+before optimising applies to search as much as to code.
+\end{alertbox}
+
+\section{Means--Ends Analysis and the General Problem Solver}
+
+The 1961 General Problem Solver of Newell and Simon did not search the state space
+at all. It worked on \term{differences}.
+
+\begin{definitionbox}[Means--ends analysis]
+To achieve a goal from a state:
+\begin{enumerate}[leftmargin=2.0em, itemsep=1pt, topsep=2pt]
+  \item If the goal already holds, stop.
+  \item Otherwise pick a \term{difference} --- a goal literal not yet true.
+  \item Choose an operator whose add list contains that literal.
+  \item \emph{Recursively} achieve that operator's preconditions.
+  \item Apply the operator, and continue with the remaining goals.
+\end{enumerate}
+The recursion at step~4 is the idea: the means to an end become ends in their own
+right.
+\end{definitionbox}
+
+The difference in cost is large. On this domain, means--ends analysis considers
+$187$ operators at four components where progression search expands $1{,}163$
+states --- and the gap widens with size, because it never enumerates states at all.
+
+\smallskip
+\noindent\begin{longtable}{@{}L{2.6cm}L{2.0cm}L{2.2cm}L{2.6cm}L{2.4cm}L{2.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Components} & \textbf{States} & \textbf{Plan length} &
+\textbf{BFS expanded} & \textbf{$A^{*}$ expanded} & \textbf{GPS ops} \\
+\midrule
+\endhead
+2 & 41 & 9 & 37 & 36 & 45 \\
+3 & 223 & 14 & 218 & 214 & 104 \\
+4 & 1{,}169 & 19 & 1{,}163 & 1{,}152 & \textbf{187} \\
+\bottomrule
+\caption{Progression search against means--ends analysis. All three find an optimal
+plan on every instance; the state space grows about fivefold per component while
+the work means--ends analysis does grows roughly linearly.}\label{tab:planning}
+\end{longtable}
+
+\section{Goal Clobbering}
+
+Means--ends analysis takes the goals in some order, and that order matters. Achieving
+one goal can destroy a condition that a later goal needs --- \term{goal clobbering}
+--- and a means--ends planner has no machinery for noticing in advance.
+
+\dsref{clobber} is the smallest example, and it is two operators long.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  st/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!8,
+             text=#1!50!black, font=\ttfamily\scriptsize, text width=2.7cm,
+             align=center, inner sep=5pt, minimum height=0.8cm},
+  act/.style={rounded corners=2pt, fill=#1, text=white,
+              font=\scriptsize\bfseries, inner sep=3pt},
+  a/.style={-{Stealth[length=2mm]}, neutral!70, line width=0.9pt},
+  bad/.style={-{Stealth[length=2mm]}, accent, line width=1.1pt}]
+
+% ---- order 1: fails
+\node[font=\scriptsize\bfseries, text=accent, anchor=west] at (-6.4,2.5)
+  {Goal order: \texttt{locked}, then \texttt{smoke ok} \quad --- FAILS};
+\node[st=primary] (s0) at (-4.9,1.55) {staging free};
+\node[st=accent]  (s1) at (-0.7,1.55) {locked};
+\draw[a] (s0) -- node[act=primary, above, midway] {lock staging} (s1);
+\node[font=\tiny\itshape, text=accent, anchor=west, text width=5.9cm]
+  at (1.0,1.55)
+  {\texttt{lock staging} deletes \texttt{staging free}, which is the one
+   precondition \texttt{run smoke test} has. The second goal is now
+   \emph{unreachable}, and the planner returns failure on a solvable problem.};
+
+% ---- order 2: succeeds
+\node[font=\scriptsize\bfseries, text=greenhl!50!black, anchor=west]
+  at (-6.4,0.1) {Goal order: \texttt{smoke ok}, then \texttt{locked} \quad --- works};
+\node[st=primary] (t0) at (-4.9,-0.85) {staging free};
+\node[st=greenhl] (t1) at (-0.7,-0.85) {staging free, smoke ok};
+\node[st=greenhl] (t2) at (3.5,-0.85)  {smoke ok, locked};
+\draw[a] (t0) -- node[act=greenhl, above, midway] {run smoke test} (t1);
+\draw[a] (t1) -- node[act=greenhl, above, midway] {lock staging} (t2);
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!30, line width=0.8pt,
+      text=primary!70!black, font=\scriptsize, text width=13.2cm,
+      align=flush left, inner sep=6pt] at (0,-2.2)
+  {\textbf{Same problem, same operators, same planner --- one order succeeds and
+   the other reports that no plan exists.} This is why the field moved to
+   \emph{partial-order} planning, which commits to an order between two steps only
+   when it has a reason to, and to modern planners that search plan space with
+   explicit protection of achieved conditions.};
+\end{tikzpicture}}%
+{Goal clobbering, in two operators. Means--ends analysis is complete only if it
+happens to take the goals in a workable order.}{clobber}
+
+The historical response was \term{partial-order planning}: build a set of steps with
+ordering constraints only where needed, detect when one step threatens a condition
+another step established, and resolve the threat by adding an ordering constraint.
+This course names that idea and does not develop it; it is the natural next reading
+in Russell and Norvig, Chapter~10.
+
+\section{What the Representation Buys}
+
+Progression search over STRIPS operators expands the same states a general search
+would. So what was gained by describing actions instead of writing a successor
+function?
+
+\textbf{The planner can read the actions.} A successor function can only be called.
+An operator can be \emph{inspected} --- which is what lets means--ends analysis ask
+``which action adds \texttt{deployed B}?'' and what lets a heuristic be derived
+automatically by, for example, ignoring every delete list.
+
+\textbf{Domain and planner separate.} The operator table is data. A delivery lead
+can add a deployment gate without touching the search, which is the same argument
+\chref{csp} made for constraints and \chref{expert} will make for rules. It is the
+third test of \chref{introduction}'s checklist, and it is most of what
+distinguishes an AI system from a program that happens to solve the problem.
+
+\textbf{Plans are explainable.} Every step names an operator with stated
+preconditions, so the answer to ``why is \texttt{release staging} in my plan?'' is
+mechanical: because \texttt{test B} requires \texttt{staging free}, and
+\texttt{test A} deleted it.
+
+\begin{worked}[Means--ends analysis on the release domain, traced]
+Goal $\{\texttt{deployed A}, \texttt{deployed B}\}$, initial state
+$\{\texttt{staging free}\}$. Take the goals in order.
+
+\smallskip
+\textbf{Difference: \texttt{deployed A}.} The only operator adding it is
+\texttt{deploy A}, whose precondition is \texttt{tested A}. Recurse.
+
+\smallskip
+\quad\textbf{Difference: \texttt{tested A}.} Added by \texttt{test A}, which needs
+\texttt{reviewed A} and \texttt{staging free}. Recurse on each.
+
+\smallskip
+\quad\quad\textbf{\texttt{reviewed A}} needs \texttt{coded A}, which needs nothing.
+Apply \texttt{code A}, then \texttt{review A}.
+
+\smallskip
+\quad\quad\textbf{\texttt{staging free}} already holds. Nothing to do.
+
+\smallskip
+\quad Apply \texttt{test A}. State becomes
+$\{\texttt{coded A}, \texttt{reviewed A}, \texttt{tested A},
+\texttt{staging busy}\}$ --- note that \texttt{staging free} is \emph{gone}.
+
+\smallskip
+Apply \texttt{deploy A}. First goal achieved, in four steps.
+
+\smallskip
+\textbf{Difference: \texttt{deployed B}.} By the same recursion this needs
+\texttt{tested B}, which needs \texttt{reviewed B} and \texttt{staging free}.
+
+\smallskip
+\quad\textbf{\texttt{reviewed B}}: apply \texttt{code B}, \texttt{review B}.
+
+\smallskip
+\quad\textbf{\texttt{staging free}} is \emph{no longer true} --- \texttt{test A}
+deleted it. But it is a goal like any other, and \texttt{release staging} adds it,
+with precondition \texttt{staging busy}, which does hold. Apply
+\texttt{release staging}.
+
+\smallskip
+\quad Apply \texttt{test B}, then \texttt{deploy B}.
+
+\smallskip
+\textbf{The plan, nine steps:}
+\texttt{code A}, \texttt{review A}, \texttt{test A}, \texttt{deploy A},
+\texttt{code B}, \texttt{review B}, \texttt{release staging}, \texttt{test B},
+\texttt{deploy B}. It is optimal, and it was found by considering $45$ operators
+rather than by expanding $37$ states.
+
+\smallskip
+\textbf{Where the luck was.} Re-achieving \texttt{staging free} worked because an
+operator exists that restores it. Had there been none --- had locking staging been
+irreversible --- means--ends analysis would have failed here exactly as it fails in
+\dsref{clobber}, and the failure would have been reported as ``no plan exists''.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Omitting the delete list.} Without it every action only adds, no
+        action can interfere, and the problem collapses to
+        \chref{uninformed}'s topological sort. If your planning problem seems too
+        easy, check whether you modelled the interference.
+  \item \textbf{Assuming a plan step must appear in the goal.}
+        \texttt{release staging} appears in no goal and is indispensable.
+  \item \textbf{Trusting means--ends analysis to be complete.} It is sensitive to
+        goal order and can report failure on a solvable problem
+        (\dsref{clobber}).
+  \item \textbf{Adding a heuristic before measuring.} A strong admissible heuristic
+        removed under one per cent of the expansions here, because almost every
+        state lies on an optimal plan.
+  \item \textbf{Confusing progression with regression.} Progression searches
+        forward from the initial state over world states; regression searches
+        backward from the goal over \emph{sets} of states, and the two have very
+        different branching factors.
+  \item \textbf{Forgetting the STRIPS assumption.} Everything unmentioned is
+        unchanged. If an action really does change something you did not list, the
+        plan will be correct on paper and wrong in the world.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[A Release Plan from Operators]
+STRIPS operators, progression search reusing \chref{uninformed}'s frontier,
+means--ends analysis, and the clobbering example. Reproduces
+Table~\ref{tab:planning}.
+\begin{lstlisting}[language=Python]
+"""Chapter 9 lab -- planning a release from STRIPS operators.
+
+Components go through code, review, test and deploy, sharing a single
+staging environment. Testing seizes staging and deletes it -- that one
+delete effect is what makes this planning rather than search.
+"""
+
+import heapq
+import itertools
+from collections import deque
+
+COMPONENTS = ("A", "B")
+
+
+def operators(components):
+    """(name, preconditions, add, delete), all frozensets."""
+    ops = []
+    for c in components:
+        ops.append(("code %s" % c, frozenset(),
+                    frozenset({"coded %s" % c}), frozenset()))
+        ops.append(("review %s" % c, frozenset({"coded %s" % c}),
+                    frozenset({"reviewed %s" % c}), frozenset()))
+        ops.append(("test %s" % c,
+                    frozenset({"reviewed %s" % c, "staging free"}),
+                    frozenset({"tested %s" % c, "staging busy"}),
+                    frozenset({"staging free"})))
+        ops.append(("deploy %s" % c, frozenset({"tested %s" % c}),
+                    frozenset({"deployed %s" % c}), frozenset()))
+    ops.append(("release staging", frozenset({"staging busy"}),
+                frozenset({"staging free"}),
+                frozenset({"staging busy"})))
+    return ops
+
+
+def applicable(state, ops):
+    for op in ops:
+        if op[1] <= state:
+            yield op
+
+
+def apply_op(state, op):
+    _, _, add, dele = op
+    return (state - dele) | add
+
+
+def reachable(init, ops):
+    seen, q = {init}, deque([init])
+    while q:
+        s = q.popleft()
+        for op in applicable(s, ops):
+            n = apply_op(s, op)
+            if n not in seen:
+                seen.add(n)
+                q.append(n)
+    return seen
+
+
+# --- 1. progression search: Chapter 4's frontier, unchanged ---------
+def progression_bfs(init, goal, ops):
+    seen = {init}
+    q = deque([(init, ())])
+    expanded = 0
+    while q:
+        state, plan = q.popleft()
+        if goal <= state:
+            return list(plan), expanded
+        expanded += 1
+        for op in applicable(state, ops):
+            nxt = apply_op(state, op)
+            if nxt not in seen:
+                seen.add(nxt)
+                q.append((nxt, plan + (op[0],)))
+    return None, expanded
+
+
+def h_remaining(state, components):
+    """Actions each component still needs. They are specific to that
+    component, so the sum is a lower bound: admissible."""
+    total = 0
+    for c in components:
+        if "deployed %s" % c in state:
+            total += 0
+        elif "tested %s" % c in state:
+            total += 1
+        elif "reviewed %s" % c in state:
+            total += 2
+        elif "coded %s" % c in state:
+            total += 3
+        else:
+            total += 4
+    return total
+
+
+def progression_astar(init, goal, ops, components):
+    tie = itertools.count()
+    frontier = [(h_remaining(init, components), next(tie), 0, init, ())]
+    best = {init: 0}
+    expanded = 0
+    while frontier:
+        _, _, g, state, plan = heapq.heappop(frontier)
+        if goal <= state:
+            return list(plan), expanded
+        if g > best.get(state, 1 << 30):
+            continue
+        expanded += 1
+        for op in applicable(state, ops):
+            nxt, ng = apply_op(state, op), g + 1
+            if ng < best.get(nxt, 1 << 30):
+                best[nxt] = ng
+                heapq.heappush(frontier,
+                               (ng + h_remaining(nxt, components),
+                                next(tie), ng, nxt, plan + (op[0],)))
+    return None, expanded
+
+
+# --- 2. means-ends analysis: the General Problem Solver -------------
+class Work:
+    def __init__(self):
+        self.ops = 0
+
+
+def means_ends(state, goals, ops, work, depth=0):
+    """Achieve each goal in turn, recursing on preconditions.
+
+    Returns (state, plan) or None. Note it never enumerates states.
+    """
+    if depth > 40:
+        return None
+    plan = []
+    for g in goals:
+        if g in state:
+            continue
+        achieved = False
+        for op in ops:
+            work.ops += 1
+            name, pre, add, dele = op
+            if g not in add:
+                continue
+            got = means_ends(state, sorted(pre), ops, work, depth + 1)
+            if got is None:
+                continue
+            state, sub = got
+            if not pre <= state:
+                continue
+            state = apply_op(state, op)
+            plan += sub + [name]
+            achieved = True
+            break
+        if not achieved:
+            return None            # clobbered, or simply impossible
+    return state, plan
+
+
+def legal(plan, init, goal, ops):
+    by_name = {o[0]: o for o in ops}
+    s = init
+    for step in plan:
+        op = by_name.get(step)
+        if op is None or not op[1] <= s:
+            return False
+        s = apply_op(s, op)
+    return goal <= s
+
+
+if __name__ == "__main__":
+    print("components  states  plan  BFS exp  A* exp  GPS ops")
+    print("-" * 54)
+    rows = {}
+    for n in (2, 3, 4):
+        comps = ("A", "B", "C", "D")[:n]
+        ops = operators(comps)
+        init = frozenset({"staging free"})
+        goal = frozenset({"deployed %s" % c for c in comps})
+
+        states = len(reachable(init, ops))
+        bplan, bexp = progression_bfs(init, goal, ops)
+        aplan, aexp = progression_astar(init, goal, ops, comps)
+        work = Work()
+        got = means_ends(init, sorted(goal), ops, work)
+        gplan = got[1]
+
+        for p in (bplan, aplan, gplan):
+            assert legal(p, init, goal, ops)
+        # all three find an OPTIMAL plan on this domain
+        assert len(aplan) == len(bplan) == len(gplan)
+
+        rows[n] = (states, len(bplan), bexp, aexp, work.ops)
+        print("%10d %7d %5d %8d %7d %8d"
+              % (n, states, len(bplan), bexp, aexp, work.ops))
+
+    # the heuristic is strong and still buys almost nothing
+    st, ln, bexp, aexp, gops = rows[4]
+    comps = ("A", "B", "C", "D")
+    print()
+    print("h at the initial state, 4 components: %d against a true"
+          % h_remaining(frozenset({"staging free"}), comps))
+    print("optimum of %d -- a strong admissible heuristic." % ln)
+    print("A* expanded %d where BFS expanded %d: %.1f%% saved."
+          % (aexp, bexp, 100 * (bexp - aexp) / bexp))
+    print("Almost every reachable state lies on some optimal plan,")
+    print("so there is nothing for f < C* to rule out.")
+    assert (bexp - aexp) / bexp < 0.05
+
+    # means-ends scales quite differently
+    print()
+    print("means-ends considered %d operators where BFS expanded %d"
+          % (gops, bexp))
+    assert gops * 5 < bexp
+
+    # the nine-step plan, and why release staging is in it
+    ops = operators(("A", "B"))
+    init = frozenset({"staging free"})
+    goal = frozenset({"deployed A", "deployed B"})
+    plan, _ = progression_bfs(init, goal, ops)
+    print()
+    print("an optimal two-component plan:")
+    for i, s in enumerate(plan, 1):
+        print("   %d. %s" % (i, s))
+    assert "release staging" in plan
+    print("'release staging' appears in no goal and is indispensable.")
+
+    # --- 3. goal clobbering, in two operators ----------------------
+    print()
+    print("goal clobbering:")
+    clob = [
+        ("lock staging", frozenset({"staging free"}),
+         frozenset({"locked"}), frozenset({"staging free"})),
+        ("run smoke test", frozenset({"staging free"}),
+         frozenset({"smoke ok"}), frozenset()),
+    ]
+    c_init = frozenset({"staging free"})
+    c_goal = frozenset({"locked", "smoke ok"})
+    for order in (["locked", "smoke ok"], ["smoke ok", "locked"]):
+        got = means_ends(c_init, order, clob, Work())
+        if got is None:
+            print("   order %-22s -> FAILS" % (" then ".join(order)))
+        else:
+            print("   order %-22s -> %s"
+                  % (" then ".join(order), " then ".join(got[1])))
+    # one order fails, the other succeeds, on the same solvable problem
+    assert means_ends(c_init, ["locked", "smoke ok"], clob, Work()) is None
+    assert means_ends(c_init, ["smoke ok", "locked"], clob,
+                      Work()) is not None
+    plan, _ = progression_bfs(c_init, c_goal, clob)
+    print("   progression search finds it either way:", plan)
+\end{lstlisting}
+Then delete the \texttt{staging free} literal from \texttt{test}'s delete list and
+re-run. The plan loses \texttt{release staging}, the state space shrinks, and the
+problem becomes the topological sort of \chref{uninformed} --- which is the clearest
+possible demonstration of what the delete list is for.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item The nine-step plan contains \texttt{release staging}, which appears in
+        neither the initial state nor the goal. Explain why it is there, and what
+        would have to be deleted from the domain for it to disappear.
+  \item A strong admissible heuristic reduced $A^{*}$'s expansions by under one per
+        cent on this problem. Give the reason, and describe the kind of planning
+        problem on which the same heuristic would pay well.
+  \item Means--ends analysis found an optimal plan considering $187$ operators
+        where breadth-first search expanded $1{,}163$ states. Give one property of
+        means--ends analysis that breadth-first search has and it does not.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item A \term{STRIPS} operator is preconditions, an add list and a delete list.
+        Applying it gives $(s \setminus \mathrm{delete}) \cup \mathrm{add}$;
+        everything unmentioned is unchanged, which is the \term{STRIPS assumption}
+        and the practical answer to the \term{frame problem}.
+  \item The \term{delete list} is what distinguishes planning from search. Without
+        it, actions cannot interfere and the problem is a topological sort.
+  \item \term{Progression search} runs \chref{uninformed}'s frontier over states of
+        literals, unchanged. A plan step may appear in no goal:
+        \texttt{release staging} is indispensable and mentioned nowhere.
+  \item A strong admissible heuristic saved under one per cent here, because almost
+        every reachable state lies on an optimal plan. Heuristics pay when most of
+        the space is wasted effort; measure before optimising.
+  \item \term{Means--ends analysis} works on differences rather than states,
+        recursing from a missing goal literal to the preconditions of an operator
+        that supplies it. It is the General Problem Solver, and it did the job here
+        for a sixth of the work.
+  \item It is not complete: \term{goal clobbering} makes it sensitive to goal
+        order, and it can report failure on a solvable problem.
+        \term{Partial-order planning} is the response.
+  \item The representation is the gain: a planner can \emph{read} operators rather
+        than merely call a successor function, the domain is data separate from the
+        algorithm, and every plan step is explainable by its preconditions.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Applying a STRIPS operator produces:
+        (a)~$s \cup \mathrm{add}$ (b)~$(s \setminus \mathrm{delete}) \cup
+        \mathrm{add}$ (c)~$(s \cup \mathrm{add}) \setminus \mathrm{pre}$
+        (d)~$\mathrm{add} \setminus \mathrm{delete}$.
+  \item \textbf{(MCQ)} The STRIPS assumption says that: (a)~all actions are
+        reversible (b)~anything not in the add or delete list is unchanged
+        (c)~preconditions are always satisfiable (d)~plans are optimal.
+  \item \textbf{(MCQ)} Goal clobbering means: (a)~two goals are contradictory
+        (b)~achieving one goal destroys a condition another needs (c)~the goal is
+        unreachable (d)~the heuristic overestimates.
+  \item \textbf{(MCQ)} Progression search proceeds: (a)~backward from the goal
+        (b)~forward from the initial state (c)~over plan space
+        (d)~over constraint arcs.
+  \item \textbf{(Short)} Explain what the delete list is for, using
+        \texttt{test A} and \texttt{test B} as your example.
+  \item \textbf{(Short)} Give two things a planner can do with an operator table
+        that it cannot do with an opaque successor function.
+  \item \textbf{(Short)} Means--ends analysis is much cheaper than progression
+        search on this domain and is not complete. State the trade precisely, and
+        say which you would deploy for a release planner used by a delivery team.
+  \item \textbf{(Applied)} Add a component \texttt{C} and an operator
+        \texttt{sign off c} requiring \texttt{deployed c} and adding
+        \texttt{signed c}, with the goal extended to include \texttt{signed C}.
+        Give the optimal plan length by hand, then say whether means--ends analysis
+        taking the goals in the order \texttt{signed C}, \texttt{deployed A},
+        \texttt{deployed B} would succeed, and why.
+\end{reviewq}

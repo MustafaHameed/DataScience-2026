@@ -1,0 +1,561 @@
+%=====================================================================
+\chapter{Knowledge Representation}\label{ch:kr}
+%=====================================================================
+\locator{4}{Part IV --- Knowledge, Logic and Reasoning}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} what a knowledge representation must support, and
+        \textbf{judge} a candidate representation against those criteria.
+  \item \textbf{Build} a semantic network and \textbf{answer} queries by
+        inheritance.
+  \item \textbf{Distinguish} frames, slots and defaults, and \textbf{explain} what
+        default override buys and what it costs.
+  \item \textbf{Identify} a multiple-inheritance conflict and \textbf{say} why no
+        purely local rule resolves it.
+  \item \textbf{Describe} what an ontology adds, and \textbf{say} where this course
+        hands over to \emph{Knowledge Representation and Reasoning}.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{python} (dictionaries, sets and recursion) and \chref{introduction} (the
+third test of the checklist: an explicit representation a domain expert could read
+and correct). No logic is assumed --- \chref{propositional} makes formal what this
+chapter introduces informally.
+\end{prereq}
+
+\begin{keyterms}
+knowledge representation $\bullet$ ontological commitment $\bullet$
+epistemological adequacy $\bullet$ semantic network $\bullet$ node and link
+$\bullet$ \texttt{is-a} $\bullet$ \texttt{instance-of} $\bullet$ inheritance
+$\bullet$ frame $\bullet$ slot $\bullet$ filler $\bullet$ default $\bullet$
+override $\bullet$ non-monotonic reasoning $\bullet$ multiple inheritance
+$\bullet$ ontology $\bullet$ taxonomy
+\end{keyterms}
+
+\section{The Change of Question}
+
+Parts~II and~III asked \emph{what should I do}. Every algorithm took a goal and
+searched for a sequence of actions. The knowledge was implicit: buried in a
+successor function, a constraint predicate, an operator table.
+
+Part~IV asks a different question: \emph{what follows from what I have been told}.
+The delivery team knows a great many things --- that a hotfix is a kind of release,
+that every release needs a sign-off, that Ayesha owns the payments service, that
+releases normally go out on Thursdays except this one. None of that is a goal. It
+is what the organisation knows, and the useful question is what else must therefore
+be true.
+
+That change is why this part exists, and it has a practical consequence worth
+stating at the start: \emph{a representation can be corrected by someone who cannot
+program}. An operations lead can tell you that a hotfix does not need a full
+regression pass. If that fact lives in a data structure, they can point at it. If it
+lives in an \texttt{if} statement, they cannot.
+
+\begin{definitionbox}[What a knowledge representation must support]
+A representation is a scheme for writing down what is known so that a program can
+reason with it. Four requirements, from Russell and Norvig:
+\begin{tight}
+  \item \term{Representational adequacy} --- it can express the things you need to
+        say, including the awkward ones: defaults, exceptions, uncertainty.
+  \item \term{Inferential adequacy} --- new facts can be derived from stored ones.
+  \item \term{Inferential efficiency} --- the derivation happens in acceptable
+        time.
+  \item \term{Acquisitional efficiency} --- new knowledge can be added easily, and
+        ideally by a domain expert rather than by an engineer.
+\end{tight}
+These pull against each other. A representation expressive enough to say everything
+is generally one in which inference is intractable, and that tension is the whole
+subject.
+\end{definitionbox}
+
+\section{Semantic Networks}
+
+The oldest and simplest representation: a graph. Nodes are concepts or individuals;
+labelled edges are relations between them. Two link types carry most of the weight:
+\texttt{is-a}, relating a class to a more general class, and \texttt{instance-of},
+relating an individual to its class.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  cls/.style={rounded corners=3pt, draw=primary, line width=1pt, fill=primary!10,
+              text=primary!60!black, font=\scriptsize\bfseries, align=center,
+              minimum width=2.1cm, minimum height=0.6cm},
+  ind/.style={rounded corners=10pt, draw=goldhl, line width=1pt, fill=goldhl!12,
+              text=goldhl!50!black, font=\scriptsize\bfseries, align=center,
+              minimum width=2.1cm, minimum height=0.6cm},
+  isa/.style={-{Stealth[length=1.9mm]}, primary!60, line width=0.9pt},
+  inst/.style={-{Stealth[length=1.9mm]}, goldhl!70, line width=0.9pt,
+               dash pattern=on 3pt off 2pt},
+  rel/.style={-{Stealth[length=1.9mm]}, tealhl!70, line width=0.9pt},
+  el/.style={font=\tiny, text=neutral, inner sep=1.5pt}]
+
+\node[cls] (art)     at (0,3.0)    {Artefact};
+\node[cls] (rel)     at (-2.4,1.8) {Release};
+\node[cls] (doc)     at (2.4,1.8)  {Document};
+\node[cls] (hot)     at (-4.2,0.6) {Hotfix};
+\node[cls] (maj)     at (-0.9,0.6) {Major Release};
+\node[ind] (r47)     at (-4.2,-0.7) {Release 4.7};
+\node[cls] (dev)     at (3.6,0.4)  {Developer};
+\node[ind] (ayesha)  at (3.6,-0.7) {Ayesha};
+\node[cls] (svc)     at (0.9,-0.7) {Service};
+\node[ind] (pay)     at (0.9,-1.9) {Payments};
+
+\draw[isa] (rel) -- node[el, above left] {is-a} (art);
+\draw[isa] (doc) -- node[el, above right] {is-a} (art);
+\draw[isa] (hot) -- node[el, left] {is-a} (rel);
+\draw[isa] (maj) -- node[el, right] {is-a} (rel);
+\draw[inst] (r47) -- node[el, left] {instance-of} (hot);
+\draw[inst] (ayesha) -- node[el, right] {instance-of} (dev);
+\draw[inst] (pay) -- node[el, left] {instance-of} (svc);
+\draw[rel] (ayesha) -- node[el, above] {owns} (svc);
+\draw[rel] (r47) to[bend right=18] node[el, below] {changes} (pay);
+
+\node[rounded corners=3pt, fill=lightbg, draw=primary!30, line width=0.8pt,
+      text=primary!70!black, font=\scriptsize, text width=5.4cm,
+      align=flush left, inner sep=6pt, anchor=west] at (5.2,2.1)
+  {\textbf{The query that matters.} Nothing in this graph says
+   \emph{Release 4.7 is an Artefact}. It is derived, by walking
+   \texttt{instance-of} once and then \texttt{is-a} upwards until the walk stops:
+   Release 4.7 $\rightarrow$ Hotfix $\rightarrow$ Release $\rightarrow$ Artefact.
+   That walk is \term{inheritance}, and it is the entire inference mechanism of a
+   semantic network.};
+\end{tikzpicture}}%
+{A fragment of a delivery ontology. Rounded boxes are individuals, square boxes are
+classes; solid arrows are \texttt{is-a}, dashed are \texttt{instance-of}.}
+{semantic-net}
+
+Inheritance is cheap, and it is the whole reason the representation is worth
+having: a property stated once at \texttt{Release} is available to every hotfix and
+every major release, without being repeated and --- more importantly --- without
+being repeated \emph{inconsistently}.
+
+\section{Frames, Slots and Defaults}
+
+A semantic network drawn as a graph becomes unreadable at a few hundred nodes. The
+same information organised by concept is a \term{frame}: a named bundle of
+\term{slots}, each with a \term{filler} or a \term{default}.
+
+\begin{examplebox}[Three frames from the delivery domain]
+\begin{tabular}{@{}L{3.0cm}L{5.1cm}L{5.9cm}@{}}
+\toprule
+\textbf{Frame} & \textbf{Slot} & \textbf{Value} \\
+\midrule
+\texttt{Release} & \texttt{is-a} & \texttt{Artefact} \\
+ & \texttt{needs-signoff} & \texttt{yes} \emph{(default)} \\
+ & \texttt{regression-pass} & \texttt{full} \emph{(default)} \\
+ & \texttt{window} & \texttt{Thursday} \emph{(default)} \\
+\midrule
+\texttt{Hotfix} & \texttt{is-a} & \texttt{Release} \\
+ & \texttt{regression-pass} & \texttt{smoke} \quad\textbf{(overrides)} \\
+ & \texttt{window} & \texttt{any} \quad\textbf{(overrides)} \\
+\midrule
+\texttt{Release 4.7} & \texttt{instance-of} & \texttt{Hotfix} \\
+ & \texttt{changes} & \texttt{Payments} \\
+\bottomrule
+\end{tabular}
+\end{examplebox}
+
+Ask for \texttt{Release 4.7}'s \texttt{regression-pass}. It has none of its own, so
+the search goes to \texttt{Hotfix}, which says \texttt{smoke}, and stops. Ask for
+\texttt{needs-signoff}: \texttt{Release 4.7} has none, \texttt{Hotfix} has none,
+\texttt{Release} says \texttt{yes}. The rule is \emph{the most specific value
+wins}, and it falls out of searching upward and stopping at the first hit.
+
+\begin{conceptbox}
+Defaults are what make this representation fit an organisation, and they are also
+where it stops being logic.
+
+``Releases go out on Thursdays'' is not a universally quantified statement --- it
+is false of hotfixes --- and yet it is exactly what the delivery lead would tell
+you, and exactly what you want the system to assume when it knows nothing more.
+Reasoning that can be \emph{withdrawn} when a more specific fact arrives is
+\term{non-monotonic}: adding knowledge can remove a conclusion.
+
+Classical logic, the subject of \chref{propositional} and \chref{fol}, is
+monotonic: once entailed, always entailed. The two chapters therefore buy soundness
+and lose the ability to say ``normally''. That trade is real, and neither side wins
+outright.
+\end{conceptbox}
+
+\section{When Inheritance Has No Answer}
+
+Defaults are convenient until a concept inherits from two places that disagree.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  cls/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!10,
+              text=#1!55!black, font=\scriptsize\bfseries, align=center,
+              minimum width=2.6cm, minimum height=0.68cm},
+  ind/.style={rounded corners=10pt, draw=goldhl, line width=1.2pt, fill=goldhl!14,
+              text=goldhl!50!black, font=\scriptsize\bfseries, align=center,
+              minimum width=2.6cm, minimum height=0.68cm},
+  isa/.style={-{Stealth[length=1.9mm]}, line width=1pt},
+  el/.style={font=\tiny, text=neutral, inner sep=1.5pt}]
+
+\node[cls=primary]  (rel) at (0,2.1)     {Release};
+\node[cls=greenhl]  (hot) at (-2.3,0.75) {Hotfix};
+\node[cls=accent]   (reg) at (2.3,0.75)  {Regulated Change};
+\node[ind]          (r47) at (0,-0.6)    {Release 4.7};
+
+\draw[isa, primary!60] (hot) -- (rel);
+\draw[isa, primary!60] (reg) -- (rel);
+\draw[isa, greenhl!70] (r47) -- node[el, left] {is-a} (hot);
+\draw[isa, accent!70]  (r47) -- node[el, right] {is-a} (reg);
+
+\node[font=\tiny, text=greenhl!50!black, anchor=east, align=right]
+  at (-3.7,0.75) {\texttt{needs-signoff}\\ \textbf{no}};
+\node[font=\tiny, text=accent!55!black, anchor=west, align=left]
+  at (3.75,0.75) {\texttt{needs-signoff}\\ \textbf{yes}};
+\node[font=\tiny, text=primary!60!black, anchor=west, align=left]
+  at (1.5,2.1) {\texttt{needs-signoff}: yes};
+
+\node[rounded corners=3pt, fill=accent!7, draw=accent!55, line width=0.9pt,
+      text=accent!55!black, font=\scriptsize, text width=12.8cm,
+      align=flush left, inner sep=6pt] at (0,-2.1)
+  {\textbf{Does Release 4.7 need a sign-off?} Both parents are equally specific and
+   they disagree. Depth-first inheritance answers whichever parent it happens to
+   visit first --- so the answer depends on the order the links were entered, which
+   is not a property of the knowledge at all. Breadth-first inheritance has the
+   same defect with a different bias.
+
+   \smallskip
+   There is no purely local rule that settles this. The honest options are to
+   \textbf{detect the conflict and refuse to answer}, to demand an explicit
+   precedence between the two parents, or to move to a representation with a
+   defined semantics for it. A system that quietly returns ``no'' here is the
+   dangerous one --- and in this instance it would be waving a regulated change
+   through without a sign-off.};
+\end{tikzpicture}}%
+{A multiple-inheritance conflict --- the ``Nixon diamond'' of the literature, in a
+delivery setting. The lab detects it rather than guessing.}{diamond}
+
+\section{Ontologies}
+
+An \term{ontology} is a semantic network taken seriously: a shared, formal
+vocabulary of the types in a domain, their relations, and the constraints on them,
+agreed across an organisation rather than invented per system.
+
+The value is not the graph; it is the \emph{agreement}. When the delivery tool, the
+incident tool and the finance system all mean the same thing by ``release'', a query
+can cross them. When they do not, the integration work is endless and the reports
+disagree. Most of the practical benefit of ontologies in industry comes from that,
+and not from the inference.
+
+Formally, an ontology commits to answers for questions a semantic network leaves
+open: is \texttt{is-a} transitive (yes), can an individual belong to two classes
+(usually yes), can a class be an individual, what makes two individuals identical.
+Those are \term{ontological commitments}, and writing them down is most of the work.
+
+\section{Where This Course Stops}
+
+This chapter is a first pass, deliberately. Everything after it in this handout
+uses semantic networks and frames as the \emph{thing reasoned over}:
+\chref{propositional} and \chref{fol} give inference a formal footing, and
+\chref{expert} turns a frame base plus rules into a working system.
+
+What this course does not cover is the formal side of representation itself:
+description logic, reasoning over description logic, ontology languages such as OWL,
+logical agents and commonsense reasoning. Those are the content of the HEC elective
+\emph{Knowledge Representation and Reasoning}, for which this course is the
+prerequisite; Appendix~F sets out the line.
+
+\begin{worked}[Answering four queries by inheritance]
+Using the frames of the examplebox and the conflict of \dsref{diamond}.
+
+\smallskip
+\textbf{Query 1: \texttt{Release 4.7 . regression-pass}}
+\begin{tight}
+  \item \texttt{Release 4.7}: no local slot. Follow \texttt{instance-of} to
+        \texttt{Hotfix}.
+  \item \texttt{Hotfix}: \texttt{regression-pass = smoke}. \textbf{Stop.}
+\end{tight}
+\textbf{Answer: \texttt{smoke}}, inherited from \texttt{Hotfix}. Note that
+\texttt{Release} says \texttt{full} and is never consulted --- the search stops at
+the first hit, which is what ``most specific wins'' means operationally.
+
+\smallskip
+\textbf{Query 2: \texttt{Release 4.7 . needs-signoff}} (ignoring the second parent
+for the moment)
+\begin{tight}
+  \item \texttt{Release 4.7}: nothing. \texttt{Hotfix}: nothing.
+        \texttt{Release}: \texttt{yes}. \textbf{Stop.}
+\end{tight}
+\textbf{Answer: \texttt{yes}}, inherited from two levels up. The same walk answered
+both queries; only the depth at which it stopped differed.
+
+\smallskip
+\textbf{Query 3: \texttt{Release 4.7 . window}}
+\begin{tight}
+  \item \texttt{Hotfix} overrides with \texttt{any}. \textbf{Answer: \texttt{any}}
+        --- the default \texttt{Thursday} at \texttt{Release} is correctly
+        suppressed.
+\end{tight}
+Now add the fact that \texttt{Release 4.7} is also a \texttt{Regulated Change} whose
+window is \texttt{Thursday}. The answer changes to a conflict. \emph{Adding
+knowledge removed a conclusion}: that is non-monotonicity, in three lines.
+
+\smallskip
+\textbf{Query 4: \texttt{Release 4.7 . needs-signoff}, with both parents.}
+\begin{tight}
+  \item \texttt{Hotfix} says \texttt{no}; \texttt{Regulated Change} says
+        \texttt{yes}. Both are at distance~1 from the individual.
+  \item Depth-first inheritance returns whichever was entered first. That is not an
+        answer; it is an artefact of the file.
+\end{tight}
+\textbf{Answer: conflict}, and the system should say so. The lab returns the set
+$\{\texttt{yes}, \texttt{no}\}$ with its provenance, and leaves the decision to a
+person --- which in this case is the only defensible behaviour, because the two
+sources are a delivery convention and a regulatory obligation and they are not
+equally negotiable.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Letting inheritance guess on a multiple-inheritance conflict.} The
+        answer then depends on insertion order. Detect it and refuse.
+  \item \textbf{Treating a default as a universal.} ``Releases go out on Thursdays''
+        is false of hotfixes. If you write it as $\forall$ in \chref{fol}, the
+        knowledge base becomes inconsistent the first time a hotfix appears.
+  \item \textbf{Putting knowledge in code.} A rule inside an \texttt{if} statement
+        cannot be reviewed by the person who knows whether it is right.
+  \item \textbf{Cycles in \texttt{is-a}.} An inheritance walk that does not keep a
+        visited set will not terminate. The lab keeps one.
+  \item \textbf{Confusing \texttt{is-a} with \texttt{instance-of}.} A hotfix
+        \emph{is a kind of} release; Release 4.7 \emph{is a} hotfix. Conflating
+        them lets a class inherit properties of an individual, and the errors are
+        very hard to see.
+  \item \textbf{Expecting the ontology to pay for itself through inference.} In
+        practice most of the value is the shared vocabulary.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[A Semantic Network That Answers Queries]
+Frames in a dictionary, inheritance by walking upward, defaults with override, and
+a conflict that is detected rather than guessed.
+\begin{lstlisting}[language=Python]
+"""Chapter 10 lab -- a semantic network with frames and defaults.
+
+Inheritance is one upward walk. The interesting cases are the third
+query, where a default is correctly suppressed by a more specific one,
+and the fourth, where two equally specific parents disagree and the
+only defensible answer is to say so.
+"""
+
+# frame -> {slot: value}. 'is-a' and 'instance-of' are the links the
+# inheritance walk follows; everything else is ordinary knowledge.
+FRAMES = {
+    "Artefact": {
+        "owned-by": "Delivery",
+    },
+    "Release": {
+        "is-a": ["Artefact"],
+        "needs-signoff": "yes",          # default
+        "regression-pass": "full",       # default
+        "window": "Thursday",            # default
+    },
+    "Hotfix": {
+        "is-a": ["Release"],
+        "regression-pass": "smoke",      # overrides Release
+        "window": "any",                 # overrides Release
+    },
+    "Regulated Change": {
+        "is-a": ["Release"],
+        "needs-signoff": "yes",
+        "window": "Thursday",
+    },
+    "Release 4.7": {
+        "instance-of": ["Hotfix"],
+        "changes": "Payments",
+    },
+    "Developer": {},
+    "Ayesha": {"instance-of": ["Developer"], "owns": "Payments"},
+}
+
+LINKS = ("instance-of", "is-a")
+
+
+def parents(frame):
+    out = []
+    for link in LINKS:
+        out += FRAMES.get(frame, {}).get(link, [])
+    return out
+
+
+def ancestors(frame):
+    """Every class above this one, nearest first. The seen set is what
+    stops an is-a cycle from looping forever."""
+    out, seen, queue = [], {frame}, list(parents(frame))
+    while queue:
+        f = queue.pop(0)
+        if f in seen:
+            continue
+        seen.add(f)
+        out.append(f)
+        queue += parents(f)
+    return out
+
+
+def get(frame, slot):
+    """Most specific value wins. Returns (value, where it came from),
+    or a conflict if two equally distant sources disagree."""
+    if slot in FRAMES.get(frame, {}):
+        return FRAMES[frame][slot], frame
+
+    # breadth-first by distance, so 'equally specific' is well defined
+    level, seen = list(parents(frame)), {frame}
+    distance = 1
+    while level:
+        hits = []
+        for f in level:
+            if f in seen:
+                continue
+            if slot in FRAMES.get(f, {}):
+                hits.append((FRAMES[f][slot], f))
+        values = {v for v, _ in hits}
+        if len(values) > 1:
+            return ("CONFLICT", sorted(hits)), distance
+        if hits:
+            return hits[0][0], hits[0][1]
+        seen |= set(level)
+        nxt = []
+        for f in level:
+            nxt += parents(f)
+        level = [f for f in nxt if f not in seen]
+        distance += 1
+    return None, None
+
+
+def isa_chain(frame):
+    return [frame] + ancestors(frame)
+
+
+if __name__ == "__main__":
+    print("inheritance chain for Release 4.7:")
+    print("   " + " -> ".join(isa_chain("Release 4.7")))
+    assert "Artefact" in ancestors("Release 4.7")
+    print()
+
+    print("queries, with the frame each answer came from")
+    print("-" * 56)
+    for slot in ("regression-pass", "needs-signoff", "window",
+                 "changes", "owned-by"):
+        val, src = get("Release 4.7", slot)
+        print("   %-16s = %-10s  (from %s)" % (slot, val, src))
+
+    # the default was correctly suppressed
+    assert get("Release 4.7", "regression-pass") == ("smoke", "Hotfix")
+    assert get("Release", "regression-pass") == ("full", "Release")
+    # and a default two levels up is still found
+    assert get("Release 4.7", "needs-signoff") == ("yes", "Release")
+    print()
+    print("'smoke' overrode 'full'; 'yes' was still reached two levels up.")
+
+    # --- now add a second, equally specific parent ----------------
+    print()
+    print("adding 'Release 4.7 is-a Regulated Change' ...")
+    FRAMES["Hotfix"]["needs-signoff"] = "no"      # delivery convention
+    FRAMES["Release 4.7"]["is-a"] = ["Regulated Change"]
+
+    val, dist = get("Release 4.7", "needs-signoff")
+    print("   needs-signoff =", val[0] if isinstance(val, tuple) else val)
+    assert isinstance(val, tuple) and val[0] == "CONFLICT"
+    for v, src in val[1]:
+        print("      %-4s from %s" % (v, src))
+    print()
+    print("Two parents at the same distance disagree. Depth-first")
+    print("inheritance would answer whichever link was entered first,")
+    print("which is a property of the file and not of the knowledge.")
+    print("Here that would wave a regulated change through with no")
+    print("sign-off, so the only defensible answer is to report the")
+    print("conflict and its provenance.")
+
+    # non-monotonicity, demonstrated: adding knowledge REMOVED an answer
+    print()
+    print("Note what just happened: adding a fact removed a")
+    print("conclusion. Classical logic cannot do that, which is")
+    print("exactly the trade Chapters 11 and 12 make.")
+\end{lstlisting}
+Then add an explicit precedence --- a slot \texttt{overrides} on
+\texttt{Regulated Change} naming \texttt{Hotfix} --- and make \texttt{get} consult
+it before reporting a conflict. That is the smallest honest fix, and it is worth
+noticing that it works by adding \emph{knowledge about the knowledge}, which is the
+direction description logic goes in.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item \texttt{Release} says \texttt{regression-pass = full} and \texttt{Hotfix}
+        says \texttt{smoke}. Explain, in terms of the inheritance walk, why
+        \texttt{Release 4.7} gets \texttt{smoke}, and why no rule about
+        ``specificity'' has to be stated separately.
+  \item Adding the fact that Release~4.7 is a regulated change \emph{removed} the
+        system's answer about sign-off. Name the property of this kind of reasoning
+        that this demonstrates, and say whether classical logic has it.
+  \item Give one thing a semantic network can express that a set of universally
+        quantified logical statements cannot, and one thing logic can do that the
+        network cannot.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item A knowledge representation must be \term{representationally} and
+        \term{inferentially adequate}, \term{efficient}, and easy to add to --- and
+        those requirements pull against each other. Expressive representations tend
+        to have intractable inference.
+  \item A \term{semantic network} is nodes and labelled links. \texttt{is-a}
+        relates a class to a more general class, \texttt{instance-of} relates an
+        individual to a class, and \term{inheritance} --- one upward walk --- is
+        the whole inference mechanism.
+  \item A \term{frame} organises the same knowledge by concept: slots with fillers
+        or \term{defaults}. The most specific value wins, which falls out of
+        stopping the walk at the first hit.
+  \item Defaults make the representation fit an organisation and make the reasoning
+        \term{non-monotonic}: adding knowledge can remove a conclusion. Classical
+        logic is monotonic and cannot say ``normally''.
+  \item \term{Multiple inheritance} from disagreeing parents has no purely local
+        resolution. Detect the conflict, report its provenance, and refuse to
+        guess --- the dangerous system is the one that quietly answers.
+  \item An \term{ontology} is a shared, formal vocabulary with explicit
+        \term{ontological commitments}. In practice most of its value is the
+        agreement, not the inference.
+  \item This is a first pass. Description logic, ontology languages and commonsense
+        reasoning belong to \emph{Knowledge Representation and Reasoning}
+        (Appendix~F).
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} In a semantic network, \texttt{is-a} relates:
+        (a)~an individual to a class (b)~a class to a more general class
+        (c)~two individuals (d)~a slot to a filler.
+  \item \textbf{(MCQ)} ``The most specific value wins'' is implemented by:
+        (a)~sorting all values (b)~stopping the upward walk at the first hit
+        (c)~preferring the root (d)~taking the majority.
+  \item \textbf{(MCQ)} Reasoning in which adding a fact can remove a conclusion is:
+        (a)~monotonic (b)~non-monotonic (c)~unsound (d)~incomplete.
+  \item \textbf{(MCQ)} A multiple-inheritance conflict between two equally specific
+        parents should be: (a)~resolved depth-first (b)~resolved breadth-first
+        (c)~reported, with its provenance (d)~resolved by the alphabetically first
+        parent.
+  \item \textbf{(Short)} State the four requirements on a knowledge representation
+        and give one pair that pull against each other, with an example.
+  \item \textbf{(Short)} Explain the difference between \texttt{is-a} and
+        \texttt{instance-of}, and describe a concrete error caused by conflating
+        them.
+  \item \textbf{(Short)} Why is ``most of the value of an ontology is the
+        agreement, not the inference'' a reasonable claim? Give a delivery example.
+  \item \textbf{(Applied)} Extend the frames of this chapter with a class
+        \texttt{Emergency Hotfix}, a kind of \texttt{Hotfix}, whose
+        \texttt{needs-signoff} is \texttt{retrospective}. Give the value of
+        \texttt{needs-signoff}, \texttt{regression-pass} and \texttt{window} for an
+        instance of it, naming the frame each answer comes from. Then say what
+        happens if that instance is also a \texttt{Regulated Change}, and what the
+        system should do.
+\end{reviewq}

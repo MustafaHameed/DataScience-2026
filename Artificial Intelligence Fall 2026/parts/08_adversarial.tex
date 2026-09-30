@@ -1,0 +1,652 @@
+%=====================================================================
+\chapter{Adversarial Search and Game Playing}\label{ch:adversarial}
+%=====================================================================
+\locator{3}{Part III --- Constraints, Games and Plans}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Model} a two-party interaction as a game tree with a utility at
+        each leaf, and \textbf{say} what the zero-sum assumption commits you to.
+  \item \textbf{Compute} the minimax value of a position by hand and in code.
+  \item \textbf{Apply} alpha--beta pruning, \textbf{trace} its cutoffs, and
+        \textbf{state} the bound it achieves under perfect move ordering.
+  \item \textbf{Explain} why move ordering determines how much is pruned, and
+        \textbf{judge} when the cost of ordering exceeds what it saves.
+  \item \textbf{Cut off} search with an evaluation function, and \textbf{recognise}
+        the horizon effect.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{uninformed} (depth-first search, which is what a game tree search is) and
+\chref{agents} --- specifically the \emph{multi-agent} property of a task
+environment. This chapter is what you do when the sixth property of
+Table~\ref{tab:envprops} comes out multi-agent.
+\end{prereq}
+
+\begin{keyterms}
+game tree $\bullet$ ply $\bullet$ terminal state $\bullet$ utility $\bullet$
+zero-sum $\bullet$ minimax value $\bullet$ MAX and MIN $\bullet$ alpha--beta
+pruning $\bullet$ cutoff $\bullet$ move ordering $\bullet$ principal variation
+$\bullet$ cutoff test $\bullet$ evaluation function $\bullet$ horizon effect
+\end{keyterms}
+
+\section{When the Other Party Is Choosing Too}
+
+The delivery team and the client are agreeing a release slot. We propose, they
+respond, we respond, and so on until somebody accepts or the deadline forces a
+decision. Every option we might take is worth something to us --- and what we
+eventually get depends on what they do next, which depends on what we do now.
+
+\chref{local} would treat their behaviour as part of the landscape. \chref{csp}
+would treat it as a constraint. Both are wrong in the same way: the other party is
+not weather and not a rule. They are optimising, and if we model them as noise they
+will exploit us systematically. That is the \emph{multi-agent} property of
+\chref{agents}, and this chapter is what it costs to take it seriously.
+
+\begin{definitionbox}[Game tree and minimax value]
+A \term{game tree} has the current position at its root; the children of a node are
+the positions reachable by one legal move; and each \term{terminal} position has a
+\term{utility} for us. Levels alternate between \term{MAX} (our move --- we choose
+the largest value) and \term{MIN} (their move --- they choose the smallest). One
+level is a \term{ply}.
+
+The \term{minimax value} of a node is what the position is worth under optimal play
+by both sides:
+\[
+  \mathrm{minimax}(n) =
+  \begin{cases}
+    \mathrm{utility}(n) & \text{$n$ terminal} \\
+    \max_{s} \mathrm{minimax}(s) & \text{$n$ is a MAX node} \\
+    \min_{s} \mathrm{minimax}(s) & \text{$n$ is a MIN node}
+  \end{cases}
+\]
+\end{definitionbox}
+
+\begin{alertbox}[What MIN assumes, and when it is wrong]
+Minimax assumes the opponent plays the move that is worst for us --- that the game
+is \term{zero-sum}, our gain being exactly their loss. A negotiation usually is not:
+both sides can lose by failing to agree, and both can gain from a slot that suits
+each.
+
+Assuming an optimal adversary is nevertheless the right default, because it is the
+\emph{safe} assumption. The minimax value is a guarantee: we can obtain at least
+this much whatever they do. Model them as cooperative and you get a better number
+and no guarantee at all. Know which one you are quoting.
+\end{alertbox}
+
+\section{Minimax by Hand}
+
+\dsref{game-tree} is a three-ply negotiation, small enough to compute in your head
+and used for the rest of this chapter. Leaves are days of delay avoided, from our
+point of view.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  mx/.style={rectangle, rounded corners=2pt, draw=primary, line width=1pt,
+             fill=primary!12, text=primary!60!black, font=\scriptsize\bfseries,
+             minimum width=0.72cm, minimum height=0.56cm},
+  mn/.style={circle, draw=accent, line width=1pt, fill=accent!12,
+             text=accent!60!black, font=\scriptsize\bfseries,
+             minimum size=0.66cm, inner sep=0pt},
+  lf/.style={rectangle, rounded corners=2pt, draw=neutral, line width=0.8pt,
+             fill=gray!8, text=neutral!60!black, font=\scriptsize,
+             minimum width=0.62cm, minimum height=0.52cm},
+  ed/.style={neutral!70, line width=0.8pt},
+  lab/.style={font=\tiny, text=neutral}]
+
+\node[mx] (r) at (0,3.1) {5};
+\node[mn] (m1) at (-2.6,1.9) {5};
+\node[mn] (m2) at (2.6,1.9)  {0};
+\node[mx] (a) at (-3.9,0.7) {5};
+\node[mx] (b) at (-1.3,0.7) {9};
+\node[mx] (c) at (1.3,0.7)  {2};
+\node[mx] (d) at (3.9,0.7)  {0};
+\node[lf] (l1) at (-4.55,-0.5) {3};
+\node[lf] (l2) at (-3.25,-0.5) {5};
+\node[lf] (l3) at (-1.95,-0.5) {6};
+\node[lf] (l4) at (-0.65,-0.5) {9};
+\node[lf] (l5) at (0.65,-0.5)  {1};
+\node[lf] (l6) at (1.95,-0.5)  {2};
+\node[lf] (l7) at (3.25,-0.5)  {0};
+\node[lf] (l8) at (4.55,-0.5)  {-1};
+
+\foreach \a/\b in {r/m1,r/m2,m1/a,m1/b,m2/c,m2/d,
+                   a/l1,a/l2,b/l3,b/l4,c/l5,c/l6,d/l7,d/l8}{
+  \draw[ed] (\a) -- (\b);}
+
+\node[lab, anchor=east] at (-5.1,3.1)  {\textbf{MAX} (us)};
+\node[lab, anchor=east] at (-5.1,1.9)  {\textbf{MIN} (them)};
+\node[lab, anchor=east] at (-5.1,0.7)  {\textbf{MAX} (us)};
+\node[lab, anchor=east] at (-5.1,-0.5) {utility to us};
+
+\node[font=\tiny\itshape, text=neutral, text width=4.2cm, align=flush left,
+      anchor=west] at (5.2,1.4)
+  {Working upward: the MAX row takes $\max(3,5)=5$, $\max(6,9)=9$,
+   $\max(1,2)=2$, $\max(0,-1)=0$. The MIN row takes $\min(5,9)=5$ and
+   $\min(2,0)=0$. The root takes $\max(5,0)=5$.};
+\node[font=\tiny\bfseries, text=primary, text width=4.2cm, align=flush left,
+      anchor=west] at (5.2,-0.2)
+  {So the position is worth 5, and our first move is to the left.};
+\end{tikzpicture}}%
+{A three-ply negotiation. Squares are our choices, circles theirs. Minimax
+evaluates all eight leaves to establish that the position is worth $5$.}{game-tree}
+
+\section{Alpha--Beta Pruning}
+
+Minimax examined every leaf. Most of them could not have changed the answer.
+
+\begin{definitionbox}[Alpha and beta]
+Carry two bounds down the tree:
+\begin{tight}
+  \item $\alpha$ --- the best value MAX can already guarantee somewhere above.
+  \item $\beta$ --- the best value MIN can already guarantee somewhere above.
+\end{tight}
+At any node, if $\alpha \ge \beta$, stop examining the remaining children: the
+player above already has a better alternative and will never choose this branch, so
+its exact value cannot matter.
+
+\term{Alpha--beta pruning} returns exactly the minimax value. It is not an
+approximation --- it computes the same answer while declining to evaluate leaves
+that provably cannot affect it.
+\end{definitionbox}
+
+\dsref{alphabeta} traces it on the same tree. Five of eight leaves are evaluated.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  mx/.style={rectangle, rounded corners=2pt, draw=primary, line width=1pt,
+             fill=primary!12, text=primary!60!black, font=\scriptsize\bfseries,
+             minimum width=0.72cm, minimum height=0.56cm},
+  mn/.style={circle, draw=accent, line width=1pt, fill=accent!12,
+             text=accent!60!black, font=\scriptsize\bfseries,
+             minimum size=0.66cm, inner sep=0pt},
+  lf/.style={rectangle, rounded corners=2pt, draw=greenhl, line width=0.9pt,
+             fill=greenhl!14, text=greenhl!50!black, font=\scriptsize\bfseries,
+             minimum width=0.62cm, minimum height=0.52cm},
+  sk/.style={rectangle, rounded corners=2pt, draw=neutral!45, line width=0.7pt,
+             fill=gray!5, text=neutral!70, font=\scriptsize,
+             minimum width=0.62cm, minimum height=0.52cm},
+  ed/.style={neutral!70, line width=0.8pt},
+  dead/.style={neutral!35, line width=0.8pt, dash pattern=on 2pt off 2pt},
+  lab/.style={font=\tiny, text=neutral},
+  cut/.style={accent, line width=1.2pt}]
+
+\node[mx] (r) at (0,3.1) {5};
+\node[mn] (m1) at (-2.6,1.9) {5};
+\node[mn] (m2) at (2.6,1.9)  {2};
+\node[mx] (a) at (-3.9,0.7) {5};
+\node[mx] (b) at (-1.3,0.7) {6};
+\node[mx] (c) at (1.3,0.7)  {2};
+\node[sk] (d) at (3.9,0.7)  {?};
+\node[lf] (l1) at (-4.55,-0.5) {3};
+\node[lf] (l2) at (-3.25,-0.5) {5};
+\node[lf] (l3) at (-1.95,-0.5) {6};
+\node[sk] (l4) at (-0.65,-0.5) {9};
+\node[lf] (l5) at (0.65,-0.5)  {1};
+\node[lf] (l6) at (1.95,-0.5)  {2};
+\node[sk] (l7) at (3.25,-0.5)  {0};
+\node[sk] (l8) at (4.55,-0.5)  {-1};
+
+\foreach \a/\b in {r/m1,r/m2,m1/a,m1/b,m2/c,
+                   a/l1,a/l2,b/l3,c/l5,c/l6}{\draw[ed] (\a) -- (\b);}
+\foreach \a/\b in {m2/d,b/l4,d/l7,d/l8}{\draw[dead] (\a) -- (\b);}
+
+% cutoff 1: at the MAX node b, after leaf 6, alpha=6 >= beta=5
+\draw[cut] (-1.10,0.28) -- (-0.60,-0.12);
+\draw[cut] (-0.60,0.28) -- (-1.10,-0.12);
+\node[font=\tiny\bfseries, text=accent, anchor=west] at (-0.48,0.10)
+  {$\alpha=6 \ge \beta=5$};
+
+% cutoff 2: at the MIN node m2, after child c, beta=2 <= alpha=5
+\draw[cut] (3.05,1.45) -- (3.55,1.05);
+\draw[cut] (3.55,1.45) -- (3.05,1.05);
+\node[font=\tiny\bfseries, text=accent, anchor=west] at (3.65,1.25)
+  {$\beta=2 \le \alpha=5$};
+
+\node[lab, anchor=east] at (-5.1,3.1)  {\textbf{MAX} (us)};
+\node[lab, anchor=east] at (-5.1,1.9)  {\textbf{MIN} (them)};
+\node[lab, anchor=east] at (-5.1,0.7)  {\textbf{MAX} (us)};
+\node[lab, anchor=east] at (-5.1,-0.5) {leaves};
+
+\node[rounded corners=3pt, fill=greenhl!8, draw=greenhl!50, line width=0.9pt,
+      text=greenhl!45!black, font=\scriptsize, text width=13.4cm,
+      align=flush left, inner sep=6pt] at (0,-1.9)
+  {\textbf{Five leaves evaluated instead of eight, and the answer is still 5.}
+   The first cutoff: our node has already found $6$, and their node above has
+   already secured $5$ --- so they will never come this way, and leaf~$9$ is
+   irrelevant. The second is larger: their right-hand node has found $2$, and we
+   have already secured $5$ at the root, so we will never come this way and the
+   entire right subtree below it --- three more leaves --- is skipped. Note that
+   the dashed node's value is printed as ``?'': alpha--beta never learns it, and
+   does not need to.};
+\end{tikzpicture}}%
+{Alpha--beta on the tree of \dsref{game-tree}. Green leaves are evaluated, grey are
+never looked at, and the crosses mark the two cutoffs.}{alphabeta}
+
+\section{Move Ordering Is Everything}
+
+Alpha--beta prunes when it has already found something good. So the order in which
+moves are tried decides how much is pruned: try the best move first and the bounds
+tighten immediately; try it last and there is nothing to prune against.
+
+With \emph{perfect} ordering --- best move first at every node --- alpha--beta
+evaluates
+\[
+  b^{\lceil d/2 \rceil} + b^{\lfloor d/2 \rfloor} - 1
+\]
+leaves instead of $b^{d}$. That is roughly $b^{d/2}$: the same time buys
+\emph{twice the depth}, which for a game-playing program is the whole ball game.
+
+The chapter's lab measures all of this on a five-ply, three-branch negotiation ---
+$243$ leaves --- and the perfect-ordering bound is reached exactly:
+$3^{3} + 3^{2} - 1 = 27 + 9 - 1 = 35$.
+
+\smallskip
+\noindent\begin{longtable}{@{}L{5.6cm}L{2.4cm}L{2.0cm}L{4.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Algorithm} & \textbf{Leaves seen} & \textbf{Saving} & \textbf{Note} \\
+\midrule
+\endhead
+Minimax, no pruning & 243 & --- & Every leaf, always \\
+Alpha--beta, worst ordering & 217 & 1.1$\times$ & Pruning still helps a little,
+even at its worst \\
+Alpha--beta, natural ordering & 75 & 3.2$\times$ & The realistic case \\
+Alpha--beta, perfect ordering & \textbf{35} & \textbf{6.9$\times$} & Exactly
+$b^{\lceil d/2\rceil} + b^{\lfloor d/2\rfloor} - 1$ \\
+\bottomrule
+\caption{Leaf evaluations on a five-ply, three-branch negotiation. All four return
+the same minimax value of $14$ --- pruning is exact, not approximate.}
+\label{tab:alphabeta}
+\end{longtable}
+
+\begin{conceptbox}
+Perfect ordering requires knowing the best move, which is what the search is for.
+So the practical question is how good an ordering you can buy cheaply. Real engines
+use a shallow search first and order the deep search by its results, plus
+remembered ``killer'' moves that caused cutoffs elsewhere.
+
+But cheaply is doing real work in that sentence. The lab measures a shallow-probe
+ordering on this tree and it costs \emph{506} leaf evaluations against natural
+ordering's $75$ --- nearly seven times worse, because the probes themselves are
+evaluations and the tree is not deep enough to amortise them. Ordering pays in
+chess, at twenty ply with a transposition table caching the probes. At five ply it
+does not. Measure before you believe.
+\end{conceptbox}
+
+\section{Cutting Off the Search}
+
+Real games do not fit. A negotiation with ten rounds and five options each is
+$5^{10} \approx 10$ million leaves, and chess is unthinkable. So replace the
+terminal test with a \term{cutoff test} --- stop at a fixed depth --- and replace
+the utility with an \term{evaluation function} that estimates the position's worth.
+
+The evaluation function is where domain knowledge enters, and the search is no
+better than it. For the negotiation: how far the current offer is from our target,
+how much slack remains in the schedule, whether the remaining rounds favour us.
+
+\term{The horizon effect} is the price. A cutoff at depth $d$ cannot see anything at
+depth $d+1$, so the search happily chooses a line that pushes an unavoidable loss
+just past the horizon --- conceding a small point now to delay a large concession
+into invisibility. The standard mitigations are to search \emph{quiescent}
+positions deeper (do not stop in the middle of an exchange) and to extend the
+search along forcing lines.
+
+\begin{worked}[Tracing alpha--beta through the tree of \dsref{game-tree}]
+Left to right, carrying $(\alpha, \beta)$.
+
+\smallskip
+\textbf{Root} (MAX), $\alpha = -\infty$, $\beta = +\infty$. Descend left.
+
+\smallskip
+\textbf{Left MIN node}, $(-\infty, +\infty)$. Descend to its left child.
+
+\smallskip
+\textbf{MAX node }$a$, $(-\infty, +\infty)$: evaluate leaf $3$, so $v=3$,
+$\alpha = 3$; evaluate leaf $5$, so $v=5$, $\alpha=5$. Return $5$.
+\emph{(2 leaves)}
+
+\smallskip
+Back at the left MIN node: $v = 5$, so $\beta = 5$. Descend to its right child
+with $(-\infty, 5)$.
+
+\smallskip
+\textbf{MAX node }$b$, $(-\infty, 5)$: evaluate leaf $6$, so $v = 6$ and
+$\alpha = 6$. Now $\alpha \ge \beta$ ($6 \ge 5$) --- \textbf{cutoff}. Leaf $9$ is
+never evaluated. Return $6$. \emph{(1 leaf)}
+
+\smallskip
+Why it is safe: node $b$ is a MAX node that can already secure $6$. The MIN node
+above it will never accept $6$ when it already has $5$ available. Whatever leaf $9$
+holds, $b$ can only get \emph{better} than $6$, so MIN's choice is settled.
+
+\smallskip
+Left MIN node returns $\min(5, 6) = 5$. Root: $v = 5$, $\alpha = 5$.
+
+\smallskip
+\textbf{Right MIN node}, $(5, +\infty)$. Descend left.
+
+\smallskip
+\textbf{MAX node }$c$, $(5, +\infty)$: leaf $1$ gives $v=1$; leaf $2$ gives $v=2$.
+Return $2$. \emph{(2 leaves)}
+
+\smallskip
+Right MIN node: $v = 2$, so $\beta = 2$. Now $\beta \le \alpha$ ($2 \le 5$) ---
+\textbf{cutoff}. Node $d$ and both its leaves are skipped entirely. Return $2$.
+
+\smallskip
+Why it is safe: this MIN node can already hold us to $2$, and we have already
+secured $5$ at the root. We will never play into this branch, so its exact value is
+irrelevant --- which is why \dsref{alphabeta} prints it as ``?''.
+
+\smallskip
+\textbf{Root} returns $\max(5,2) = 5$. \textbf{Leaves evaluated: $3, 5, 6, 1, 2$
+--- five of eight}, and the value is identical to minimax's.
+
+\smallskip
+\textbf{Now reverse the leaves} to $[-1, 0, 2, 1, 9, 6, 5, 3]$ and trace again. The
+minimax value is still $5$, but the cutoffs fall differently --- that is move
+ordering, and it is the entire content of Table~\ref{tab:alphabeta}.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Thinking alpha--beta is an approximation.} It returns exactly the
+        minimax value. What it approximates is nothing; what it saves is leaves.
+  \item \textbf{Modelling a negotiator as a stochastic process.} If their choice
+        depends on yours, an average-case model is not merely inaccurate, it is
+        exploitable.
+  \item \textbf{Quoting a cooperative-model number as a guarantee.} The minimax
+        value is what you can secure \emph{whatever} they do. Any friendlier
+        assumption gives a bigger number and no floor.
+  \item \textbf{Assuming move ordering always pays.} Measured here: a shallow-probe
+        ordering cost $506$ leaf evaluations against natural ordering's $75$. It
+        pays at depth twenty, not at depth five.
+  \item \textbf{Stopping the search in a volatile position.} The horizon effect
+        makes the program push bad news just out of sight. Search quiescent
+        positions deeper.
+  \item \textbf{Forgetting that the evaluation function is the ceiling.} Beyond a
+        point, deeper search of a bad evaluation function just finds worse moves
+        more confidently.
+\end{tight}
+\end{pitfall}
+
+%---------------------------------------------------------------------
+\begin{lab}[Minimax and Alpha--Beta on a Slot Negotiation]
+The five-ply negotiation of Table~\ref{tab:alphabeta}, with four move orderings,
+counting leaf evaluations --- the operation that costs.
+\begin{lstlisting}[language=Python]
+"""Chapter 8 lab -- minimax and alpha-beta on a release negotiation.
+
+Five plies, three options each, 243 leaves. All four configurations
+return the same minimax value; they differ only in how many leaves
+they have to look at. The perfect-ordering row hits the theoretical
+bound b^ceil(d/2) + b^floor(d/2) - 1 exactly.
+"""
+
+import random
+
+DEPTH = 5          # plies of negotiation
+BRANCH = 3         # hold, concede, swap
+OPTIONS = ("hold", "concede", "swap")
+
+
+def build(seed=7):
+    """Leaf utilities to us, in days of delay avoided."""
+    rng = random.Random(seed)
+    leaves = {}
+
+    def rec(path):
+        if len(path) == DEPTH:
+            leaves[path] = rng.randrange(-20, 21)
+            return
+        for m in range(BRANCH):
+            rec(path + (m,))
+
+    rec(())
+    return leaves
+
+
+LEAVES = build()
+
+
+class Counter:
+    def __init__(self):
+        self.evals = 0          # leaf evaluations: the expensive op
+        self.nodes = 0
+
+
+def minimax(path, maximising, c):
+    c.nodes += 1
+    if len(path) == DEPTH:
+        c.evals += 1
+        return LEAVES[path]
+    vals = [minimax(path + (m,), not maximising, c)
+            for m in range(BRANCH)]
+    return max(vals) if maximising else min(vals)
+
+
+def true_value(path, maximising):
+    """An oracle, used only to build the best/worst orderings."""
+    return minimax(path, maximising, Counter())
+
+
+def ordered(path, maximising, how):
+    ms = list(range(BRANCH))
+    if how == "natural":
+        return ms
+    # 'best' puts the strongest move first, 'worst' puts it last
+    rev = maximising if how == "best" else not maximising
+    return sorted(ms, key=lambda m: true_value(path + (m,), not maximising),
+                  reverse=rev)
+
+
+def alphabeta(path, maximising, alpha, beta, c, how="natural"):
+    c.nodes += 1
+    if len(path) == DEPTH:
+        c.evals += 1
+        return LEAVES[path]
+    if maximising:
+        v = -10 ** 9
+        for m in ordered(path, maximising, how):
+            v = max(v, alphabeta(path + (m,), False, alpha, beta, c, how))
+            alpha = max(alpha, v)
+            if alpha >= beta:
+                break                      # beta cutoff
+        return v
+    v = 10 ** 9
+    for m in ordered(path, maximising, how):
+        v = min(v, alphabeta(path + (m,), True, alpha, beta, c, how))
+        beta = min(beta, v)
+        if beta <= alpha:
+            break                          # alpha cutoff
+    return v
+
+
+def shallow(path, maximising, limit, c):
+    """A depth-limited probe, used to ORDER a deeper search.
+
+    Every leaf it touches is charged, because in a real engine the
+    evaluation function is what costs.
+    """
+    if len(path) == DEPTH:
+        c.evals += 1
+        return LEAVES[path]
+    if limit == 0:
+        p = path
+        while len(p) < DEPTH:
+            p = p + (0,)
+        c.evals += 1
+        return LEAVES[p]
+    vals = [shallow(path + (m,), not maximising, limit - 1, c)
+            for m in range(BRANCH)]
+    return max(vals) if maximising else min(vals)
+
+
+def ab_probe_ordered(path, maximising, alpha, beta, c, probe=1):
+    """Alpha-beta ordering its moves by a shallow probe."""
+    c.nodes += 1
+    if len(path) == DEPTH:
+        c.evals += 1
+        return LEAVES[path]
+    ms = sorted(range(BRANCH),
+                key=lambda m: shallow(path + (m,), not maximising,
+                                      probe, c),
+                reverse=maximising)
+    if maximising:
+        v = -10 ** 9
+        for m in ms:
+            v = max(v, ab_probe_ordered(path + (m,), False, alpha, beta,
+                                        c, probe))
+            alpha = max(alpha, v)
+            if alpha >= beta:
+                break
+        return v
+    v = 10 ** 9
+    for m in ms:
+        v = min(v, ab_probe_ordered(path + (m,), True, alpha, beta,
+                                    c, probe))
+        beta = min(beta, v)
+        if beta <= alpha:
+            break
+    return v
+
+
+if __name__ == "__main__":
+    print("depth %d, branching %d, leaves %d"
+          % (DEPTH, BRANCH, BRANCH ** DEPTH))
+
+    c0 = Counter()
+    value = minimax((), True, c0)
+    print("minimax value: %d" % value)
+    print()
+    print("algorithm                      leaf evals   nodes  value")
+    print("-" * 60)
+    print("%-30s %10d %7d %6d"
+          % ("minimax, no pruning", c0.evals, c0.nodes, value))
+
+    results = {"minimax": c0.evals}
+    for how, label in (("worst", "alpha-beta, worst ordering  "),
+                       ("natural", "alpha-beta, natural ordering"),
+                       ("best", "alpha-beta, perfect ordering")):
+        c = Counter()
+        v = alphabeta((), True, -10 ** 9, 10 ** 9, c, how)
+        assert v == value, how          # pruning is EXACT
+        results[how] = c.evals
+        print("%-30s %10d %7d %6d" % (label, c.evals, c.nodes, v))
+
+    # the theoretical bound, reached exactly by perfect ordering
+    bound = BRANCH ** ((DEPTH + 1) // 2) + BRANCH ** (DEPTH // 2) - 1
+    print()
+    print("b^ceil(d/2) + b^floor(d/2) - 1 = %d^%d + %d^%d - 1 = %d"
+          % (BRANCH, (DEPTH + 1) // 2, BRANCH, DEPTH // 2, bound))
+    assert results["best"] == bound
+    print("perfect ordering evaluated %d leaves: the bound, exactly."
+          % results["best"])
+
+    # pruning never loses, and ordering decides how much it wins
+    assert results["worst"] < results["minimax"]
+    assert results["best"] < results["natural"] < results["worst"]
+    print()
+    print("saving against minimax:  worst %.1fx   natural %.1fx   "
+          "perfect %.1fx"
+          % (results["minimax"] / results["worst"],
+             results["minimax"] / results["natural"],
+             results["minimax"] / results["best"]))
+
+    # does a shallow probe pay for the ordering it buys? Not here.
+    c = Counter()
+    v = ab_probe_ordered((), True, -10 ** 9, 10 ** 9, c, probe=1)
+    assert v == value
+    print()
+    print("ordering by a depth-1 probe: %d leaf evals against natural"
+          % c.evals)
+    print("ordering's %d. The probes cost more than they save at this"
+          % results["natural"])
+    print("depth. Ordering pays in chess, at twenty ply with a cache.")
+    assert c.evals > results["natural"]
+
+    # how much does the instance matter?
+    totals = []
+    for seed in range(20):
+        globals()["LEAVES"] = build(seed)
+        c = Counter()
+        alphabeta((), True, -10 ** 9, 10 ** 9, c, "natural")
+        totals.append(c.evals)
+    print()
+    print("across 20 different negotiations, natural ordering:")
+    print("   leaf evals  min %d   mean %.1f   max %d"
+          % (min(totals), sum(totals) / len(totals), max(totals)))
+\end{lstlisting}
+Then try the experiment from the worked example: set \texttt{DEPTH = 6} and watch
+both the minimax count and the perfect-ordering bound move --- $729$ leaves against
+$3^{3}+3^{3}-1 = 53$. The gap is what buys the extra depth.
+\end{lab}
+
+%---------------------------------------------------------------------
+\begin{checkpoint}
+\begin{tightnum}
+  \item Alpha--beta evaluated five leaves where minimax evaluated eight, and both
+        returned $5$. Explain in one sentence why that is not a coincidence and not
+        an approximation.
+  \item In \dsref{alphabeta} the right-hand MIN node's right child is printed as
+        ``?''. State the two facts that together make its value irrelevant.
+  \item A colleague adds shallow-probe move ordering to your alpha--beta search and
+        reports that it is slower. Give the most likely explanation, and say what
+        would have to change for the ordering to pay.
+\end{tightnum}
+\end{checkpoint}
+
+%---------------------------------------------------------------------
+\begin{chaptersummary}
+\begin{tight}
+  \item A \term{game tree} alternates \term{MAX} levels (ours) and \term{MIN}
+        levels (theirs). The \term{minimax value} is the position's worth under
+        optimal play by both sides, and it is a \emph{guarantee}: at least this
+        much, whatever they do.
+  \item Minimax assumes a zero-sum optimal opponent. That is usually false and
+        still the right default, because it is the only assumption that yields a
+        floor.
+  \item \term{Alpha--beta pruning} carries the best values each player can already
+        secure and stops examining a branch when $\alpha \ge \beta$. It returns
+        \emph{exactly} the minimax value.
+  \item \term{Move ordering} decides how much is pruned. With perfect ordering
+        alpha--beta sees $b^{\lceil d/2\rceil} + b^{\lfloor d/2\rfloor} - 1$
+        leaves --- measured here as exactly $35$ against minimax's $243$ ---
+        which is roughly $b^{d/2}$, so the same time buys twice the depth.
+  \item Buying a good ordering is not free. A shallow-probe ordering cost $506$
+        leaf evaluations here against natural ordering's $75$: it pays at great
+        depth with a cache, and not at five ply.
+  \item Real games need a \term{cutoff test} and an \term{evaluation function},
+        which is where domain knowledge enters and where the search's ceiling is
+        set. The \term{horizon effect} is the cost: the program pushes
+        unavoidable bad news just past the cutoff.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Alpha--beta pruning returns: (a)~an approximation of the
+        minimax value (b)~exactly the minimax value (c)~the greedy value
+        (d)~a lower bound only.
+  \item \textbf{(MCQ)} A cutoff occurs when: (a)~$\alpha \ge \beta$
+        (b)~$\alpha < \beta$ (c)~the depth limit is reached (d)~a leaf is
+        negative.
+  \item \textbf{(MCQ)} Under perfect move ordering alpha--beta examines about:
+        (a)~$b^{d}$ (b)~$b^{d/2}$ (c)~$d^{b}$ (d)~$bd$ leaves.
+  \item \textbf{(MCQ)} The horizon effect is: (a)~running out of memory
+        (b)~pushing an unavoidable loss beyond the depth limit (c)~pruning too
+        aggressively (d)~a bad evaluation function.
+  \item \textbf{(Short)} Explain why the minimax value is a guarantee, and what you
+        give up by modelling the other party as cooperative instead.
+  \item \textbf{(Short)} Why does move ordering affect alpha--beta but not minimax?
+  \item \textbf{(Short)} Using the measured numbers in this chapter, explain the
+        circumstances in which investing in move ordering pays and the
+        circumstances in which it does not.
+  \item \textbf{(Applied)} Take the tree of \dsref{game-tree} with its leaves
+        reversed to $[-1, 0, 2, 1, 9, 6, 5, 3]$. Compute the minimax value, then
+        trace alpha--beta left to right and list which leaves are evaluated and
+        where each cutoff occurs. Compare the count with the five of the worked
+        example and say what that demonstrates.
+\end{reviewq}
