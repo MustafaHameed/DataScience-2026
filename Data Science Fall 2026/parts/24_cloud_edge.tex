@@ -65,14 +65,15 @@ $\bullet$ egress cost
      {\textcolor{accent!65!black}{$\blacksquare$}~\textbf{you manage}\\[4pt]
       \textcolor{secondary!55!black}{$\blacksquare$}~provider manages};
 
-\node[anchor=west, align=left, text width=6.6cm, font=\scriptsize, text=gray!55!black]
-     at (-1.9,-2.5)
+% below the stack, whose last row sits at y = -2.06
+\node[anchor=north west, align=left, text width=6.6cm, font=\scriptsize, text=gray!55!black]
+     at (-1.9,-2.55)
      {\textbf{The one row that never changes colour} is \emph{Data}. It is always yours:
       the provider runs the machines, but you remain accountable for what is in them and
       who may see it (\chref{ethics}).};
 
-\node[anchor=west, align=left, text width=6.6cm, font=\scriptsize, text=gray!55!black]
-     at (5.5,-2.5)
+\node[anchor=north west, align=left, text width=6.6cm, font=\scriptsize, text=gray!55!black]
+     at (5.5,-2.55)
      {\textbf{Examples:} IaaS --- a GPU virtual machine you configure yourself. PaaS ---
       a managed notebook or training service. SaaS --- a BI dashboard or a hosted model
       API. Moving right buys convenience and costs control.};
@@ -214,8 +215,9 @@ fleet-wide normal looks like.
 \begin{tight}
   \item \emph{Edge:} compute window statistics on-device and run a quantised
         threshold model. Trigger shutdown locally in under 10 ms. Transmit only
-        features and alerts --- roughly 1 kB per device per minute, about
-        \textbf{0.6 GB/year} in total.
+        features and alerts --- roughly 1 kB per device per minute, which is
+        $400 \times 1\text{ kB} \times 525{,}600$ minutes $\approx$
+        \textbf{210 GB/year} in total.
   \item \emph{Fog:} the site gateway correlates across all 400 motors, catching
         site-wide events no single device could see.
   \item \emph{Cloud:} retrain the model monthly on the accumulated feature history
@@ -223,7 +225,8 @@ fleet-wide normal looks like.
 \end{tight}
 
 \smallskip
-\textbf{Result:} bandwidth falls by a factor of roughly 50{,}000, the safety-critical
+\textbf{Result:} bandwidth falls from 30 TB to 210 GB --- a factor of about
+\textbf{140} --- the safety-critical
 decision meets its latency budget, protection survives a network outage, and the
 model still improves from fleet-wide learning. Note that the constraint that decided
 this was \emph{latency and availability}, not accuracy.
@@ -328,6 +331,9 @@ docker run -p 8080:8080 risk-model:2026.08.1
 
 # For an edge device, the same model must be made small:
 #   quantise float32 -> int8   (roughly 4x smaller, 2-3x faster)
+#   int4 goes smaller still, and most current edge hardware has an NPU that
+#   runs integer arithmetic far faster than its CPU -- so the quantised model
+#   is not merely smaller, it is the only one the accelerator will run.
 #   python -m tf.lite.TFLiteConverter ... with optimizations=[OPTIMIZE_FOR_SIZE]
 # Then measure accuracy AFTER quantisation -- it usually drops a little,
 # and whether that drop is acceptable is a Chapter 14 question.

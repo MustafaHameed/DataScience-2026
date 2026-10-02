@@ -23,8 +23,9 @@ RAG is built on them).
 generative model $\bullet$ large language model $\bullet$ token $\bullet$
 next-token prediction $\bullet$ temperature $\bullet$ context window $\bullet$
 pre-training $\bullet$ fine-tuning $\bullet$ prompt engineering $\bullet$
-zero/few-shot $\bullet$ chain of thought $\bullet$ hallucination $\bullet$
-retrieval-augmented generation $\bullet$ vector database $\bullet$ grounding
+zero/few-shot $\bullet$ chain of thought $\bullet$ reasoning model $\bullet$
+structured output $\bullet$ hallucination $\bullet$ retrieval-augmented generation
+$\bullet$ vector database $\bullet$ re-ranking $\bullet$ grounding
 \end{keyterms}
 
 \section{How an LLM Actually Works}
@@ -53,7 +54,8 @@ by doing this repeatedly, each new token appended and fed back in.
   \draw[-{Stealth[length=1.4mm]}, gray!55] (t\i) -- (m);}
 
 % probability distribution over next token
-\begin{scope}[shift={(7.2,-0.55)}]
+% shifted right so the longest row label ("connection") clears the "?" token
+\begin{scope}[shift={(7.65,-0.55)}]
   \node[font=\tiny\bfseries, text=primary, anchor=west] at (0,2.15)
        {probability over the whole vocabulary};
   \foreach \i/\w/\p/\bw in {0/connection/0.34/2.72, 1/request/0.21/1.68,
@@ -67,9 +69,11 @@ by doing this repeatedly, each new token appended and fed back in.
 \end{scope}
 \draw[-{Stealth[length=1.8mm]}, purplehl, line width=1pt] (m) -- (6.3,0.15);
 
+% the sampled token travels back over the top of the figure: routed to the
+% right of the bars it crossed both the first bar and the panel's own title
 \draw[-{Stealth[length=1.8mm]}, greenhl, line width=1pt]
-     (10.6,1.2) .. controls +(0.9,0.9) and +(0.9,-0.9) .. (t4.east);
-\node[font=\tiny, text=greenhl!45!black, anchor=west] at (11.3,1.4) {sample one};
+     (12.7,1.25) .. controls +(0,1.15) and +(0,1.15) .. (t4.north);
+\node[font=\tiny, text=greenhl!45!black, anchor=south] at (8.4,2.2) {sample one};
 
 \node[anchor=north west, align=left, text width=13.3cm, font=\scriptsize, text=accent!75!black]
      at (-1.0,-2.15)
@@ -85,11 +89,19 @@ and samples from it; the sampled token is appended and the process repeats. Flue
 truth are produced by the same mechanism, which is the central risk.}{llm-generation}
 
 \begin{conceptbox}[Temperature]
-\term{Temperature} controls how sharply the model samples. Near 0 it always takes
-the most likely token --- repetitive but predictable, and the right setting for
-extraction, classification and code. Around 0.7--1.0 it samples more freely ---
+\term{Temperature} controls how sharply the model samples. Near 0 it almost always
+takes the most likely token --- repetitive but predictable, and the right setting
+for extraction, classification and code. Around 0.7--1.0 it samples more freely ---
 varied and creative, and the right setting for drafting and brainstorming. Setting
 temperature is a task decision, not a style preference.
+
+\textbf{But temperature 0 is not a guarantee of identical output.} Floating-point
+addition on a GPU is not associative, so when a request is batched with different
+neighbouring requests the sums are accumulated in a different order, the last bits
+of the scores change, and a close contest between two tokens can flip. If you need
+reproducibility --- and an evaluation suite does --- pin the model version, fix the
+seed where the provider offers one, record the exact prompt, and write your tests
+to accept semantically equivalent answers rather than byte-identical ones.
 \end{conceptbox}
 
 \section{Four Ways to Adapt a Model}
@@ -197,11 +209,37 @@ evaluation against outcomes. For an actual deployed risk score, use
 \chref{evaluation}. Knowing which tool the problem calls for is the point.
 \end{worked}
 
-\begin{conceptbox}[Chain of Thought]
+\begin{conceptbox}[Chain of Thought, and What Reasoning Models Changed]
 Adding ``work through this step by step'' measurably improves accuracy on
 multi-step reasoning, because the intermediate tokens give the model somewhere to
 do the work. It also makes the answer auditable: you can see where the reasoning
 went wrong instead of only that it did.
+
+\term{Reasoning models} --- the class of model that deliberates before answering,
+spending extra computation at \emph{answer} time rather than extra parameters at
+training time --- now do this internally, so asking them to think step by step adds
+little. Three consequences for you:
+\begin{tight}
+  \item Prompt them with the \emph{goal and the constraints}, not with a procedure;
+        over-specifying the steps can make them worse.
+  \item They cost more and answer more slowly, so use them where the reasoning is
+        the product (a plan, a diagnosis, a proof) and a cheaper model elsewhere.
+  \item Their visible ``thinking'' is a summary of a process, not a transcript of
+        it. Treat it as a useful explanation, never as evidence of what the model
+        actually did.
+\end{tight}
+The old advice still applies to ordinary models, which remain the right choice for
+most extraction and classification work.
+\end{conceptbox}
+
+\begin{conceptbox}[Ask for Structured Output, Not Prose You Must Parse]
+If the answer feeds a program rather than a person, do not ask for a markdown table
+and write a parser for it. Every major API now accepts a \term{schema} --- a JSON
+shape the response is constrained to follow --- so the model cannot return prose,
+cannot omit a required field, and cannot invent a category outside the list you
+gave. The same discipline as a database schema, applied to a probabilistic
+component: declare the shape, and validate on arrival anyway, because a
+schema constrains the \emph{form} of the answer and never its \emph{truth}.
 \end{conceptbox}
 
 \section{Retrieval-Augmented Generation}
@@ -251,6 +289,21 @@ The model then answers from supplied evidence rather than from memory.
 know your private documents, its training data has a cutoff date, and its claims cannot
 otherwise be checked.}{rag}
 
+\begin{conceptbox}[``Can I Not Just Paste Everything In?'']
+Context windows are now large enough to hold a small library, so students
+reasonably ask why retrieval is needed at all. Three reasons it still is. You pay
+for every token on every request, so pasting a handbook into each call is
+expensive. Models attend less reliably to material buried in the middle of a very
+long context than to material near its start or end, so more context can mean
+\emph{worse} answers. And retrieval is what produces the citation, which is the
+output that makes the answer checkable.
+
+The practical system is a hybrid: retrieve a generous set of candidates with
+keyword \emph{and} vector search, re-rank them with a smaller model, and put only
+the best few into a long context window. Long context has raised the ceiling on how
+much evidence you can supply; it has not removed the need to choose the evidence.
+\end{conceptbox}
+
 \section{Evaluating Generative Systems}
 
 \begin{alertbox}[There Is No Accuracy Here]
@@ -287,6 +340,11 @@ Cost \& latency & Affordable and fast enough? & Tokens per request, p95 response
         person's grade, employment or security posture needs a human in the loop.
   \item \textbf{Evaluating on the examples you used to write the prompt.} That is
         the leakage of \chref{wrangling} in a new costume.
+  \item \textbf{Trusting an LLM judge you have never checked.} Scoring answers with
+        another model is cheap and scales, and it inherits the judge's own biases ---
+        towards longer answers, towards its own style, and towards whichever option
+        is listed first. Calibrate it against a few dozen human-scored examples
+        before you believe any number it produces.
 \end{tight}
 \end{pitfall}
 
@@ -382,8 +440,9 @@ print(build_prompt("What is our password rotation policy?"))
         generation mechanism rather than a bug to be patched.
   \item Your assistant does not know your company's leave policy. Should you
         fine-tune or use RAG? Justify.
-  \item You need identical output for the same input every time. What temperature,
-        and why?
+  \item You need the same answer for the same input every time. Set the temperature
+        to 0 and you are most of the way there --- but why is that still not a
+        guarantee, and what else would you pin down?
 \end{tightnum}
 \end{checkpoint}
 

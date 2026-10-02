@@ -33,19 +33,64 @@ Figure conventions worth knowing before you edit one:
 
 ## Content changes — Fall 2026 slide pass
 
-The lecture decks in `slides/` are generated from this handout, so every
-correction found while building them was made here first. Rendering each
-figure alone at 300 dpi for the slides exposed faults that the page-by-page
-review of the PDF had not.
+The lecture decks in `slides/` — 33 decks, 1,406 slides, all 103 figures as
+vector art — are generated from this handout, so every correction found while
+building them was made here first.
+
+### Arithmetic and consistency
 
 | Ch | Change | Why |
 | --- | --- | --- |
+| 2 | "When a Better Model Is a Worse Project": Model A now flags 100 (40 real), Model B 26 (18 real), capacity 100 | With 60 and 20 flags the stated 88% and 91% accuracies were impossible — the numbers implied 92% |
+| 3 | Swipe-level granularity 400,000 → 95,000, with the student–lecture grain explained as 2,000 × 60 | 400,000 swipes cannot sit under 120,000 student–lecture pairs |
+| 3 | "roughly 20% of the world's data" → "the minority of what an organisation holds" | An unsourced statistic repeated from folklore |
 | 14 | "Setting a Threshold with Money" table: rows now in threshold order (0.05 first) | The minimum sat below the default row, out of sequence |
-| 14 | Figure 14.1: column heads raised clear of the cells; formula panel widened | "Positive"/"Negative" touched the boxes; three descriptions wrapped under their formulas |
-| 14 | Figure 14.2: ROC curves redrawn as $y=x^{1/9}$ and $y=x^{3/7}$ | The curves labelled AUC 0.90 and 0.70 actually had AUC 0.82 and 0.66 |
-| 14 | Figure 14.2: "default 0.5" label re-anchored; "worked example" label moved off the curve | The label was clipped to "ault 0.5" |
-| 14 | Figure 14.3: fold labels moved out from under the first column; score labels clear of the last | "fold 1–5" were hidden behind the boxes; "score" overlapped the fifth column |
 | 14 | Lab: `confusion_matrix(...).ravel()[[0,1,2,3]]` → `.ravel()` | The fancy index was a no-op |
+| 20 | "a strong baseline forty years on" → the IDF term dates from 1972, "half a century on" | Understated by a decade |
+| 24 | "Where Should the Model Run?": edge telemetry is 210 GB/year, a ~140× reduction | 1 kB per device per minute across 400 devices is 210 GB/year, not the 0.6 GB and 50,000× stated |
+| 29 | Feasibility check now cites the $1/\delta^2$ scaling rather than Chapter 10's sample size directly | Chapter 10 sized a pass-rate comparison; this study's outcome is a mark out of 100 |
+| 31 | "4 in 5 flagged students would have passed" → "2 in 3"; "1 in 4 failed" → "1 in 3" | Catching 7 in 10 failures while contacting 1 in 5 of the cohort implies precision near a third, not a fifth |
+
+### Figures
+
+Rendering each figure on its own at 300 dpi for the slides exposed faults that
+the page-by-page review of the PDF had not.
+
+| Ch | Change | Why |
+| --- | --- | --- |
+| 1 | Nesting figure: the closing note moved below the outer ring | Its line was wider than the circle at that height and crossed it at both ends |
+| 2 | CRISP-DM centre label "THE DATA" → "THE PROCESS" | It read as "THE DATA CRISP-DM" |
+| 4 | Slope figure: plot extended below the axis, note moved inside the parabola | "minimum: slope = 0" was clipped; the legend printed over the note |
+| 5 | Boxplot: IQR brace raised; symmetric panel given headroom | The brace label sat on "median"; "mean = median = mode" was clipped away entirely |
+| 6 | Base-rate callout given an opaque background | A curve ran through the text |
+| 7 | Leakage figure: rows spaced, split arrows drawn separately | The two arrows collapsed into one horizontal line between the boxes |
+| 9 | Error-types figure: the rotated "YOUR DECISION" bar declared wide-and-short | Rotation turned it the other way; it lay across the row labels and the first column |
+| 11 | "Sweet spot" moved to the validation curve's actual minimum; gap brace matched to the curves; legend moved | The marker sat beside the minimum, and the brace spanned a gap the curves did not have |
+| 14 | Figure 14.1: column heads raised clear of the cells; formula panel widened | "Positive"/"Negative" touched the boxes; three descriptions wrapped under their formulas |
+| 14 | Figure 14.2: ROC curves redrawn as $y=x^{1/9}$ and $y=x^{3/7}$; labels re-anchored | The curves labelled AUC 0.90 and 0.70 actually had AUC 0.82 and 0.66, and "default 0.5" was clipped to "ault 0.5" |
+| 14 | Figure 14.3: fold labels moved out from under the first column; score labels clear of the last | "fold 1–5" were hidden behind the boxes |
+| 15 | Bagging panel: feed and collection drawn as buses with drops into each branch | Straight arrows passed through the boxes between their ends, so bagging read as sequential |
+| 16 | Silhouette note moved under the curve | It ran off the panel and over the "maximum at k = 3" label |
+| 17 | Early-stopping label hangs below its anchor | Its first line fell outside the axis |
+| 18 | RNN title raised above the output labels | It printed across $\hat{y}_1$ and $\hat{y}_2$ |
+| 19 | Decomposition: the week-31 outage now shown in the observed series too; panel titles moved above the axes | The residual panel isolated an outage the observed series did not contain, and the titles sat on the curves |
+| 21 | Next-token figure: the sampled-token arrow routed over the top; probability panel shifted right | The arrow crossed the first bar and the panel title; "connection" touched the "?" token |
+| 24 | Service-model notes moved below the stack | They overlapped the "Networking" row |
+| 25 | Over-the-air label given an opaque background; maintenance loop routed outside the boxes | The return path printed through its own label, and two arrows crossed the boxes between their ends |
+| 26 | "max viable FPR" raised above the "Detector B" label | The two printed over each other |
+
+### Brought up to date (September–October 2026)
+
+| Ch | Change |
+| --- | --- |
+| 21 | Chain-of-thought box now covers **reasoning models**: deliberation at answer time, how to prompt them, and that their visible "thinking" is a summary rather than a transcript |
+| 21 | Temperature box: temperature 0 is **not** a guarantee of identical output — GPU floating-point addition is not associative, so batching can flip a close contest. Checkpoint 3 and its answer rewritten to match |
+| 21 | New box on **structured output** (schema-constrained responses) and on **long context versus retrieval**, including hybrid search with re-ranking |
+| 21 | Pitfall added: an **LLM judge** must be calibrated against human scores before its numbers are believed |
+| 22 | New box on the **Model Context Protocol** — one interface instead of $m \times n$ adapters, donated to the Linux Foundation's Agentic AI Foundation in December 2025 — and what it does *not* change about tool safety |
+| 22 | New section on **evaluating an agent**: outcome, trajectory, cost and safety, reported as a success rate over repeated runs |
+| 24 | Edge deployment note on **int4 quantisation and NPUs** |
+| 28 | New dated box, *Where the Law Stands*: the EU AI Act's Article 50 transparency duties from 2 August 2026, high-risk duties deferred to 2 December 2027 by the Digital Omnibus (Regulation (EU) 2026/1744); Pakistan's National AI Policy (2025) with no data-protection statute yet; NIST AI RMF and ISO/IEC 42001 as the frameworks auditors ask for |
 
 ## Build
 

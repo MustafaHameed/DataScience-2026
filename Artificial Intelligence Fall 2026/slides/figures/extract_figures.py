@@ -41,6 +41,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
@@ -159,16 +160,26 @@ def compile_one(name: str, body: str, pre: str, level: int | None = None
             m = re.search(r"^! (.+)$", txt, re.M)
             why = m.group(1) if m else "compile failed"
         return False, why, (0, 0)
-    subprocess.run(["pdftocairo", "-svg", pdf,
-                    os.path.join(OUT, name + ".svg")],
-                   capture_output=True)
-    subprocess.run(["pdftocairo", "-png", "-r", str(DPI), "-transp",
-                    "-singlefile", pdf, os.path.join(OUT, name)],
-                   capture_output=True)
+    # pdftocairo occasionally loses a race on Windows when several
+    # workers write into out/ at once, so retry each conversion.
+    svg = os.path.join(OUT, name + ".svg")
+    png = os.path.join(OUT, name + ".png")
+    for attempt in range(3):
+        if not os.path.exists(svg):
+            subprocess.run(["pdftocairo", "-svg", pdf, svg],
+                           capture_output=True)
+        if not os.path.exists(png):
+            subprocess.run(["pdftocairo", "-png", "-r", str(DPI),
+                            "-transp", "-singlefile", pdf,
+                            os.path.join(OUT, name)],
+                           capture_output=True)
+        if os.path.exists(svg) and os.path.exists(png):
+            break
+        if attempt < 2:
+            time.sleep(0.4 * (attempt + 1))
     size = page_size(pdf)
-    ok = os.path.exists(os.path.join(OUT, name + ".svg")) and \
-        os.path.exists(os.path.join(OUT, name + ".png"))
-    return ok, "" if ok else "conversion failed", size
+    ok = os.path.exists(svg) and os.path.exists(png)
+    return ok, "" if ok else "conversion failed after 3 tries", size
 
 
 def page_size(pdf: str) -> tuple[float, float]:

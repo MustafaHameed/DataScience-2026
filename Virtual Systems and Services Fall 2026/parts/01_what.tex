@@ -1,0 +1,617 @@
+%=====================================================================
+\chapter{What Virtualization Is}\label{ch:what}
+%=====================================================================
+\locator{1}{Part I --- Foundations of Virtualization}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} virtualization as a layer that presents a resource
+        different from the one it sits on, and \textbf{identify} that layer in
+        a system you are shown.
+  \item \textbf{Distinguish} a virtual machine from a process, an emulator and
+        a simulator, by what each one is allowed to assume about the hardware.
+  \item \textbf{Explain} the four reasons an organisation inserts such a layer
+        --- consolidation, isolation, encapsulation and elasticity --- and
+        \textbf{state} which of the four motivated each milestone in the
+        field's history.
+  \item \textbf{Compute} a consolidation ratio and the power it saves, from
+        measured utilisation figures.
+  \item \textbf{Describe} what is being virtualized in a given product, and
+        locate the chapter of this book that covers it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+Nothing in this book. You need the idea that an operating system stands between
+a program and the hardware, and that a program cannot tell the difference
+between a real device and a convincing imitation of one. If the second half of
+that sentence sounds improbable, this chapter is the right place to start.
+\end{prereq}
+
+\begin{keyterms}
+virtualization $\bullet$ virtual machine $\bullet$ hypervisor $\bullet$ virtual
+machine monitor $\bullet$ host $\bullet$ guest $\bullet$ abstraction $\bullet$
+multiplexing $\bullet$ aggregation $\bullet$ emulation $\bullet$ consolidation
+$\bullet$ consolidation ratio $\bullet$ utilisation $\bullet$ server sprawl
+$\bullet$ isolation $\bullet$ encapsulation $\bullet$ elasticity $\bullet$
+time-sharing
+\end{keyterms}
+
+\section{A Room Full of Idle Servers}
+
+Walk into a university machine room that has not been consolidated and you will
+find something strange: forty servers, each costing as much as a car, each
+running at eight per cent of its capacity. The library catalogue has a server.
+The examination system has a server. The staff portal has a server. None of them
+is busy. Together they draw fourteen kilowatts and need as much again in cooling,
+and the department pays for all of it.
+
+Nobody planned this. It arrived one purchase order at a time, and each purchase
+was defensible. The examination system must not be slowed down by the library
+catalogue, so it gets its own machine. The portal needs a newer version of the
+database than the catalogue can tolerate, so it gets its own machine. The
+vendor's support contract is void if anything else runs on the box, so it gets
+its own machine. Every reason is a reason about \emph{isolation}, and the only
+isolation mechanism available was a second computer.
+
+This is \term{server sprawl}, and it is the problem virtualization was brought
+to industry to solve. The insight is that the forty applications genuinely do
+need to be isolated from one another --- that part was never wrong --- but that
+isolation does not have to be purchased one chassis at a time.
+
+\begin{definitionbox}[Virtualization]
+\term{Virtualization} is the insertion of a software layer that presents a
+resource which differs from the one physically present, while preserving the
+interface that software above the layer already expects.
+
+\smallskip
+The layer does one of three things, or several at once:
+\begin{tight}
+  \item \term{multiplexing} --- one physical resource is presented as many
+        (one processor as twelve vCPUs);
+  \item \term{aggregation} --- many physical resources are presented as one
+        (twelve disks as one volume);
+  \item \term{abstraction} --- a resource is presented as a different kind of
+        thing entirely (a file on a disk presented as a disk).
+\end{tight}
+
+\smallskip
+What makes it virtualization rather than merely software is the second clause:
+the interface is \emph{preserved}. An unmodified operating system, written with
+no knowledge that any of this is happening, runs correctly above the layer.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\small,
+  hw/.style={rounded corners=2pt, draw=neutral, line width=1pt, fill=neutral!12,
+             text=neutral!40!black, minimum width=11.6cm, minimum height=0.95cm,
+             align=center, font=\small\bfseries},
+  vl/.style={rounded corners=2pt, draw=primary, line width=1.4pt, fill=primary!14,
+             text=primary, minimum width=11.6cm, minimum height=0.95cm,
+             align=center, font=\small\bfseries},
+  g/.style={rounded corners=2pt, draw=secondary, line width=1pt, fill=secondary!8,
+            text=secondary!80!black, minimum width=3.5cm, minimum height=1.45cm,
+            align=center, font=\scriptsize},
+  % align=left is load-bearing: a \\ in a node whose style sets neither align
+  % nor text width is "Not allowed in LR mode".
+  lab/.style={font=\scriptsize\itshape, text=neutral, anchor=west, align=left}
+]
+  \node[hw] (hw) at (0,0) {Physical hardware \quad
+        {\scriptsize\mdseries 64 cores \ $\bullet$\ 512 GB \ $\bullet$\ 2 NICs \ $\bullet$\ 8 disks}};
+  \node[vl] (vl) at (0,1.25) {Virtualization layer};
+  \node[g]  (g1) at (-4.05,2.95) {\textbf{Guest A}\\[2pt]
+        4 vCPU \ $\bullet$\ 16 GB\\1 NIC \ $\bullet$\ 1 disk};
+  \node[g]  (g2) at (0,2.95)     {\textbf{Guest B}\\[2pt]
+        2 vCPU \ $\bullet$\ 8 GB\\1 NIC \ $\bullet$\ 1 disk};
+  \node[g]  (g3) at (4.05,2.95)  {\textbf{Guest C}\\[2pt]
+        8 vCPU \ $\bullet$\ 64 GB\\2 NIC \ $\bullet$\ 3 disks};
+
+  \foreach \n in {g1,g2,g3}{
+    \draw[-{Stealth[length=2mm]}, primary!55, line width=0.9pt] (\n) -- (\n |- vl.north);}
+  \draw[-{Stealth[length=2mm]}, primary!55, line width=0.9pt] (vl) -- (hw);
+
+  \node[lab] at (6.1,2.95) {each believes it owns\\a whole computer};
+  \node[lab] at (6.1,1.25) {maintains the belief};
+  \node[lab] at (6.1,0)    {what actually exists};
+
+  \node[font=\scriptsize, text=accent, anchor=east] at (-6.1,2.95)
+       {unmodified};
+  \node[font=\scriptsize, text=accent, anchor=east] at (-6.1,2.55)
+       {operating systems};
+\end{tikzpicture}}%
+{The layer, and the only claim it makes. Each guest is told a different machine
+exists, and none of the three was modified to be told. Every later chapter
+replaces one row of this diagram with something more specific.}{the-layer}
+
+\begin{definitionbox}[Virtual Machine, Hypervisor, Host, Guest]
+A \term{virtual machine} is the illusion the layer sells: a complete computer
+--- processor, memory, firmware, disks, network interfaces --- implemented in
+software, on which an operating system can be installed as if on metal.
+
+\smallskip
+The \term{hypervisor}, equivalently the \term{virtual machine monitor} or VMM,
+is the software that creates and maintains that illusion. The \term{host} is the
+physical machine and the software running directly on it; a \term{guest} is an
+operating system running inside a virtual machine.
+
+\smallskip
+This book uses \emph{hypervisor} and \emph{VMM} interchangeably, as the
+literature does. \chref{vmm} is the one place the distinction is sharpened,
+because that is where it begins to matter.
+\end{definitionbox}
+
+\section{What It Is Not}
+
+Three neighbouring ideas are routinely confused with virtualization, and the
+confusion is worth clearing before it compounds.
+
+\begin{conceptbox}[Virtualization, Emulation, Simulation]
+\term{Emulation} interprets every guest instruction in software, translating
+from one instruction set to another. An ARM emulator on an x86 laptop reads an
+ARM instruction, works out what it means, and performs the equivalent x86 work.
+It is slow --- commonly ten to a hundred times slower than native --- and
+completely general: the guest architecture need not resemble the host at all.
+
+\smallskip
+\term{Virtualization} runs guest instructions \emph{on the real processor}
+wherever it safely can, and intervenes only for the instructions it cannot allow
+to execute directly. It is therefore fast --- commonly within a few per cent of
+native --- and restricted: the guest must be built for the same architecture as
+the host.
+
+\smallskip
+\emph{Simulation} models a system's behaviour without claiming to run its
+software: a network simulator predicts throughput; it does not boot a router.
+
+\smallskip
+QEMU does the first two in different modes, which is why it appears on both
+sides of the comparison in \chref{architectures}. Running
+\texttt{qemu-system-aarch64} on an x86 host is emulation. Running
+\texttt{qemu-system-x86\_64} with KVM enabled is virtualization, and the same
+binary does both.
+\end{conceptbox}
+
+\begin{alertbox}[A container is not a virtual machine, and both are virtualization]
+The two most common statements about containers in a first course contradict
+each other, and both are half right.
+
+\smallskip
+A container does not contain a virtual machine: there is no virtual processor,
+no virtual firmware, no guest kernel. Processes in a container run on the host's
+kernel as ordinary processes, and \texttt{ps} on the host can see them.
+
+\smallskip
+But a container \emph{is} virtualization by the definition above. The layer is
+inserted inside the kernel rather than beneath it, and what it multiplexes is
+the operating system's own namespace of process identifiers, mount points,
+network interfaces and users. The interface preserved is the system-call
+interface, not the instruction set. \chref{containers} makes this precise; the
+reason it matters this early is that ``virtual machine or container?'' is a
+question about \emph{which layer}, not about whether a layer exists.
+\end{alertbox}
+
+\section{Why Anyone Would Do This}
+
+Four motives, and they arrived in this order historically. Every product in this
+book was built for at least one of them, and the ones that lasted serve several.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.9cm}L{6.3cm}L{5.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Motive} & \textbf{What it buys} & \textbf{Where this book shows it} \\
+\midrule
+\endhead
+\term{Consolidation} & Many lightly-loaded workloads on one well-loaded
+machine. Fewer machines, less power, less cooling, less floor space, less to
+patch & The worked example below; \chref{cpumem} on how far it can be pushed;
+\chref{performance} on when it has gone too far \\
+\term{Isolation} & A fault, a crash or a compromise in one workload does not
+reach the others. This is the reason the forty servers existed, and
+virtualization preserves it while removing the forty & \chref{vmm} on what makes
+isolation sound; \chref{security} on where it fails \\
+\term{Encapsulation} & A running machine becomes a file. It can be copied,
+versioned, moved, snapshotted and restored --- operations no physical server
+supports & \chref{storage} on the file; \chref{migration} on moving it while it
+runs \\
+\term{Elasticity} & Capacity becomes a quantity you request rather than a
+chassis you procure. Minutes instead of months, and returnable & \chref{cloud}
+entire; \chref{kubernetes} for the same idea one layer up \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Encapsulation is the one with no physical analogue]
+Consolidation is an efficiency argument and isolation is a safety argument, and
+a sufficiently rich organisation could buy its way out of both. Encapsulation is
+different in kind.
+
+\smallskip
+Once a running computer is a file, every operation you know how to perform on a
+file becomes available to it. You can take a snapshot before a risky upgrade and
+return to it in four seconds when the upgrade fails. You can copy a production
+machine into a test environment, bit for bit, including the fault you are trying
+to reproduce. You can keep last Tuesday. None of this has a physical equivalent
+--- there is no way to take a snapshot of a server in a rack --- and it is the
+capability administrators miss most when they go back.
+\end{conceptbox}
+
+\begin{worked}[The Forty Servers, Costed]
+The machine room of the opening section, measured over one semester. Decide how
+many hosts replace it, and what that saves.
+
+\smallskip
+\textbf{What is there.} 40 servers, each 2 sockets $\times$ 8 cores $=$ 16
+cores and 64 GB of memory. Measured per server: mean CPU utilisation 8\%, peak
+22\%; mean memory in use 11 GB. Each draws 350 W.
+
+\smallskip
+\textbf{Step 1 --- what is actually consumed.}
+\begin{tight}
+  \item CPU: $40 \times 16 \times 0.08 = 51.2$ cores' worth of work, spread over
+        640 physical cores.
+  \item Memory: $40 \times 11 = 440$ GB in use, of 2{,}560 GB installed.
+\end{tight}
+
+\smallskip
+\textbf{Step 2 --- size the replacement on memory, not CPU.} Memory is the
+binding constraint in almost every consolidation, because it cannot be
+oversubscribed as freely as processor time (\chref{cpumem} says why). Allow 30\%
+headroom for growth and for the hypervisor itself:
+\[ 440 \times 1.3 = 572 \text{ GB} \]
+On hosts of 512 GB that is $\lceil 572/512 \rceil = 2$ hosts. Add one more so
+that a single host failure does not take the estate down --- an \emph{N+1}
+design --- giving \textbf{3 hosts}.
+
+\smallskip
+\textbf{Step 3 --- check that CPU is not the real constraint.} Give each
+workload 4 vCPUs, which is generous against a measured peak of
+$16 \times 0.22 = 3.5$ cores. Three hosts of 2 $\times$ 32 cores give 192
+physical cores:
+\[ \sigma = \frac{40 \times 4}{192} = \frac{160}{192} = 0.83 \]
+An overcommit ratio below 1 means that even if every guest demanded its full
+allocation simultaneously, the cores exist. CPU is not the constraint; memory
+was right.
+
+\smallskip
+\textbf{Step 4 --- the consolidation ratio.}
+\[ R = \frac{40 \text{ workloads}}{3 \text{ hosts}} = \mathbf{13.3 : 1} \]
+
+\smallskip
+\textbf{Step 5 --- the power.} The new hosts are larger and draw 700 W each.
+\[ 40 \times 350 = 14{,}000 \text{ W} \qquad 3 \times 700 = 2{,}100 \text{ W}
+   \qquad \text{saved: } 11.9 \text{ kW} \]
+Cooling roughly tracks the load; at a power usage effectiveness of 1.6 the
+facility saves $11.9 \times 1.6 = 19.0$ kW. Over a year:
+\[ 19.0 \times 8{,}760 = 166{,}400 \text{ kWh} \]
+At PKR 45 per kWh that is \textbf{about PKR 7.5 million a year}, before counting
+the thirty-seven servers not bought, the rack space not rented, or the
+thirty-seven operating systems not patched.
+
+\smallskip
+\textbf{What the number does not say.} Those three hosts are now a shared fate.
+The arithmetic above bought a 13:1 reduction in machines and a 13:1
+concentration of risk, and \chref{migration} is where that bill comes due.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize]
+  % --- before: 40 boxes, lightly used ---
+  \node[font=\small\bfseries, text=neutral!40!black, anchor=south west]
+       at (0,2.7) {Before: 40 servers at 8\%};
+  \foreach \i in {0,...,39}{
+    \pgfmathsetmacro{\cx}{mod(\i,10)*0.62}
+    \pgfmathsetmacro{\cy}{2.35-floor(\i/10)*0.56}
+    \draw[draw=neutral!55, line width=0.6pt, fill=white]
+          (\cx,\cy) rectangle ++(0.50,0.44);
+    \fill[neutral!45] (\cx,\cy) rectangle ++(0.50,0.0352);}
+  \node[font=\scriptsize\itshape, text=neutral, anchor=north west] at (0,0.28)
+       {640 cores installed, 51 used \ $\bullet$\ 14 kW};
+
+  % --- after: 3 boxes, well used ---
+  \node[font=\small\bfseries, text=primary, anchor=south west]
+       at (7.6,2.7) {After: 3 hosts at 68\%};
+  \foreach \i in {0,1,2}{
+    \pgfmathsetmacro{\cx}{7.6+\i*1.45}
+    \pgfmathsetmacro{\mx}{7.6+\i*1.45+0.575}
+    \draw[draw=primary, line width=1pt, fill=white]
+          (\cx,1.23) rectangle ++(1.15,1.56);
+    \fill[primary!35] (\cx,1.23) rectangle ++(1.15,1.0608);
+    \node[font=\scriptsize, text=primary!70!black] at (\mx,0.98)
+         {13--14 guests};}
+  \node[font=\scriptsize\itshape, text=primary, anchor=north west] at (7.6,0.28)
+       {192 cores installed, 160 allocated \ $\bullet$\ 2.1 kW};
+
+  \draw[-{Stealth[length=2.6mm]}, primary!55, line width=1.1pt]
+        (6.55,1.55) -- (7.35,1.55);
+  \node[font=\scriptsize\bfseries, text=accent] at (6.95,1.85) {13.3 : 1};
+
+  \node[font=\scriptsize\itshape, text=neutral!50!black, anchor=north west]
+       at (0,-0.15)
+       {Shaded area is the fraction of installed capacity actually doing work.};
+\end{tikzpicture}}%
+{The same work, before and after. Nothing was made faster; the idle capacity was
+simply stopped from being bought. The right-hand picture is also the risk
+picture: three failure domains where there were forty.}{consolidation}
+
+\section{Where It Came From}
+
+Virtualization is not a 2000s invention. It is a 1960s invention that the
+personal computer made irrelevant for thirty years and the data centre made
+urgent again.
+
+\dsfig{%
+% The colour of each event is written out per node rather than carried by a
+% parameterised ev=<colour> style: a TikZ style taking #1 does not survive
+% being an argument of \dsfig.  See the README's figure rules.
+\begin{tikzpicture}[font=\scriptsize,
+  ev/.style={rounded corners=2pt, line width=0.8pt, font=\scriptsize,
+             align=center, inner sep=3pt, anchor=south}
+]
+  \draw[-{Stealth[length=2.6mm]}, neutral!60, line width=1.2pt]
+        (-0.4,0) -- (16.2,0);
+  \foreach \x/\y in {0/1967, 2.1/1974, 4.0/1999, 5.6/2003, 7.1/2005,
+                     8.7/2006, 10.6/2013, 12.0/2014, 13.6/2018, 15.3/2021}{
+    \draw[neutral!60, line width=0.9pt] (\x,-0.12) -- (\x,0.12);
+    \node[font=\scriptsize\bfseries, text=neutral!40!black, anchor=north]
+         at (\x,-0.16) {\y};}
+
+  \node[ev, draw=primary, fill=primary!10, text=primary!60!black]
+       at (0,0.28)    {IBM CP-67\\\emph{first hypervisor}};
+  \node[ev, draw=primary, fill=primary!10, text=primary!60!black]
+       at (2.1,1.42)  {Popek \&\\Goldberg\\\emph{the theory}};
+  % Every \\ is at the top level of the node.  A \\ inside the \emph{} group
+  % is "Undefined control sequence" at the end of the figure, because an
+  % aligned node redefines \\ only at its own brace level.
+  \node[ev, draw=secondary, fill=secondary!10, text=secondary!60!black]
+       at (4.0,0.28)  {VMware\\\emph{x86, by}\\\emph{translation}};
+  \node[ev, draw=secondary, fill=secondary!10, text=secondary!60!black]
+       at (5.6,1.42)  {Xen\\\emph{x86, by}\\\emph{asking nicely}};
+  \node[ev, draw=secondary, fill=secondary!10, text=secondary!60!black]
+       at (7.1,0.28)  {Intel VT-x\\\emph{x86, in}\\\emph{silicon}};
+  \node[ev, draw=purplehl, fill=purplehl!10, text=purplehl!60!black]
+       at (8.7,1.42)  {Amazon EC2\\\emph{sold by}\\\emph{the hour}};
+  \node[ev, draw=greenhl, fill=greenhl!10, text=greenhl!60!black]
+       at (10.6,0.28) {Docker\\\emph{the image,}\\\emph{not the VM}};
+  \node[ev, draw=greenhl, fill=greenhl!10, text=greenhl!60!black]
+       at (12.0,1.42) {Kubernetes\\\emph{a thousand}\\\emph{of them}};
+  \node[ev, draw=greenhl, fill=greenhl!10, text=greenhl!60!black]
+       at (13.6,0.28) {Firecracker\\\emph{the VM}\\\emph{comes back}};
+  \node[ev, draw=goldhl, fill=goldhl!10, text=goldhl!60!black]
+       at (15.3,1.42) {SEV-SNP, TDX\\\emph{the guest stops}\\\emph{trusting the host}};
+
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror}, accent, line width=0.8pt]
+        (2.4,-0.62) -- (3.7,-0.62);
+  \node[font=\scriptsize\itshape, text=accent, anchor=north] at (3.05,-0.76)
+       {25 years in which x86 could not do this};
+\end{tikzpicture}}%
+{The field in ten dates, coloured by the part of this book that covers each.
+The gap in the middle is the subject of \chref{vmm}: the theory was settled in
+1974, and the dominant architecture then spent a quarter of a century unable to
+satisfy it.}{timeline}
+
+IBM built CP-67 for the System/360 Model 67 because its customers had a problem
+of scarcity rather than sprawl. A mainframe cost millions and there was exactly
+one; a dozen departments each needed their own operating environment on it, and
+several of those operating systems could not be persuaded to share. CP-67 gave
+each department a complete virtual System/360 of its own. Its successor VM/370
+ran in production for decades, and its descendant z/VM still does.
+
+Then the minicomputer and the personal computer made computers cheap, and the
+problem CP-67 solved stopped being a problem: if you needed a second computing
+environment you bought a second computer. The idea went quiet for twenty-five
+years, kept alive on mainframes and in research, while the architecture that won
+the market --- x86 --- turned out, for reasons \chref{vmm} sets out exactly, to
+be incapable of supporting it correctly.
+
+\begin{conceptbox}[Why the second wave looked nothing like the first]
+CP-67 was built for scarcity: one machine, many users. VMware was built for the
+opposite --- forty machines, each almost idle. The motive inverted completely,
+and the mechanism was reused unchanged.
+
+\smallskip
+That is worth noticing because the same inversion happened again. Containers
+were adopted in 2013 largely for \emph{packaging}: a reproducible image that
+runs the same on a laptop and in production. Only afterwards did the industry
+discover that the same mechanism gave it density --- a thousand containers on a
+host that would hold fifty virtual machines --- and density became the reason
+people cite today. A mechanism outlives the motive that produced it, which is
+why this book teaches mechanisms.
+\end{conceptbox}
+
+\section{What Is Virtualized, and Where to Find It}
+
+``Virtualization'' names a technique, not a product category. The useful
+question about any system is \emph{which resource} it virtualizes, because that
+determines what it can promise.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.3cm}L{5.0cm}L{3.0cm}L{3.7cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{What is virtualized} & \textbf{So that} & \textbf{Examples} &
+\textbf{Chapter} \\
+\midrule
+\endhead
+The whole machine & An unmodified operating system boots on it &
+ESXi, Hyper-V, KVM, Xen & \chref{platforms} \\
+The operating system & Processes see a private system, sharing one kernel &
+Docker, containerd, LXC & \chref{containers}, \chref{docker} \\
+The processor and memory & Several guests divide cores and RAM & vCPU
+scheduling, ballooning & \chref{cpumem} \\
+A device & A guest drives hardware it does not exclusively own & virtio,
+SR-IOV, VFIO & \chref{paravirt} \\
+Storage & A file behaves as a disk; many disks behave as one & qcow2, VMDK,
+Ceph, vSAN & \chref{storage} \\
+The network & A switch exists in software; a LAN spans data centres & Open
+vSwitch, VXLAN, SDN & \chref{network} \\
+The desktop & The screen is here and the computer is elsewhere & VDI, Citrix,
+AVD & \chref{desktop} \\
+An accelerator & One GPU serves several tenants & vGPU, MIG, SR-IOV &
+\chref{gpu} \\
+\bottomrule
+\end{longtable}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Treating ``virtual'' as meaning ``not real''.} A virtual
+        processor executes real instructions on real silicon and consumes real
+        electricity. What is virtual is the \emph{mapping}, not the work. The
+        fastest way to mislead yourself about capacity is to believe the vCPU
+        count is free.
+  \item \textbf{Sizing a consolidation from installed capacity rather than
+        measured use.} The forty servers above had 2{,}560 GB installed and used
+        440 GB. Planning against the first number buys five times the hardware
+        you need; it is the single most common and most expensive mistake in
+        this subject.
+  \item \textbf{Assuming consolidation is free.} It converts capital cost into
+        shared risk and contention. Three hosts instead of forty is also three
+        failure domains instead of forty, and every guest on a host is now a
+        potential noisy neighbour to every other (\chref{performance}).
+  \item \textbf{Calling a hypervisor an operating system, or vice versa.} They
+        schedule different things for different consumers. The confusion makes
+        \chref{vmm} incomprehensible, because the whole chapter turns on what
+        the hypervisor is allowed to assume that an operating system is not.
+  \item \textbf{Believing the marketing distinction between ``virtualization''
+        and ``cloud''.} A cloud is virtualization with a billing system, an API
+        and somebody else's staff. \chref{cloud} is explicit about which of the
+        three is doing the work in any given claim.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Your First Virtual Machine]
+Runs on any Linux host, or on Windows under WSL2 with VirtualBox substituted at
+step 2. Appendix~A installs the prerequisites. Expect fifteen minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch01_first_vm.sh -- create, snapshot, break and restore a virtual machine.
+set -euo pipefail
+
+# --- 1. Does this processor support virtualization at all? --------------
+# vmx = Intel VT-x, svm = AMD-V. Chapter 4 explains what these flags buy.
+# A count of 0 means the feature is absent or disabled in firmware.
+grep -c -E '\<(vmx|svm)\>' /proc/cpuinfo
+lscpu | grep -i 'virtuali[sz]ation' || echo "no virtualization line reported"
+
+# --- 2. Install the hypervisor and confirm it is usable -----------------
+sudo apt-get install -y qemu-kvm libvirt-daemon-system virtinst \
+                        libguestfs-tools cloud-image-utils
+# virt-host-validate prints PASS/WARN/FAIL for every prerequisite.
+sudo virt-host-validate qemu | head -20
+
+# --- 3. Fetch a cloud image and give it a login -------------------------
+# A cloud image is a disk file with an operating system already installed:
+# encapsulation (section 1.3) before you have even started.
+wget -nc -O ubuntu.img \
+  https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+cat > user-data <<'YAML'
+#cloud-config
+password: vss2026
+chpasswd: { expire: False }
+ssh_pwauth: True
+YAML
+cloud-localds seed.iso user-data
+
+# --- 4. Create the virtual machine --------------------------------------
+# Read the arguments as a parts list for an imaginary computer.
+sudo cp ubuntu.img /var/lib/libvirt/images/vss1.qcow2
+sudo qemu-img resize /var/lib/libvirt/images/vss1.qcow2 10G
+sudo virt-install --name vss1 --memory 2048 --vcpus 2 \
+  --disk /var/lib/libvirt/images/vss1.qcow2,format=qcow2 \
+  --disk seed.iso,device=cdrom --os-variant ubuntu22.04 \
+  --import --graphics none --noautoconsole
+
+# --- 5. Look at it from the host ----------------------------------------
+# dominfo is the guest as the hypervisor sees it: an allocation, not a machine.
+sudo virsh list --all
+sudo virsh dominfo vss1
+
+# --- 6. Snapshot it, then break it on purpose ---------------------------
+sudo virsh snapshot-create-as vss1 clean "before I broke it"
+sudo virsh console vss1    # log in as ubuntu / vss2026, then:
+                           #   sudo rm -rf /etc/systemd  ; sudo reboot
+                           # Ctrl-] returns you to the host.
+
+# --- 7. Undo four minutes of damage in four seconds ---------------------
+# No physical server supports this operation. That is section 1.3's point.
+sudo virsh snapshot-revert vss1 clean --running
+sudo virsh snapshot-list vss1
+
+# --- 8. Tear down -------------------------------------------------------
+sudo virsh destroy vss1 || true
+sudo virsh undefine vss1 --remove-all-storage --snapshots-metadata
+\end{lstlisting}
+
+\textbf{What to notice.} Step 6 took longer to type than step 7 took to undo,
+and step 7 has no physical equivalent. Everything else in this book is detail;
+that asymmetry is the subject.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A department runs 24 servers, each with 128 GB of memory, of which a
+        measured 19 GB is in use. You are sizing hosts with 384 GB each, with
+        30\% headroom and an N+1 spare. How many hosts, and what consolidation
+        ratio does that give?
+  \item A colleague says ``containers are faster than virtual machines because
+        there is no virtualization layer.'' Which half of that sentence is
+        wrong, and what is the correct statement?
+  \item Of the four motives in Section 1.3, which one has no equivalent for
+        physical servers at all? Give an operation it makes possible and say
+        why a physical machine cannot offer it.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Virtualization inserts a layer that presents a resource differing from
+        the physical one, while preserving the interface above it. It
+        multiplexes, aggregates or abstracts --- often all three.
+  \item The preserved interface is what distinguishes it: an unmodified
+        operating system runs above the layer.
+  \item Emulation interprets every instruction and is general and slow;
+        virtualization executes most instructions natively and is restricted
+        and fast. QEMU does both, in different modes.
+  \item Four motives: consolidation, isolation, encapsulation, elasticity.
+        Encapsulation --- a running machine as a file --- is the one with no
+        physical analogue.
+  \item Size a consolidation from measured use, not installed capacity, and
+        expect memory rather than CPU to be the binding constraint.
+  \item The technique is from 1967. The twenty-five-year gap in the middle of
+        its history is an x86 problem, and \chref{vmm} is what went wrong.
+  \item Ask of any product: \emph{which resource does it virtualize?} That
+        determines what it can promise, and which chapter of this book covers
+        it.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The defining property that separates virtualization from
+        ordinary resource-sharing software is that: (a)~it runs in kernel mode;
+        (b)~it preserves the interface, so unmodified software runs above it;
+        (c)~it improves performance; (d)~it requires hardware support.
+  \item \textbf{(MCQ)} A tool runs ARM binaries on an x86 laptop at roughly one
+        fiftieth of native speed. This is: (a)~virtualization;
+        (b)~paravirtualization; (c)~emulation; (d)~containerisation.
+  \item \textbf{(Short)} Give the three things a virtualization layer can do to
+        a resource, with one concrete example of each from a system you have
+        used.
+  \item \textbf{(Short)} Explain why memory, rather than processor time, is
+        usually the constraint that decides how many guests fit on a host.
+  \item \textbf{(Short)} The opening section argued that forty separate servers
+        was a rational response to a real requirement. Name the requirement,
+        and explain precisely what virtualization changed about it.
+  \item \textbf{(Applied)} A faculty runs 60 servers at a measured mean of 6\%
+        CPU and 14 GB of 96 GB memory each, drawing 300 W apiece. Size a
+        replacement estate on 768 GB hosts drawing 850 W, with 30\% headroom and
+        N+1. Give the host count, the consolidation ratio and the annual energy
+        saved at PUE 1.6 and PKR 45 per kWh. Then state the one risk your
+        proposal has introduced and what you would do about it.
+  \item \textbf{(Applied)} For each of these, say which resource is virtualized
+        and which chapter of this book covers it: a laptop running Windows
+        inside a window on macOS; a Kubernetes cluster; an NVMe disk presented
+        to eight tenants; an office where staff keep no local files and log in
+        to the same desktop from any machine; a GPU shared between three
+        training jobs.
+\end{reviewq}

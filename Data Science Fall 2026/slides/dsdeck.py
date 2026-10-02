@@ -1430,6 +1430,23 @@ class Deck:
 
     # -- figures -------------------------------------------------------------
 
+    def _figure_beside(self, s, png, svg, ar, rest, number, cap):
+        """Figure left, takeaway right -- for figures that are nearly square."""
+        gap = 0.42
+        fw = min(CW * 0.66, BODY_H * ar)
+        fh = fw / ar
+        tw = CW - fw - gap
+        self.picture(s, png, ML, BODY_Y + (BODY_H - fh) / 2, fw, fh, svg,
+                     name="!!figure", alt=f"Figure {number}. {cap}")
+        tx = ML + fw + gap
+        sz = self.fit_size([T.Run(rest)], tw - 0.3, BODY_H - 1.0, 19, 15)
+        spec = PSpec([T.Run(rest)], sz, "3E4C57", spacing=1.08)
+        th = spec.height(tw - 0.3)
+        ty = BODY_Y + max(0.0, (BODY_H - th) / 2)
+        self.rect(s, tx, ty, 0.06, th, self.hue, name="!!takebar")
+        self.write(s, tx + 0.24, ty - 0.03, tw - 0.3, th + 0.1, [spec],
+                   name="!!take")
+
     def figure_slide(self, fig: T.FigureE, number: str, page: int,
                      section: str, notes="", ref="", step=None, morph=False):
         cap = T.plain(fig.caption)
@@ -1439,6 +1456,19 @@ class Deck:
         s = self.new("figure")
         self.chrome(s, title, f"Figure {number}" if number else "Figure",
                     None, ref, kicker_color=self.accent_txt)
+        ar = 0.0
+        if os.path.exists(png):
+            from PIL import Image
+            with Image.open(png) as im:
+                ar = im.size[0] / im.size[1]
+        # A near-square figure scaled to the body height leaves most of the
+        # slide empty on both sides.  Stand the takeaway beside it instead.
+        if rest and 0 < ar < 1.55:
+            self._figure_beside(s, png, svg, ar, rest, number, cap)
+            FX.transition(s, "morph" if morph else "fade")
+            self.notes(s, "\n\n".join(x for x in (
+                notes, f"Figure {number} (handout p. {page}): {cap}") if x))
+            return s
         take_h = 0.0
         take_sz = 17
         if rest:
@@ -1446,10 +1476,7 @@ class Deck:
             take_h = PSpec([T.Run(rest)], take_sz, spacing=1.04).height(
                 CW - 0.3) + 0.24
         area_h = BODY_H - take_h - 0.08
-        if os.path.exists(png):
-            from PIL import Image
-            with Image.open(png) as im:
-                ar = im.size[0] / im.size[1]
+        if ar:
             w = min(CW, area_h * ar)
             h = w / ar
             x = ML + (CW - w) / 2
@@ -1544,7 +1571,9 @@ class Deck:
         badge = 0.40
         tx = ML + badge + 0.26
         tw = CW - (tx - ML)
-        y0 = BODY_Y + (0.5 if lead else 0.0)
+        lead_h = (PSpec(lead.runs, 16, spacing=1.04).height(CW) + 0.16
+                  if lead else 0.0)
+        y0 = BODY_Y + lead_h
         room = BODY_B - y0
         for sz in (21, 20, 19, 18, 17):
             hs = [max(badge, PSpec(it.runs, sz, spacing=1.04).height(tw))
@@ -1567,9 +1596,10 @@ class Deck:
                         st.label, st, ref)
             y = BODY_Y
             if lead and pi == 0:
-                self.write(s, ML, y, CW, 0.4, [PSpec(lead.runs, 16, MUTED)],
+                self.write(s, ML, y, CW, lead_h, [PSpec(lead.runs, 16,
+                                                        MUTED)],
                            name="!!plead")
-                y += 0.5
+                y += lead_h
             steps = []
             for k, (it, hh) in enumerate(page):
                 b = self.rect(s, ML, y + 0.02, badge, badge,

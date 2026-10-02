@@ -243,8 +243,13 @@ def read_args(s: str, i: int, n: int, opt: bool = False
 
 
 def strip_comments(tex: str) -> str:
-    """Remove LaTeX comments. Code listings must be protected first."""
-    return re.sub(r"(?<!\\)%.*", "", tex)
+    """Remove LaTeX comments. Code listings must be protected first.
+
+    The newline goes with the comment, as it does in TeX: leaving it behind
+    turns a comment-only line into a blank one, and a blank line inside a
+    pgfplots option list ends the paragraph and the compile.
+    """
+    return re.sub(r"(?<!\\)%.*\n?", "", tex)
 
 
 # ---------------------------------------------------------------------------

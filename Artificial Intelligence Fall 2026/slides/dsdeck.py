@@ -251,7 +251,13 @@ def style_runs(p, runs, size, color=INK, bold=False, italic=False,
         run = p.add_run()
         run.text = r.text
         f = run.font
-        sz = size * (0.94 if r.mono else 1.0)
+        # a script run is SET smaller as well as raised: this is what
+        # PSpec.pieces() measures, so leaving it at full size made
+        # exponents render full-height and measure short.
+        scale = 0.94 if r.mono else 1.0
+        if r.script:
+            scale *= 0.66
+        sz = size * scale
         f.size = Pt(round(sz * 2) / 2)
         fam = MONO if r.mono else (MATHF if r.math else family)
         f.name = fam

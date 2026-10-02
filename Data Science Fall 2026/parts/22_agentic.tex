@@ -21,9 +21,10 @@ chapter first.
 
 \begin{keyterms}
 agent $\bullet$ autonomy $\bullet$ agent loop $\bullet$ tool / function calling
-$\bullet$ short-term and long-term memory $\bullet$ planning $\bullet$ ReAct
-$\bullet$ multi-agent system $\bullet$ guardrail $\bullet$ human in the loop
-$\bullet$ prompt injection $\bullet$ blast radius
+$\bullet$ Model Context Protocol $\bullet$ short-term and long-term memory
+$\bullet$ planning $\bullet$ ReAct $\bullet$ multi-agent system $\bullet$ guardrail
+$\bullet$ human in the loop $\bullet$ prompt injection $\bullet$ blast radius
+$\bullet$ trajectory evaluation
 \end{keyterms}
 
 \section{What Makes Something an Agent}
@@ -130,6 +131,22 @@ effect from \chref{genai} --- and it produces the audit trail without which the
 system cannot be debugged or defended.
 \end{conceptbox}
 
+\begin{conceptbox}[How Tools Get Wired In: One Protocol Instead of $N$ Adapters]
+Early agents needed a bespoke adapter for every system they touched: $m$ agents
+times $n$ systems meant $m \times n$ integrations. The \term{Model Context
+Protocol} (MCP) replaced that with one interface --- a tool or data source is
+exposed once as an MCP \emph{server}, and any MCP-speaking client can use it. It
+was donated to the Linux Foundation's Agentic AI Foundation in December 2025 and
+is now supported natively by every major assistant, which is why ``write an MCP
+server for it'' has become the normal way to give an agent access to something.
+
+Two things this does \emph{not} change, and they are the examinable ones. A
+standard connector is still a connector: everything in \dsref{agent-failures}
+applies to a tool reached over MCP exactly as it would to a hand-written one, and
+a server you did not write is third-party code with your credentials. Grant it the
+least privilege that works, and log what it does.
+\end{conceptbox}
+
 \section{Memory}
 
 \rowcolors{2}{white}{defbg}
@@ -167,6 +184,30 @@ Multi-agent designs are appealing on a slide and expensive in practice: errors
 compound across handoffs, cost multiplies, and debugging becomes very hard because
 failures emerge from the interaction rather than from any one component. Make a
 single agent work before you build a committee.
+\end{conceptbox}
+
+\section{Evaluating an Agent}
+
+\begin{conceptbox}[Score the Path, Not Only the Destination]
+\chref{evaluation} scored a single prediction against a label. An agent produces a
+\emph{trajectory} --- a sequence of thoughts, tool calls and observations --- and a
+right answer reached by a wrong route will fail the next time the route matters.
+Evaluate on four things:
+
+\begin{tight}
+  \item \textbf{Outcome:} did it achieve the goal, judged against a fixed set of
+        tasks you wrote \emph{before} building the agent?
+  \item \textbf{Trajectory:} did it call sensible tools in a sensible order, or
+        stumble into the answer? Replay the logs.
+  \item \textbf{Cost:} tokens, wall-clock time and number of steps per completed
+        task --- an agent that succeeds for three dollars a ticket is not viable
+        for a help desk.
+  \item \textbf{Safety:} how does it behave on a suite of hostile inputs,
+        including documents containing injected instructions? Run this on every
+        release, exactly as \chref{cybersecurity} would run a red-team suite.
+\end{tight}
+Because the agent is non-deterministic, run each task several times and report the
+\emph{success rate}, not a single pass or fail.
 \end{conceptbox}
 
 \section{Failure Modes Unique to Agents}

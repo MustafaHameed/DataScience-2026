@@ -6,15 +6,17 @@ course, written to the HEC curriculum. The whole course is one document: six par
 rule engine that explains itself. Every chapter has a matching PowerPoint deck
 generated from the handout, and a runnable Python lab.
 
-**Current build:** 152 pages · 22 figures, all numbered, captioned and listed ·
-22 decks, 507 slides · zero LaTeX errors, zero undefined references, zero overfull
-or underfull boxes, zero font warnings · slide QA static checks clean.
+**Current build:** 290 pages · 52 figures, all numbered, captioned and listed ·
+22 decks, 1,133 slides · zero LaTeX errors, zero undefined references, zero
+overfull or underfull boxes, zero font warnings · slide QA static checks clean ·
+all 22 labs run green.
 
-**Status:** Chapters 1–6 (Parts I and II) are written in full, with labs,
-figures and verified numbers. Chapters 7–22 are structured stubs — outcomes,
-prerequisites, key terms and section headings are settled and match the Course
-Specification and Appendix G; prose, figures, worked examples and labs are being
-written chapter by chapter.
+**Status: complete.** All 22 chapters are written in full — prose, figures,
+worked examples, pitfalls, checkpoints, summaries, review questions and a runnable
+lab apiece — across 290 pages. Every number quoted in the text is produced by that
+chapter's lab and checked by an assertion, so the prose and the code cannot drift
+apart. All seven appendices are written, including worked answers to every
+checkpoint.
 
 **This course is symbolic, on purpose.** It teaches the agent that is *told* the
 rules and must reason with them: agents, search, constraints, games, planning,

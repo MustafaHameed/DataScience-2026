@@ -1,0 +1,636 @@
+%=====================================================================
+% FRONT MATTER
+%=====================================================================
+\pagenumbering{roman}
+% Front-matter figures sit outside any chapter, so give them their own prefix
+% rather than letting them inherit a misleading chapter number.
+\structuralfigures{F.}
+\thispagestyle{empty}
+
+\begin{center}
+\vspace*{1.0cm}
+
+{\color{secondary}\rule{0.85\textwidth}{2pt}}\\[6pt]
+{\large\textsc{\color{secondary}Bachelor of Science in Information Technology}}\\[18pt]
+
+{\Huge\bfseries\color{primary}VIRTUAL SYSTEMS AND SERVICES}\\[10pt]
+{\LARGE\bfseries\color{primary}From Hypervisors to the Cloud-Native Stack}\\[16pt]
+
+{\color{secondary}\rule{0.85\textwidth}{2pt}}\\[16pt]
+
+{\Large\textsc{Unified Lecture Handout}}\\[6pt]
+{\large\color{gray!70!black}Complete Course in One Volume $\bullet$ Fall 2026}\\[24pt]
+
+% --- the one claim the whole book rests on ---
+\begin{tikzpicture}
+  \node[rounded corners=4pt, draw=primary, line width=1.1pt, fill=primary!6,
+        text=primary, align=center, font=\small\bfseries,
+        minimum width=11.4cm, minimum height=1.5cm]
+       {\faIcon{layer-group}\\[2pt]One idea, six times over: put a layer
+        underneath, and lie to what sits above it};
+\end{tikzpicture}\\[10pt]
+{\small\itshape\color{gray!70!black}A CPU that is not a CPU, a disk that is not a
+disk, a network that is not a network --- and the cost of each lie.}
+
+\vspace{1.0cm}
+
+\begin{tcolorbox}[enhanced, width=0.86\textwidth, colback=lightbg,
+  colframe=primary, boxrule=0pt, leftrule=4pt, arc=2pt, top=6pt, bottom=6pt]
+\small
+\textbf{\color{primary}What this volume covers.} The HEC course \emph{Virtual
+Systems and Services}, modernised. Parts~I and~II teach the 2017 outline close
+to its published specification --- what a hypervisor is, why x86 resisted
+virtualization for twenty years, and what Intel and AMD added to hardware to
+end that. Parts~III to~VI carry the same ideas forward into containers,
+Kubernetes, storage and network virtualization, cloud service models, live
+migration, and confidential computing.
+
+\smallskip
+HEC published contents for this course once, in 2017. The 2025 revision drops
+it and divides its ground between \emph{Cloud Computing} and \emph{Microservices
+Architecture and Docker Containers}. Appendix~F states exactly where the line
+falls, and why a course that goes one layer below both still earns its place.
+\end{tcolorbox}
+
+\vspace{0.9cm}
+{\small\color{gray!60!black}Six Parts $\bullet$ Twenty-Three Chapters $\bullet$ Seven Appendices}
+\vspace{1cm}
+\end{center}
+
+\newpage
+
+%=====================================================================
+\chapter*{How to Use This Handout}
+\addcontentsline{toc}{chapter}{How to Use This Handout}
+\markboth{How to Use This Handout}{}
+
+This book has one subject, met six times. A \term{virtualization layer} sits
+between something real and something that believes it has the real thing, and
+keeps the belief intact. Chapters~3 to~7 do it to a processor. Chapters~8
+to~11 do it to an operating system. Chapter~12 does it to a disk, Chapter~13
+to a network, Chapter~15 to a desktop, Chapter~20 to a graphics card. The
+machinery differs; the question never does --- \emph{what is the lie, who
+maintains it, and what does maintaining it cost?}
+
+Read it in order. Each layer is built from the one before.
+
+\section*{The six parts}
+
+\textbf{Part~I --- Foundations of Virtualization} (Chapters 1--3) fixes the
+vocabulary and then proves the hard part. Chapter~3 is the theoretical spine of
+the book: Popek and Goldberg's conditions, why x86 failed them for two decades,
+and the two ways round that failure. Everything in Part~II is a hardware answer
+to a problem stated in Chapter~3.
+
+\textbf{Part~II --- Hypervisors and Compute Virtualization} (Chapters 4--7) is
+the engine room. What Intel and AMD put in silicon; the four platforms you will
+actually meet; how a CPU and a gigabyte of memory are divided among guests that
+each think they own everything; and how a device is shared, emulated or handed
+over outright.
+
+\textbf{Part~III --- Containers and Lightweight Virtualization} (Chapters 8--11)
+changes what is virtualized. Not the hardware, but the operating system's own
+view of itself: namespaces, control groups and layered filesystems. Then Docker,
+then Kubernetes, then the designs that put a hypervisor back underneath a
+container because isolation mattered more than density.
+
+\textbf{Part~IV --- Storage, Network and Cloud Virtualization} (Chapters 12--15)
+applies the same idea to everything that is not a CPU. It ends at the cloud,
+which is this book's six layers sold by the hour.
+
+\textbf{Part~V --- Management, Performance and Security} (Chapters 16--19) is
+the operations half: what you run to manage a fleet, how a running machine moves
+between hosts without stopping, which numbers tell you a host is overloaded ---
+and the attacks that exist only because the layer exists.
+
+\textbf{Part~VI --- Emerging Hardware and Practice} (Chapters 20--23) closes
+with the parts still moving: accelerator partitioning, encrypted memory and
+attestation, four case studies, and your project.
+
+\begin{conceptbox}
+Why the theory chapter comes third, and not later. Chapter~3 is the most
+demanding chapter in the book, and it is deliberately early. Without it,
+hardware-assisted virtualization is a list of acronyms to memorise; with it,
+every feature in Chapter~4 has a reason --- each one exists because
+trap-and-emulate could not be made to work on x86. A reader who skips
+Chapter~3 can still pass the course and will never understand why any of it
+was built.
+\end{conceptbox}
+
+\section*{The furniture of every chapter}
+
+Every chapter has the same parts, in the same order. Learn to read them once.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.6cm}L{10.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Box} & \textbf{What it is for} \\
+\midrule
+\endhead
+\faIcon{bullseye}~\textbf{Outcomes} & What you will be able to \emph{do}. Bloom
+verbs, not topics. Use it as a checklist before the examination. \\
+\faIcon{link}~\textbf{Before you start} & Which earlier chapters this one stands
+on. If these are shaky, go back; nothing here is improved by pressing on. \\
+\faIcon{tags}~\textbf{Key terms} & The vocabulary introduced. Every one appears
+in the glossary of Appendix~D. \\
+\faIcon{book}~\textbf{Definition} & The canonical statement. Learn these
+verbatim; this field is full of terms used loosely in marketing and precisely in
+documentation. \\
+\faIcon{lightbulb}~\textbf{Concept} & The judgement call --- what an experienced
+administrator would decide here, and why. \\
+\faIcon{exclamation-triangle}~\textbf{Warning} & Something that will bite you,
+usually in production and usually at scale. \\
+\faIcon{calculator}~\textbf{Worked example} & Real arithmetic, every step shown.
+Consolidation ratios, page-walk costs, migration times, availability budgets.
+Do them with a pen. \\
+\faIcon{exclamation-circle}~\textbf{Common pitfalls} & The mistakes that are
+actually made, with the symptom each produces. \\
+\faIcon{flask}~\textbf{Try it yourself} & The laboratory. Each is a runnable file
+in \texttt{code/}, named for its chapter. \\
+\faIcon{question-circle}~\textbf{Checkpoint} & Three questions. Attempt them
+before reading the answers in Appendix~C. \\
+\faIcon{clipboard-check}~\textbf{Chapter summary} & What to retain. \\
+\faIcon{pen-fancy}~\textbf{Review questions} & Examination practice: multiple
+choice, short answer, applied. \\
+\bottomrule
+\end{longtable}
+
+\section*{How to study with it}
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=3pt, topsep=4pt]
+  \item Read the outcomes first. They tell you what the chapter is \emph{for}.
+  \item Read the prose once without stopping, then again with a pen on the
+        worked examples. Every number in this book was computed before it was
+        typed; you should be able to reproduce each one.
+  \item Run the lab. This is not an optional enrichment: a hypervisor is a thing
+        you develop intuition about by breaking it, and the labs are built to be
+        broken. Overcommit memory until the guest swaps. Fill a thin pool.
+        Migrate a machine while pinging it.
+  \item Do the checkpoint from memory. Then read Appendix~C and argue with it.
+  \item Attempt the applied review questions in pairs. They are written to be
+        discussed, not looked up.
+\end{enumerate}
+
+\begin{alertbox}[On the laboratories, and what they need]
+Every lab in this book runs on one student laptop with free software. Where the
+subject is an enterprise platform --- vSphere, Hyper-V on a cluster, a Ceph
+estate, an NVIDIA vGPU --- the chapter teaches the real thing and the lab uses a
+free equivalent that behaves the same way, naming the substitution in its first
+line. KVM with \texttt{virsh} stands in for vSphere; \texttt{kind} stands in for
+a production Kubernetes cluster; LVM thin pools stand in for enterprise storage.
+
+\smallskip
+Three labs need hardware not every reader has: nested virtualization in
+Chapter~4, GPU partitioning in Chapter~20, and an SEV- or TDX-capable processor
+in Chapter~21. Each ships captured output in \texttt{code/} so the exercise can
+be done by reading. No lab in this book is an instruction to buy something.
+
+\smallskip
+Appendix~A installs and verifies the whole stack in one sitting.
+\end{alertbox}
+
+\newpage
+
+%=====================================================================
+\chapter*{Course Specification}
+\addcontentsline{toc}{chapter}{Course Specification}
+\markboth{Course Specification}{}
+
+This page is the course file. It states what HEC requires of a course called
+\emph{Virtual Systems and Services}, and shows where in this handout each
+requirement is met.
+
+This course's position in the HEC curricula is unusual enough to state plainly
+before the tables begin. HEC published contents for it \emph{once}, in the 2017
+\emph{Curriculum of BS \& MS CS, SE \& IT} (pp.~71--130). The 2023 revision
+keeps the title in the BSIT tables as a domain elective but publishes no
+contents for the Information Technology cluster at all. The 2025 revision
+removes the course, dividing its ground between \emph{Cloud Computing}, a new
+major core, and \emph{Microservices Architecture and Docker Containers}.
+
+The 2017 outline is therefore the only authoritative description that exists,
+and this handout treats it as binding on Parts~I and~II and as a starting point
+for the rest.
+
+\section*{Course particulars}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.2cm}L{11.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Item} & \textbf{Value} \\
+\midrule
+\endhead
+Course title & Virtual Systems and Services \\
+Programme & BS Information Technology. A domain elective under HEC 2017 and
+HEC 2023; absent from HEC 2025 \\
+Credit hours & 3 (2--1): two credit hours of lectures and one of laboratory \\
+Prerequisite & Programming Fundamentals (HEC 2017). In practice this course also
+assumes comfort at a Linux command line; the self-check two pages on says what
+that means concretely \\
+Duration & Sixteen teaching weeks, with a midterm in Week~8 and a project due in
+Week~16 (Appendix~G) \\
+Course introduction & The HEC 2017 aim, verbatim: ``This course will investigate
+the current state of virtualization in computing systems. Virtualization at both
+the hardware and software levels will be examined, with emphasis on the
+hypervisor configurations of systems such as Vmware, Zen and Hyper-V. The
+features and limitations of virtual environments will be considered, along with
+several case studies used to demonstrate the configuration and management of
+such systems. Para-virtualized software components will be analyzed and their
+pros and cons discussed. Processor and peripheral support for virtualization
+will also be examined, with a focus on emerging hardware features and the future
+of virtualization.'' \\
+Set texts & See the note below. The two titles HEC 2017 lists are not about this
+subject; Appendix~E gives the references this handout actually uses \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The set texts in the published outline are the wrong books]
+HEC 2017 lists two texts for this course: K.\ M.\ Stanney, \emph{Handbook of
+Virtual Environments: Design, Implementation and Applications}, and G.\ Burdea,
+\emph{Virtual Reality Technology}.
+
+\smallskip
+Both are virtual-\emph{reality} references --- head-mounted displays, haptics,
+presence and simulator sickness. Neither mentions a hypervisor. The outline's own
+description is unambiguously about system virtualization, so the reading list
+appears to have been assembled from the course title rather than its contents.
+This handout does not use them. Appendix~E lists the primary sources it does
+use, beginning with Popek and Goldberg's 1974 paper, the Intel and AMD
+architecture manuals, and the Xen, KVM and Firecracker papers.
+
+\smallskip
+The outline also spells Xen as ``Zen''. It is Xen, after the Xenoserver project
+at Cambridge.
+\end{alertbox}
+
+\section*{Course learning outcomes}
+
+HEC 2017 publishes an outline but no Bloom-levelled outcomes, and the later
+editions publish neither. The six below are written against the 2017 outline and
+traced to the chapters that deliver them.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{1.3cm}L{7.6cm}L{2.1cm}L{3.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{CLO} & \textbf{By the end of the course the student will be able to} &
+\textbf{Bloom} & \textbf{Chapters} \\
+\midrule
+\endhead
+CLO-1 & Explain what a virtualization layer is, and classify a given system by
+the layer it virtualizes and the technique it uses & C2 Understand & 1, 2, 8 \\
+CLO-2 & State the Popek--Goldberg conditions and explain why x86 failed them,
+and how binary translation and hardware assistance each answer that failure &
+C3 Apply & 3, 4 \\
+CLO-3 & Configure and manage virtual machines and containers on at least three
+platforms, including storage and networking & C3 Apply & 5--7, 9--13, 16 \\
+CLO-4 & Analyze the performance of a virtualized workload, identify the
+bottleneck from hypervisor metrics, and size a host for a given set of guests &
+C4 Analyze & 6, 17, 18 \\
+CLO-5 & Evaluate the security and the cost of a virtualization or cloud design,
+and justify a deployment model against stated requirements & C5 Evaluate &
+14, 19, 21, 22 \\
+CLO-6 & Build, deploy, measure and document a working virtualized service &
+C6 Create & 23, and every lab \\
+\bottomrule
+\end{longtable}
+
+\section*{Coverage of the HEC 2017 course outline}
+
+The published outline is a single descriptive paragraph rather than a topic
+list. Each of its eleven clauses is traced below, in the order HEC writes them.
+Nothing is omitted.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{6.4cm}L{2.0cm}L{6.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{HEC 2017 clause} & \textbf{Chapter} & \textbf{Where exactly} \\
+\midrule
+\endhead
+``The current state of virtualization in computing systems'' & 1 & What the
+layer is, the four motives for inserting one, and the line from CP-67 to the
+cloud \\
+``Virtualization at the hardware level'' & 4 & VT-x and AMD-V, the VMCS,
+extended page tables, the IOMMU \\
+``\ldots\ and software levels'' & 2, 3 & Full virtualization, paravirtualization
+and binary translation; the virtual machine monitor itself \\
+``Hypervisor configurations of systems such as VMware, Xen and Hyper-V'' & 5 &
+All three, plus KVM, each as an architecture diagram and a comparison table \\
+``The features \ldots\ of virtual environments'' & 6, 7, 17 & Overcommit,
+ballooning, page sharing, NUMA; virtio and passthrough; snapshots and live
+migration \\
+``\ldots\ and limitations'' & 6, 18, 19 & What overcommit costs, how a
+virtualized benchmark lies, and the attack surface the layer creates \\
+``Several case studies \ldots\ configuration and management of such systems'' &
+16, 22 & The management platforms in Chapter~16; four full case studies in
+Chapter~22 \\
+``Para-virtualized software components will be analyzed'' & 7 & The split-driver
+model, virtqueues, and the PV driver sets of each platform \\
+``\ldots\ and their pros and cons discussed'' & 7 & Emulated against
+paravirtualized against passthrough, measured, with the cost of each \\
+``Processor \ldots\ support for virtualization'' & 4 & Chapter~4 entire \\
+``\ldots\ and peripheral support'' & 7, 20 & SR-IOV and VFIO in Chapter~7; GPU
+and accelerator partitioning in Chapter~20 \\
+``Emerging hardware features and the future of virtualization'' & 20, 21 &
+Accelerator virtualization; confidential computing, attestation, CXL and
+composable infrastructure \\
+\bottomrule
+\end{longtable}
+
+\section*{Topics taught here that the 2017 outline does not name}
+
+The 2017 outline predates Docker's general adoption, Kubernetes entirely, and
+every confidential-computing platform in Chapter~21. Eight chapters go beyond
+its letter. They are listed here so that the departure is explicit.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.1cm}L{8.2cm}L{3.7cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Chapters} & \textbf{Why they are here} & \textbf{What they rest on} \\
+\midrule
+\endhead
+8--11 Containers & The dominant form of virtualization in industry since 2015,
+and the direct subject of the course HEC 2025 created to replace this one.
+Taught as what they are --- operating-system-level virtualization, one layer
+above the hypervisor & HEC 2025, \emph{Microservices Architecture and Docker
+Containers} \\
+12--13 Storage and network & The 2017 clause ``virtualization at both the
+hardware and software levels'' is not restricted to the processor, and no
+hypervisor is useful without virtual disks and virtual switches & HEC 2017,
+``hardware and software levels'' \\
+14 Cloud models & Where virtualization is actually consumed. Without it the
+course ends at the machine room door & HEC 2025, \emph{Cloud Computing} \\
+21 Confidential computing & The direct continuation of ``emerging hardware
+features and the future of virtualization'', written sixteen years later &
+HEC 2017, ``emerging hardware features'' \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}
+The overlap with \emph{Cloud Computing} is real, intended, and bounded. The
+curriculum map that traces these editions reaches a blunt conclusion ---
+``virtualisation is one chapter of cloud computing, not a peer of it'' --- and
+where a department offers both courses, that is the right call.
+
+\smallskip
+Where this one is offered, it earns its three credit hours by going a layer
+\emph{below} a cloud course rather than alongside it. A cloud course explains
+what an instance is and how to rent one. This course explains what happens on
+the host when you do: which instruction trapped, which page table was walked
+twice, which driver was split in half, and why the instance beside yours can
+make yours slow. Appendix~F draws the line topic by topic, and names what this
+course deliberately does not teach.
+\end{conceptbox}
+
+\newpage
+
+%=====================================================================
+\chapter*{The Course at a Glance}
+\addcontentsline{toc}{chapter}{The Course at a Glance}
+\markboth{The Course at a Glance}{}
+
+\dsfigh{%
+\begin{tikzpicture}[
+  part/.style={rounded corners=3pt, fill=#1, text=white, font=\bfseries\footnotesize,
+               minimum width=2.5cm, text width=2.2cm, minimum height=0.95cm,
+               align=center},
+  ch/.style={rounded corners=2pt, draw=#1, line width=0.7pt, fill=#1!7, text=#1!60!black,
+             font=\scriptsize, minimum width=2.5cm, minimum height=0.52cm, align=center},
+  arr/.style={-{Stealth[length=2mm]}, primary!45, line width=0.8pt}
+]
+\node[part=primary]   (p1) at (0,0)    {Part I\\Foundations};
+\node[part=secondary] (p2) at (3.0,0)  {Part II\\Hypervisors};
+\node[part=greenhl]   (p3) at (6.0,0)  {Part III\\Containers};
+\node[part=purplehl]  (p4) at (9.0,0)  {Part IV\\Storage, Network, Cloud};
+\node[part=tealhl]    (p5) at (12.0,0) {Part V\\Operations};
+\node[part=goldhl]    (p6) at (15.0,0) {Part VI\\Emerging and Practice};
+
+\foreach \a/\b in {p1/p2,p2/p3,p3/p4,p4/p5,p5/p6}{\draw[arr] (\a) -- (\b);}
+
+\foreach \i/\t in {1/{1. What Virtualization Is}, 2/{2. Architectures},
+                   3/{3. The VMM}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=primary] at (0,\yy) {\t};}
+
+\foreach \i/\t in {1/{4. Hardware Support}, 2/{5. Platforms},
+                   3/{6. CPU and Memory}, 4/{7. Paravirtualization}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=secondary] at (3.0,\yy) {\t};}
+
+\foreach \i/\t in {1/{8. VMs to Containers}, 2/{9. Docker},
+                   3/{10. Kubernetes}, 4/{11. Lightweight}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=greenhl] at (6.0,\yy) {\t};}
+
+\foreach \i/\t in {1/{12. Storage}, 2/{13. Network and SDN},
+                   3/{14. Cloud Models}, 4/{15. Desktop and App}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=purplehl] at (9.0,\yy) {\t};}
+
+\foreach \i/\t in {1/{16. Management}, 2/{17. HA and Migration},
+                   3/{18. Performance}, 4/{19. Security}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=tealhl] at (12.0,\yy) {\t};}
+
+\foreach \i/\t in {1/{20. GPU and Accelerators}, 2/{21. Confidential Computing},
+                   3/{22. Case Studies}, 4/{23. Project}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=goldhl] at (15.0,\yy) {\t};}
+
+\node[rounded corners=3pt, fill=primary!7, draw=primary!30,
+      minimum width=17.3cm, minimum height=0.66cm,
+      font=\scriptsize\bfseries, text=primary] at (7.5,-3.95)
+      {\faIcon{layer-group}~~The same question in every part: what is the lie,
+       who maintains it, and what does maintaining it cost?};
+\end{tikzpicture}}%
+{The six parts and the chapters in each. Parts I and II teach the HEC 2017
+outline close to specification; Parts III to VI carry it forward to the stack
+in production use today.}{coursemap}
+
+\vspace{4pt}
+{\small\itshape\color{gray!70!black}
+This course sits beside \emph{Cloud Computing}, \emph{System and Network
+Administration} and the CCNA track, and one layer below all three.
+Appendix~F states what belongs to each.}
+
+\newpage
+
+%=====================================================================
+\chapter*{The Laboratory Stack}
+\addcontentsline{toc}{chapter}{The Laboratory Stack}
+\markboth{The Laboratory Stack}{}
+
+This course is unusual among the BSIT electives in that the subject is
+infrastructure, and infrastructure is expensive. A faithful laboratory for the
+2017 outline would need a vSphere licence, a Hyper-V cluster, a SAN and a
+GPU with vGPU entitlement --- perhaps forty thousand dollars of software before
+any hardware.
+
+That is not what this book asks for. Every lab runs on one laptop with free
+software, and the substitution is named each time it is made.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.2cm}L{5.2cm}L{5.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{What the chapter teaches} & \textbf{What the lab uses} &
+\textbf{Why the substitution is honest} \\
+\midrule
+\endhead
+VMware ESXi and vSphere & KVM with \texttt{virsh} and \texttt{virt-manager} &
+Both are Type-1 hypervisors with the same primitives. The vocabulary differs;
+the mechanism does not \\
+Microsoft Hyper-V & Hyper-V where Windows Pro is available, KVM otherwise &
+Hyper-V is free with the operating system most students already run \\
+vMotion / Live Migration & \texttt{virsh migrate} between two nested hosts &
+Pre-copy migration with dirty-page tracking, which is the mechanism
+Chapter~17 teaches \\
+Enterprise SAN, Ceph, vSAN & LVM thin pools; a single-node \texttt{cephadm}
+cluster & Thin provisioning, copy-on-write and the over-subscription failure are
+all reproducible on one disk \\
+Production Kubernetes & \texttt{kind} (Kubernetes in Docker) & A real API
+server, scheduler and kubelet. Only the node count is a pretence \\
+NVIDIA vGPU and MIG & \texttt{nvidia-smi} partitioning where a GPU exists;
+captured output otherwise & Partitioning policy is the lesson; the silicon is
+not available to rent by the hour \\
+AWS, Azure and GCP & The three free tiers, with a teardown step in every lab &
+The instance you launch is the instance the chapter describes \\
+Intel TDX, AMD SEV & Captured attestation output in \texttt{code/} & Confidential
+VMs need a specific processor generation and a cooperating host \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[One thing the free stack cannot teach you]
+Scale. Every pathology in Chapter~18 --- the noisy neighbour, the oversubscribed
+cluster, the storage array that saturates at three in the afternoon --- is a
+property of many machines sharing one resource, and a laptop running four guests
+will not show it to you honestly.
+
+\smallskip
+Where that is the case the chapter says so and gives measured numbers from real
+estates instead of asking you to produce them. Read those numbers as data, and
+treat the lab as the mechanism rather than the magnitude.
+\end{alertbox}
+
+Appendix~A installs the whole stack and verifies it. Appendix~B is the command
+reference you will keep open beside the labs.
+
+\newpage
+
+%=====================================================================
+\chapter*{Notation and Conventions}
+\addcontentsline{toc}{chapter}{Notation and Conventions}
+\markboth{Notation and Conventions}{}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.4cm}L{11.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Term or symbol} & \textbf{Meaning in this book} \\
+\midrule
+\endhead
+\term{host} & The physical machine, and the software running directly on it \\
+\term{guest} & An operating system running inside a virtual machine \\
+\term{hypervisor}, \term{VMM} & Used interchangeably, as the literature does.
+Where the distinction matters --- KVM is a VMM inside a host kernel, not a
+free-standing hypervisor --- the text says which it means \\
+Ring 0, 1, 3 & x86 privilege levels: kernel, the level Xen deprivileged guests
+into, and user \\
+\texttt{root}, \texttt{non-root} & VMX operation modes, Chapter~4. Nothing to do
+with the \texttt{root} user \\
+GVA, GPA, HPA & Guest virtual, guest physical and host physical address --- the
+three address spaces a nested page walk crosses \\
+vCPU & A virtual processor presented to a guest; scheduled onto a physical core
+by the hypervisor \\
+pCPU & A physical core or hardware thread \\
+$R$ & Consolidation ratio: guests per host \\
+$\sigma$ & Overcommit ratio: allocated resource divided by physical resource \\
+\%RDY & Fraction of time a vCPU was runnable but not scheduled. The single most
+useful number in Chapter~18 \\
+RPO, RTO & Recovery point objective (how much data you may lose) and recovery
+time objective (how long you may be down) \\
+p95, p99 & The 95th and 99th percentile of a latency distribution \\
+1 GiB, 1 GB & Binary and decimal gigabytes, $2^{30}$ and $10^{9}$ bytes. Storage
+vendors mean the second; operating systems usually report the first. This book
+is explicit every time it matters \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}
+Two conventions worth stating because the industry is inconsistent about them.
+
+\smallskip
+\textbf{Type-1 and Type-2} are used in this book as Goldberg defined them in
+1973 --- by whether the VMM runs on bare metal or on a host operating system ---
+and Chapter~2 shows why the distinction is blurrier in practice than the
+textbook diagram suggests. KVM is the awkward case, and it is discussed rather
+than assigned.
+
+\smallskip
+\textbf{Virtualization and emulation} are not synonyms. Virtualization runs
+guest instructions on the real processor wherever it can; emulation interprets
+every one of them. QEMU does both, in different modes, which is why it appears
+on both sides of the comparison in Chapter~2.
+\end{conceptbox}
+
+\newpage
+
+%=====================================================================
+\chapter*{Prerequisite Self-Check}
+\addcontentsline{toc}{chapter}{Prerequisite Self-Check}
+\markboth{Prerequisite Self-Check}{}
+
+The published prerequisite is \emph{Programming Fundamentals}, which is not
+really what this course needs. What it needs is the twelve things below. If you
+can do ten of them, begin at Chapter~1. If you cannot, Appendix~A and the first
+two sections of Appendix~B will close most of the gap in an afternoon.
+
+\begin{enumerate}[leftmargin=2.4em, itemsep=4pt, topsep=4pt]
+  \item Explain what an operating system kernel does that a user program cannot.
+        \hfill{\scriptsize\color{neutral}(Operating Systems)}
+  \item Describe what happens on a system call, from the user instruction to the
+        return. \hfill{\scriptsize\color{neutral}(\chref{vmm})}
+  \item Explain virtual memory: what a page table maps, and what the MMU does
+        with it. \hfill{\scriptsize\color{neutral}(\chref{hardware})}
+  \item State what a process is, and what the kernel keeps for each one.
+        \hfill{\scriptsize\color{neutral}(\chref{containers})}
+  \item Navigate a Linux filesystem and read a file from the command line
+        without a graphical tool. \hfill{\scriptsize\color{neutral}(Appendix~B)}
+  \item Edit a text file over SSH and explain what SSH is doing.
+        \hfill{\scriptsize\color{neutral}(Appendix~A)}
+  \item Read a shell script containing a loop, a conditional and a pipeline.
+        \hfill{\scriptsize\color{neutral}(Appendix~B)}
+  \item Explain the difference between an IP address, a subnet mask and a
+        default gateway. \hfill{\scriptsize\color{neutral}(\chref{network})}
+  \item Say what a TCP port is and how two services share one host.
+        \hfill{\scriptsize\color{neutral}(\chref{network})}
+  \item Convert between binary, decimal and hexadecimal, and read a size in
+        bytes written either way. \hfill{\scriptsize\color{neutral}(Notation,
+        above)}
+  \item Explain what a file format is, given that a virtual disk is a file that
+        contains a filesystem. \hfill{\scriptsize\color{neutral}(\chref{storage})}
+  \item Describe what a compiler produces and in what sense a CPU
+        ``runs'' it. \hfill{\scriptsize\color{neutral}(Programming
+        Fundamentals)}
+\end{enumerate}
+
+\begin{conceptbox}
+Notice what is \emph{not} on that list: no calculus, no statistics, no
+networking certification, and no prior exposure to any cloud platform. The
+arithmetic in this book is ratios, percentages and powers of two. What it
+genuinely demands instead is comfort with the idea that software can be
+\emph{underneath} other software --- which is uncomfortable the first time, and
+then never again.
+\end{conceptbox}
+
+\newpage
+\tableofcontents
+\newpage
+\listoffigures
+\newpage
+
+\pagenumbering{arabic}

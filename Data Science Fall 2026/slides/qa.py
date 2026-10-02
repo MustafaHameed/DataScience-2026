@@ -245,6 +245,7 @@ def sheet(d, out, cols=6, tw=420):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ch", nargs="*", type=int)
+    ap.add_argument("--deck", help="substring of the deck file name")
     ap.add_argument("--render", action="store_true")
     ap.add_argument("--width", type=int, default=1600)
     a = ap.parse_args()
@@ -252,6 +253,9 @@ def main() -> int:
     if a.ch:
         keep = {f"DS_Ch{n:02d}_" for n in a.ch}
         paths = [p for p in paths if os.path.basename(p)[:8] in keep]
+    if a.deck:
+        paths = [p for p in paths if a.deck.lower() in
+                 os.path.basename(p).lower()]
     if not paths:
         print("  no decks in out/ -- run build_slides.py first")
         return 1

@@ -1118,6 +1118,35 @@ def _box(env: str, inner: str, ctx: _Ctx) -> Box:
 
 # -- tables -----------------------------------------------------------------
 
+def _strip_caption(src: str) -> tuple[str, str]:
+    r"""Pull \caption{...} (and any \label) out of a table body.
+
+    A longtable puts its caption inside the environment, usually after
+    \bottomrule and after the last row separator -- so a row splitter
+    sees it as a final data row and renders the caption as table
+    content. Returns (body without the caption, caption TeX).
+    """
+    cap = ""
+    for cmd in ("caption", "label"):
+        while True:
+            m = re.search(r"\\" + cmd + r"\s*(\[)?", src)
+            if not m:
+                break
+            i, j = m.start(), m.end()
+            if m.group(1):                       # \caption[short]{...}
+                j = src.index("]", j - 1) + 1
+            while j < len(src) and src[j] in " \t\n":
+                j += 1
+            if j >= len(src) or src[j] != "{":
+                src = src[:i] + src[m.end():]
+                continue
+            inner, k = find_group(src, j)
+            if cmd == "caption" and not cap:
+                cap = inner
+            src = src[:i] + src[k:]
+    return src, cap
+
+
 def _colspec(spec: str) -> tuple[list[float], list[str]]:
     widths, align = [], []
     i = 0
@@ -1196,6 +1225,10 @@ def _table(env: str, inner: str, ctx: _Ctx) -> TableE:
     if not rows_src:
         head_src, rows_src = "", body
     rows_src = rows_src.replace("\\endhead", "").replace("\\endfirsthead", "")
+    # the caption lives inside the environment, after the last row:
+    # take it out before splitting, or it becomes a spurious row
+    rows_src, cap_tex = _strip_caption(rows_src)
+    head_src, _ = _strip_caption(head_src)
 
     def cells(row: str) -> list[list[Run]]:
         row = re.sub(r"\\(rowcolor|cellcolor)(\[[^\]]*\])?\{[^}]*\}", "", row)
