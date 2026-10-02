@@ -3,7 +3,464 @@
 %=====================================================================
 \locator{3}{Part III --- Containers and Lightweight Virtualization}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} the isolation--density--start-up trade and \textbf{place}
+        any runtime on it.
+  \item \textbf{Explain} how a microVM reaches a 125 ms boot, and \textbf{name}
+        what was removed to get there.
+  \item \textbf{Contrast} gVisor's approach --- intercepting system calls in
+        user space --- with Kata's, which puts a kernel underneath each
+        container.
+  \item \textbf{Describe} a unikernel and \textbf{say} why the idea has not
+        displaced the alternatives.
+  \item \textbf{Choose} a runtime for a stated workload and \textbf{quantify}
+        what the choice costs.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{containers} (the shared kernel and the 350-call attack surface) and
+\chref{platforms} (what a hypervisor contains, and Xen's disaggregation
+argument). \chref{paravirt} is also assumed: every design here is fast because
+it has virtio and nothing else.
+\end{prereq}
+
+\begin{keyterms}
+microVM $\bullet$ Firecracker $\bullet$ Cloud Hypervisor $\bullet$ device model
+$\bullet$ boot time $\bullet$ jailer $\bullet$ gVisor $\bullet$ Sentry $\bullet$
+Gofer $\bullet$ system-call interception $\bullet$ Kata Containers $\bullet$
+RuntimeClass $\bullet$ unikernel $\bullet$ library operating system $\bullet$
+WebAssembly $\bullet$ WASI $\bullet$ attack surface $\bullet$ cold start
+$\bullet$ oversubscription
+\end{keyterms}
+
+\section{The Choice Nobody Wanted to Make}
+
+Part~II gave an isolation boundary enforced by the processor, at a few hundred
+megabytes and half a minute per instance. Part~III gave a boundary enforced by
+the kernel, at a few megabytes and a tenth of a second.
+
+For most workloads the second is right. For one case it is unacceptable:
+running \emph{other people's} code. A public cloud function service executes
+whatever a stranger uploads, beside another stranger's, on hardware shared with
+a third. The 350-call Linux system-call interface is then not an abstraction
+--- it is the perimeter, and it is enormous.
+
+The honest statement of the problem is that this is a three-way trade and you
+may normally have two.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  ax/.style={neutral!60, line width=0.9pt},
+  pt/.style={circle, inner sep=1.6pt, line width=0.8pt},
+  lb/.style={font=\scriptsize\bfseries, align=center},
+  note/.style={font=\scriptsize\itshape, align=center}
+]
+  \draw[ax, -{Stealth[length=2.2mm]}] (0,0) -- (12.2,0);
+  \draw[ax, -{Stealth[length=2.2mm]}] (0,0) -- (0,5.0);
+  \node[font=\scriptsize\bfseries, text=neutral!40!black, anchor=north]
+       at (6.1,-0.35) {start-up time and overhead per instance $\longrightarrow$};
+  \node[font=\scriptsize\bfseries, text=neutral!40!black, rotate=90,
+        anchor=south] at (-0.45,2.5) {strength of the isolation boundary
+        $\longrightarrow$};
+
+  \foreach \x/\t in {1.3/{100 ms\\4 MB}, 4.2/{125 ms\\5 MB},
+                     7.0/{250 ms\\50 MB}, 10.3/{25 s\\400 MB}}{
+    \node[note, text=neutral, anchor=north] at (\x,-0.05) {\t};}
+
+  % points
+  \node[pt, draw=greenhl, fill=greenhl!30] (c)  at (1.3,1.0) {};
+  \node[pt, draw=goldhl,  fill=goldhl!30]  (g)  at (7.0,2.6) {};
+  \node[pt, draw=purplehl,fill=purplehl!30](f)  at (4.2,3.7) {};
+  \node[pt, draw=purplehl,fill=purplehl!30](k)  at (7.6,3.9) {};
+  \node[pt, draw=secondary,fill=secondary!30](v) at (10.3,4.3) {};
+  \node[pt, draw=accent,  fill=accent!30]  (u)  at (2.4,3.2) {};
+
+  \node[lb, text=greenhl!45!black, anchor=west]  at (1.55,0.75)
+       {container\\{\scriptsize\mdseries shared kernel}};
+  \node[lb, text=goldhl!45!black, anchor=west]   at (7.25,2.35)
+       {gVisor\\{\scriptsize\mdseries kernel in user space}};
+  \node[lb, text=purplehl!70!black, anchor=east] at (3.95,3.95)
+       {Firecracker\\{\scriptsize\mdseries microVM}};
+  \node[lb, text=purplehl!70!black, anchor=west] at (7.85,4.15)
+       {Kata\\{\scriptsize\mdseries VM per container}};
+  \node[lb, text=secondary!80!black, anchor=east] at (10.1,4.6)
+       {full VM};
+  \node[lb, text=accent!70!black, anchor=west]   at (2.65,3.0)
+       {unikernel\\{\scriptsize\mdseries one app, no kernel}};
+
+  \draw[greenhl!50, line width=0.9pt, dashed] (1.3,1.0) -- (4.2,3.7);
+  \node[note, text=accent, anchor=west] at (4.4,1.6)
+       {Part III's whole answer:\\
+        move up and left --- keep the\\
+        hardware boundary, pay the\\
+        container's start-up cost};
+\end{tikzpicture}}%
+{The trade, with measured figures on the horizontal axis. The dashed line is
+the move the designs in this chapter make: a hardware-enforced boundary at
+something close to a container's cost.}{isolation-density}
+
+\section{MicroVMs}
+
+A virtual machine is slow to start and heavy because of what the hypervisor
+emulates: a BIOS, a PCI bus, an IDE controller, a VGA adapter, a PS/2 keyboard
+--- a 1990s PC, assembled in software so that an unmodified operating system
+recognises it. \chref{paravirt} showed this is also where the throughput goes.
+
+A \term{microVM} deletes all of it. If the guest is going to use virtio for
+everything anyway, the emulated chipset is dead weight.
+
+\begin{definitionbox}[MicroVM]
+A \term{microVM} is a virtual machine with a minimal device model: typically
+virtio-net, virtio-block, a serial console and a one-shot timer, and nothing
+else. No BIOS, no PCI enumeration, no legacy devices. The kernel is loaded
+directly rather than booted through firmware.
+
+\smallskip
+\term{Firecracker}, written at Amazon in Rust and released in 2018, is the
+reference example. It is about 50{,}000 lines against QEMU's 1.4 million, boots
+a Linux guest in roughly \textbf{125 ms}, and adds under \textbf{5 MB} of
+memory per instance. It runs AWS Lambda and AWS Fargate: every function
+invocation you have ever made on Lambda ran in one.
+\end{definitionbox}
+
+\begin{conceptbox}[Where the Boot Time Went]
+A conventional guest spends its 25 seconds roughly like this: firmware
+initialisation and PCI enumeration, bootloader, kernel device probing for
+hardware that is not there, then an init system bringing up services. Almost
+none of it is the application.
+
+\smallskip
+Firecracker removes each in turn. There is no firmware, so nothing to
+initialise. There is no PCI bus, so nothing to enumerate. The kernel is loaded
+into memory by the VMM and entered directly, with a command line that names the
+devices, so probing finds exactly what exists and stops. What remains is
+roughly 125 ms, most of it the Linux kernel's own startup.
+
+\smallskip
+The lesson generalises past this chapter: \emph{the cost was compatibility, not
+virtualization}. A guest willing to give up looking like a PC can have a
+hardware isolation boundary for about the price of a container --- and that one
+observation is what made serverless computing economic.
+\end{conceptbox}
+
+\begin{alertbox}[The jailer, and defence in depth]
+Firecracker's small size is a security argument only if you also assume the VMM
+process itself can be attacked. Amazon assumes it can.
+
+\smallskip
+Each Firecracker process is therefore started by a \term{jailer} that places it
+in its own namespaces and cgroup, chroots it, drops every capability it does
+not need and applies a seccomp filter restricting it to a few dozen system
+calls. An attacker who escapes the guest lands in a process that can barely
+talk to the kernel --- the container mechanisms of \chref{containers} used to
+contain the hypervisor rather than the workload.
+
+\smallskip
+This is the strongest practical illustration in this book that the layers
+compose. It is not virtual machines \emph{or} containers; it is a microVM
+inside a container, and the combination is stronger than either.
 \end{alertbox}
+
+\section{gVisor: a Kernel in User Space}
+
+Google's answer inverts the problem. Instead of putting a real kernel
+underneath the container, \term{gVisor} puts a \emph{fake} one in front of it.
+
+A gVisor sandbox runs the application's system calls into \term{Sentry}, a
+user-space process written in Go that implements most of the Linux system-call
+interface itself. Sentry handles the call in user space wherever it can; where
+it genuinely needs the host, it makes a far narrower call of its own. File
+access goes through a second process, the \term{Gofer}, so Sentry itself need
+not hold file descriptors.
+
+\begin{conceptbox}[What gVisor Buys and What It Costs]
+\textbf{Buys:} the host kernel sees perhaps 60 distinct system calls from
+Sentry rather than 350 arbitrary ones from untrusted code. The attack surface
+shrinks by roughly a factor of six, without a hypervisor and without a second
+kernel's memory.
+
+\smallskip
+\textbf{Costs:} every system call is now handled by a Go program instead of by
+the kernel. System-call-heavy workloads --- anything doing many small reads and
+writes --- lose substantially, commonly 10--30\% and occasionally much more.
+CPU-bound work is barely affected, because it makes few calls.
+
+\smallskip
+\textbf{And a third thing:} Sentry implements \emph{most} of Linux, not all of
+it. Unusual system calls, exotic \texttt{ioctl}s and some \texttt{/proc}
+behaviour are missing or approximated, so an application can fail in ways it
+never would natively. It is used in production at Google and in Google Cloud
+Run; it needs testing with your workload rather than faith.
+\end{conceptbox}
+
+\section{Kata Containers}
+
+Kata takes the most direct route: make every container a virtual machine, and
+hide that fact completely.
+
+Kata implements the OCI runtime interface, so Kubernetes drives it exactly as
+it drives runc. Underneath, each Pod gets its own lightweight VM --- using
+Firecracker, Cloud Hypervisor or QEMU --- with a minimal guest kernel and an
+agent that starts the container inside. The user writes ordinary manifests; a
+\term{RuntimeClass} selects Kata for the workloads that need it.
+
+\begin{conceptbox}[Per-Workload Isolation Is the Deployable Idea]
+The important property is not Kata's architecture but its granularity. A
+cluster does not have to choose one isolation level for everything.
+
+\smallskip
+Internal services, whose code you wrote and review, run on runc at full density.
+A tenant-supplied plugin, a customer's build job, an untrusted PDF converter
+--- these get \texttt{runtimeClassName: kata} and a hardware boundary, at
+perhaps 50 MB and 250 ms each. The manifests are otherwise identical, and the
+decision is made per workload by the people who know the trust level.
+
+\smallskip
+That is the shape of the answer this chapter has been building towards:
+isolation stops being an architectural commitment and becomes a per-workload
+setting.
+\end{conceptbox}
+
+\section{Unikernels and WebAssembly}
+
+Two more positions on the same axis, both further out than anything above.
+
+A \term{unikernel} compiles the application together with just the operating
+system functions it actually calls, producing a single-address-space image that
+boots directly on a hypervisor. There is no shell, no package manager, no
+second process and often no notion of a user. Images are measured in megabytes
+and boot in milliseconds, and the attack surface is tiny because almost nothing
+is there.
+
+They have not displaced anything, and the reasons are instructive: you cannot
+debug one with the usual tools, you cannot run arbitrary existing software in
+one without porting it, and the build toolchains have stayed difficult. The
+idea is sound and the operational cost has never been paid down.
+
+\term{WebAssembly} outside the browser --- Wasm with \term{WASI} --- is the
+current attempt at the same goal from the other direction: a sandboxed
+bytecode with a deny-by-default capability model, millisecond start-up and
+images in the low megabytes. It runs under Kubernetes today through
+\texttt{runwasi} and similar shims. Its limitations are the obvious ones: your
+application must compile to it, and the ecosystem is much younger than the
+alternatives in this chapter.
+
+\begin{worked}[Sizing a Function Service]
+A provider will run untrusted functions. Expected load: 2{,}000 concurrent
+instances, average lifetime 400 ms, memory limit 128 MB each, on hosts of 64
+cores and 256 GB. Compare plain containers, Kata and Firecracker.
+
+\smallskip
+\textbf{Step 1 --- memory per instance.}
+\begin{tight}
+  \item container: $128 + 4 = 132$ MB
+  \item Kata on QEMU: $128 + 50 = 178$ MB
+  \item Firecracker: $128 + 5 = 133$ MB
+\end{tight}
+
+\smallskip
+\textbf{Step 2 --- instances per host}, reserving 32 GB, so 224 GB usable:
+\[ \text{container} = \frac{224 \times 1024}{132} = 1{,}737 \qquad
+   \text{Kata} = \frac{224 \times 1024}{178} = 1{,}288 \]
+\[ \text{Firecracker} = \frac{224 \times 1024}{133} = \mathbf{1{,}724} \]
+
+\smallskip
+\textbf{Step 3 --- hosts needed for 2{,}000 concurrent.}
+\[ \text{container} = \left\lceil \frac{2000}{1737} \right\rceil = 2 \qquad
+   \text{Kata} = \left\lceil \frac{2000}{1288} \right\rceil = 2 \qquad
+   \text{Firecracker} = 2 \]
+All three need two hosts. On this workload the density difference does not
+change the bill at all.
+
+\smallskip
+\textbf{Step 4 --- the cost that does differ: cold start.} With a 400 ms
+lifetime, start-up is not overhead, it is a large fraction of the work:
+\[ \text{container} = \frac{0.10}{0.40 + 0.10} = 20\% \qquad
+   \text{Kata} = \frac{0.25}{0.40 + 0.25} = 38\% \]
+\[ \text{Firecracker} = \frac{0.125}{0.40 + 0.125} = \mathbf{24\%} \]
+Kata spends 38\% of every host-second starting machines. Firecracker spends
+24\%, nearly matching the container, and gives a hardware boundary for it.
+
+\smallskip
+\textbf{Step 5 --- the decision.} \textbf{Firecracker.} It is within 1\% of the
+container's density and within 4 percentage points of its start-up overhead,
+and it is the only one of the three that puts the processor between one
+stranger's code and the next.
+
+\smallskip
+\textbf{Step 6 --- and the honest caveat.} These figures assume a cold start
+every time. Real function services keep warm instances pooled, which cuts the
+effective cold-start rate by an order of magnitude and moves the whole
+comparison. Reproduce Step 4 with your measured cold-start \emph{rate}, not the
+worst case, before committing hardware.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Treating this as a ranking.} There is no best runtime. A
+        microVM for an internal service is wasted money; runc for a stranger's
+        code is negligence.
+  \item \textbf{Assuming gVisor is free.} The system-call path is slower, and
+        how much depends entirely on how many calls your workload makes.
+        Measure it, do not assume 10\%.
+  \item \textbf{Expecting every program to run under gVisor.} It implements
+        most of Linux, not all. Test the actual application.
+  \item \textbf{Thinking a microVM removes the need to harden the container
+        around it.} Firecracker ships a jailer precisely because its designers
+        do not make that assumption.
+  \item \textbf{Choosing a unikernel without pricing the debugging.} The
+        runtime properties are excellent and the day the thing misbehaves in
+        production you have no shell, no \texttt{strace} and no package to
+        install one from.
+  \item \textbf{Applying one isolation level to a whole cluster.} RuntimeClass
+        exists so that the decision can be made per workload. Most clusters
+        should mix.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Booting a MicroVM, and Timing It]
+Starts a Firecracker microVM and compares its boot time and memory footprint
+with a full QEMU guest and a container. Needs KVM. Expect forty minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch11_microvm.sh -- 25 s, 125 ms and 100 ms, measured on one machine.
+set -euo pipefail
+cd ~ && mkdir -p fc && cd fc
+
+# --- 1. Firecracker needs KVM and nothing else. ------------------------
+[ -w /dev/kvm ] || { echo "no /dev/kvm -- see Chapter 4 step 1"; exit 1; }
+ARCH=$(uname -m)
+curl -sL -o firecracker \
+  "https://github.com/firecracker-microvm/firecracker/releases/latest/\
+download/firecracker-${ARCH}.tgz" || true
+# If that fails, the release page lists a direct tarball; extract the
+# firecracker binary beside this script.
+chmod +x firecracker 2>/dev/null || true
+
+# --- 2. A kernel and a root filesystem, loaded directly. --------------
+# No bootloader and no firmware: the VMM places the kernel in memory.
+curl -sL -o vmlinux \
+  "https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/\
+${ARCH}/kernels/vmlinux.bin"
+curl -sL -o rootfs.ext4 \
+  "https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/\
+${ARCH}/rootfs/bionic.rootfs.ext4"
+
+# --- 3. Describe the whole machine. Note how little there is. ---------
+cat > vm.json <<'JSON'
+{
+  "boot-source": {
+    "kernel_image_path": "vmlinux",
+    "boot_args": "console=ttyS0 reboot=k panic=1 pci=off"
+  },
+  "drives": [{
+    "drive_id": "rootfs", "path_on_host": "rootfs.ext4",
+    "is_root_device": true, "is_read_only": false
+  }],
+  "machine-config": { "vcpu_count": 1, "mem_size_mib": 128 }
+}
+JSON
+# pci=off is the chapter: there is no PCI bus to enumerate.
+
+# --- 4. Boot it, and time to the login prompt. ------------------------
+echo "=== firecracker ==="
+time timeout 20 ./firecracker --no-api --config-file vm.json \
+  2>&1 | grep -m1 -E 'login:|Welcome' || true
+
+# --- 5. The same guest under full QEMU, for comparison. ---------------
+echo "=== full qemu guest ==="
+time timeout 90 sudo virsh start vss1 --console 2>&1 \
+  | grep -m1 'login:' || true
+sudo virsh destroy vss1 || true
+
+# --- 6. And a container, for the other end of the axis. ---------------
+echo "=== container ==="
+time docker run --rm alpine:3.20 /bin/true
+
+# --- 7. Memory footprint of the VMM process itself. -------------------
+./firecracker --no-api --config-file vm.json &
+FCPID=$!
+sleep 3
+grep -E '^(VmRSS|VmSize)' "/proc/$FCPID/status"
+kill $FCPID 2>/dev/null || true
+# Compare with the qemu process for vss1: typically 40-80x larger.
+
+# --- 8. Kata, if the host has it: one flag, a whole VM. ---------------
+# Under Kubernetes this is runtimeClassName: kata in the Pod spec.
+command -v kata-runtime >/dev/null && kata-runtime check || \
+  echo "kata not installed -- see Appendix A"
+
+# --- 9. Tear down. ----------------------------------------------------
+cd ~ && rm -rf fc
+\end{lstlisting}
+
+\textbf{What to notice.} Three boot times spanning roughly two orders of
+magnitude, and the middle one has the same isolation boundary as the slowest.
+That single fact is why this chapter exists, and why Lambda is built the way it
+is.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Firecracker boots in 125 ms where a conventional guest takes 25 s. Name
+        the three things that were removed, and say which of them a guest
+        operating system must be willing to give up.
+  \item A workload runs 18\% slower under gVisor than under runc, while another
+        is unaffected. What distinguishes them, and what would you measure to
+        confirm it?
+  \item A cluster runs 200 internal services and accepts customer-supplied
+        build jobs. Describe the runtime arrangement you would deploy and the
+        single Kubernetes field that expresses it.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Isolation, density and start-up form a three-way trade. This chapter is
+        the set of designs that refuse to pick only two.
+  \item A microVM deletes the emulated 1990s PC. Firecracker is 50{,}000 lines,
+        boots in 125 ms and costs under 5 MB --- the cost was compatibility,
+        not virtualization.
+  \item Firecracker is itself jailed in namespaces, a cgroup and a seccomp
+        filter: containers containing a hypervisor. The layers compose.
+  \item gVisor implements Linux in user space, cutting the host's exposed
+        system calls from about 350 to about 60, at a system-call-rate-dependent
+        performance cost and with imperfect coverage.
+  \item Kata gives every Pod its own virtual machine behind the ordinary OCI
+        interface, selectable per workload with RuntimeClass.
+  \item Unikernels and Wasm go further still; the first has never paid down its
+        operational cost, and the second is young.
+  \item Isolation is now a per-workload setting rather than an architectural
+        commitment. Most clusters should mix.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Firecracker achieves its boot time principally by:
+        (a)~a faster kernel; (b)~removing firmware, PCI enumeration and legacy
+        device emulation; (c)~running without KVM; (d)~sharing the host
+        kernel.
+  \item \textbf{(MCQ)} gVisor reduces risk by: (a)~running each container in a
+        virtual machine; (b)~implementing most of the Linux system-call
+        interface in user space; (c)~encrypting guest memory; (d)~removing the
+        container's network namespace.
+  \item \textbf{(Short)} Explain why Firecracker ships a jailer, given that its
+        own code base is only 50{,}000 lines.
+  \item \textbf{(Short)} State the trade gVisor makes, and the workload
+        characteristic that decides whether it is acceptable.
+  \item \textbf{(Short)} Why have unikernels not displaced containers, despite
+        better figures on size, start-up and attack surface?
+  \item \textbf{(Applied)} Redo the worked example for functions with an
+        average lifetime of 4 s rather than 400 ms. Give the start-up overhead
+        for all three runtimes and say whether your recommendation changes, and
+        why.
+  \item \textbf{(Applied)} A university wants to let students submit code that
+        is compiled and run automatically on a shared cluster. Set out the
+        isolation design you would propose, what you would measure before
+        going live, and what you would do if the measured overhead were twice
+        what you expected.
+\end{reviewq}

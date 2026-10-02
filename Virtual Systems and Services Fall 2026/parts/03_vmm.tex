@@ -3,7 +3,557 @@
 %=====================================================================
 \locator{1}{Part I --- Foundations of Virtualization}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} the three properties Popek and Goldberg require of a
+        virtual machine monitor, and \textbf{explain} what each one rules out.
+  \item \textbf{Distinguish} privileged from sensitive instructions, and
+        \textbf{state} the theorem that connects them to virtualizability.
+  \item \textbf{Explain} why x86 failed the theorem's condition, using
+        \texttt{POPF} as the worked case, and \textbf{say} precisely what goes
+        wrong --- which is not a crash.
+  \item \textbf{Describe} binary translation and ring deprivileging as the two
+        software answers, and \textbf{compare} what each costs.
+  \item \textbf{Apply} the theorem to an architecture you are given a
+        specification for, and decide whether trap-and-emulate alone would
+        suffice.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{what} (the layer and what it promises) and \chref{architectures} (the
+three techniques, named but not yet justified). You also need, from Operating
+Systems, what a privilege level is and what happens on a trap. If that is
+shaky, read the first page of Section~3.1 slowly; everything after it depends
+on the idea that the processor behaves differently according to who is asking.
+\end{prereq}
+
+\begin{keyterms}
+virtual machine monitor $\bullet$ equivalence $\bullet$ resource control
+$\bullet$ efficiency $\bullet$ privileged instruction $\bullet$ sensitive
+instruction $\bullet$ control-sensitive $\bullet$ behaviour-sensitive $\bullet$
+trap $\bullet$ trap-and-emulate $\bullet$ Popek--Goldberg theorem $\bullet$
+silent failure $\bullet$ ring deprivileging $\bullet$ ring aliasing $\bullet$
+binary translation $\bullet$ translation cache $\bullet$ hybrid virtualization
+\end{keyterms}
+
+\section{What a Monitor Must Guarantee}
+
+In 1974 Gerald Popek and Robert Goldberg asked a question that had not been
+asked precisely before: \emph{what has to be true of a processor for it to be
+possible to write a correct virtual machine monitor for it?} Their answer is
+the only theorem in this book, and it explains the twenty-five-year gap in
+\dsref{timeline}.
+
+They begin by saying what a monitor is \emph{for}. Three properties, all three
+required.
+
+\begin{definitionbox}[The Three Properties of a Virtual Machine Monitor]
+\begin{tight}
+  \item \term{Equivalence}. A program running under the monitor behaves
+        identically to the same program running directly on the hardware,
+        except for timing and for resources that are genuinely absent. This is
+        the ``preserved interface'' of \chref{what}, stated formally.
+  \item \term{Resource control}. The monitor is in complete control of the
+        resources it virtualizes. A guest cannot reach memory it was not
+        given, cannot affect another guest, and cannot take control away from
+        the monitor.
+  \item \term{Efficiency}. A \emph{statistically dominant} subset of the
+        guest's instructions executes directly on the real processor, with no
+        intervention.
+\end{tight}
+\end{definitionbox}
+
+\begin{conceptbox}[Efficiency Is the Clause That Does the Work]
+Drop the third property and the problem becomes trivial: write an interpreter.
+An emulator satisfies equivalence and resource control perfectly, because it
+never lets the guest touch the processor at all. It is also fifty times slower,
+which is why nobody consolidates a data centre with one.
+
+\smallskip
+So the entire difficulty of this chapter lives in the word \emph{dominant}. The
+monitor must let the guest run on the real silicon almost all of the time, and
+must nevertheless remain in control --- and those two demands pull in opposite
+directions. The rest of the chapter is about where exactly they tear.
+
+\smallskip
+Notice also what equivalence \emph{excludes}: timing. A guest may legitimately
+observe that it is running slower, and a guest that reads the cycle counter can
+often tell it is virtualized. Popek and Goldberg were explicit that this is
+allowed. Software that uses timing to \emph{detect} a hypervisor --- malware
+avoiding analysis, licence enforcement --- is exploiting a gap the theorem
+deliberately left open.
+\end{conceptbox}
+
+\section{Privileged, Sensitive, and the Difference}
+
+The classical way to build a monitor is \term{trap-and-emulate}: run the guest
+at a reduced privilege level, let the hardware trap anything it may not do, and
+have the monitor emulate the trapped instruction in a way consistent with the
+guest's virtual machine.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  st/.style={rounded corners=2pt, line width=0.8pt, align=center,
+             minimum width=3.9cm, minimum height=0.64cm, inner sep=3pt},
+  g/.style={st, draw=secondary, fill=secondary!8, text=secondary!80!black},
+  h/.style={st, draw=primary, fill=primary!12, text=primary},
+  p/.style={st, draw=accent, fill=accent!8, text=accent!70!black},
+  ar/.style={-{Stealth[length=2mm]}, line width=0.9pt},
+  note/.style={font=\scriptsize\itshape, text=neutral, anchor=west, align=left}
+]
+  \node[g] (g1) at (0,4.0)  {guest kernel executes\\an instruction};
+  \node[p] (t1) at (0,2.85) {may it? the \emph{processor} decides};
+  \node[g] (ok) at (-3.1,1.6) {ordinary instruction:\\runs at full speed};
+  \node[h] (tr) at (3.1,1.6)  {privileged: \textbf{trap}};
+  \node[h] (em) at (3.1,0.45) {monitor emulates it\\against the guest's\\virtual state};
+  \node[g] (rt) at (3.1,-0.9) {control returns to\\the guest};
+
+  \draw[ar, secondary!60] (g1) -- (t1);
+  \draw[ar, greenhl!70] (t1) -- (ok);
+  \draw[ar, accent!70]  (t1) -- (tr);
+  \draw[ar, primary!60] (tr) -- (em);
+  \draw[ar, primary!60] (em) -- (rt);
+  \draw[ar, greenhl!70] (ok) to[out=-90,in=180] (0,-1.6) -- (1.2,-1.6);
+  \draw[ar, primary!60] (rt) to[out=-90,in=0] (0,-1.9) -- (-1.2,-1.9);
+
+  \node[note] at (5.4,1.6)  {the \emph{dominant} case\\--- efficiency};
+  \node[note] at (5.4,0.45) {the \emph{rare} case\\--- equivalence and control};
+  \node[note] at (-6.4,2.85) {this is the step\\x86 could not do};
+  \draw[accent!60, line width=0.8pt, -{Stealth[length=1.6mm]}]
+        (-3.5,2.85) -- (-2.2,2.85);
+\end{tikzpicture}}%
+{Trap-and-emulate. The design is sound and was old by 1974; the whole question
+is whether the processor traps everything the monitor needs it to
+trap.}{trap-emulate}
+
+For this to work, the processor must trap \emph{every} instruction whose
+behaviour the monitor needs to control. Popek and Goldberg made that precise
+with two definitions.
+
+\begin{definitionbox}[Privileged and Sensitive Instructions]
+An instruction is \term{privileged} if it traps when executed in user mode and
+does not trap in supervisor mode. This is a property of the \emph{hardware}:
+the processor is built to refuse it.
+
+\smallskip
+An instruction is \term{sensitive} if it is one the monitor must know about.
+There are two kinds:
+\begin{tight}
+  \item \term{control-sensitive} --- it changes the configuration of resources:
+        the page tables, the interrupt mask, the privilege level.
+  \item \term{behaviour-sensitive} --- its \emph{result} depends on the
+        configuration: it reads a register whose value differs between
+        privilege levels, or depends on where in memory it is running.
+\end{tight}
+
+\smallskip
+Sensitivity is a property of what the \emph{monitor needs}; privilege is a
+property of what the \emph{hardware does}. Nothing guarantees that they
+coincide.
+\end{definitionbox}
+
+\begin{conceptbox}[The Theorem]
+\textbf{Popek and Goldberg, 1974.} For any conventional third-generation
+computer, a virtual machine monitor may be constructed if the set of sensitive
+instructions is a \emph{subset} of the set of privileged instructions.
+
+\smallskip
+That is the whole condition. Every instruction the monitor needs to know about
+must be one the hardware will trap. If so, trap-and-emulate works: run the guest
+unprivileged, catch the sensitive instructions as traps, emulate them, and
+everything else runs at full speed --- equivalence, control and efficiency
+together.
+
+\smallskip
+And the contrapositive is the interesting half. If even one instruction is
+sensitive but \emph{not} privileged, the guest can execute it, the hardware will
+not trap it, and the monitor will never find out.
+\end{conceptbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\small]
+  % --- virtualizable ---
+  \node[font=\small\bfseries, text=greenhl!55!black] at (0,3.15)
+       {Virtualizable: sensitive $\subseteq$ privileged};
+  \draw[draw=primary, line width=1.1pt, fill=primary!8]
+        (-2.6,0.1) rectangle (2.6,2.6);
+  \node[text=primary, font=\scriptsize\bfseries, anchor=north west]
+       at (-2.5,2.52) {privileged};
+  \draw[draw=accent, line width=1.1pt, fill=accent!10]
+        (-1.5,0.5) rectangle (1.5,1.95);
+  \node[text=accent!70!black, font=\scriptsize\bfseries] at (0,1.55) {sensitive};
+  \node[font=\scriptsize\itshape, text=greenhl!55!black] at (0,1.0)
+       {every one of these traps};
+  \node[font=\scriptsize\itshape, text=neutral, anchor=north] at (0,-0.1)
+       {trap-and-emulate alone is enough};
+
+  % --- not virtualizable ---
+  \node[font=\small\bfseries, text=accent!70!black] at (8.6,3.15)
+       {x86 before 2005: 17 instructions outside};
+  \draw[draw=primary, line width=1.1pt, fill=primary!8]
+        (6.0,0.1) rectangle (11.2,2.6);
+  \node[text=primary, font=\scriptsize\bfseries, anchor=north west]
+       at (6.1,2.52) {privileged};
+  \draw[draw=accent, line width=1.1pt, fill=accent!10]
+        (7.4,0.5) rectangle (12.6,1.95);
+  \node[text=accent!70!black, font=\scriptsize\bfseries] at (9.0,1.55) {sensitive};
+  \node[font=\scriptsize\bfseries, text=accent, align=center] at (11.9,1.22)
+       {\texttt{POPF}\\\texttt{SGDT}\\\texttt{PUSHF}\\\ldots};
+  \draw[decorate, decoration={brace, amplitude=4pt}, accent, line width=0.9pt]
+        (12.7,1.95) -- (12.7,0.5);
+  \node[font=\scriptsize\itshape, text=accent!70!black, anchor=west, align=left]
+       at (12.95,1.22) {sensitive but\\not privileged:\\no trap, no\\notification};
+  \node[font=\scriptsize\itshape, text=neutral, anchor=north] at (8.6,-0.1)
+       {trap-and-emulate silently produces wrong answers};
+\end{tikzpicture}}%
+{The condition, and the architecture that failed it. The seventeen instructions
+on the right are not exotic: several are ordinary, unprivileged instructions a
+compiler emits without comment.}{popek-goldberg}
+
+\section{Why x86 Failed}
+
+In 2000 John Robin and Cynthia Irvine went through the Pentium instruction set
+against Popek and Goldberg's condition and found \textbf{seventeen}
+instructions that are sensitive but not privileged. The IBM System/370 had
+satisfied the condition; x86, designed for a single operating system on a
+desktop, had never needed to.
+
+The clearest of the seventeen is \texttt{POPF}.
+
+\begin{worked}[How \texttt{POPF} Breaks a Hypervisor Without Crashing It]
+\texttt{POPF} pops a word off the stack into the \texttt{EFLAGS} register.
+\texttt{EFLAGS} holds ordinary arithmetic flags --- carry, zero, sign --- and
+also the \term{interrupt flag} \texttt{IF}, which controls whether the processor
+accepts hardware interrupts.
+
+\smallskip
+\textbf{What the guest kernel intends.} It is entering a critical section and
+wants interrupts off:
+\begin{tight}
+  \item push a flags word with \texttt{IF = 0};
+  \item execute \texttt{POPF};
+  \item expect interrupts to be disabled.
+\end{tight}
+
+\smallskip
+\textbf{Step 1 --- is \texttt{POPF} sensitive?} Yes, control-sensitive: it
+changes the interrupt configuration, which the monitor must control. If a guest
+could really disable interrupts, it could refuse to give the processor back,
+destroying resource control.
+
+\smallskip
+\textbf{Step 2 --- is \texttt{POPF} privileged?} \textbf{No.} In user mode the
+x86 \texttt{POPF} does not fault. It updates the arithmetic flags and
+\emph{silently ignores the write to} \texttt{IF}. The designers chose this
+deliberately in 1985, so that user programs manipulating arithmetic flags would
+not need to care about \texttt{IF}.
+
+\smallskip
+\textbf{Step 3 --- so what happens under a monitor?} The guest kernel runs
+unprivileged. It executes \texttt{POPF}:
+\begin{tight}
+  \item no trap occurs --- the monitor is never told;
+  \item the arithmetic flags are updated, so the instruction appears to work;
+  \item \texttt{IF} is unchanged, so interrupts remain \emph{enabled};
+  \item the instruction completes and the guest proceeds, believing it is in a
+        critical section.
+\end{tight}
+
+\smallskip
+\textbf{Step 4 --- what the failure looks like.} Not a crash. An interrupt
+arrives during the critical section the guest believes it has protected. A data
+structure is modified halfway through an update. Perhaps nothing happens. Perhaps
+the guest's scheduler corrupts its run queue, at a rate of once a fortnight, in
+a way that is not reproducible and cannot be traced to the instruction that
+caused it.
+
+\smallskip
+\textbf{The point.} A \emph{crash} would be a gift --- it is a signal. The
+seventeen instructions do something far worse: they make the equivalence
+property fail \emph{quietly}. The guest cannot detect it, the monitor cannot
+detect it, and the resulting bug reports are unfalsifiable. This, and not
+performance, is why x86 was called non-virtualizable for twenty-five years.
+\end{worked}
+
+\begin{alertbox}[``Non-virtualizable'' never meant impossible]
+It meant that \emph{trap-and-emulate alone} is not sufficient --- that no
+correct monitor can be built the classical way. VMware shipped a correct x86
+hypervisor in 1999 and Xen in 2003, so clearly monitors could be built. What
+the theorem denies is that they can be built cheaply and simply. Both products
+are, in effect, elaborate workarounds for seventeen instructions, and both
+workarounds cost something the next section quantifies.
 \end{alertbox}
+
+\section{Two Ways Round}
+
+\subsection{Binary translation}
+
+VMware's answer, and the one that founded the industry. The monitor never lets
+the guest kernel's instructions reach the processor unexamined. Instead it
+reads the kernel's code a basic block at a time, \emph{translates} it ---
+copying ordinary instructions unchanged and replacing each of the seventeen
+with a call into the monitor --- and executes the translated block. Translations
+are cached, so a hot loop is translated once and then runs many times.
+
+Guest \emph{user} code is not translated at all. It runs directly, at full
+speed, because an application executing \texttt{POPF} and losing the write to
+\texttt{IF} is exactly what would happen on real hardware: equivalence is
+preserved for free.
+
+\begin{conceptbox}[Why Translation Was Fast Enough to Sell]
+It sounds ruinous and it was not, for two reasons.
+
+\smallskip
+First, the ratio. A kernel is a small fraction of what runs on a busy machine,
+and the translation cost is paid once per block rather than once per execution.
+
+\smallskip
+Second --- and this surprised people --- a translator can be \emph{faster} than
+the hardware trap it replaces. A trap on 2005-era x86 cost well over a thousand
+cycles of saving and restoring state. A translated call into the monitor cost
+tens. For several years after hardware assistance arrived, VMware's translator
+beat the first generation of VT-x on system-call-heavy workloads, and VMware
+said so publicly. \chref{hardware} is the story of Intel and AMD closing that
+gap.
+\end{conceptbox}
+
+\subsection{Ring deprivileging and paravirtualization}
+
+Xen's answer. x86 provides four privilege levels --- rings 0 to 3 --- of which
+operating systems historically used only two. Xen put the hypervisor in ring~0,
+moved the guest kernel to ring~1, and left applications in ring~3.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  ring/.style={rounded corners=2pt, line width=0.9pt, align=center,
+               minimum width=3.5cm, minimum height=0.7cm, inner sep=3pt},
+  lbl/.style={font=\scriptsize\bfseries, text=neutral!40!black, anchor=east},
+  note/.style={font=\scriptsize\itshape, text=accent, anchor=west, align=left}
+]
+  % native
+  \node[font=\small\bfseries, text=primary] at (2.3,3.0) {Native};
+  \node[lbl] at (0.2,2.2) {ring 0}; \node[lbl] at (0.2,1.3) {ring 1};
+  \node[lbl] at (0.2,0.4) {ring 2}; \node[lbl] at (0.2,-0.5) {ring 3};
+  \node[ring, draw=purplehl, fill=purplehl!12, text=purplehl!70!black]
+       at (2.3,2.2) {OS kernel};
+  \node[ring, draw=neutral!50, fill=neutral!6, text=neutral!45!black, dashed]
+       at (2.3,1.3) {unused};
+  \node[ring, draw=neutral!50, fill=neutral!6, text=neutral!45!black, dashed]
+       at (2.3,0.4) {unused};
+  \node[ring, draw=secondary, fill=secondary!8, text=secondary!80!black]
+       at (2.3,-0.5) {applications};
+
+  % deprivileged
+  \node[font=\small\bfseries, text=primary] at (9.0,3.0) {Xen, ring deprivileged};
+  \node[ring, draw=primary, fill=primary!14, text=primary]
+       at (9.0,2.2) {\textbf{hypervisor}};
+  \node[ring, draw=purplehl, fill=purplehl!12, text=purplehl!70!black]
+       at (9.0,1.3) {guest kernel};
+  \node[ring, draw=neutral!50, fill=neutral!6, text=neutral!45!black, dashed]
+       at (9.0,0.4) {unused};
+  \node[ring, draw=secondary, fill=secondary!8, text=secondary!80!black]
+       at (9.0,-0.5) {applications};
+
+  \draw[-{Stealth[length=2.2mm]}, accent, line width=1pt]
+        (4.3,2.2) to[out=20,in=160] (7.1,1.3);
+  \node[note] at (11.0,1.3) {now unprivileged,\\so most sensitive\\instructions
+                             do trap};
+  \node[note] at (11.0,2.2) {and the ones that\\still do not are\\replaced by
+                             hypercalls};
+\end{tikzpicture}}%
+{Ring deprivileging. Moving the guest kernel down one ring makes the hardware
+trap most of what the monitor needs; the instructions that still slip through
+are removed from the guest's source instead.}{ring-deprivileging}
+
+Deprivileging alone does not solve the problem --- \texttt{POPF} still fails
+silently in ring~1 --- so Xen took the second step: it \emph{modified the guest
+kernel}. Where Linux would have executed one of the seventeen, the Xen port
+issues a \term{hypercall} instead. That is paravirtualization, and the price is
+exactly the one named in \chref{architectures}: you need the guest's source.
+Xen ran Linux and NetBSD from the first release and could not run Windows at
+all.
+
+\begin{alertbox}[Ring aliasing: the guest can tell]
+Deprivileging breaks equivalence in a second, subtler way. The unprivileged
+instruction \texttt{PUSHF} pushes \texttt{EFLAGS} --- including the current
+privilege level --- onto the stack, and \texttt{SGDT} and \texttt{SIDT} read
+descriptor-table registers. None of them traps. A guest kernel that executes
+any of them sees ring~1 where it expects ring~0, and a descriptor table that is
+not its own.
+
+\smallskip
+This is \term{ring aliasing}, and it is why \texttt{SGDT} is on the list of
+seventeen. It also makes hypervisor detection trivial: a few unprivileged
+instructions and the guest knows. \chref{confidential} is where that question
+comes back inverted --- there, the guest \emph{wants} to prove what it is
+running on.
+\end{alertbox}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.3cm}L{3.8cm}L{3.8cm}L{3.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{Binary translation} & \textbf{Paravirtualization} &
+\textbf{Hardware assistance} \\
+\midrule
+\endhead
+Who changes & The monitor, at run time & The guest, at compile time & The
+processor, at design time \\
+Unmodified guests & Yes & \textbf{No} & Yes \\
+Where the cost falls & Translating, and a cache to maintain & Nothing at run
+time; everything at porting time & A trap per sensitive instruction \\
+Monitor complexity & Very high --- a working x86 translator & Low & Low \\
+Shipped & VMware, 1999 & Xen, 2003 & Intel VT-x 2005, AMD-V 2006 \\
+Still used & Where hardware assistance is absent or slower & As \emph{drivers},
+almost universally (\chref{paravirt}) & Everywhere (\chref{hardware}) \\
+\bottomrule
+\end{longtable}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Saying that non-virtualizable means ``cannot be
+        virtualized''.} It means trap-and-emulate alone is insufficient. Two
+        companies built correct monitors anyway, at considerable cost.
+  \item \textbf{Expecting the failure to be a crash.} The \texttt{POPF} failure
+        is silent and intermittent. Students who look for an exception in the
+        worked example have missed what makes those seventeen instructions
+        dangerous.
+  \item \textbf{Confusing privileged with sensitive.} Privileged is what the
+        hardware traps; sensitive is what the monitor needs. The theorem is
+        precisely the claim that the first set must contain the second.
+  \item \textbf{Believing hardware assistance made the theorem obsolete.} It
+        made x86 satisfy the condition. The theorem is what tells you
+        \emph{why} VT-x was needed and what it had to do --- and it still
+        decides the question for any new architecture, which is why RISC-V
+        designers argued about exactly this.
+  \item \textbf{Assuming efficiency means ``fast''.} It is a formal property:
+        a statistically dominant subset of instructions runs natively. An
+        emulator fails it at any speed.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Catching a Sensitive Instruction in the Act]
+No hypervisor needed: this runs on the host and shows the hardware behaviour
+the whole chapter rests on. Needs \texttt{gcc}. Expect twenty minutes.
+
+\begin{lstlisting}[language=C]
+/* ch03_popf.c -- show that POPF fails silently in user mode.
+   Build: gcc -O0 -o ch03_popf ch03_popf.c     Run: ./ch03_popf   */
+#include <stdio.h>
+
+/* --- 1. Read EFLAGS, so we can see what the processor really did. */
+static unsigned long read_flags(void) {
+    unsigned long f;
+    __asm__ volatile ("pushfq ; popq %0" : "=r"(f));
+    return f;
+}
+
+/* --- 2. Try to write EFLAGS, clearing the interrupt flag (bit 9). */
+static void write_flags(unsigned long f) {
+    __asm__ volatile ("pushq %0 ; popfq" : : "r"(f) : "cc");
+}
+
+int main(void) {
+    unsigned long before = read_flags();
+    printf("before : EFLAGS=0x%08lx  IF=%lu\n", before, (before >> 9) & 1);
+
+    /* --- 3. Ask for interrupts off, and for the carry flag on.
+       A kernel entering a critical section does exactly this. */
+    unsigned long want = (before & ~(1UL << 9)) | 1UL;   /* IF=0, CF=1 */
+    write_flags(want);
+
+    /* --- 4. Look at what we actually got. */
+    unsigned long after = read_flags();
+    printf("wanted : EFLAGS=0x%08lx  IF=%lu  CF=%lu\n",
+           want, (want >> 9) & 1, want & 1);
+    printf("after  : EFLAGS=0x%08lx  IF=%lu  CF=%lu\n",
+           after, (after >> 9) & 1, after & 1);
+
+    /* --- 5. The verdict. No signal was raised; nothing faulted. */
+    printf("\ncarry flag taken?     %s\n",
+           (after & 1) ? "yes -- the instruction 'worked'" : "no");
+    printf("interrupt flag taken? %s\n",
+           (((after >> 9) & 1) == 0) ? "yes" :
+           "NO -- written, ignored, and no trap. This is the bug.");
+    return 0;
+}
+\end{lstlisting}
+
+\textbf{What to notice.} The program does not crash and reports no error. The
+carry flag changed, so by every signal available to the program the instruction
+succeeded --- and the interrupt flag did not change. Now reread Step~4 of the
+worked example: a guest kernel in this position believes it holds a lock it does
+not hold.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item An architecture has an instruction \texttt{RDCFG} that returns the
+        current privilege level and does not fault in user mode. Classify it
+        using the two definitions, and say whether this architecture satisfies
+        the Popek--Goldberg condition.
+  \item Why would a \emph{crash} on executing \texttt{POPF} in a guest have
+        been a better outcome for hypervisor authors than what x86 actually
+        does?
+  \item Binary translation needs no cooperation from the guest, and
+        paravirtualization needs the guest's source code. Give one situation
+        where the second is nevertheless the better engineering choice, and say
+        why.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A virtual machine monitor must provide equivalence, resource control
+        and efficiency. Efficiency --- a statistically dominant subset running
+        natively --- is what rules out an emulator and makes the problem hard.
+  \item Privileged means the hardware traps it; sensitive means the monitor
+        needs to know about it. They are different properties of different
+        things.
+  \item Popek and Goldberg: a monitor can be built by trap-and-emulate if the
+        sensitive instructions are a subset of the privileged ones.
+  \item x86 had seventeen instructions that are sensitive and not privileged.
+        \texttt{POPF} silently discards a write to the interrupt flag in user
+        mode, so the guest believes it disabled interrupts and did not.
+  \item The failure is silent, intermittent and untraceable --- which is worse
+        than a crash, and is why x86 was called non-virtualizable.
+  \item Binary translation rewrites the guest's kernel code at run time, needs
+        no guest changes, and was for some years faster than the first
+        hardware assistance. Ring deprivileging plus paravirtualization is
+        simpler and needs the guest's source.
+  \item The theorem is not obsolete. It is what \chref{hardware} is an answer
+        to, and it still decides the question for any new architecture.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Popek and Goldberg's efficiency property requires that:
+        (a)~the monitor adds less than 5\% overhead; (b)~a statistically
+        dominant subset of guest instructions executes directly on the
+        processor; (c)~the guest boots in under a minute; (d)~no instruction is
+        ever trapped.
+  \item \textbf{(MCQ)} An instruction that is sensitive but not privileged
+        causes: (a)~a general protection fault; (b)~the guest to crash;
+        (c)~the monitor to lose control or correctness with no notification;
+        (d)~a performance penalty only.
+  \item \textbf{(Short)} State the Popek--Goldberg condition in one sentence,
+        and explain what each of the two instruction sets is a property of.
+  \item \textbf{(Short)} Describe what \texttt{POPF} does in user mode on x86
+        and why that single design decision cost the industry twenty-five
+        years.
+  \item \textbf{(Short)} Explain how binary translation could outperform
+        hardware-assisted virtualization on a system-call-heavy workload in
+        2006, even though the hardware was doing the same job.
+  \item \textbf{(Applied)} You are reviewing the specification of a new
+        64-bit architecture. Write the procedure you would follow to decide
+        whether it can be virtualized by trap-and-emulate alone, say what
+        evidence you would need from the vendor, and state what you would
+        recommend if you found three offending instructions.
+  \item \textbf{(Applied)} A colleague proposes to run an unmodified legacy
+        operating system, whose vendor no longer exists, on current hardware.
+        Using this chapter and \chref{architectures}, set out which
+        architectures are available to them, which are ruled out and why, and
+        what you would check first.
+\end{reviewq}

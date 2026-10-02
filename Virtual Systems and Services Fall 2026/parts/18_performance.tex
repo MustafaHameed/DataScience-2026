@@ -3,7 +3,495 @@
 %=====================================================================
 \locator{5}{Part V --- Management, Performance and Security}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why a guest's own metrics are untrustworthy, and
+        \textbf{name} the host-side counters that are not.
+  \item \textbf{Interpret} ready time, co-stop, balloon, swap and latency
+        together to locate a bottleneck.
+  \item \textbf{Explain} why a mean is the wrong statistic for latency, and
+        \textbf{use} percentiles instead.
+  \item \textbf{Diagnose} a noisy-neighbour problem and \textbf{distinguish}
+        it from a workload problem.
+  \item \textbf{Produce} a capacity plan from measured percentiles, with a
+        stated headroom and a stated trigger.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{cpumem} above all --- ready time, co-stop, the reclamation ladder and
+NUMA are the quantities this chapter measures. \chref{storage} (IOPS and the
+thin pool) and \chref{paravirt} (device models) supply the rest.
+\end{prereq}
+
+\begin{keyterms}
+\%RDY $\bullet$ steal time $\bullet$ co-stop $\bullet$ balloon $\bullet$
+swap-in $\bullet$ latency $\bullet$ throughput $\bullet$ saturation $\bullet$
+utilisation $\bullet$ percentile $\bullet$ p95 $\bullet$ p99 $\bullet$ tail
+latency $\bullet$ noisy neighbour $\bullet$ timekeeping $\bullet$ tick drift
+$\bullet$ USE method $\bullet$ headroom $\bullet$ capacity plan $\bullet$
+trigger
+\end{keyterms}
+
+\section{The Guest Is an Unreliable Witness}
+
+Every tool a guest has for measuring itself assumes it owns a processor. None
+of them do.
+
+A guest kernel computes CPU utilisation by sampling what it was doing at each
+timer tick. If the hypervisor descheduled it for 30 ms, the guest did not
+experience 30 ms --- time simply jumped, and the ticks that should have
+occurred did not. The guest therefore reports being busy for the time it
+\emph{ran}, and has no idea about the time it did not.
+
+The consequence is the single most misleading observation in this subject: a
+guest reporting \textbf{40\% CPU utilisation while being unable to keep up}.
+It was given 50\% of a core, used 40\% of what it was given, and spent the rest
+of the time not existing.
+
+\begin{conceptbox}[Measure From Outside, Correlate From Inside]
+The rule for this whole chapter: \textbf{the host knows what happened; the
+guest knows what it wanted.}
+
+\smallskip
+Only the hypervisor can report ready time, co-stop, ballooning and host swap,
+because only the hypervisor was present for them. Only the guest can report
+which process was running and which query was slow. A diagnosis needs both, in
+that order --- host first to find the constrained resource, guest second to
+find out who wanted it.
+
+\smallskip
+The one guest-side number that \emph{is} trustworthy is steal time
+(\texttt{\%st} in \texttt{top}, \texttt{mpstat}), because the hypervisor tells
+the guest about it explicitly through a paravirtual clock. It is the same
+quantity as \%RDY, visible from the other side, and it is the first thing to
+look at when you only have access to the guest.
+\end{conceptbox}
+
+\section{The Counters That Matter}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.7cm}L{4.5cm}L{2.5cm}L{4.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Counter} & \textbf{What a high value means} & \textbf{Threshold} &
+\textbf{What to do} \\
+\midrule
+\endhead
+\textbf{\%RDY} / steal & The vCPU wanted to run and no core was free & $>5\%$
+look, $>10\%$ act & Right-size guests down, or add hosts (\chref{cpumem}) \\
+\textbf{co-stop} & A wide guest waiting for its own siblings to be scheduled
+together & $>3\%$ & Reduce that guest's vCPU count \\
+\textbf{balloon} & The hypervisor is reclaiming memory from this guest &
+any sustained value & Reduce overcommit before it reaches swap \\
+\textbf{host swap-in} & The hypervisor is reading guest memory back from disk &
+\textbf{any} & Emergency. Migrate guests off now \\
+\textbf{device latency} & Storage or network is the constraint, not the host &
+depends on media & Look below the hypervisor \\
+\textbf{\%SYS on the host} & The hypervisor itself is busy --- often device
+emulation & $>10\%$ & Check for emulated devices (\chref{paravirt}) \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Utilisation is not saturation, and the difference is the whole job]
+A resource at 100\% utilisation is \emph{fully used}. A resource that is
+\emph{saturated} has a queue. They are not the same, and only the second is a
+problem.
+
+\smallskip
+A disk at 100\% utilisation with a queue depth of 1 is working perfectly ---
+it has exactly enough work. The same disk at 100\% with a queue depth of 40
+has forty requests waiting, and every one of them is experiencing latency it
+did not have an hour ago.
+
+\smallskip
+So the useful triple for any resource is \textbf{utilisation, saturation,
+errors} --- Brendan Gregg's USE method. Dashboards almost always show the
+first, sometimes the third and rarely the second, which is why so many
+estates are described as healthy while the people using them disagree.
 \end{alertbox}
+
+\section{Why the Mean Is the Wrong Number}
+
+A dashboard reporting ``average response time 45 ms'' is reporting almost
+nothing useful. Latency distributions in virtualized systems are not symmetric:
+most requests are fast and a few are very slow, and the slow ones are what
+people experience and remember.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  ax/.style={neutral!60, line width=0.9pt},
+  note/.style={font=\scriptsize\itshape, align=left, anchor=west}
+]
+  \draw[ax, -{Stealth[length=2mm]}] (0,0) -- (11.0,0);
+  \draw[ax, -{Stealth[length=2mm]}] (0,0) -- (0,3.4);
+  \node[font=\scriptsize\bfseries, text=neutral!40!black, anchor=north]
+       at (5.0,-0.3) {response time (ms)};
+  \node[font=\scriptsize\bfseries, text=neutral!40!black, rotate=90,
+        anchor=south] at (-0.4,1.7) {requests};
+
+  % a right-skewed distribution, drawn as bars
+  \foreach \i/\h in {0/0.25, 1/1.35, 2/2.75, 3/2.35, 4/1.55, 5/0.95,
+                     6/0.6, 7/0.4, 8/0.28, 9/0.2, 10/0.16, 11/0.13,
+                     12/0.11, 13/0.09, 14/0.08, 15/0.07, 16/0.06,
+                     17/0.055, 18/0.05, 19/0.045}{
+    \pgfmathsetmacro{\x}{0.2+\i*0.52}
+    \draw[draw=secondary!70, fill=secondary!25, line width=0.4pt]
+          (\x,0) rectangle ++(0.44,\h);}
+
+  \draw[greenhl, line width=1.2pt] (1.55,0) -- (1.55,3.1);
+  \node[font=\scriptsize\bfseries, text=greenhl!45!black, anchor=south]
+       at (1.55,3.1) {mean 45 ms};
+  \draw[goldhl, line width=1.2pt] (4.6,0) -- (4.6,2.6);
+  \node[font=\scriptsize\bfseries, text=goldhl!45!black, anchor=south]
+       at (4.6,2.6) {p95 180 ms};
+  \draw[accent, line width=1.4pt] (8.3,0) -- (8.3,2.1);
+  \node[font=\scriptsize\bfseries, text=accent, anchor=south]
+       at (8.3,2.1) {p99 940 ms};
+
+  \node[note, text=accent!70!black] at (5.0,1.35)
+       {This tail is where\\
+        ready time, balloon\\
+        and queued I/O show up.\\
+        The mean cannot see it.};
+
+  \node[rounded corners=3pt, draw=primary!50, fill=primary!5, text=primary,
+        font=\scriptsize, align=center, inner sep=4pt, text width=10.6cm]
+       at (5.3,-1.35)
+       {A page making 20 backend calls will exceed the p95 on at least one of
+        them about \textbf{64\%} of the time ($1 - 0.95^{20}$). The tail is not
+        a rare case for the user; it is the common case.};
+\end{tikzpicture}}%
+{A real latency distribution. The mean sits below almost all of the mass, and
+every pathology in this book lives to the right of
+it.}{latency-percentiles}
+
+\begin{worked}[Is This the Neighbours, or Is It Us?]
+A team reports their application has become slow. Nothing was deployed. The
+guest's own dashboard shows CPU at 38\%, memory at 55\% and ``no problems''.
+Decide where the fault is.
+
+\smallskip
+\textbf{Step 1 --- the guest's own figures are consistent with both
+explanations}, so they settle nothing. Go to the host.
+
+\smallskip
+\textbf{Step 2 --- host counters for this guest.}
+\begin{tight}
+  \item \%RDY: 16\% (was 3\% a month ago)
+  \item co-stop: 1\% --- not a wide-guest problem
+  \item balloon: 0 --- memory is not being reclaimed
+  \item host swap-in: 0 --- not an emergency
+  \item storage latency: 2 ms --- normal
+\end{tight}
+Ready time has risen fivefold and nothing else has moved. The guest is not
+being given a processor.
+
+\smallskip
+\textbf{Step 3 --- is it this guest's fault?} Its own vCPU count has not
+changed. So either the host gained work, or the other guests did.
+
+\smallskip
+\textbf{Step 4 --- the host's arithmetic, then and now.} 64 cores.
+\[ \text{a month ago: } \sigma = \frac{112}{64} = 1.75 \qquad
+   \text{now: } \sigma = \frac{168}{64} = \mathbf{2.63} \]
+Fourteen guests of 4 vCPUs were added to the host since. \textbf{This is a
+noisy-neighbour problem}: nothing about the complaining application changed,
+and the resource it depends on was divided more ways.
+
+\smallskip
+\textbf{Step 5 --- confirm it, do not assume it.} Two checks that distinguish
+the diagnoses:
+\begin{tight}
+  \item Compare \%RDY across \emph{all} guests on the host. If only this one is
+        high, it is the guest. If all are high, it is the host.
+  \item Migrate the guest to a quiet host and measure again. If it recovers
+        with no other change, the question is settled.
+\end{tight}
+
+\smallskip
+\textbf{Step 6 --- what the fix is, and what it is not.} Adding vCPUs to the
+complaining guest would make it worse (\chref{cpumem}). The options are to
+rebalance the host, to right-size the fourteen new guests, or to add hosts.
+
+\smallskip
+\textbf{Step 7 --- the real failure.} Nobody checked the host's \%RDY before
+adding the fourteen guests. The capacity decision was made on \emph{allocated}
+vCPUs, which looked fine, instead of on \emph{contention}, which did not. The
+next section is how to not do that.
+\end{worked}
+
+\section{Benchmarking Honestly}
+
+Measurements taken inside guests are easy to get wrong in ways that are not
+obvious.
+
+\begin{conceptbox}[Five Ways a Virtualized Benchmark Lies]
+\begin{tight}
+  \item \textbf{The neighbours.} The host is shared, so your result depends on
+        what everyone else was doing. Run the measurement several times across
+        different hours and report the distribution, not one figure.
+  \item \textbf{Timekeeping.} A descheduled guest's clock can drift, so a
+        benchmark measuring its own elapsed time may be measuring the
+        hypervisor's scheduling. Use a paravirtual clock source, and prefer
+        timing from the host where you can.
+  \item \textbf{Caching you did not account for.} The host's page cache serves
+        the guest's reads. A ``disk benchmark'' on a 2 GB file on a host with
+        256 GB of RAM is a memory benchmark.
+  \item \textbf{Burstable instances.} In the cloud (\chref{cloud}), a short
+        benchmark runs on credits and a long one does not. The two give
+        different answers about the same machine.
+  \item \textbf{Nesting.} Anything measured in a nested guest
+        (\chref{hardware}) is inflated by the outer hypervisor's exits, by a
+        variable amount.
+\end{tight}
+
+\smallskip
+A benchmark that does not state how it handled all five should be read as an
+anecdote.
+\end{conceptbox}
+
+\section{Capacity Planning}
+
+A capacity plan is three things: a measured baseline, a growth rate, and a
+\emph{trigger} --- the figure at which you act, chosen so that acting is still
+possible.
+
+\begin{conceptbox}[Why the Trigger Comes Before the Target]
+The common mistake is to plan to a utilisation target: ``we will run the
+cluster at 80\%''. That is a destination with no mechanism.
+
+\smallskip
+The useful form is a trigger with a lead time attached. Hardware takes --- say
+--- ten weeks to specify, approve, order, receive and install. So the trigger
+must be the figure reached \emph{ten weeks before} the resource would be
+exhausted, computed from the measured growth rate.
+
+\smallskip
+That single reframing is what distinguishes a plan from a dashboard. A
+dashboard tells you where you are; a plan tells you when the decision was
+supposed to have been made.
+\end{conceptbox}
+
+\begin{worked}[A Capacity Plan From Measurements]
+A six-host cluster: 64 cores and 512 GB each. Measured over three months at the
+95th percentile: 1{,}150 vCPUs allocated, \%RDY 6.2\%, memory active 2{,}060 GB,
+storage 41{,}000 IOPS. Growth: 4\% a quarter in guests. Lead time for new
+hardware: 10 weeks. Produce the plan.
+
+\smallskip
+\textbf{Step 1 --- where the cluster is now.}
+\[ \sigma_{\text{cpu}} = \frac{1{,}150}{6 \times 64} = \frac{1{,}150}{384}
+   = 2.99 \qquad
+   \text{memory} = \frac{2{,}060}{6 \times 512 \times 0.85}
+   = \frac{2{,}060}{2{,}611} = 79\% \]
+\%RDY at 6.2\% is already in the band that \chref{cpumem} says to investigate.
+
+\smallskip
+\textbf{Step 2 --- N+1, which is not optional.} Six hosts must survive one
+failing, so plan against five:
+\[ \sigma_{\text{cpu}}\big|_{N+1} = \frac{1{,}150}{5 \times 64} = 3.59
+   \qquad \text{memory}\big|_{N+1} = \frac{2{,}060}{5 \times 512 \times 0.85}
+   = 95\% \]
+\textbf{At 95\% of memory with one host down, this cluster has no real
+N+1 today.} That is the finding, and it is invisible on any dashboard showing
+79\%.
+
+\smallskip
+\textbf{Step 3 --- the binding resource and the limit.} Memory. Take 85\% of
+N+1 capacity as the ceiling --- beyond it the reclamation ladder starts
+working:
+\[ \text{ceiling} = 5 \times 512 \times 0.85 \times 0.85 = 1{,}850 \text{ GB} \]
+Current 2{,}060 GB already exceeds it. The cluster is over its own N+1 limit
+now.
+
+\smallskip
+\textbf{Step 4 --- growth.} 4\% a quarter on 2{,}060 GB is 82 GB a quarter,
+about 6.3 GB a week.
+
+\smallskip
+\textbf{Step 5 --- the trigger.} Working back from the 6-host ceiling of
+$6 \times 512 \times 0.85 \times 0.85 = 2{,}220$ GB:
+\[ \frac{2{,}220 - 2{,}060}{6.3} = 25 \text{ weeks until the cluster is full
+   even without N+1} \]
+With a 10-week lead time, the order must be placed by week 15 --- and the N+1
+finding means it should be placed \textbf{now}.
+
+\smallskip
+\textbf{Step 6 --- the plan, as it would be written.}
+\begin{tight}
+  \item \textbf{Immediate:} order two hosts. N+1 is already unmet, and \%RDY is
+        in the investigate band.
+  \item \textbf{In parallel:} right-size. $\sigma_{\text{cpu}} = 2.99$ with
+        6.2\% ready suggests over-allocated vCPUs; the exercise in
+        \chref{cpumem} commonly recovers 30--40\% and may defer the second
+        host.
+  \item \textbf{Trigger, standing:} alert when N+1 memory exceeds 85\%, when
+        \%RDY p95 exceeds 8\%, or when storage exceeds 80\% of measured peak
+        IOPS. Review quarterly against actual growth.
+  \item \textbf{Report:} N+1 figures, not raw utilisation. The difference
+        between 79\% and 95\% in step 2 is the entire finding.
+\end{tight}
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Trusting guest-reported CPU.} A guest at 40\% may be unable to
+        keep up. Only the host knows about the time the guest did not exist.
+  \item \textbf{Reporting utilisation without saturation.} A queue, not a busy
+        resource, is what users feel.
+  \item \textbf{Planning on means.} The tail is the user experience, and a page
+        making twenty calls meets it most of the time.
+  \item \textbf{Reporting capacity without N+1.} 79\% and 95\% were the same
+        cluster.
+  \item \textbf{Benchmarking once, in one hour, on a shared host.} You measured
+        the neighbours.
+  \item \textbf{Setting a trigger without a lead time.} A threshold reached too
+        late to act on is a notification, not a plan.
+  \item \textbf{Adding capacity before right-sizing.} Inflated allocations are
+        cheaper to fix than hardware is to buy, and buying first preserves the
+        waste permanently.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Finding the Bottleneck]
+Produces three different bottlenecks on one host and distinguishes them using
+only the counters in this chapter. Expect forty minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch18_bottleneck.sh -- CPU contention, memory pressure and I/O queueing.
+set -euo pipefail
+sudo apt-get install -y sysstat fio stress-ng
+ip_of () {
+  sudo virsh domifaddr "$1" | awk '/ipv4/{split($4,a,"/"); print a[1]}'
+}
+G () { ssh -o StrictHostKeyChecking=no "ubuntu@$(ip_of "$1")" "$2"; }
+
+# --- 1. Baseline, with the host quiet. --------------------------------
+sudo virsh start vss1 || true ; sleep 25
+G vss1 "sudo apt-get -qq install -y sysstat fio stress-ng"
+echo "=== baseline ==="
+G vss1 "mpstat 2 3 | tail -2"           # %steal should be near zero
+sudo virsh domstats vss1 --vcpu | grep -E 'wait|delay' || true
+
+# --- 2. Bottleneck A: CPU contention from the neighbours. -------------
+# Other guests take the cores. The complaining guest changes nothing.
+for n in 2 3 4; do
+  sudo virt-clone --original vss1 --name "n$n" \
+    --file "/var/lib/libvirt/images/n$n.qcow2" --auto-clone >/dev/null
+  sudo virsh setvcpus "n$n" "$(nproc)" --config --maximum
+  sudo virsh setvcpus "n$n" "$(nproc)" --config
+  sudo virsh start "n$n"
+done
+sleep 40
+for n in 2 3 4; do
+  G "n$n" "nohup stress-ng --cpu \$(nproc) --timeout 120s >/dev/null 2>&1 &"
+done
+sleep 10
+echo "=== A: CPU contention ==="
+G vss1 "mpstat 2 3 | tail -2"           # %steal climbs; %usr does NOT
+sudo virsh domstats vss1 --vcpu | grep -E 'wait|delay' || true
+# The signature: steal high, guest's own utilisation unchanged.
+
+# --- 3. Bottleneck B: memory pressure. --------------------------------
+for n in 2 3 4; do
+  G "n$n" "nohup stress-ng --vm 1 --vm-bytes 85% --vm-keep \
+           --timeout 90s >/dev/null 2>&1 &"
+done
+sleep 20
+echo "=== B: memory pressure ==="
+sudo virsh dommemstat vss1 | grep -E 'balloon|swap|available'
+vmstat 2 3 | tail -2                    # host si/so columns
+free -m | head -2
+# The signature: balloon moving, or host swap non-zero. Different fix.
+
+# --- 4. Bottleneck C: storage queueing. -------------------------------
+pkill stress-ng 2>/dev/null || true ; sleep 5
+G vss1 "nohup fio --name=load --rw=randwrite --bs=4k --size=512M \
+        --numjobs=4 --time_based --runtime=60 --direct=1 \
+        >/dev/null 2>&1 &"
+sleep 10
+echo "=== C: storage queueing ==="
+iostat -x 2 3 | awk '/Device|vd|sd|nvme/' | tail -6
+# The signature: aqu-sz (queue depth) and await (latency) both high,
+# while %util may already have been 100% harmlessly before. Utilisation
+# against saturation, section 18.2.
+
+# --- 5. Percentiles, not means. ---------------------------------------
+G vss1 "fio --name=lat --rw=randread --bs=4k --size=256M --direct=1 \
+        --runtime=30 --time_based --output-format=json" \
+  | grep -E '"mean"|"percentile"|"95.000000"|"99.000000"' | head -8
+# Compare the mean with p95 and p99 on the same run.
+
+# --- 6. Tear down. ----------------------------------------------------
+for n in 2 3 4; do
+  sudo virsh destroy "n$n" 2>/dev/null || true
+  sudo virsh undefine "n$n" --remove-all-storage 2>/dev/null || true
+done
+sudo virsh destroy vss1 || true
+\end{lstlisting}
+
+\textbf{What to notice.} The three bottlenecks look identical from inside the
+guest --- the application is slow --- and have three different signatures and
+three different fixes on the host. That difference is the whole chapter, and
+it is why the guest's dashboard settled nothing in the worked example.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A guest reports 35\% CPU utilisation and its users say it cannot keep
+        up. Give two host-side counters that would distinguish the possible
+        causes, and say what each value would mean.
+  \item A page issues 12 backend calls. If each has a p95 of 200 ms, what
+        fraction of page loads will contain at least one call slower than
+        200 ms?
+  \item A cluster of 8 hosts is at 76\% memory. Compute the N+1 figure and say
+        whether you would report the cluster as healthy.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A guest cannot see the time it was not running, so its CPU figures are
+        unreliable. The host knows what happened; the guest knows what it
+        wanted. Steal time is the one trustworthy guest-side number.
+  \item \%RDY, co-stop, balloon, host swap-in and device latency each point at
+        a different constraint with a different fix.
+  \item Utilisation is not saturation. A queue is what users feel, and most
+        dashboards do not show it.
+  \item Plan on percentiles. The mean sits below almost all the mass, and a
+        page making twenty calls meets the p95 most of the time.
+  \item Distinguish a noisy neighbour from a workload problem by comparing all
+        guests on the host, and by migrating to a quiet host.
+  \item A virtualized benchmark lies through neighbours, timekeeping, caching,
+        burst credits and nesting. State how you handled all five.
+  \item Report N+1 capacity, not raw utilisation, and set triggers with the
+        procurement lead time built in.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The one guest-side counter that reliably indicates host
+        CPU contention is: (a)~load average; (b)~\%usr; (c)~\%steal;
+        (d)~context switches.
+  \item \textbf{(MCQ)} A disk at 100\% utilisation with an average queue depth
+        of 1 is: (a)~saturated; (b)~fully used but not saturated;
+        (c)~failing; (d)~idle.
+  \item \textbf{(Short)} Explain why a guest can report 40\% CPU while being
+        unable to keep up.
+  \item \textbf{(Short)} State the USE method and explain which of its three
+        parts dashboards usually omit.
+  \item \textbf{(Short)} Give three of the five ways a virtualized benchmark
+        can mislead, with the control for each.
+  \item \textbf{(Applied)} A four-host cluster of 48 cores and 384 GB each
+        measures 820 vCPUs allocated, \%RDY p95 of 9\%, and 1{,}180 GB active
+        memory, growing 5\% a quarter. Lead time is 12 weeks. Work through the
+        worked example's six steps and write the plan.
+  \item \textbf{(Applied)} A developer insists their application is slow
+        ``because virtualization is slow'' and produces a benchmark run inside
+        their guest. Write the response: what the benchmark does not control
+        for, what you would measure instead, and what result would prove them
+        right.
+\end{reviewq}

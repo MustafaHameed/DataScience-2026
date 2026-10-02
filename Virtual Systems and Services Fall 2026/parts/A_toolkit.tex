@@ -3,6 +3,231 @@
 %=====================================================================
 \normalfigures
 
-\begin{alertbox}[Not written yet]
-This appendix is a placeholder.
+Everything the labs in this book need, installed and verified in one sitting.
+Work through it once in Week 1; every later chapter assumes it.
+
+\section{What You Need}
+
+One machine, with:
+
+\begin{tight}
+  \item a 64-bit x86 processor with VT-x or AMD-V \emph{enabled in firmware};
+  \item 16 GB of memory --- 8 GB works for most labs and not for
+        \chref{cpumem}'s or \chref{desktop}'s;
+  \item 100 GB of free disk;
+  \item Linux, or Windows with WSL2.
+\end{tight}
+
+Where a lab needs more --- nested virtualization, two hosts, a GPU --- it says
+so in its first line and ships captured output in \texttt{code/}.
+
+\begin{alertbox}[Check this before anything else]
+A large share of ``the hypervisor will not start'' is a cleared firmware bit.
+\begin{lstlisting}[language=bash]
+# Should print a number greater than zero. Zero means the feature is
+# absent or disabled in BIOS/UEFI -- look for "Intel VT-x", "AMD-V",
+# "SVM Mode" or "Virtualization Technology" and enable it.
+grep -c -E '\<(vmx|svm)\>' /proc/cpuinfo
+\end{lstlisting}
+On Windows, Task Manager's Performance tab reports ``Virtualization:
+Enabled''.
 \end{alertbox}
+
+\section{The Stack, in One Pass}
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# appA_setup.sh -- install and verify everything the labs need.
+set -euo pipefail
+
+# --- 1. Hypervisor: KVM, libvirt and the tools around them ------------
+sudo apt-get update
+sudo apt-get install -y \
+  qemu-kvm libvirt-daemon-system libvirt-clients virtinst \
+  libguestfs-tools cloud-image-utils virt-manager bridge-utils \
+  qemu-utils ovmf
+sudo usermod -aG libvirt,kvm "$USER"    # log out and in for this
+sudo systemctl enable --now libvirtd
+sudo virsh net-start default 2>/dev/null || true
+sudo virsh net-autostart default
+
+# --- 2. Verify the hypervisor before going further --------------------
+sudo virt-host-validate qemu            # every line should be PASS or WARN
+sudo virsh list --all
+sudo virsh net-list
+
+# --- 3. Nested virtualization: Chapters 4, 11 and 17 need it ----------
+MOD=$(lsmod | grep -o -m1 -E 'kvm_intel|kvm_amd')
+cat "/sys/module/$MOD/parameters/nested"
+# If that prints N or 0:
+echo "options $MOD nested=1" | sudo tee "/etc/modprobe.d/$MOD.conf"
+sudo modprobe -r "$MOD" && sudo modprobe "$MOD"
+cat "/sys/module/$MOD/parameters/nested"    # now Y or 1
+
+# --- 4. Containers: Docker and kind -----------------------------------
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker "$USER"
+sudo systemctl enable --now docker
+curl -fsSLo /tmp/kind \
+  https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+sudo install -m 755 /tmp/kind /usr/local/bin/kind
+curl -fsSLo /tmp/kubectl \
+  "https://dl.k8s.io/release/$(curl -fsSL \
+   https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install -m 755 /tmp/kubectl /usr/local/bin/kubectl
+
+# --- 5. Measurement tools, used from Chapter 2 onwards -----------------
+sudo apt-get install -y \
+  sysstat fio iperf3 stress-ng hdparm iotop htop \
+  linux-tools-common "linux-tools-$(uname -r)" \
+  tcpdump iproute2 bridge-utils net-tools ethtool
+
+# --- 6. Infrastructure as code: Chapter 16 ----------------------------
+curl -fsSL https://apt.releases.hashicorp.com/gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp.gpg
+echo "deb [signed-by=/usr/share/keyrings/hashicorp.gpg] \
+https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
+  | sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt-get update && sudo apt-get install -y terraform packer
+
+# --- 7. A base image, used by nearly every lab ------------------------
+BASE=https://cloud-images.ubuntu.com/jammy/current
+wget -nc -O ~/ubuntu.img "$BASE/jammy-server-cloudimg-amd64.img"
+cat > ~/user-data <<'YAML'
+#cloud-config
+password: vss2026
+chpasswd: { expire: False }
+ssh_pwauth: True
+YAML
+cloud-localds ~/seed.iso ~/user-data
+
+# --- 8. Build the guest the labs call vss1 ----------------------------
+sudo cp ~/ubuntu.img /var/lib/libvirt/images/vss1.qcow2
+sudo qemu-img resize /var/lib/libvirt/images/vss1.qcow2 10G
+sudo virt-install --name vss1 --memory 2048 --vcpus 2 \
+  --disk /var/lib/libvirt/images/vss1.qcow2,format=qcow2 \
+  --disk ~/seed.iso,device=cdrom --os-variant ubuntu22.04 \
+  --import --graphics none --noautoconsole
+
+# --- 9. Verify end to end ---------------------------------------------
+sleep 30
+sudo virsh list
+IP=$(sudo virsh domifaddr vss1 | awk '/ipv4/{split($4,a,"/"); print a[1]}')
+echo "guest address: $IP"
+ssh -o StrictHostKeyChecking=no "ubuntu@$IP" 'uname -a; systemd-detect-virt'
+echo "toolkit ready"
+\end{lstlisting}
+
+\section{Windows Hosts}
+
+Windows Pro and above have Hyper-V, which is a genuine Type-1 hypervisor
+(\chref{platforms}) and is sufficient for most labs.
+
+\begin{tight}
+  \item Enable Hyper-V and WSL2 from ``Turn Windows features on or off''.
+  \item Install a Linux distribution under WSL2 and run the script above inside
+        it --- nested KVM under WSL2 works for the container and Kubernetes
+        labs, and for some of the hypervisor ones.
+  \item For the virtual-machine labs proper, use Hyper-V Manager directly, or
+        VirtualBox \emph{with Hyper-V disabled}.
+\end{tight}
+
+\begin{alertbox}[Hyper-V and VirtualBox on one machine]
+As \chref{platforms} explains, enabling Hyper-V --- which Docker Desktop, WSL2,
+Windows Sandbox and memory integrity all do --- makes Windows a guest, so
+VirtualBox and VMware Workstation become nested and much slower.
+
+\smallskip
+Choose one. To turn Hyper-V off:
+\begin{lstlisting}[language=bash]
+# In an elevated PowerShell. Reboot afterwards.
+bcdedit /set hypervisorlaunchtype off
+# To turn it back on:
+bcdedit /set hypervisorlaunchtype auto
+\end{lstlisting}
+Benchmarks taken without checking this are measuring a nested guest.
+\end{alertbox}
+
+\section{Cloud Accounts}
+
+\chref{cloud}'s lab uses three free tiers. Create the accounts in Week 1; card
+verification takes time and the free tiers have validity windows.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.4cm}L{4.0cm}L{4.0cm}L{4.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{Free allowance} & \textbf{CLI} & \textbf{Watch for} \\
+\midrule
+\endhead
+AWS & 12 months of a small instance, monthly hours capped & \texttt{aws} &
+Elastic IPs and EBS volumes bill after the instance is gone \\
+Azure & Credit for 30 days, then limited always-free services &
+\texttt{az} & Delete the whole resource group, not the VM \\
+GCP & Credit for 90 days, plus a small always-free instance &
+\texttt{gcloud} & Disks and reserved addresses persist after deletion \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Set a budget alert before you launch anything]
+Every lab in this book ends with a teardown step. Do them. Then add a hard
+safety net, because a forgotten instance bills until somebody notices.
+\begin{lstlisting}[language=bash]
+# AWS: alert at $5 of forecast spend
+aws budgets create-budget --account-id "$(aws sts get-caller-identity \
+  --query Account --output text)" --budget \
+  '{"BudgetName":"vss-lab","BudgetLimit":{"Amount":"5","Unit":"USD"},
+    "TimeUnit":"MONTHLY","BudgetType":"COST"}'
+# Azure and GCP have equivalents in the portal under Cost Management.
+\end{lstlisting}
+\end{alertbox}
+
+\section{When a Lab Cannot Run Here}
+
+Three labs need hardware not every reader has. Each ships captured output in
+\texttt{code/}, and the exercise --- the analysis --- is unchanged.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.0cm}L{4.4cm}L{7.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Lab} & \textbf{Needs} & \textbf{Substitute} \\
+\midrule
+\endhead
+\chref{hardware} & nested virtualization & Section A.2 step 3 enables it on most
+laptops; where firmware forbids it, the exit counts in
+\texttt{code/ch04\_exits.txt} \\
+\chref{migration} & two hosts and shared storage & Two nested guests acting as
+hosts, with NFS between them; the setup script is
+\texttt{code/appA\_twohost.sh} \\
+\chref{gpu} & an NVIDIA GPU with MIG & \texttt{code/ch20\_capture.txt} ---
+real \texttt{nvidia-smi} output from a partitioned card \\
+\chref{confidential} & an SEV-SNP or TDX processor &
+\texttt{code/ch21\_report.txt} and
+\texttt{code/ch21\_expected\_measurement.txt} \\
+\bottomrule
+\end{longtable}
+
+\section{Tearing It All Down}
+
+At the end of the semester:
+
+\begin{lstlisting}[language=bash]
+# --- 1. Guests and their storage --------------------------------------
+for d in $(sudo virsh list --all --name); do
+  sudo virsh destroy "$d" 2>/dev/null || true
+  sudo virsh undefine "$d" --remove-all-storage --snapshots-metadata || true
+done
+
+# --- 2. Containers, images and clusters -------------------------------
+kind delete clusters --all 2>/dev/null || true
+docker system prune -af --volumes
+
+# --- 3. Cloud. Check, do not assume. ----------------------------------
+aws ec2 describe-instances \
+  --filters 'Name=instance-state-name,Values=running' \
+  --query 'Reservations[].Instances[].InstanceId' --output text
+az group list --query '[].name' -o tsv
+gcloud compute instances list --format='value(name,zone)'
+# All three should print nothing. If they do not, delete what they list.
+\end{lstlisting}

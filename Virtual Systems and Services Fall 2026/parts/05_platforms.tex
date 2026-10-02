@@ -3,7 +3,465 @@
 %=====================================================================
 \locator{2}{Part II --- Hypervisors and Compute Virtualization}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} the architecture of ESXi, Hyper-V, KVM and Xen, and
+        \textbf{say} for each one where the device drivers live.
+  \item \textbf{Explain} why the location of the drivers is the single fact
+        that most determines a platform's security and performance character.
+  \item \textbf{Compare} the four on licensing, ecosystem, guest support and
+        operational tooling.
+  \item \textbf{Compute} the three-year cost of a small cluster on two of them,
+        and \textbf{identify} which cost dominates.
+  \item \textbf{Recommend} a platform for a stated requirement and defend it
+        against the strongest alternative.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{architectures} (Type-1 and Type-2, and the three techniques) and
+\chref{hardware} (VT-x, EPT, the IOMMU). Every platform here is a different set
+of engineering answers built on the same silicon, so the hardware chapter is
+what lets you see what they actually differ about.
+\end{prereq}
+
+\begin{keyterms}
+ESXi $\bullet$ VMkernel $\bullet$ vSphere $\bullet$ vCenter $\bullet$ Hyper-V
+$\bullet$ parent partition $\bullet$ child partition $\bullet$ VMBus $\bullet$
+enlightenment $\bullet$ KVM $\bullet$ QEMU $\bullet$ libvirt $\bullet$ Xen
+$\bullet$ dom0 $\bullet$ domU $\bullet$ PV $\bullet$ HVM $\bullet$ PVH
+$\bullet$ disaggregation $\bullet$ driver domain $\bullet$ trusted computing
+base
+\end{keyterms}
+
+\section{The Question That Separates Them}
+
+All four platforms in this chapter run on the same processors, use VT-x or
+AMD-V the same way, and use extended page tables for memory. At the level of
+\chref{hardware} they are nearly identical.
+
+What separates them is a question \chref{hardware} did not ask: \emph{where do
+the device drivers live?} A hypervisor needs drivers for every disk controller
+and network card in the machine, and drivers are large, written by hardware
+vendors, and the commonest source of kernel bugs. Any code that can crash the
+host is part of the \term{trusted computing base}, and a driver can always
+crash the host.
+
+The four platforms give four different answers, and almost every other
+difference between them follows.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  box/.style={rounded corners=2pt, line width=0.8pt, align=center,
+              inner sep=2pt, minimum height=0.5cm, font=\scriptsize},
+  hw/.style={box, draw=neutral, fill=neutral!15, text=neutral!40!black,
+             minimum width=3.3cm},
+  hv/.style={box, draw=primary, fill=primary!14, text=primary,
+             font=\scriptsize\bfseries, minimum width=3.3cm},
+  gu/.style={box, draw=secondary, fill=secondary!8, text=secondary!80!black,
+             minimum width=1.5cm},
+  pr/.style={box, draw=purplehl, fill=purplehl!12, text=purplehl!70!black,
+             minimum width=1.5cm},
+  dr/.style={box, draw=accent, fill=accent!12, text=accent!70!black,
+             font=\tiny, minimum width=1.5cm, minimum height=0.4cm},
+  ttl/.style={font=\scriptsize\bfseries, text=primary},
+  blurb/.style={font=\tiny\itshape, text=neutral, align=center}
+]
+% ---------------- ESXi ----------------
+\node[ttl] at (1.9,3.5) {ESXi};
+\node[hw] (e0) at (1.9,0)   {hardware};
+\node[hv] (e1) at (1.9,0.75) {VMkernel};
+\node[dr, minimum width=3.1cm] (ed) at (1.9,1.3) {drivers inside it};
+\node[gu] (e2) at (1.1,2.2) {guest}; \node[gu] (e3) at (2.7,2.2) {guest};
+\node[blurb] at (1.9,-0.75) {one purpose-built kernel\\of about 150 MB};
+
+% ---------------- Hyper-V ----------------
+\node[ttl] at (7.1,3.5) {Hyper-V};
+\node[hw] (h0) at (7.1,0)   {hardware};
+\node[hv] (h1) at (7.1,0.75) {hypervisor (thin)};
+\node[pr, minimum width=1.6cm] (hp) at (6.0,1.75) {parent\\partition};
+\node[dr, minimum width=1.6cm] (hd) at (6.0,2.45) {Windows\\drivers};
+\node[gu] (h2) at (7.9,1.75) {child}; \node[gu] (h3) at (7.9,2.45) {child};
+\draw[-{Stealth[length=1.4mm]}, accent!70, line width=0.7pt] (7.15,1.9) -- (6.8,1.9);
+\node[font=\tiny, text=accent!70!black] at (7.35,2.1) {VMBus};
+\node[blurb] at (7.1,-0.75) {thin hypervisor; drivers\\in a privileged Windows};
+
+% ---------------- KVM ----------------
+\node[ttl] at (12.3,3.5) {KVM};
+\node[hw] (k0) at (12.3,0)   {hardware};
+\node[hv] (k1) at (12.3,0.9) {Linux kernel\\{\tiny\mdseries + kvm.ko}};
+\node[dr, minimum width=3.1cm] (kd) at (12.3,1.6) {every Linux driver};
+\node[gu, minimum width=1.5cm] (k2) at (11.5,2.5) {QEMU\\+ guest};
+\node[gu, minimum width=1.5cm] (k3) at (13.1,2.5) {QEMU\\+ guest};
+\node[blurb] at (12.3,-0.75) {a general-purpose kernel\\that is also the
+                            hypervisor};
+
+% ---------------- Xen ----------------
+\node[ttl] at (17.5,3.5) {Xen};
+\node[hw] (x0) at (17.5,0)   {hardware};
+\node[hv] (x1) at (17.5,0.75) {Xen hypervisor};
+\node[pr, minimum width=1.6cm] (xp) at (16.4,1.75) {dom0};
+\node[dr, minimum width=1.6cm] (xd) at (16.4,2.45) {Linux\\drivers};
+\node[gu] (x2) at (18.3,1.75) {domU}; \node[gu] (x3) at (18.3,2.45) {domU};
+\draw[-{Stealth[length=1.4mm]}, accent!70, line width=0.7pt] (17.55,1.9) -- (17.2,1.9);
+\node[font=\tiny, text=accent!70!black] at (17.8,2.1) {rings};
+\node[blurb] at (17.5,-0.75) {hypervisor of about 1 MB;\\drivers in a
+                            privileged guest};
+
+\foreach \a/\b in {e1/e0, h1/h0, k1/k0, x1/x0}{
+  \draw[-{Stealth[length=1.4mm]}, primary!55, line width=0.7pt] (\a) -- (\b);}
+\end{tikzpicture}}%
+{The four platforms, drawn to the same question: where are the drivers (red)?
+Xen's answer gives it the smallest hypervisor in the room and the most moving
+parts; ESXi's gives it the most predictable behaviour and the shortest hardware
+compatibility list.}{four-platforms}
+
+\section{VMware ESXi and vSphere}
+
+ESXi is a purpose-built Type-1 hypervisor. Its kernel, the \term{VMkernel}, was
+written for one job and contains the scheduler, the memory manager and the
+device drivers. Nothing general-purpose runs beside it; the shell is
+deliberately limited and disabled by default.
+
+\term{vSphere} is the product that matters commercially: ESXi hosts plus
+\term{vCenter}, the management server that turns a set of hosts into a cluster
+with shared storage, automated placement, live migration and failover. Almost
+everything an enterprise buys VMware for lives in vCenter rather than in ESXi.
+
+\begin{conceptbox}[The Compatibility List Is the Point, Not a Limitation]
+ESXi runs on a short list of certified hardware, and students usually read this
+as a weakness. It is the central design decision.
+
+\smallskip
+Because VMware controls which drivers exist, it can test them, and because the
+VMkernel does nothing else, its behaviour under load is predictable in a way a
+general-purpose kernel's is not. An estate of certified hardware running a
+tested driver set is why vSphere acquired a reputation for not surprising
+people at three in the morning --- and that reputation, rather than any
+technical feature, is what the licence buys.
+
+\smallskip
+The cost is real: a host that is not on the list may not install at all, and
+a new network card may wait months for a driver.
+\end{conceptbox}
+
+\section{Microsoft Hyper-V}
+
+Hyper-V is also Type-1, and the picture most people hold of it is wrong.
+Installing the Hyper-V role on Windows Server does not make Windows the
+hypervisor; it slides a thin hypervisor \emph{underneath} the running Windows,
+which is then demoted to the \term{parent partition} --- a privileged guest.
+
+The parent partition owns the physical devices and runs the Windows driver
+stack. \term{Child partitions} --- the ordinary guests --- have no direct device
+access and talk to the parent over \term{VMBus}, a shared-memory channel. A
+guest with Hyper-V's integration services installed uses \term{enlightened}
+paravirtualized drivers over VMBus; a guest without them falls back to emulated
+devices and the performance of \chref{architectures}'s worked example.
+
+\begin{alertbox}[Hyper-V changes the machine underneath you]
+Once the Hyper-V role is enabled, the Windows you were using is a guest. This
+has consequences people meet by accident:
+
+\smallskip
+Other hypervisors stop working, or quietly become nested. VirtualBox and VMware
+Workstation on a Hyper-V-enabled Windows run on top of Hyper-V's platform
+rather than on the hardware, and historically simply refused. Benchmarks taken
+on that machine are measuring a nested guest.
+
+\smallskip
+It is also enabled by features that do not mention it: Windows Subsystem for
+Linux 2, Windows Sandbox, Docker Desktop and memory-integrity protection all
+turn Hyper-V on. A great deal of ``my virtual machines got slow after a Windows
+update'' is this.
 \end{alertbox}
+
+\section{KVM and QEMU}
+
+KVM is a kernel module. Loading \texttt{kvm.ko} and \texttt{kvm\_intel.ko} turns
+Linux into a hypervisor by giving it the ability to enter VMX non-root
+operation; the module is about twenty thousand lines, because the scheduler,
+memory manager and drivers it needs are already there.
+
+That is also the whole architectural claim: \textbf{a guest is a process}. It
+is scheduled by the ordinary Linux scheduler, its memory is ordinary process
+memory, \texttt{top} shows it, \texttt{kill} ends it, cgroups limit it. Every
+tool that works on a Linux process works on a virtual machine.
+
+KVM provides only the processor and memory virtualization. The virtual
+hardware --- disk controllers, network cards, graphics, BIOS --- is QEMU's job,
+running in user space as that process. \term{libvirt} sits above both and
+provides the stable API that \texttt{virsh}, \texttt{virt-manager}, OpenStack
+and oVirt all drive.
+
+\begin{conceptbox}[One Design Decision, Two Opposite Consequences]
+\textbf{For:} KVM inherits everything. Every driver Linux has, every filesystem,
+every scheduler improvement, every networking feature, with no porting work.
+When a new network card ships with a Linux driver, KVM supports it that day.
+This is why KVM runs most of the world's public cloud.
+
+\smallskip
+\textbf{Against:} KVM inherits everything. The trusted computing base is the
+entire Linux kernel --- millions of lines, every driver loaded, every
+filesystem --- and a bug in any of it is a host compromise. ESXi's 150 MB and
+Xen's 1 MB are the competing answers to exactly this.
+
+\smallskip
+Neither consequence can be had without the other, and which one dominates
+depends on whether you are optimising for hardware support or for attack
+surface.
+\end{conceptbox}
+
+\section{Xen}
+
+Xen is the smallest hypervisor here --- on the order of a megabyte --- because
+it deliberately contains almost nothing. No drivers, no filesystems, no network
+stack. It schedules domains, manages memory, and passes messages.
+
+Everything else lives in \term{dom0}, a privileged guest (normally Linux) that
+owns the physical devices and runs the driver stack. Unprivileged guests are
+\term{domU} and reach devices through split drivers terminating in dom0.
+
+Xen was the paravirtualization project of \chref{vmm}, and its guest modes
+record that history: \term{PV} (fully paravirtualized, no hardware assistance
+needed, guest kernel modified), \term{HVM} (hardware-assisted, unmodified
+guests, from 2006), and \term{PVH} (hardware assistance for the processor,
+paravirtualized devices, no emulated chipset --- the modern default).
+
+\begin{conceptbox}[Disaggregation: the idea Xen got right early]
+Because dom0 is a guest rather than part of the hypervisor, it can be split
+up. A \term{driver domain} is an unprivileged domain given one device via the
+IOMMU, running that device's driver and nothing else. A buggy or hostile
+network driver then crashes a domain that can be restarted, instead of the
+host.
+
+\smallskip
+This is \term{disaggregation}, and it is the strongest security argument any
+platform in this chapter can make: it is the only one that can reduce the
+blast radius of a driver bug to something smaller than the whole machine. It
+is also operationally fiddly, which is why it is common in security-focused
+deployments such as Qubes OS and rare elsewhere.
+
+\smallskip
+Note where the idea goes next. \chref{lightweight} removes device emulation
+from the trusted path almost entirely, and \chref{gpu} uses the same IOMMU
+machinery to hand accelerators to guests. Xen's answer was early rather than
+wrong.
+\end{conceptbox}
+
+\section{Choosing}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.5cm}L{3.0cm}L{3.0cm}L{3.0cm}L{3.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{ESXi} & \textbf{Hyper-V} & \textbf{KVM} & \textbf{Xen} \\
+\midrule
+\endhead
+Hypervisor size & $\approx$150 MB & thin, plus a full Windows parent &
+the Linux kernel & $\approx$1 MB, plus dom0 \\
+Drivers live in & the VMkernel & the parent partition & the Linux kernel &
+dom0 or a driver domain \\
+Licence & Commercial; free tier withdrawn in 2024 & Included with Windows
+Server; free Hyper-V Server discontinued & GPL, free & GPL, free \\
+Guest support & Very broad, certified & Windows strongest; Linux good &
+Anything x86 or ARM & Anything, three guest modes \\
+Management & vCenter --- the strongest in the industry & System Center, Windows
+Admin Center & libvirt, oVirt, Proxmox, OpenStack & XenCenter, XCP-ng \\
+Used by & Enterprise data centres & Windows-centred estates & AWS Nitro,
+Google, DigitalOcean, most OpenStack & AWS before Nitro, Citrix, Qubes \\
+Strongest when & Mixed hardware, mixed guests, operations staff who must not be
+surprised & The estate is already Windows and licensed & You want control, no
+licence cost, and newest hardware & Minimal trusted base, or driver
+isolation \\
+\bottomrule
+\end{longtable}
+
+\begin{worked}[Three Years of a Small Cluster]
+Size and cost the three-host cluster of \chref{what}'s worked example on vSphere
+and on KVM. Each host has 2 sockets $\times$ 32 cores.
+
+\smallskip
+\textbf{vSphere.} VMware licenses per core with a 16-core minimum per socket.
+Here each socket has 32 cores, so the minimum does not bite:
+\[ 3 \text{ hosts} \times 2 \text{ sockets} \times 32 = 192 \text{ cores} \]
+At a list price of about \$350 per core per year for a standard edition, plus
+vCenter at about \$12{,}000 for three years:
+\[ 192 \times 350 \times 3 + 12{,}000 = 201{,}600 + 12{,}000
+   = \mathbf{\$213{,}600} \]
+
+\smallskip
+\textbf{KVM.} The software is free. A supported distribution with a virtualisation
+subscription runs about \$1{,}500 per host per year:
+\[ 3 \times 1{,}500 \times 3 = \mathbf{\$13{,}500} \]
+Unsupported, it is \$0.
+
+\smallskip
+\textbf{Step 1 --- the gap.} \$200{,}100 over three years, or about
+\$66{,}700 a year.
+
+\smallskip
+\textbf{Step 2 --- what the gap must buy.} At a loaded cost of roughly
+\$45{,}000 a year for an experienced Linux engineer, the licence is worth
+paying if vSphere saves about \textbf{1.5 full-time engineers} of effort
+against a self-managed KVM estate --- or if it prevents outages worth that
+much.
+
+\smallskip
+\textbf{Step 3 --- read it honestly in both directions.} For an estate of three
+hosts the answer is almost always KVM: three hosts do not need 1.5 engineers
+of management either way, so the licence buys little. For an estate of three
+hundred hosts with a mixed hardware fleet, staff who know vCenter and an
+availability target with contractual penalties, the same arithmetic inverts.
+
+\smallskip
+\textbf{What the arithmetic leaves out.} Migration cost. An estate already on
+vSphere carries years of runbooks, automation, backup integration and staff
+knowledge, and moving is a project, not a decision. Prices also change: VMware's
+2024 move to subscription-only bundles raised many renewals severalfold and
+sent a visible part of the market to Proxmox and OpenStack. Check current
+pricing before quoting any of these figures.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Thinking Hyper-V runs on top of Windows.} It runs underneath
+        it. Once enabled, your Windows is a privileged guest --- which is why
+        other hypervisors on the same machine become nested or refuse.
+  \item \textbf{Describing KVM as ``just a kernel module'' and stopping
+        there.} The module is the small part. QEMU supplies every virtual
+        device and libvirt supplies the management API; a KVM deployment is all
+        three.
+  \item \textbf{Comparing hypervisor sizes without counting dom0 or the parent
+        partition.} Xen's hypervisor is a megabyte and its dom0 is a full Linux
+        kernel. The honest comparison is of the whole privileged path.
+  \item \textbf{Assuming the free tier still exists.} VMware withdrew free ESXi
+        in 2024 and Microsoft discontinued the free Hyper-V Server. Student and
+        evaluation routes change; check before building a course or a budget on
+        one.
+  \item \textbf{Choosing a platform on hypervisor features.} All four
+        virtualize a processor competently. The decision is made on management
+        tooling, licence cost, hardware support and the skills of the people
+        who will be on call.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[The Same Guest on Two Platforms]
+Builds one guest under KVM and the same guest under VirtualBox, then compares
+what each platform exposes to it. Appendix~A has both. Expect forty minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch05_platforms.sh -- one workload, two platforms, and what differs.
+set -euo pipefail
+
+# --- 1. What is this host already running, if anything? ----------------
+systemd-detect-virt || echo "bare metal"
+lsmod | grep -E '^(kvm|kvm_intel|kvm_amd|vboxdrv)' || true
+
+# --- 2. Define a guest on KVM, from the Chapter 1 image. ---------------
+sudo virsh dumpxml vss1 > vss1.xml
+grep -E '<(domain|emulator|controller|interface|model)' vss1.xml | head -20
+# Note the machine type: QEMU presents a specific, named virtual chipset.
+
+# --- 3. Ask the guest what hardware it thinks it has. ------------------
+sudo virsh start vss1 ; sleep 25
+IP=$(sudo virsh domifaddr vss1 | awk '/ipv4/{split($4,a,"/"); print a[1]}')
+G () { ssh -o StrictHostKeyChecking=no "ubuntu@$IP" "$1"; }
+G "sudo dmidecode -s system-manufacturer"
+G "sudo dmidecode -s system-product-name"
+G "lspci | head; systemd-detect-virt"
+
+# --- 4. Build the same guest under VirtualBox. ------------------------
+VBoxManage createvm --name vss2 --ostype Ubuntu_64 --register
+VBoxManage modifyvm vss2 --memory 2048 --cpus 2 --nic1 nat
+VBoxManage clonehd ubuntu.img vss2.vdi --format VDI
+VBoxManage storagectl vss2 --name SATA --add sata
+VBoxManage storageattach vss2 --storagectl SATA --port 0 \
+           --type hdd --medium vss2.vdi
+VBoxManage startvm vss2 --type headless
+
+# --- 5. Compare what the two platforms claim to be. -------------------
+# Each hypervisor identifies itself: the manufacturer string, the PCI
+# device list and the CPUID hypervisor leaf all differ.
+echo "KVM guest reports:"      ; G "sudo dmidecode -s system-manufacturer"
+echo "VirtualBox guest reports: innotek GmbH (check in the guest console)"
+
+# --- 6. The feature that is not in the free product. ------------------
+# Live migration needs two hosts and shared storage. virsh offers it;
+# VirtualBox does not. Chapter 17 is where this becomes the whole point.
+sudo virsh migrate --help | head -5
+
+# --- 7. Tear down. ----------------------------------------------------
+sudo virsh destroy vss1 || true
+VBoxManage controlvm vss2 poweroff || true
+VBoxManage unregistervm vss2 --delete || true
+\end{lstlisting}
+
+\textbf{What to notice.} Step 5 is the honest answer to ``can a guest tell?'' ---
+every platform identifies itself in several places, and none of them tries very
+hard to hide. Step 6 is the difference that actually decides procurement:
+the hypervisors are comparable, and the operational features are not.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item For each of ESXi, Hyper-V, KVM and Xen, say in one phrase where the
+        device drivers run, and give the consequence for the trusted computing
+        base.
+  \item A colleague reports that after installing Docker Desktop on Windows,
+        their VirtualBox guests became much slower. Explain what happened.
+  \item Using the worked example's method, at what cluster size does a vSphere
+        licence begin to look defensible, and what assumption in your answer is
+        doing the most work?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item All four platforms use the same hardware features. What separates them
+        is where the device drivers live, and almost every other difference
+        follows from that.
+  \item ESXi: a purpose-built kernel of about 150 MB with drivers inside it, a
+        certified hardware list, and vCenter --- which is what the licence
+        actually buys.
+  \item Hyper-V: a thin hypervisor that slides underneath a running Windows,
+        demoting it to a privileged parent partition that owns the drivers.
+        Enabling it changes the machine, often by accident.
+  \item KVM: a kernel module that makes Linux a hypervisor, so a guest is a
+        process. It inherits every Linux driver and the entire Linux kernel as
+        trusted base --- the same fact read twice.
+  \item Xen: about a megabyte of hypervisor with nothing in it; dom0 owns the
+        drivers, and driver domains can shrink the blast radius of a driver bug
+        to less than the host.
+  \item Licence cost differences are large --- roughly \$200{,}000 over three
+        years for a three-host cluster --- and are decided by staff effort and
+        risk, not by hypervisor features.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} In Hyper-V, the Windows installation on which the role
+        was enabled becomes: (a)~the hypervisor; (b)~the parent partition, a
+        privileged guest; (c)~an ordinary child partition; (d)~unchanged.
+  \item \textbf{(MCQ)} Xen's hypervisor is roughly a megabyte because:
+        (a)~it is written in assembly; (b)~it contains no device drivers,
+        filesystems or network stack; (c)~it supports fewer guests;
+        (d)~it is compiled with optimisation.
+  \item \textbf{(Short)} State the single architectural claim KVM makes about
+        what a guest is, and give three operational consequences of it.
+  \item \textbf{(Short)} Explain why ESXi's short hardware compatibility list
+        is a design decision rather than a shortcoming, and what it costs.
+  \item \textbf{(Short)} Describe a driver domain and the specific failure it
+        is meant to contain.
+  \item \textbf{(Applied)} A department has six hosts, two Linux engineers, no
+        existing virtualization and a small budget. A vendor proposes vSphere.
+        Write the recommendation you would give, including the two questions
+        you would ask before committing and what answer to each would change
+        your mind.
+  \item \textbf{(Applied)} A hosting provider must run untrusted guests and is
+        choosing between KVM and Xen with driver domains. Set out the security
+        argument for each, name what the Xen design costs operationally, and
+        say what you would need to measure before deciding.
+\end{reviewq}

@@ -3,7 +3,471 @@
 %=====================================================================
 \locator{2}{Part II --- Hypervisors and Compute Virtualization}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} the three ways a guest can be given a device ---
+        emulation, paravirtualization and passthrough --- by the path an I/O
+        request takes in each.
+  \item \textbf{Explain} the virtio split-driver model and the virtqueue, and
+        \textbf{say} why batching is what makes it fast.
+  \item \textbf{Describe} SR-IOV in terms of physical and virtual functions,
+        and \textbf{state} what the IOMMU contributes.
+  \item \textbf{Quantify} the throughput and CPU cost of each option from
+        measured figures.
+  \item \textbf{Choose} a device model for a stated requirement, and
+        \textbf{state} the capability each choice gives up.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{architectures} (paravirtualization as a technique, and the worked
+example where an emulated disk lost 81\% of its throughput) and
+\chref{hardware} (VM exits, and the IOMMU without which passthrough is
+unsafe). This chapter is where that 81\% is explained and removed.
+\end{prereq}
+
+\begin{keyterms}
+device emulation $\bullet$ full device model $\bullet$ virtio $\bullet$ split
+driver $\bullet$ front-end driver $\bullet$ back-end driver $\bullet$ virtqueue
+$\bullet$ descriptor ring $\bullet$ available ring $\bullet$ used ring $\bullet$
+doorbell $\bullet$ vhost $\bullet$ vhost-user $\bullet$ passthrough $\bullet$
+device assignment $\bullet$ VFIO $\bullet$ SR-IOV $\bullet$ physical function
+$\bullet$ virtual function $\bullet$ DPDK $\bullet$ guest additions
+\end{keyterms}
+
+\section{Three Ways to Give a Guest a Device}
+
+A guest needs a disk and a network card. The hypervisor has one of each, or
+several, and must serve many guests. There are exactly three strategies, and
+they differ in how much of the real device the guest is allowed to see.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  lane/.style={rounded corners=3pt, line width=1pt, minimum width=4.9cm,
+               minimum height=5.1cm},
+  bx/.style={rounded corners=2pt, line width=0.7pt, align=center,
+             minimum width=3.9cm, minimum height=0.52cm, inner sep=2pt,
+             font=\scriptsize},
+  gst/.style={bx, draw=secondary, fill=secondary!8, text=secondary!80!black},
+  hyp/.style={bx, draw=primary, fill=primary!12, text=primary},
+  dev/.style={bx, draw=neutral, fill=neutral!15, text=neutral!40!black},
+  hot/.style={bx, draw=accent, fill=accent!12, text=accent!70!black},
+  ar/.style={-{Stealth[length=1.7mm]}, line width=0.8pt},
+  tag/.style={font=\scriptsize\bfseries, align=center}
+]
+% ---- emulated ----
+\node[lane, draw=accent!55, fill=accent!3] at (0,0) {};
+\node[tag, text=accent!70!black] at (0,2.35) {Emulated};
+\node[gst] (e1) at (0,1.75) {guest driver for a\\real 1990s NIC};
+\node[hot] (e2) at (0,0.95) {\textbf{VM exit} per\\register access};
+\node[hyp] (e3) at (0,0.15) {hypervisor pretends\\to be that NIC};
+\node[hyp] (e4) at (0,-0.65) {real driver};
+\node[dev] (e5) at (0,-1.45) {hardware};
+\foreach \a/\b in {e1/e2,e2/e3,e3/e4,e4/e5}{\draw[ar, accent!60] (\a)--(\b);}
+\node[font=\scriptsize\itshape, text=accent!70!black, align=center] at (0,-2.15)
+     {dozens of exits per I/O\\no guest changes at all};
+
+% ---- virtio ----
+\node[lane, draw=greenhl!55, fill=greenhl!3] at (5.6,0) {};
+\node[tag, text=greenhl!50!black] at (5.6,2.35) {Paravirtualized (virtio)};
+\node[gst] (v1) at (5.6,1.75) {guest \emph{front-end}\\driver};
+\node[hot, draw=greenhl, fill=greenhl!12, text=greenhl!50!black] (v2)
+     at (5.6,0.95) {shared virtqueue\\one doorbell per \emph{batch}};
+\node[hyp] (v3) at (5.6,0.15) {\emph{back-end} in the\\hypervisor};
+\node[hyp] (v4) at (5.6,-0.65) {real driver};
+\node[dev] (v5) at (5.6,-1.45) {hardware};
+\foreach \a/\b in {v1/v2,v2/v3,v3/v4,v4/v5}{\draw[ar, greenhl!60] (\a)--(\b);}
+\node[font=\scriptsize\itshape, text=greenhl!50!black, align=center]
+     at (5.6,-2.15) {one exit per batch of requests\\needs a driver in the guest};
+
+% ---- passthrough ----
+\node[lane, draw=purplehl!55, fill=purplehl!3] at (11.2,0) {};
+\node[tag, text=purplehl!70!black] at (11.2,2.35) {Passthrough / SR-IOV};
+\node[gst] (p1) at (11.2,1.75) {guest's \emph{own} driver\\for the real device};
+\node[hot, draw=purplehl, fill=purplehl!12, text=purplehl!70!black] (p2)
+     at (11.2,0.95) {IOMMU translates\\its DMA};
+\node[dev] (p3) at (11.2,0.15) {the hardware itself};
+\node[bx, draw=neutral!40, fill=white, text=neutral!50, dashed] (p4)
+     at (11.2,-0.8) {hypervisor not\\on the data path};
+\draw[ar, purplehl!60] (p1)--(p2); \draw[ar, purplehl!60] (p2)--(p3);
+\node[font=\scriptsize\itshape, text=purplehl!70!black, align=center]
+     at (11.2,-2.15) {no exits at all, near-native speed\\
+                      and no live migration};
+\end{tikzpicture}}%
+{The same I/O request, three ways. Reading down each lane gives the cost: the
+left lane crosses the boundary dozens of times per request, the middle once per
+batch, the right not at all.}{device-models}
+
+\subsection{Emulation}
+
+The hypervisor implements, in software, a specific piece of real hardware ---
+classically an Intel e1000 network card or an IDE controller --- chosen because
+every operating system since the 1990s already has a driver for it. Nothing is
+installed in the guest and nothing is configured. It simply works.
+
+It is also catastrophic for throughput, and \chref{architectures} measured why.
+The guest driver was written to talk to hardware, so it reads and writes device
+registers, and each of those is a VM exit at several hundred cycles. One packet
+costs dozens.
+
+Emulation survives because it is the only option that needs no cooperation: an
+installer booting from an unknown ISO, an appliance you cannot modify, a guest
+before its drivers are installed. Every platform offers it, and no platform
+expects you to keep using it.
+
+\subsection{Paravirtualization: virtio}
+
+If the guest can be given a driver, a far better interface is available ---
+one designed for the situation rather than inherited from it.
+
+\term{virtio} is that interface. It is a standard --- an OASIS specification,
+not a vendor's product --- which is why one virtio driver in Linux works under
+KVM, and under cloud hypervisors that are not KVM at all.
+
+\begin{definitionbox}[The Split Driver Model and the Virtqueue]
+A virtio device is split in two. The \term{front-end driver} runs in the guest
+and presents a normal disk or network interface to the guest kernel. The
+\term{back-end driver} runs in the hypervisor and does the real work. Between
+them sits one or more \term{virtqueues}, in memory both can see.
+
+\smallskip
+A virtqueue is three rings in shared memory:
+\begin{tight}
+  \item the \term{descriptor table} --- buffers, each an address and a length;
+  \item the \term{available ring} --- which descriptors the guest has offered;
+  \item the \term{used ring} --- which the host has finished with.
+\end{tight}
+
+\smallskip
+The guest writes buffers and advances the available ring with \emph{ordinary
+memory writes}. No exit. It then rings a \term{doorbell} --- one write to one
+register, one exit --- to say that work is waiting. The host takes everything
+in the ring, does it, and advances the used ring.
+\end{definitionbox}
+
+\begin{conceptbox}[Batching Is the Whole Trick]
+The emulated card costs an exit per register access. virtio costs an exit per
+\emph{doorbell}, and one doorbell can cover a hundred queued requests.
+
+\smallskip
+Under load it gets better rather than worse, which is the opposite of the
+usual pattern. A busy back-end polls the ring and finds new work already
+waiting, so the guest can skip the doorbell entirely --- the specification has
+an explicit flag for suppressing notifications. At high rates the exit count
+per request tends toward zero.
+
+\smallskip
+That is why \chref{architectures}'s disk measurement went from 81\% lost to
+4\% lost by changing one attribute. Nothing about the hardware changed; the
+number of boundary crossings did.
+\end{conceptbox}
+
+\begin{conceptbox}[vhost: Moving the Back-End Out of QEMU]
+In plain KVM the virtio back-end lives in QEMU, in user space. A packet
+therefore crosses from the guest into the kernel, up to QEMU, back into the
+kernel to reach the real driver, and out.
+
+\smallskip
+\term{vhost} moves the back-end into the host \emph{kernel}, so the data path
+never enters user space; QEMU only sets the queues up. \term{vhost-user} goes
+the other way for a different reason: it hands the back-end to a dedicated
+user-space process --- typically a DPDK-based virtual switch --- which polls
+the queues on a core of its own and never sleeps.
+
+\smallskip
+Both are the same instinct as the ladder in \chref{cpumem}: the mechanism is
+settled, and all remaining performance work is removing crossings.
+\end{conceptbox}
+
+\subsection{Passthrough and SR-IOV}
+
+The third option is to stop virtualizing the device at all and give it to one
+guest. The guest loads the vendor's own driver and programs the real hardware;
+the hypervisor is not on the data path.
+
+On Linux this is done with \term{VFIO}, which unbinds the device from the host
+driver and exposes it to QEMU, with the IOMMU confining its DMA to that guest's
+memory. Performance is native, because nothing is in the way.
+
+The limitation is arithmetic: one device, one guest. A host with two network
+cards can serve two guests this way.
+
+\begin{definitionbox}[SR-IOV, Physical and Virtual Functions]
+\term{SR-IOV} --- single-root I/O virtualization --- is a PCIe capability that
+lets one physical device present itself as many.
+
+\smallskip
+The \term{physical function} (PF) is the real device, managed by the host: it
+configures the card, sets rate limits, and creates the virtual functions. Each
+\term{virtual function} (VF) is a lightweight PCIe function with its own
+queues, its own MAC address and its own configuration space, which can be
+assigned to a guest exactly as a whole device would be.
+
+\smallskip
+The card's own hardware switch sorts traffic between the VFs. A modern server
+NIC supports 64 to 128 of them, so one card serves many guests at close to line
+rate, with the IOMMU keeping each VF's DMA inside its guest.
+\end{definitionbox}
+
+\begin{worked}[What Each Device Model Costs]
+One 25 Gb/s network card, one guest, a small-packet forwarding test. Compute
+the throughput and the cost per unit of work.
+
+\smallskip
+\textbf{Measured.}
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}L{3.5cm}rrr@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Model} & \textbf{Mpps} & \textbf{Host CPU, cores} &
+\textbf{Guest CPU, cores} \\
+\midrule
+Emulated e1000  & 0.12 & 1.8 & 0.9 \\
+virtio (in QEMU) & 1.40 & 1.1 & 0.8 \\
+virtio + vhost  & 2.90 & 0.9 & 0.8 \\
+SR-IOV VF       & 8.60 & 0.0 & 0.9 \\
+Native (no guest) & 8.90 & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Step 1 --- throughput against native.}
+\[ \text{emulated} = \frac{0.12}{8.90} = \mathbf{1.3\%} \qquad
+   \text{virtio} = \frac{1.40}{8.90} = \mathbf{15.7\%} \]
+\[ \text{vhost} = \frac{2.90}{8.90} = \mathbf{32.6\%} \qquad
+   \text{SR-IOV} = \frac{8.60}{8.90} = \mathbf{96.6\%} \]
+
+\smallskip
+\textbf{Step 2 --- the cost of a packet, in host cores per Mpps.}
+\[ \text{emulated} = \frac{1.8}{0.12} = 15.0 \qquad
+   \text{virtio} = \frac{1.1}{1.40} = 0.79 \qquad
+   \text{vhost} = \frac{0.9}{2.90} = 0.31 \]
+\[ \text{SR-IOV} = \frac{0.0}{8.60} = \mathbf{0} \]
+Emulation is roughly \textbf{48 times} more expensive per packet than vhost,
+and SR-IOV spends no host processor at all because the host is not involved.
+
+\smallskip
+\textbf{Step 3 --- the figure that decides most designs.} Look at the host-CPU
+column, not the throughput column. The emulated card burns 1.8 cores to move
+almost nothing; on a host of 64 cores running 30 guests, that is nearly 3\% of
+the machine, per guest, spent on pretending to be a 1999 network card. The
+consolidation ratio of \chref{what} is quietly destroyed by a default nobody
+changed.
+
+\smallskip
+\textbf{Step 4 --- so why is SR-IOV not the answer to everything?} Because of
+what it gives up, which Section~7.4 sets out: that guest can no longer be live
+migrated, snapshotted with its device state, or overcommitted. Most estates
+value those more than they value the last 64\% of line rate, and run virtio
+with vhost. SR-IOV is for the specific guests that cannot --- a virtual
+firewall, a packet broker, a trading system.
+\end{worked}
+
+\section{What Passthrough Costs You}
+
+Passthrough is the fastest option and it is rare, because speed is not the
+thing most estates are optimising.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.2cm}L{5.1cm}L{5.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Capability} & \textbf{What happens with passthrough} &
+\textbf{Why} \\
+\midrule
+\endhead
+Live migration (\chref{migration}) & \textbf{Lost}, or needs an elaborate
+bonded-failover arrangement & The device's internal state is in silicon the
+hypervisor cannot read, so there is nothing to copy to the other host \\
+Memory overcommit (\chref{cpumem}) & \textbf{Lost} for that guest & The device
+performs DMA to guest memory at any moment, so every page must be pinned in
+real memory and cannot be ballooned or swapped \\
+Snapshots & Lost or incomplete & The device's state is not part of the guest's
+memory image \\
+Density & One VF per guest, 64--128 per card & A hard hardware limit, where
+virtio has none \\
+Hardware independence & Lost & The guest now has a driver for a specific card.
+Move it to a host with a different NIC and it will not work \\
+Host visibility & Reduced & The host cannot see or shape that traffic; firewall
+and monitoring must move into the guest or onto the card \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Memory pinning is the consequence people forget]
+Live migration is the loss everyone cites. Pinning is the one that bites
+quietly.
+
+\smallskip
+A device doing DMA writes to host physical addresses it was given earlier. If
+the hypervisor moved, compressed, ballooned or swapped that page in the
+meantime, the device writes over whatever is there now. So every page of a
+passthrough guest's memory must be locked in RAM for the guest's whole life.
+
+\smallskip
+A 64 GB guest with an assigned device consumes 64 GB of the host whether it
+uses it or not --- and the entire reclamation ladder of \chref{cpumem} is
+unavailable for it. On a host sized with overcommit in mind, two or three such
+guests change the arithmetic completely.
 \end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Leaving guests on emulated devices and concluding
+        virtualization is slow.} It is the commonest cause of a bad first
+        impression, and it is one attribute in the guest's configuration.
+  \item \textbf{Installing guest tools ``for the clipboard''.} The drivers are
+        the point. The clipboard is a side effect.
+  \item \textbf{Assigning a device without checking IOMMU groups.} Devices
+        share groups, and the whole group must be assigned together. Passing
+        one function of a multi-function card may drag its siblings --- which
+        might include a device the host needs.
+  \item \textbf{Expecting to migrate a guest with an assigned device.} Plan the
+        exception before you build it, not when you first need to patch the
+        host.
+  \item \textbf{Forgetting that SR-IOV traffic bypasses the host switch.}
+        Packets between two VFs on the same card never reach the host, so host
+        firewall rules, flow logging and traffic shaping do not see them.
+        \chref{network} and \chref{security} both depend on this.
+  \item \textbf{Treating virtio as a Linux feature.} It is an open
+        specification with signed Windows drivers (virtio-win) that are free
+        and are what every cloud Windows image already uses.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[The Same Card, Three Ways]
+Measures the throughput and the host CPU cost of an emulated NIC, a virtio NIC
+and virtio with vhost. SR-IOV is included as a read-only step because it needs
+a server NIC. Expect forty minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch07_devices.sh -- emulation, virtio and vhost, measured.
+set -euo pipefail
+ip_of () {
+  sudo virsh domifaddr "$1" | awk '/ipv4/{split($4,a,"/"); print a[1]}'
+}
+G () { ssh -o StrictHostKeyChecking=no "ubuntu@$(ip_of vss1)" "$1"; }
+
+# --- 1. What device model is the guest using right now? ----------------
+sudo virsh dumpxml vss1 | sed -n '/<interface/,/<\/interface>/p'
+# <model type='virtio'/> or type='e1000'. This single line is the chapter.
+
+# --- 2. Set up the measurement: iperf3 on the host, client in guest. ---
+sudo apt-get install -y iperf3 sysstat
+iperf3 -s -D                       # server on the host, port 5201
+sudo virsh start vss1 || true ; sleep 25
+G "sudo apt-get -qq install -y iperf3"
+
+# --- 3. Emulated e1000: a software imitation of a 1999 card. ----------
+sudo virsh destroy vss1
+sudo virt-xml vss1 --edit --network model=e1000
+sudo virsh start vss1 ; sleep 25
+mpstat 1 12 > host-e1000.txt &     # host CPU while the test runs
+G "iperf3 -c 192.168.122.1 -t 10 -P 4" | tail -4
+wait ; tail -2 host-e1000.txt
+
+# --- 4. virtio: the split-driver model of section 7.2. ----------------
+sudo virsh destroy vss1
+sudo virt-xml vss1 --edit --network model=virtio
+sudo virsh start vss1 ; sleep 25
+mpstat 1 12 > host-virtio.txt &
+G "iperf3 -c 192.168.122.1 -t 10 -P 4" | tail -4
+wait ; tail -2 host-virtio.txt
+
+# --- 5. virtio + vhost: back-end moved into the host kernel. ----------
+# vhost_net is usually already on; confirm, and confirm the guest uses it.
+lsmod | grep vhost_net || sudo modprobe vhost_net
+sudo virsh destroy vss1
+sudo virt-xml vss1 --edit --network driver.name=vhost
+sudo virsh start vss1 ; sleep 25
+mpstat 1 12 > host-vhost.txt &
+G "iperf3 -c 192.168.122.1 -t 10 -P 4" | tail -4
+wait ; tail -2 host-vhost.txt
+
+# --- 6. Look at the virtqueues themselves. ----------------------------
+# One queue pair per vCPU is the usual arrangement; each is a ring in
+# memory that both sides can see, exactly as the definition box says.
+G "ls /sys/class/net/*/queues/ ; ethtool -l ens3 2>/dev/null || true"
+
+# --- 7. SR-IOV, if the host has a server NIC that supports it. --------
+# Read-only: creating VFs needs a capable card and IOMMU enabled.
+for d in /sys/class/net/*/device/sriov_totalvfs; do
+  [ -e "$d" ] && echo "$d -> $(cat "$d") VFs available"
+done
+ls /sys/kernel/iommu_groups 2>/dev/null | wc -l
+
+# --- 8. Restore and tear down. ----------------------------------------
+sudo virsh destroy vss1 || true
+pkill iperf3 || true
+\end{lstlisting}
+
+\textbf{What to notice.} The three throughput figures should differ by roughly
+the ratios in the worked example, but look at the \texttt{mpstat} output rather
+than the bandwidth: the emulated run burns host processor to move very little,
+and that --- not the bandwidth --- is what decides how many guests the host can
+hold.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A guest moves 0.2 Mpps while the host spends 1.6 cores serving it.
+        Give the cost in host cores per Mpps, say which device model this
+        almost certainly is, and give the one change you would make.
+  \item Explain why a virtio guest's exit rate per request \emph{falls} as load
+        rises, and name the mechanism.
+  \item A team wants SR-IOV for twelve guests on a host that must stay
+        patchable without downtime. Name the conflict, and give two ways to
+        resolve it.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Three device models: emulation (no guest changes, dozens of exits per
+        I/O), paravirtualization (a driver in the guest, one exit per batch),
+        and passthrough (the guest drives real hardware, no exits).
+  \item virtio splits the driver in two around a virtqueue in shared memory.
+        The guest fills the ring with ordinary writes and rings a doorbell once
+        per batch, so the crossing rate per request falls as load rises.
+  \item vhost moves the back-end into the host kernel; vhost-user moves it to a
+        polling user-space switch. Both remove crossings rather than making
+        them cheaper.
+  \item SR-IOV makes one card present many virtual functions, each assignable
+        to a guest, with the IOMMU confining each one's DMA.
+  \item Passthrough costs live migration, memory overcommit, snapshots,
+        hardware independence and host visibility. Memory must be pinned for
+        the guest's whole life.
+  \item Most estates run virtio with vhost, and reserve passthrough for the few
+        guests that genuinely need line rate.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A virtqueue consists of: (a)~a single FIFO buffer;
+        (b)~a descriptor table, an available ring and a used ring;
+        (c)~one ring per device register; (d)~a copy of the guest's page
+        tables.
+  \item \textbf{(MCQ)} Assigning a physical device to a guest requires every
+        page of that guest's memory to be pinned because: (a)~the guest runs
+        faster; (b)~the device performs DMA to addresses that must stay valid;
+        (c)~the IOMMU has no page tables; (d)~live migration needs it.
+  \item \textbf{(Short)} Explain the difference between a physical function and
+        a virtual function, and say what each is used for.
+  \item \textbf{(Short)} Why does emulation still exist, given that it is
+        roughly fifty times more expensive per packet than the alternatives?
+  \item \textbf{(Short)} State three capabilities a guest loses when a device
+        is assigned to it, with the reason for each.
+  \item \textbf{(Applied)} A virtual firewall must inspect 10 Gb/s of
+        small-packet traffic. The estate's standard is virtio with vhost and
+        all guests are live migrated for monthly patching. Recommend a device
+        model, state what it costs, and describe how you would keep the host
+        patchable anyway.
+  \item \textbf{(Applied)} A host of 64 cores runs 30 guests, all on emulated
+        e1000 adapters because that was the template default. Using the worked
+        example's figures, estimate the host processor currently spent on
+        device emulation, say what you would change, and describe how you would
+        roll the change out without an outage.
+\end{reviewq}

@@ -3,7 +3,521 @@
 %=====================================================================
 \locator{5}{Part V --- Management, Performance and Security}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} the hypervisor's attack surface and \textbf{explain}
+        why device models are where escapes keep being found.
+  \item \textbf{Explain} how a side channel defeats isolation without any
+        software fault, and \textbf{name} the mitigations and what they cost.
+  \item \textbf{Compare} the blast radius of a guest compromise, a host
+        compromise and a management-plane compromise.
+  \item \textbf{List} the container hardening measures and \textbf{say} what
+        each one removes.
+  \item \textbf{Produce} a hardening plan for a stated estate, in priority
+        order, justified by blast radius rather than by severity score.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{vmm} (what isolation means formally --- resource control is the property
+being attacked), \chref{paravirt} (device models, which are the attack surface)
+and \chref{containers} (the shared kernel). \chref{management} supplies the
+management plane this chapter argues is the real target.
+\end{prereq}
+
+\begin{keyterms}
+attack surface $\bullet$ trusted computing base $\bullet$ VM escape $\bullet$
+guest-to-host $\bullet$ device model $\bullet$ side channel $\bullet$ covert
+channel $\bullet$ Spectre $\bullet$ Meltdown $\bullet$ L1TF $\bullet$ MDS
+$\bullet$ simultaneous multithreading $\bullet$ core scheduling $\bullet$
+blast radius $\bullet$ management plane $\bullet$ lateral movement $\bullet$
+container escape $\bullet$ privileged container $\bullet$ seccomp $\bullet$
+capability $\bullet$ image provenance $\bullet$ secret $\bullet$
+micro-segmentation
+\end{keyterms}
+
+\section{What the Layer Added}
+
+Virtualization is, on balance, good for security. It gives every workload a
+hardware-enforced boundary, it makes a compromised machine disposable, and it
+makes isolation affordable enough to apply everywhere.
+
+It also added two things that did not exist before: a piece of privileged
+software underneath every workload, and a control plane that can reach every
+machine at once. This chapter is about those two.
+
+\begin{definitionbox}[VM Escape]
+A \term{VM escape} is code executing in a guest that gains execution on the
+host. It breaks the resource-control property of \chref{vmm} --- the one the
+whole subject rests on --- and it is the most severe class of bug a hypervisor
+can have, because the attacker arrives with every other guest on the host
+beside them.
+
+\smallskip
+Escapes are rare, which is why the architecture works at all. They are not
+hypothetical: they are found, patched and exploited on a regular schedule.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  bx/.style={rounded corners=2pt, line width=0.9pt, align=center,
+             inner sep=3pt, minimum height=0.6cm, font=\scriptsize},
+  g/.style={bx, draw=secondary, fill=secondary!8, text=secondary!80!black,
+            minimum width=2.3cm},
+  surf/.style={bx, draw=accent, fill=accent!12, text=accent!70!black,
+               minimum width=9.6cm},
+  hv/.style={bx, draw=primary, fill=primary!12, text=primary,
+             minimum width=9.6cm},
+  mg/.style={bx, draw=goldhl, fill=goldhl!14, text=goldhl!45!black,
+             minimum width=9.6cm},
+  note/.style={font=\scriptsize\itshape, anchor=west, align=left},
+  ar/.style={-{Stealth[length=1.8mm]}, line width=0.9pt}
+]
+  \node[g] at (-3.4,3.5) {guest};
+  \node[g] at (-0.6,3.5) {\textbf{attacker's guest}};
+  \node[g] at (2.2,3.5)  {guest};
+  \node[surf] at (0,2.55) {device models: network, disk, USB, graphics,
+                           clipboard};
+  \node[hv]   at (0,1.65) {hypervisor core: VMX handling, EPT, scheduler};
+  \node[bx, draw=neutral, fill=neutral!14, text=neutral!40!black,
+        minimum width=9.6cm] at (0,0.75) {hardware \ \
+        {\scriptsize\mdseries shared caches, shared memory bus, SMT siblings}};
+  \node[mg] at (0,-0.55) {\textbf{management plane} --- vCenter, SCVMM,
+                          the API};
+
+  \draw[ar, accent] (-0.6,3.2) -- (-0.6,2.85);
+  \draw[ar, accent] (-0.6,2.25) -- (-0.6,1.95);
+  \draw[ar, accent!60, dashed] (-0.6,1.35) -- (-0.6,1.05);
+  \draw[ar, goldhl, line width=1.2pt] (5.6,-0.55) -- (4.9,-0.55);
+
+  \node[note, text=accent!70!black] at (5.0,2.55)
+       {\textbf{where escapes are found.}\\
+        Thousands of lines imitating\\
+        hardware, parsing input from\\
+        a hostile guest};
+  \node[note, text=primary] at (5.0,1.65)
+       {small, scrutinised, rarely\\the way in};
+  \node[note, text=neutral!45!black] at (5.0,0.75)
+       {side channels --- no software\\
+        fault required at all};
+  \node[note, text=goldhl!45!black] at (5.8,-0.55)
+       {\textbf{reachable from the network,}\\
+        \textbf{and it owns every host}};
+
+  \node[rounded corners=3pt, draw=accent!55, fill=accent!5,
+        text=accent!70!black, font=\scriptsize, align=center, inner sep=4pt,
+        text width=11.0cm] at (1.4,-1.75)
+       {The red band is \chref{paravirt}'s device models seen from the other
+        side: every emulated device is code that parses attacker-controlled
+        input while running with the hypervisor's privileges.};
+\end{tikzpicture}}%
+{The attack surface. The hypervisor core is small and heavily reviewed; the
+device models around it are neither, and that is where the escapes
+are.}{attack-surface}
+
+\section{Where Escapes Come From}
+
+Almost no escape is a flaw in the VMX handling or the page tables. They are
+overwhelmingly in the \emph{device models} --- the software of
+\chref{paravirt} that imitates a network card, a disk controller, a graphics
+adapter or a USB hub.
+
+The reason is structural. That code takes input a hostile guest fully
+controls --- ring descriptors, packet headers, command blocks --- parses it in
+C, and runs with the privileges of the hypervisor. It is large, it imitates
+decades of hardware quirks, and much of it is rarely exercised.
+
+\begin{conceptbox}[Three Recent Examples, and What They Have in Common]
+Dated to October 2026. Check for newer ones before teaching from this;
+\emph{that} is the lesson rather than the list.
+
+\begin{tight}
+  \item \textbf{CVE-2025-22224, -22225, -22226} (VMware ESXi, March 2025).
+        Three flaws that could be chained from a guest to compromise the
+        hypervisor. Researchers later established that attackers had working
+        exploits well before disclosure, and CISA recorded ransomware groups
+        actively using CVE-2025-22225 to escape guest isolation and encrypt
+        across hypervisors.
+  \item \textbf{CVE-2026-47876} (VMware ESXi, July 2026, CVSS 9.3). An
+        out-of-bounds write in the \textbf{VMXNET3 virtual network adapter}: an
+        attacker with administrative rights inside a guest executes arbitrary
+        code on the host. A paravirtualized network device --- precisely the
+        red band in \dsref{attack-surface}.
+  \item \textbf{CVE-2026-59309 and -59310} (VMware vCenter, 2026, CVSS 9.8
+        each). Unauthenticated access and remote code execution against the
+        \emph{management plane} --- no guest required.
+\end{tight}
+
+\smallskip
+Two patterns worth more than the individual numbers. The guest-to-host flaws
+are in device models, every time. And the highest-scoring flaws are not escapes
+at all --- they are in the management plane, and the next section says why
+that is worse.
+\end{conceptbox}
+
+\section{Blast Radius Is the Right Metric}
+
+Severity scores rank a vulnerability in isolation. What matters operationally
+is how much of your estate one successful attack reaches.
+
+\begin{worked}[Three Compromises, Counted]
+An estate: 40 hosts, 900 guests, one vCenter, one storage array. Compare what
+an attacker obtains from each of three footholds.
+
+\smallskip
+\textbf{Case 1 --- a guest is compromised} (a web application flaw).
+\[ \text{reach} = 1 \text{ guest} = \frac{1}{900} = \mathbf{0.1\%
+   \text{ of the estate}} \]
+Plus whatever that guest can reach over the network, which is why
+\chref{network}'s micro-segmentation matters.
+
+\smallskip
+\textbf{Case 2 --- a VM escape} (CVE-2026-47876, say). The attacker starts in
+a guest and reaches the host, and therefore every guest on it:
+\[ \frac{900}{40} = 22.5 \text{ guests per host} \qquad
+   \text{reach} = \frac{22.5}{900} = \mathbf{2.5\%} \]
+A 22-fold increase, and the hardest of the three to achieve: it needs an
+unpatched escape and administrative access inside a guest.
+
+\smallskip
+\textbf{Case 3 --- the management plane} (CVE-2026-59310, say). Unauthenticated
+remote code execution on vCenter. vCenter can power off, clone, reconfigure and
+console into every guest on every host it manages:
+\[ \text{reach} = \frac{900}{900} = \mathbf{100\%} \]
+
+\smallskip
+\textbf{Step 1 --- compare.}
+\begin{tight}
+  \item guest compromise: 1 guest, easiest to achieve
+  \item VM escape: 22 guests, hardest to achieve, 22$\times$ the reach
+  \item management plane: 900 guests, \emph{no guest access required}, and
+        reachable over the network
+\end{tight}
+
+\smallskip
+\textbf{Step 2 --- which to defend first?} Most of the attention in this
+subject goes to case 2, because escapes are dramatic. The arithmetic says case
+3: it gives \textbf{forty times} the reach of an escape, requires no foothold
+at all, and the 9.8-scored flaws of 2026 were in exactly that component.
+
+\smallskip
+\textbf{Step 3 --- and the one the arithmetic understates.} The storage array
+holds every guest's disk. An attacker with administrative access to it has all
+900 guests' data without touching a hypervisor --- and storage management
+interfaces are routinely less hardened than vCenter, because nobody thinks of
+them as compute.
+
+\smallskip
+\textbf{Step 4 --- the resulting priority.} Management plane and storage
+management first: not reachable from general networks, multi-factor
+authentication, separate credentials from the ordinary directory, patched
+fastest. Hypervisor patching second. Guest hardening third --- important, but
+it is the case with the smallest radius.
+
+\smallskip
+That ordering is the reverse of how most estates allocate effort, and the
+arithmetic above is the argument for changing it.
+\end{worked}
+
+\section{Side Channels}
+
+The attacks above are software faults, and software faults get patched. Side
+channels are not faults at all.
+
+Two guests on one physical core share caches, branch predictors and memory
+buses. Sharing is not a bug --- it is what makes the hardware fast. But
+\emph{timing} reveals what the other guest did: if a memory access is fast, the
+data was in a shared cache, which means somebody else touched it recently.
+
+\term{Spectre} and \term{Meltdown} (2018) made this practical by abusing
+speculative execution. \term{L1TF} and the \term{MDS} family extended it to the
+exact multi-tenant case --- reading data belonging to another guest on the same
+core.
+
+\begin{conceptbox}[Why the Mitigations Cost So Much]
+The fixes attack the sharing, which is also the performance.
+
+\begin{tight}
+  \item \textbf{Flush the L1 cache on every VM entry.} Correct, and it throws
+        away the cache the guest was about to use. Costs most on
+        exit-heavy workloads.
+  \item \textbf{Disable simultaneous multithreading.} Two hardware threads on
+        one core share nearly everything, so the only reliable answer for
+        strictly untrusted neighbours is to stop using the second thread ---
+        which removes 15--30\% of the host's apparent capacity outright.
+  \item \textbf{Core scheduling.} Allow SMT, but only schedule siblings from
+        the \emph{same} guest together. Recovers much of the capacity while
+        keeping tenants off shared cores, at the cost of a harder scheduling
+        problem and some lost efficiency.
+  \item \textbf{Microcode and compiler mitigations} --- retpolines, IBRS and
+        the rest --- each costing a few per cent.
+\end{tight}
+
+\smallskip
+The honest summary: a host running strictly untrusted tenants pays a real and
+permanent performance tax for these, and a host running only your own trusted
+workloads may reasonably decline some of it. \textbf{That is a documented risk
+decision, not a default} --- and it is one of the few places in this book where
+the right answer genuinely depends on who the neighbours are.
+
+\smallskip
+\chref{confidential} is the hardware's attempt to stop the question arising.
+\end{conceptbox}
+
+\section{Containers}
+
+Everything in \chref{containers} applies: one kernel, 350 system calls, and an
+isolation boundary enforced by software.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.0cm}L{5.2cm}L{5.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Measure} & \textbf{What it removes} & \textbf{Cost} \\
+\midrule
+\endhead
+Run as non-root (\texttt{USER}) & Most escalation paths that rely on real UID 0
+& None \\
+User namespaces / rootless & Maps container root to an unprivileged host user &
+Some storage drivers and features \\
+Drop capabilities & \texttt{CAP\_SYS\_ADMIN} alone is close to root. Drop all,
+add back what is needed & Must know what the app needs \\
+seccomp profile & Cuts the reachable system calls from $\approx$350 to
+$\approx$50 & Rare calls may break; test \\
+Read-only root filesystem & An attacker cannot write a tool to disk & Needs
+explicit writable volumes \\
+No \texttt{--privileged} & That flag disables essentially all of the above at
+once & Some monitoring agents claim to need it; most do not \\
+Do not mount the Docker socket & It is equivalent to host root & Use a proper
+API with scoped credentials \\
+Signed images, pinned digests & Supply-chain substitution (\chref{docker}) &
+Process discipline \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Two mistakes that are each equivalent to giving away the host]
+\textbf{\texttt{--privileged}.} It is not ``a few more permissions''. It grants
+all capabilities, disables seccomp and AppArmor, and exposes host devices. A
+privileged container is a root shell on the host with extra steps.
+
+\smallskip
+\textbf{Mounting \texttt{/var/run/docker.sock}.} Anything that can talk to the
+Docker socket can start a new container with the host's filesystem mounted and
+\texttt{--privileged} set. CI systems and monitoring agents ask for this
+constantly, and granting it makes every other control in the table above
+irrelevant.
+
+\smallskip
+If a workload genuinely needs either, it should not be sharing a kernel with
+anything you care about --- which is what \chref{lightweight} is for.
 \end{alertbox}
+
+\section{Hardening, in Order}
+
+\begin{conceptbox}[A Defensible Priority List]
+Ordered by blast radius, which is the worked example's conclusion.
+
+\begin{tight}
+  \item \textbf{Isolate the management plane.} vCenter, SCVMM, the API and the
+        storage array's management interface on a separate network, reachable
+        only from a bastion, with multi-factor authentication and credentials
+        that are not the general directory's.
+  \item \textbf{Patch the management plane fastest.} The 9.8-scored flaws are
+        here and need no foothold.
+  \item \textbf{Patch hypervisors on a schedule you can actually meet.} Live
+        migration (\chref{migration}) is what makes this possible without
+        outages --- which is why a passthrough guest that cannot migrate is a
+        security problem as well as an operational one.
+  \item \textbf{Reduce the device surface.} Remove virtual USB, serial ports,
+        floppy controllers and clipboard sharing from templates. Each is a
+        device model, and device models are where escapes are.
+  \item \textbf{Segment east--west} (\chref{network}). It is what bounds case 1
+        in the worked example.
+  \item \textbf{Harden containers} per the table, and use
+        \chref{lightweight}'s runtimes for anything untrusted.
+  \item \textbf{Decide the SMT question deliberately} and write down the
+        decision with its reason.
+  \item \textbf{Protect the backups} (\chref{migration}): immutable, separate
+        credentials. Ransomware deletes backups first.
+\end{tight}
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Defending against escapes and leaving vCenter on the general
+        network.} Forty times the blast radius, no foothold needed.
+  \item \textbf{Prioritising by CVSS alone.} A 7.5 in the management plane may
+        matter more to you than a 9.3 that needs guest administrative access
+        you do not hand out.
+  \item \textbf{Leaving every virtual device enabled in the template.} Each is
+        attack surface you are not using.
+  \item \textbf{Assuming containers isolate like virtual machines.} One kernel.
+        \chref{lightweight} is the answer when that is not acceptable.
+  \item \textbf{Granting \texttt{--privileged} or the Docker socket to make
+        something work.} Both are host root.
+  \item \textbf{Disabling side-channel mitigations for performance without
+        recording the decision.} It may be right; it must be deliberate and
+        documented.
+  \item \textbf{Forgetting the storage array.} It holds every disk, and its
+        management interface is usually the least hardened thing in the room.
+  \item \textbf{Treating a snapshot as protection from ransomware.} Same
+        storage, same credentials.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Hardening a Container, and Proving It]
+Demonstrates the escape paths the table closes, then closes them. Run on a
+disposable machine --- step 3 genuinely gives the container the host. Expect
+forty minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch19_harden.sh -- what --privileged means, and what hardening removes.
+set -euo pipefail
+
+# --- 1. A default container: how much is still exposed? ----------------
+docker run --rm alpine:3.20 id            # root, by default
+docker run --rm alpine:3.20 sh -c \
+  'cat /proc/self/status | grep -E "^Cap(Eff|Prm)"'
+# Decode those with capsh --decode=<hex>; the default set is ~14 caps.
+
+# --- 2. The kernel is shared, and the container can see it. -----------
+docker run --rm alpine:3.20 uname -a      # the HOST kernel version
+uname -a                                  # identical. Chapter 8.
+
+# --- 3. --privileged: the host, with extra steps. DISPOSABLE HOST ONLY.
+docker run --rm --privileged alpine:3.20 sh -c \
+  'ls /dev/ | head -20; echo "--- host disks visible above ---"'
+docker run --rm --privileged --pid=host alpine:3.20 sh -c \
+  'ps aux | head -5'                      # the host's process table
+# With --privileged you can mount the host root and chroot into it.
+# That is the whole "escape": there was never a boundary to cross.
+
+# --- 4. The Docker socket is equivalent. ------------------------------
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+  docker:cli sh -c 'docker ps | head -3'
+# Anything that can reach the socket can start a privileged container
+# with / mounted. Never grant it to something you do not fully trust.
+
+# --- 5. Now harden, measure by measure. -------------------------------
+docker run --rm --user 10001:10001 alpine:3.20 id
+docker run --rm --cap-drop=ALL alpine:3.20 sh -c \
+  'cat /proc/self/status | grep ^CapEff'  # 0000000000000000
+docker run --rm --read-only alpine:3.20 sh -c 'touch /x' 2>&1 | tail -1
+docker run --rm --security-opt=no-new-privileges alpine:3.20 \
+  sh -c 'echo no-new-privileges set'
+
+# --- 6. seccomp: count the system calls actually reachable. -----------
+docker run --rm --security-opt seccomp=unconfined alpine:3.20 \
+  sh -c 'echo unconfined: every syscall the kernel has'
+# The default profile already blocks ~44 of them, including some that
+# have historically been escape primitives.
+docker info --format '{{.SecurityOptions}}'
+
+# --- 7. All of it together: what a hardened run looks like. -----------
+docker run --rm \
+  --user 10001:10001 \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges \
+  --read-only --tmpfs /tmp \
+  --pids-limit 100 \
+  --memory 256m --cpus 0.5 \
+  --network none \
+  alpine:3.20 sh -c 'id; echo "hardened"; touch /tmp/ok && echo "tmp ok"'
+
+# --- 8. And the alternative, when none of that is enough. -------------
+# Under Kubernetes this is one field (Chapter 11):
+cat <<'YAML'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: untrusted
+spec:
+  runtimeClassName: kata        # a hardware boundary, per workload
+  containers:
+    - name: job
+      image: registry.example/builder@sha256:9b8c...
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: ["ALL"] }
+YAML
+
+# --- 9. Inventory your own estate for the two fatal flags. ------------
+docker ps -q | while read -r c; do
+  priv=$(docker inspect -f '{{.HostConfig.Privileged}}' "$c")
+  sock=$(docker inspect -f '{{range .Mounts}}{{.Source}} {{end}}' "$c" \
+         | grep -c docker.sock || true)
+  [ "$priv" = "true" ] && echo "PRIVILEGED: $c"
+  [ "$sock" != "0" ] && echo "DOCKER SOCKET MOUNTED: $c"
+done
+echo "inventory complete"
+\end{lstlisting}
+
+\textbf{What to notice.} Step 3 is not an exploit --- nothing was broken and no
+vulnerability was used. The flag was given, so the boundary was never there.
+Most real container ``escapes'' in the wild are this, and step 9 is how you
+find out whether your estate has any.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item An estate has 25 hosts, 600 guests and one management server. Compute
+        the blast radius of a guest compromise, a VM escape and a
+        management-plane compromise, and say which you would defend first.
+  \item Explain why disabling SMT is sometimes the only sound answer to a side
+        channel, and what it costs.
+  \item A monitoring vendor's agent requires \texttt{--privileged} and a mount
+        of the Docker socket. State what you are being asked to grant, and give
+        two alternatives.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Virtualization is good for security on balance, and it added two
+        things: privileged software under every workload, and a control plane
+        that reaches every machine.
+  \item VM escapes are overwhelmingly in \emph{device models} --- code parsing
+        hostile input with hypervisor privileges --- not in the hypervisor
+        core. CVE-2026-47876 was in a paravirtual network adapter.
+  \item Blast radius beats severity score. In the worked example an escape
+        reached 2.5\% of the estate and a management-plane flaw reached 100\%,
+        with no guest foothold required.
+  \item Side channels are not software faults. Mitigations attack the sharing
+        that makes hardware fast, and disabling SMT costs 15--30\% of capacity.
+        Decide deliberately and write it down.
+  \item Containers share a kernel. \texttt{--privileged} and the Docker socket
+        are each equivalent to host root.
+  \item Harden in blast-radius order: management plane, hypervisor patching,
+        device surface, segmentation, containers, SMT decision, backups.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Most hypervisor escapes are found in: (a)~the VMX
+        instruction handling; (b)~the extended page tables; (c)~device models;
+        (d)~the scheduler.
+  \item \textbf{(MCQ)} Running a container with \texttt{--privileged}:
+        (a)~adds two capabilities; (b)~grants all capabilities and disables
+        seccomp and AppArmor; (c)~is required for networking; (d)~only affects
+        the container's own filesystem.
+  \item \textbf{(Short)} Define blast radius and explain why it can reorder a
+        priority list derived from CVSS scores.
+  \item \textbf{(Short)} Explain how two guests on one core can leak data
+        between them with no software vulnerability involved.
+  \item \textbf{(Short)} Give three container hardening measures and state
+        precisely what each removes.
+  \item \textbf{(Applied)} A hosting provider runs untrusted customer guests on
+        shared hosts. Write the SMT and side-channel decision you would
+        recommend, the capacity consequence, and how you would justify it to a
+        finance director who sees only the lost capacity.
+  \item \textbf{(Applied)} You are given two weeks to improve the security of a
+        40-host estate with 900 guests, one vCenter on the general corporate
+        network, templates with every virtual device enabled, and a flat
+        network between guests. Write the plan, in order, with the reason for
+        each position.
+\end{reviewq}

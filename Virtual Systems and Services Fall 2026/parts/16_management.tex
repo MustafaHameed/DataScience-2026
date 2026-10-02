@@ -3,7 +3,518 @@
 %=====================================================================
 \locator{5}{Part V --- Management, Performance and Security}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why managing a fleet is a different problem from
+        managing a host, and \textbf{name} the capabilities a management layer
+        must add.
+  \item \textbf{Compare} vCenter, SCVMM, oVirt, Proxmox and OpenStack by scope
+        and by what each assumes.
+  \item \textbf{Write} infrastructure as code that is idempotent, and
+        \textbf{explain} what state the tool keeps and why.
+  \item \textbf{Describe} the image pipeline --- build, publish,
+        instantiate --- and \textbf{say} what cloud-init does at each boot.
+  \item \textbf{Define} configuration drift and \textbf{choose} between
+        correcting it and rebuilding.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{platforms} (the four hypervisors, since each management platform assumes
+one) and \chref{storage} (shared storage, which almost every cluster feature
+depends on). \chref{cloud}'s self-service characteristic is what this chapter
+builds on premises.
+\end{prereq}
+
+\begin{keyterms}
+vCenter $\bullet$ cluster $\bullet$ DRS $\bullet$ resource pool $\bullet$ SCVMM
+$\bullet$ oVirt $\bullet$ Proxmox VE $\bullet$ OpenStack $\bullet$ Nova
+$\bullet$ infrastructure as code $\bullet$ declarative $\bullet$ idempotent
+$\bullet$ Terraform $\bullet$ state file $\bullet$ plan and apply $\bullet$
+golden image $\bullet$ Packer $\bullet$ cloud-init $\bullet$ user data $\bullet$
+template $\bullet$ configuration drift $\bullet$ immutable infrastructure
+\end{keyterms}
+
+\section{One Host Is Not a Small Fleet}
+
+Everything in Parts~II and~III was about one machine. A hypervisor on its own
+is a complete, usable product --- and it stops being enough at about the third
+host, for reasons that are all variations on the same one: a decision that was
+obvious with one host has no obvious answer with twenty.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.7cm}L{4.6cm}L{5.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Question} & \textbf{With one host} & \textbf{With twenty} \\
+\midrule
+\endhead
+Where should this guest run? & There is only one answer & A placement decision,
+against current load, affinity rules and licensing \\
+A host needs patching & Schedule an outage & Evacuate it by live migration and
+patch it with nobody noticing (\chref{migration}) \\
+A host has failed & Everything on it is down & The guests should restart
+elsewhere, automatically, within minutes \\
+Who may create guests? & Whoever has the root password & Roles, quotas, an API
+and an audit trail \\
+How was this guest built? & Somebody remembers & Nobody remembers, and it
+matters \\
+Is the estate consistent? & Trivially & Only if something enforces it \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Placement Is the Capability That Pays for the Platform]
+The feature that justifies a management layer commercially is automated
+placement --- VMware calls it DRS, and the others have equivalents.
+
+\smallskip
+The cluster continuously measures load and migrates guests between hosts to
+balance it. That turns twenty hosts from twenty capacity decisions into one,
+and it makes maintenance routine: put a host in maintenance mode and its guests
+leave by themselves.
+
+\smallskip
+It also changes the sizing arithmetic of \chref{cpumem}. A single host must be
+sized for the peak of everything on it. A balanced cluster need only be sized
+for the peak of the \emph{aggregate}, and peaks that do not coincide stop
+needing separate headroom --- commonly 15--25\% less hardware for the same
+service.
+\end{conceptbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  bx/.style={rounded corners=2pt, line width=0.8pt, align=center,
+             inner sep=3pt, minimum height=0.56cm, font=\scriptsize},
+  h/.style={bx, draw=neutral, fill=neutral!12, text=neutral!40!black,
+            minimum width=2.3cm},
+  m/.style={bx, draw=primary, fill=primary!12, text=primary,
+            minimum width=9.6cm},
+  i/.style={bx, draw=greenhl, fill=greenhl!10, text=greenhl!45!black,
+            minimum width=2.9cm},
+  u/.style={bx, draw=secondary, fill=secondary!10, text=secondary!80!black,
+            minimum width=2.9cm},
+  ar/.style={-{Stealth[length=1.8mm]}, line width=0.8pt},
+  note/.style={font=\scriptsize\itshape, text=neutral, anchor=west, align=left}
+]
+  \foreach \i/\x in {1/0, 2/2.5, 3/5.0, 4/7.5}{
+    \node[h] at (\x,0) {host \i};
+    \draw[ar, primary!55] (\x,0.3) -- (\x,0.95);}
+  \node[h, draw=goldhl, fill=goldhl!10, text=goldhl!45!black,
+        minimum width=9.6cm] at (3.75,-0.85) {shared storage and network};
+
+  \node[m] at (3.75,1.25) {\textbf{management platform}};
+  \node[u] at (0.35,2.5) {web console};
+  \node[u] at (3.75,2.5) {API};
+  \node[i] at (7.15,2.5) {infrastructure as code};
+  \foreach \x in {0.35, 3.75, 7.15}{
+    \draw[ar, primary!55] (\x,2.2) -- (\x,1.55);}
+
+  \node[note] at (9.1,1.25) {placement, HA, live migration,\\
+                             roles and quotas, inventory,\\
+                             templates, audit};
+  \node[note] at (9.1,2.5) {three front ends,\\one control plane};
+  \node[note] at (9.1,-0.85) {without this, almost no\\
+                              cluster feature works};
+\end{tikzpicture}}%
+{The shape every platform in this chapter has. The interesting differences are
+in scope --- how much of the stack the platform claims --- not in this
+diagram.}{management-layer}
+
+\section{The Platforms}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.5cm}L{3.0cm}L{4.4cm}L{4.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{Manages} & \textbf{Scope} & \textbf{Choose it when} \\
+\midrule
+\endhead
+\term{vCenter} & ESXi & One cluster to a few thousand hosts; the most mature
+operational tooling there is & You have bought vSphere, and your staff know it \\
+\term{SCVMM} & Hyper-V & Fleet management inside a Microsoft estate, with
+System Center & The estate is already Windows and licensed \\
+\term{oVirt} & KVM & The open equivalent of vCenter; Red Hat Virtualization was
+built on it & You want vCenter's shape without the licence \\
+\term{Proxmox VE} & KVM and LXC & Hypervisor, containers, storage, backup and
+clustering in one installable product & Small to medium estates; it has taken a
+visible share of the post-2024 VMware migrations \\
+\term{OpenStack} & KVM mostly & An entire \emph{cloud}: multi-tenancy, quotas,
+metering, object store, identity, orchestration & You are building a cloud for
+other people, not managing servers \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[OpenStack is not in the same category as the others]
+It is routinely compared with vCenter and the comparison misleads in both
+directions.
+
+\smallskip
+vCenter manages \emph{your} servers for \emph{your} staff. OpenStack provides a
+\emph{cloud} --- the five NIST characteristics of \chref{cloud}, including
+tenants, quotas, metering and an API contract you offer to others. It is
+roughly a dozen interacting services, and that is because the problem is
+bigger, not because it is badly engineered.
+
+\smallskip
+The practical consequence: OpenStack rewards an organisation with a dedicated
+platform team and punishes one without. Several well-known deployments were
+abandoned for exactly this reason. If what you need is to run two hundred
+guests for your own department, it is the wrong tool and Proxmox or oVirt is
+the right one.
 \end{alertbox}
+
+\section{Infrastructure as Code}
+
+A console is fine for one change and hopeless as a system of record. Clicking
+through a wizard leaves nothing behind that says what was intended, so six
+months later nobody can say whether a setting was deliberate.
+
+\term{Infrastructure as code} makes the declaration the artefact. The
+definition lives in version control, is reviewed like any change, and the tool
+makes reality match it --- the same reconciliation idea as \chref{kubernetes},
+applied to infrastructure.
+
+\begin{definitionbox}[Declarative, Idempotent, and the State File]
+A declarative tool is given the desired end state, not the steps. Terraform's
+loop is \emph{plan} --- compare desired with actual and show the difference ---
+then \emph{apply}.
+
+\smallskip
+\term{Idempotent} means applying the same definition twice changes nothing the
+second time. This is what makes the tool safe to run on a schedule, and it is
+the property a shell script of \texttt{virsh} commands does not have.
+
+\smallskip
+To compare desired with actual, the tool must know which real objects it
+created. That is the \term{state file}, and it is the part that bites: it is
+authoritative, it contains secrets, and two people applying at once will
+corrupt it. Keep it in remote storage with locking, never in the repository.
+\end{definitionbox}
+
+\begin{worked}[What Automation Is Worth, and When It Is Not]
+A team provisions guests by hand: 45 minutes each, including the ticket, the
+console work and the follow-up corrections. They provision about 12 a month and
+reconfigure about 30. Decide whether to adopt Terraform.
+
+\smallskip
+\textbf{Step 1 --- the current cost.}
+\[ 12 \times 45 = 540 \text{ min} = 9 \text{ h a month on new guests} \]
+Reconfigurations average 20 minutes:
+\[ 30 \times 20 = 600 \text{ min} = 10 \text{ h a month} \]
+\[ \text{total} = 19 \text{ h a month} = \mathbf{228 \text{ h a year}} \]
+
+\smallskip
+\textbf{Step 2 --- the cost after.} Writing the module takes 3 days, 24 hours,
+once. A new guest is then 5 minutes of editing and review; a reconfiguration is
+3 minutes:
+\[ 12 \times 5 + 30 \times 3 = 60 + 90 = 150 \text{ min} = 2.5
+   \text{ h a month} \]
+\[ = 30 \text{ h a year, plus } 24 \text{ h to build} \]
+
+\smallskip
+\textbf{Step 3 --- first-year saving.}
+\[ 228 - (30 + 24) = \mathbf{174 \text{ hours}} \]
+and 198 hours in every year after. The build pays for itself in about seven
+weeks.
+
+\smallskip
+\textbf{Step 4 --- the benefit that is not in the arithmetic.} The 45 minutes
+included ``follow-up corrections'' --- guests built slightly differently from
+each other, discovered later. Those corrections do not merely take time; they
+are the \emph{drift} of the next section, and the saving from eliminating them
+is larger than the 174 hours and much harder to measure.
+
+\smallskip
+\textbf{Step 5 --- and the honest case against.} Change the inputs and the
+answer inverts. A team provisioning \emph{one} guest a month saves
+$12 \times 40 = 8$ hours a year against a 24-hour build and an ongoing
+maintenance burden --- a clear loss. Automation pays at volume and at
+repetition, and a tool adopted below that threshold is a liability maintained
+by someone who uses it too rarely to remember it.
+
+\smallskip
+State the threshold explicitly before adopting: \emph{how many of these do we
+do, and how alike are they?}
+\end{worked}
+
+\section{The Image Pipeline}
+
+Where does the guest's disk come from? Three stages, and confusing them is the
+cause of most ``why is this server different'' incidents.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  stg/.style={rounded corners=3pt, line width=1pt, align=center,
+              minimum width=3.5cm, minimum height=1.5cm, inner sep=4pt},
+  ar/.style={-{Stealth[length=2.4mm]}, line width=1.1pt},
+  tag/.style={font=\scriptsize\bfseries},
+  note/.style={font=\scriptsize\itshape, align=center}
+]
+  \node[stg, draw=secondary, fill=secondary!6, text=secondary!80!black] (b)
+       at (0,0) {\textbf{Build}\\[2pt] Packer\\
+                 install the OS, patch it,\\add the agents};
+  \node[stg, draw=goldhl, fill=goldhl!6, text=goldhl!45!black] (p)
+       at (5.3,0) {\textbf{Publish}\\[2pt] a template or image\\
+                   versioned, immutable,\\one per month};
+  \node[stg, draw=greenhl, fill=greenhl!6, text=greenhl!45!black] (i)
+       at (10.6,0) {\textbf{Instantiate}\\[2pt] clone + cloud-init\\
+                    hostname, keys, network,\\first-boot configuration};
+
+  \draw[ar, primary!60] (b) -- (p);
+  \draw[ar, primary!60] (p) -- (i);
+
+  \node[note, text=secondary!80!black] at (0,-1.3)
+       {monthly, in a pipeline,\\reviewed};
+  \node[note, text=goldhl!45!black] at (5.3,-1.3)
+       {never edited in place ---\\that is what makes it a version};
+  \node[note, text=greenhl!45!black] at (10.6,-1.3)
+       {seconds, hundreds of times,\\from the same version};
+
+  \draw[-{Stealth[length=2mm]}, accent, line width=1pt, dashed]
+        (10.6,1.1) to[out=70,in=110] (0,1.1);
+  \node[note, text=accent!70!black] at (5.3,1.95)
+       {\textbf{Changes go back to the build, never to a running guest.}\\
+        A fix applied to one instance exists only there, and that is drift.};
+\end{tikzpicture}}%
+{The pipeline. The dashed arrow is the discipline: the only supported way to
+change what a guest contains is to change the image and
+re-instantiate.}{image-pipeline}
+
+\begin{conceptbox}[cloud-init: the last mile, every boot]
+A golden image must be identical for every guest, and every guest must be
+different --- different hostname, address, keys, role. \term{cloud-init}
+resolves the contradiction: it runs on first boot, reads \term{user data} from
+the platform's metadata service, and applies it.
+
+\smallskip
+It is why the Chapter~1 lab could hand a downloaded cloud image a password in
+a two-line YAML file and have it work. Every cloud in \chref{cloud} supports it,
+and so do libvirt, Proxmox and VMware, which is why one image can be built once
+and used everywhere.
+
+\smallskip
+The rule that follows: \emph{anything that differs between guests belongs in
+user data, and anything that is the same belongs in the image.} Put a hostname
+in the image and you will clone a hostname conflict; put a patch in user data
+and you will apply it at every boot for ever.
+\end{conceptbox}
+
+\section{Drift}
+
+\term{Configuration drift} is the gap between what a system is supposed to be
+and what it has become: a package installed to debug something at 2 a.m., a
+limit raised and never recorded, a firewall rule added for a test. Each is
+small and reasonable. After two years no two servers are alike and nobody can
+rebuild any of them.
+
+Two responses, and they are genuinely different philosophies.
+
+\begin{conceptbox}[Converge, or Replace]
+\textbf{Convergent management} --- Ansible, Puppet, Chef --- re-applies the
+desired configuration periodically, correcting what has drifted. It works on
+long-lived systems, including ones you cannot rebuild, and it is the only
+option for an estate that already exists. Its weakness is that it corrects only
+what it is told to check: an unmanaged file stays drifted for ever.
+
+\smallskip
+\textbf{Immutable infrastructure} --- never change a running system. To patch
+it, build a new image and replace the instance. Drift becomes structurally
+impossible, because nothing lives long enough to drift, and every running
+system is exactly some reviewed version. The cost is that it demands the whole
+pipeline, fast instantiation and workloads that tolerate replacement ---
+stateless services, or state kept deliberately outside.
+
+\smallskip
+Most real estates are both: immutable for the application tier, convergent for
+the database servers and the appliances that cannot be rebuilt. Knowing which
+regime a given machine is under --- and writing it down --- matters more than
+which one you prefer.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Keeping the state file in the repository.} It holds secrets and
+        it must be locked. Remote backend with locking, always.
+  \item \textbf{Running \texttt{apply} without reading \texttt{plan}.} The plan
+        is the review. Reading it is the control that stops a one-character
+        change destroying a database.
+  \item \textbf{Editing a golden image in place.} Then it is not a version and
+        you cannot say what any guest was built from.
+  \item \textbf{Putting per-guest settings in the image.} Clone it and you
+        clone the hostname and the SSH host key.
+  \item \textbf{Adopting automation below its threshold.} At one guest a month
+        the tool costs more than it saves and is forgotten between uses.
+  \item \textbf{Fixing a drifted server by hand and closing the ticket.} The
+        fix now exists in one place and nowhere else; the next rebuild loses
+        it.
+  \item \textbf{Choosing OpenStack to manage a departmental estate.} It is a
+        cloud platform. Match the tool to the problem's size.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Declaring a Small Estate]
+Builds an image with a pipeline, then provisions and reconfigures guests
+declaratively with Terraform against libvirt. Expect forty-five minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch16_iac.sh -- an image pipeline and declarative provisioning.
+set -euo pipefail
+mkdir -p ~/vsiac && cd ~/vsiac
+
+# --- 1. The build stage: one patched image, made reproducibly. --------
+# Packer would do this in a pipeline; here, the same steps by hand.
+BASE=https://cloud-images.ubuntu.com/jammy/current
+wget -nc -O base.img "$BASE/jammy-server-cloudimg-amd64.img"
+cp base.img golden-2026-10.qcow2
+sudo virt-customize -a golden-2026-10.qcow2 \
+  --update --install qemu-guest-agent,chrony \
+  --run-command 'systemctl enable qemu-guest-agent' \
+  --truncate /etc/machine-id          # or every clone shares an identity
+qemu-img info golden-2026-10.qcow2 | head -4
+
+# --- 2. The publish stage: versioned, and never edited again. ---------
+sudo mkdir -p /var/lib/libvirt/images/templates
+sudo cp golden-2026-10.qcow2 /var/lib/libvirt/images/templates/
+sudo chmod 444 /var/lib/libvirt/images/templates/golden-2026-10.qcow2
+ls -l /var/lib/libvirt/images/templates/
+
+# --- 3. Declare the estate. ------------------------------------------
+cat > main.tf <<'TF'
+terraform {
+  required_providers {
+    libvirt = { source = "dmacvicar/libvirt", version = "~> 0.8" }
+  }
+}
+provider "libvirt" { uri = "qemu:///system" }
+
+variable "guests" {
+  type    = map(object({ memory = number, vcpu = number }))
+  default = {
+    web1 = { memory = 1024, vcpu = 1 }
+    web2 = { memory = 1024, vcpu = 1 }
+    db1  = { memory = 2048, vcpu = 2 }
+  }
+}
+
+resource "libvirt_volume" "disk" {
+  for_each       = var.guests
+  name           = "${each.key}.qcow2"
+  base_volume_id = "/var/lib/libvirt/images/templates/golden-2026-10.qcow2"
+  size           = 10737418240
+}
+
+resource "libvirt_cloudinit_disk" "init" {
+  for_each  = var.guests
+  name      = "${each.key}-init.iso"
+  user_data = <<EOT
+#cloud-config
+hostname: ${each.key}
+password: vss2026
+chpasswd: { expire: False }
+ssh_pwauth: True
+EOT
+}
+
+resource "libvirt_domain" "vm" {
+  for_each  = var.guests
+  name      = each.key
+  memory    = each.value.memory
+  vcpu      = each.value.vcpu
+  cloudinit = libvirt_cloudinit_disk.init[each.key].id
+  disk { volume_id = libvirt_volume.disk[each.key].id }
+  network_interface { network_name = "default" }
+  console { type = "pty", target_port = "0" }
+}
+TF
+
+# --- 4. Plan first. The plan IS the review. --------------------------
+terraform init -input=false
+terraform plan -out=tfplan | tail -20
+
+# --- 5. Apply, and then prove idempotence. ---------------------------
+terraform apply -auto-approve tfplan
+sudo virsh list --all
+terraform plan | tail -3        # "No changes" -- this is the property
+                                # a shell script of virsh does not have.
+
+# --- 6. Reconfigure declaratively: change one number. ----------------
+sed -i 's/db1  = { memory = 2048/db1  = { memory = 4096/' main.tf
+terraform plan | grep -E 'memory|will be'
+terraform apply -auto-approve
+
+# --- 7. Create drift by hand, then watch the tool notice. ------------
+sudo virsh setmaxmem web1 3145728 --config
+sudo virsh setmem web1 3145728 --config
+terraform plan | tail -8        # the difference, reported
+
+# --- 8. Tear the whole estate down with one command. -----------------
+terraform destroy -auto-approve
+sudo virsh list --all
+\end{lstlisting}
+
+\textbf{What to notice.} Step 5's second \texttt{plan} is the whole argument:
+running it again does nothing, so it is safe to run on a schedule. Step 7 is
+the other half --- the tool can tell you the estate has been changed behind its
+back, which no console can.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A team provisions 3 guests a month at 50 minutes each and reconfigures
+        8 at 25 minutes. A Terraform module would take 4 days and reduce these
+        to 5 and 3 minutes. Work out the first-year saving and say whether you
+        would adopt it.
+  \item Explain what belongs in a golden image and what belongs in cloud-init
+        user data, with one example of each being put in the wrong place and
+        the consequence.
+  \item A database server cannot be rebuilt because its configuration was never
+        captured. Which drift strategy applies to it, and what would you do to
+        change that over the next year?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A management layer exists because placement, evacuation, failure
+        recovery, access control and consistency have no obvious answers at
+        twenty hosts. Automated placement is what pays for it.
+  \item vCenter, SCVMM, oVirt and Proxmox manage \emph{servers}; OpenStack
+        provides a \emph{cloud}. Matching the tool to the size of the problem
+        matters more than the feature comparison.
+  \item Infrastructure as code makes the declaration the artefact: declarative,
+        idempotent, reviewed. The state file is authoritative, holds secrets
+        and must be locked.
+  \item Automation pays at volume and repetition. Below that threshold it costs
+        more than it saves --- state the threshold before adopting.
+  \item Build, publish, instantiate. Changes go back to the image; anything
+        differing between guests goes in cloud-init user data.
+  \item Drift is corrected by convergence or made impossible by immutability.
+        Most estates run both, and knowing which applies to a machine matters
+        more than the preference.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Terraform's state file: (a)~is a log of past actions;
+        (b)~records which real objects the tool created, and must be locked;
+        (c)~is optional; (d)~belongs in version control.
+  \item \textbf{(MCQ)} Idempotence means: (a)~the tool runs quickly;
+        (b)~applying the same definition twice changes nothing the second time;
+        (c)~changes can be rolled back; (d)~the configuration is encrypted.
+  \item \textbf{(Short)} Explain how automated placement reduces the hardware a
+        cluster needs, referring to \chref{cpumem}.
+  \item \textbf{(Short)} Give the three stages of the image pipeline and state
+        what must never be done between them.
+  \item \textbf{(Short)} Contrast convergent and immutable approaches to drift,
+        and give a workload suited to each.
+  \item \textbf{(Applied)} A department running 60 guests on three standalone
+        ESXi hosts with no vCenter asks what they are missing. Write the answer,
+        in priority order, with the operational consequence of each gap and a
+        free alternative where one exists.
+  \item \textbf{(Applied)} An estate has 200 guests, no image pipeline and no
+        record of how any was built. Design a twelve-month plan to reach a
+        state where any guest can be rebuilt from a reviewed definition,
+        saying what you would do first and why.
+\end{reviewq}

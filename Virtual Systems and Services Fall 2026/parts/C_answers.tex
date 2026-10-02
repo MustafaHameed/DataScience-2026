@@ -3,6 +3,617 @@
 %=====================================================================
 \normalfigures
 
-\begin{alertbox}[Not written yet]
-This appendix is a placeholder.
-\end{alertbox}
+Three answers per chapter, in order. Attempt the checkpoint from memory before
+reading these, and argue with them where you disagree --- several are judgement
+calls rather than facts, and they say so.
+
+% The slide pipeline parses this appendix: \ansch{<number> --- <title>} must be
+% followed immediately by an ans environment of exactly three items.
+\newcommand{\ansch}[1]{\subsection*{\color{primary}Chapter #1}}
+\newenvironment{ans}
+  {\begin{enumerate}[leftmargin=*, itemsep=4pt, topsep=3pt,
+                     label=\textbf{\arabic*.}]}
+  {\end{enumerate}}
+
+%---------------------------------------------------------------------
+\ansch{1 --- What Virtualization Is}
+\begin{ans}
+  \item Active memory is $24 \times 19 = 456$ GB. With 30\% headroom,
+        $456 \times 1.3 = 593$ GB, so $\lceil 593/384 \rceil = 2$ hosts, plus
+        one for N+1 $= \mathbf{3}$ hosts. The consolidation ratio is
+        $24/3 = \mathbf{8:1}$. Note what was \emph{not} used: the 128 GB
+        installed per server. Sizing on that would have given
+        $24 \times 128 \times 1.3 / 384 = 11$ hosts for the same work.
+  \item The second half is wrong. There \emph{is} a virtualization layer ---
+        namespaces and control groups --- it is simply inserted inside the
+        kernel rather than beneath it. The correct statement is that containers
+        start faster and cost less memory because they share the host's kernel
+        instead of each running their own, not because no layer exists.
+  \item \textbf{Encapsulation.} A running machine becomes a file, so it can be
+        snapshotted, copied, versioned and restored. The operation with no
+        physical equivalent is the snapshot: you can return a machine to its
+        state four minutes ago in a few seconds. A physical server has no way to
+        record its entire state --- memory, disk and devices --- as something
+        that can be put back.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{2 --- Virtualization Architectures}
+\begin{ans}
+  \item By Goldberg's test it is \textbf{Type-1}: the hypervisor reaches the
+        hardware without another operating system's permission, and the stripped
+        Linux exists only to boot it. The more useful questions are
+        \emph{how large is the trusted computing base?} --- here, a kernel plus
+        every driver it loads --- and \emph{what else runs on this machine?}
+        Those decide the security and performance arguments; the Roman numeral
+        decides neither.
+  \item CPU overhead is $(412-400)/400 = \mathbf{3\%}$, which is normal. Disk
+        throughput is $1 - 210/1050 = \mathbf{80\%\ lost}$, which is not. The
+        pattern --- small CPU penalty, enormous I/O penalty --- is the signature
+        of an \textbf{emulated disk controller}. Change the disk bus to virtio;
+        expect the loss to fall to a few per cent.
+  \item Paravirtualization requires modifying the guest kernel, which requires
+        its source and the ability to rebuild it. With the vendor gone, neither
+        exists. Use \textbf{hardware-assisted virtualization}, which needs no
+        guest changes at all, and install paravirtualized \emph{drivers} if any
+        exist for that operating system --- a far weaker requirement than
+        recompiling the kernel.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{3 --- The Virtual Machine Monitor}
+\begin{ans}
+  \item \texttt{RDCFG} is \textbf{behaviour-sensitive}: its result depends on
+        the privilege configuration, which the monitor must control. It is
+        \textbf{not privileged}: it does not fault in user mode. So there is a
+        sensitive instruction outside the privileged set, the condition
+        \emph{sensitive $\subseteq$ privileged} fails, and \textbf{the
+        architecture is not virtualizable by trap-and-emulate alone}. A guest
+        would read the deprivileged level and could detect, or misbehave in,
+        virtualization.
+  \item Because a crash is a \emph{signal}. The monitor author would learn
+        immediately, at the offending instruction, with a stack trace. What x86
+        does instead is accept the instruction, update the arithmetic flags and
+        silently discard the write to \texttt{IF}: the guest believes it
+        disabled interrupts and did not. The resulting corruption is
+        intermittent, unreproducible and traceable to nothing. Silent incorrect
+        behaviour is far harder to engineer around than a loud failure.
+  \item When you control the guest and want the lowest overhead --- for example
+        a cloud provider shipping its own Linux images, or an appliance vendor
+        building both halves. A hypercall costs tens of cycles where a trap
+        costs hundreds, the monitor is far simpler, and the guest's source is
+        available by construction. The requirement that makes paravirtualization
+        unusable in general is precisely the one that does not bind here.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{4 --- Hardware Support for Virtualization}
+\begin{ans}
+  \item Backward compatibility. Making \texttt{POPF} and the others privileged
+        would change the behaviour of existing, correct user programs that rely
+        on the write to \texttt{IF} being silently ignored --- they would begin
+        faulting. x86's commercial value rests on not breaking old software, so
+        both vendors added a new processor \emph{mode} in which existing
+        instructions behave as before and the \emph{hardware} decides when to
+        hand control to the hypervisor.
+  \item For each of the 5 guest levels: 5 EPT accesses to translate that level's
+        address, plus 1 read of the guest entry $= 6$, so $5 \times 6 = 30$;
+        plus 5 to translate the final guest-physical address:
+        $\mathbf{35}$ memory accesses. In general, for $n$ levels:
+        $n(n+1) + n = \mathbf{n^2 + 2n}$. Checking against the chapter,
+        $n = 4$ gives $16 + 8 = 24$.
+  \item \textbf{Device passthrough} is lost --- assigning a physical device
+        directly to a guest, including SR-IOV virtual functions. It must be
+        refused rather than warned about because a device performs DMA to
+        physical addresses: without an IOMMU to translate and confine them, the
+        guest's driver can direct the device to write anywhere in host memory,
+        including the hypervisor and other guests. That is not a degraded
+        configuration; it is the complete loss of the resource-control property
+        of \chref{vmm}.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{5 --- Major Hypervisor Platforms}
+\begin{ans}
+  \item \textbf{ESXi}: in the VMkernel itself --- a small, purpose-built trusted
+        base of about 150 MB, at the cost of a short hardware compatibility
+        list. \textbf{Hyper-V}: in the parent partition, a full Windows
+        installation --- thin hypervisor, large privileged guest.
+        \textbf{KVM}: in the Linux kernel --- every driver Linux has, and all of
+        them in the trusted base. \textbf{Xen}: in dom0, or in a separate driver
+        domain --- a one-megabyte hypervisor, and the only design that can put a
+        driver's blast radius below the whole host.
+  \item Docker Desktop enables Hyper-V (or the WSL2 platform, which uses it).
+        That slides the Hyper-V hypervisor underneath the running Windows,
+        demoting it to a parent partition. VirtualBox then no longer runs on the
+        hardware; it runs as a \emph{nested} guest above Hyper-V, and nested
+        virtualization multiplies every exit the inner guest takes. Nothing
+        about VirtualBox changed --- the machine underneath it did.
+  \item Using the chapter's figures, vSphere cost about \$200{,}000 more over
+        three years for three hosts, which is roughly 1.5 full-time engineers.
+        A licence becomes defensible once the estate is large enough that
+        vCenter genuinely saves that much effort --- in practice somewhere in
+        the low hundreds of hosts, or sooner where availability has contractual
+        penalties. \textbf{The assumption doing the most work} is that a
+        self-managed KVM estate would need those 1.5 engineers; if the team
+        already runs Linux at scale and has the automation, the saving is much
+        smaller and the threshold much higher.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{6 --- CPU and Memory Virtualization}
+\begin{ans}
+  \item $\sigma_{\text{cpu}} = (20 \times 6)/48 = 120/48 = \mathbf{2.5}$. A mean
+        \%RDY of 14\% is well above the 10\% action threshold, so the host is
+        oversubscribed. \textbf{Measure first:} the actual vCPU utilisation of
+        each guest --- 6 vCPUs is a large allocation and is very likely more
+        than most of them use. \textbf{Then act:} right-size downward before
+        buying anything. Halving the allocations would bring $\sigma$ to 1.25
+        and would almost certainly resolve the ready time without new hardware.
+  \item Because the hypervisor cannot tell which pages matter. From outside,
+        every guest page looks alike; it cannot distinguish a hot database
+        buffer from a page of cache the guest would discard without noticing,
+        so taking pages itself means guessing, and a wrong guess costs the guest
+        a disk read. The guest kernel has a page-replacement algorithm that is
+        good at exactly this question. The balloon driver asks in the one
+        language the guest understands --- it allocates memory --- and the guest
+        decides what to give up.
+  \item \textbf{The guest is wider than a NUMA node.} It has 40 vCPUs against
+        32 cores per socket and 400 GB against 256 GB per socket, so it must
+        span both sockets and roughly half its memory accesses cross the
+        interconnect at 1.5--2$\times$ the latency. No hypervisor setting fixes
+        it because the memory is physically attached to a socket; locality
+        cannot be created after the fact. The change that would work is
+        \textbf{resizing the guest to fit inside one node} --- 32 vCPU and
+        256 GB or less. Failing that, enable vNUMA so the guest's own scheduler
+        can at least keep each thread's memory on its own node.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{7 --- Paravirtualization and Device Virtualization}
+\begin{ans}
+  \item $1.6/0.2 = \mathbf{8.0}$ host cores per Mpps, roughly twenty-five times
+        what vhost costs. That figure, together with the very low packet rate,
+        is the signature of an \textbf{emulated network adapter} --- an e1000 or
+        similar, where every device register access is a VM exit. Change the
+        interface model to \textbf{virtio}, and enable vhost; expect the rate to
+        rise by an order of magnitude and the host CPU to fall.
+  \item Because the exit is caused by the \emph{doorbell}, not by the request. A
+        guest places buffers in the shared virtqueue with ordinary memory
+        writes, which cost nothing, and rings the doorbell once to say work is
+        waiting --- and one doorbell can cover a hundred queued requests. Under
+        load the back-end is already polling the ring and finds new work without
+        being told, so the guest can suppress notification entirely. The
+        mechanism is \textbf{batching with notification suppression}, and it
+        makes the exits-per-request ratio fall as the rate rises.
+  \item \textbf{The conflict:} SR-IOV virtual functions are assigned devices, so
+        those twelve guests cannot be live-migrated, and live migration is how
+        a host is patched without downtime. Two resolutions:
+        (i) \emph{bonded failover} --- give each guest a VF and a virtio
+        interface in a bond, detach the VF before migrating and reattach it
+        afterwards, accepting reduced throughput during the move;
+        (ii) \emph{scheduled downtime for those twelve guests only}, documented
+        as an exception at design time rather than discovered at the first
+        patch window.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{8 --- From Virtual Machines to Containers}
+\begin{ans}
+  \item 137 is $128 + 9$: the process was terminated by signal 9, \texttt{SIGKILL},
+        which here means the \textbf{memory limit} and the kernel's OOM killer.
+        The symptom is a kill rather than a slowdown because memory is not
+        divisible in time: a page is either available or it is not, so there is
+        nothing to degrade. A CPU limit, by contrast, throttles --- the container
+        simply runs more slowly and nothing fails.
+  \item A container shares the host's kernel, so there is no guest kernel to
+        load a module into; loading one would mean loading it into the
+        \emph{host}, which is both a privilege escalation and shared with every
+        other container. The two options are (i) load the module on the host and
+        expose the resulting device to the container, accepting that the module
+        is now host-wide, or (ii) use a \textbf{virtual machine}, or a microVM
+        from \chref{lightweight}, which has a kernel of its own.
+  \item The image is stored once and shared: $400 + 3 \times 50 =
+        \mathbf{550}$ MB. The logs are in each container's writable layer, so
+        they count three times and are lost when the containers are replaced.
+        The change is to \textbf{write logs to stdout} and let the runtime
+        collect them, or mount a volume --- either removes them from the
+        copy-on-write layer entirely.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{9 --- Docker and the Container Ecosystem}
+\begin{ans}
+  \item \texttt{node:20} is a \emph{tag}, which is a mutable pointer. The
+        publisher republished it during the week --- a patch release, a new base
+        layer --- so Friday's build used different bytes. The change that
+        prevents it is to \textbf{pin the digest}:
+        \texttt{FROM node:20@sha256:\ldots}, which identifies exact content for
+        ever. Pair it with an automated job that proposes digest updates as
+        reviewable changes, so security fixes are still applied deliberately.
+  \item \textbf{Same \texttt{RUN}: no.} Only the layer's final state is
+        committed, and the key was deleted before the layer closed.
+        \textbf{Separate \texttt{RUN}: yes.} The first layer contains the key,
+        the second records its deletion, and both layers ship. Anyone who pulls
+        the image can extract the earlier layer and read it. This is why secrets
+        belong in build secrets or a mount, never in a layer at all.
+  \item Stating assumptions: say the dependency layer is 1.0 GB, the application
+        layer 20 MB, and there are 20 builds a day.
+        \emph{Wrong order:} each build rebuilds and pushes about 1.02 GB, and
+        40 nodes pull it: $20 \times 1.02 + 40 \times 20 \times 1.02 \approx
+        \mathbf{836}$ GB a day.
+        \emph{Right order:} only the 20 MB layer changes:
+        $20 \times 0.02 + 40 \times 20 \times 0.02 = \mathbf{16.4}$ GB a day.
+        A saving of roughly \textbf{820 GB a day} in transfer alone, before
+        counting the build time.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{10 --- Container Orchestration with Kubernetes}
+\begin{ans}
+  \item Cluster totals are $6 \times 12 = 72$ cores and $6 \times 48 = 288$ GB;
+        after existing requests, 32 cores and 98 GB remain. In aggregate the new
+        Deployment's 15 cores and 90 GB would fit --- but Pods are placed on
+        individual nodes. Each node has $12 - 40/6 = 5.3$ cores and
+        $48 - 190/6 = 16.3$ GB free, giving
+        $\min(\lfloor 5.3/1 \rfloor, \lfloor 16.3/6 \rfloor) = 2$ Pods per node.
+        So $2 \times 6 = \mathbf{12}$ schedule and 3 stay \texttt{Pending}. The
+        binding resource is \textbf{memory}.
+  \item \textbf{BestEffort}, which is evicted first whenever a node comes under
+        memory pressure. The symptom is that the workloads run perfectly for
+        weeks and then are killed --- apparently at random, but in fact
+        \emph{only when the cluster is busy}, which is exactly when they are
+        most needed. Declaring nothing is not neutral; it is choosing to be
+        first in the eviction queue.
+  \item A liveness probe \emph{kills} the container when it fails. If the probe
+        checks a shared database and the database slows, every replica fails the
+        probe at the same moment, so Kubernetes kills them all. They restart,
+        reconnect simultaneously in a thundering herd, overload the already-slow
+        database and fail again. Use a \textbf{readiness} probe: it removes the
+        Pod from the Service's endpoints without killing it, so the replicas
+        stop taking traffic, the database recovers, and they return.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{11 --- Lightweight and Secure Virtualization}
+\begin{ans}
+  \item Removed: \textbf{firmware initialisation}, \textbf{PCI bus enumeration}
+        and \textbf{legacy device emulation}; the kernel is loaded directly into
+        memory rather than booted through a bootloader. What the guest must be
+        willing to give up is \textbf{looking like a PC} --- it cannot expect a
+        BIOS, a PCI bus or any legacy device, so it must be built to use virtio
+        and to be entered directly. The cost was compatibility, not
+        virtualization.
+  \item \textbf{System-call rate.} gVisor handles system calls in a user-space
+        Go program instead of in the kernel, so a workload making many small
+        calls --- lots of short reads and writes, many file operations --- pays
+        heavily, while a CPU-bound workload that rarely calls the kernel is
+        barely affected. Confirm by measuring the calls per second of each, with
+        \texttt{strace -c} or \texttt{perf}, and correlating that against the
+        measured slowdown.
+  \item Run the 200 internal services on the default runtime (runc) at full
+        density, and the customer build jobs on a hardware-isolated runtime ---
+        Kata, or a microVM-backed equivalent. The manifests are otherwise
+        identical. The single field that expresses it is
+        \textbf{\texttt{runtimeClassName}} in the Pod spec.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{12 --- Storage Virtualization}
+\begin{ans}
+  \item Provisioned $= 120 \times 800 = 96$ TB, so
+        $\sigma = 96/40 = \mathbf{2.4}$. Written $= 120 \times 240 = 28.8$ TB,
+        so headroom $= 40 - 28.8 = \mathbf{11.2}$ TB. Growth is
+        $120 \times 20 = 2.4$ TB a month, giving
+        $11.2/2.4 = \mathbf{4.7}$ months to exhaustion. Alert at \textbf{80\% of
+        the pool} --- 32 TB used, 8 TB free --- because that is reached in about
+        six weeks, which is the last point at which there is still time to
+        order capacity or reclaim space. Alerting at 95\% leaves no time to do
+        anything.
+  \item Deleting a file inside a guest only marks blocks free in the
+        \emph{guest's} filesystem. The pool underneath was never told, so it
+        still holds those blocks as written. The setting is \textbf{discard /
+        TRIM, enabled end to end} --- in the guest mount options or a periodic
+        \texttt{fstrim}, in the virtual disk controller, and in the storage
+        layer. On an estate that has never had it, enabling it commonly returns
+        10--20\% of the pool.
+  \item \textbf{Slow} because reads are amplified: a block must be looked for in
+        each overlay in turn until it is found, so twelve layers can mean twelve
+        lookups where one would do, and a first write to a block must copy it up
+        from wherever it currently lives. \textbf{Dangerous} because every file
+        in the chain is load-bearing: lose or corrupt any one of them and every
+        snapshot above it is unreadable --- and after six months nobody knows
+        which snapshots are still needed.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{13 --- Network Virtualization and SDN}
+\begin{ans}
+  \item $14 + 40 + 8 + (8+16) = \mathbf{86}$ bytes of overhead, so the largest
+        inner frame is $1500 - 86 = \mathbf{1414}$ bytes. Note that IPv6 and
+        Geneve options together cost 36 bytes more than the VXLAN-over-IPv4 case
+        in the chapter --- the arithmetic must be redone for each
+        encapsulation, never assumed at 50.
+  \item The oversized packet is dropped and an ICMP ``fragmentation needed''
+        message is returned to tell the sender to use a smaller size. Path MTU
+        discovery depends on that message arriving --- and ICMP is very commonly
+        filtered, so the sender never learns, retransmits the same segment and
+        stalls for ever. The handshake succeeded because its packets were small.
+        The firewall change is to \textbf{permit ICMP type 3 code 4}
+        (destination unreachable, fragmentation needed), which turns a silent
+        hang into a connection that corrects itself.
+  \item A VLAN is a tag within a single layer-2 domain: it does not survive
+        being routed, so it cannot span three buildings on different IP subnets.
+        It is also limited to 4094 identifiers. Use an \textbf{overlay} ---
+        VXLAN or Geneve --- which puts the tenant's Ethernet frame inside an
+        ordinary IP packet, so it crosses any routed network, and whose 24-bit
+        identifier gives about 16.7 million isolated networks.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{14 --- Cloud Service and Deployment Models}
+\begin{ans}
+  \item It satisfies on-demand self-service (departments provision themselves),
+        broad network access, resource pooling and measured service (charged per
+        guest-month). It fails \textbf{rapid elasticity} --- specifically the
+        ability to \emph{shrink}. The hosts are bought; a department returning a
+        guest frees a little electricity and nothing else, and the university
+        cannot rent the spare capacity to anyone. It is a well-run
+        virtualization estate with a cloud-like interface, which is valuable,
+        but it does not have the economics.
+  \item $10 \times 5 \times 52 = 2{,}600$ hours a year at \$0.2016 is
+        $\mathbf{\$524}$ a year. A three-year reservation discounts the rate by
+        55\% but commits you to paying continuously:
+        $0.45 \times 0.2016 \times 8{,}760 = \$795$ a year. The reservation
+        would therefore cost \textbf{more than paying on demand}, because the
+        workload uses only $2{,}600/8{,}760 = 30\%$ of the hours it would be
+        committing to. Reservations pay for steady load, not for intermittent
+        load at any discount.
+  \item \textbf{The customer's side} --- under IaaS and under every provider's
+        shared responsibility model, data classification and access
+        configuration belong to the customer. The provider's default for object
+        storage is private; somebody changed it. To stop it recurring: enable
+        account-level public-access blocking so it cannot be set at all, scan
+        for public buckets continuously, and require infrastructure as code
+        (\chref{management}) so that a permission change is a reviewed commit
+        rather than a click.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{15 --- Desktop and Application Virtualization}
+\begin{ans}
+  \item $70 + 300 \times 3 = \mathbf{970}$ GB. Full clones would be
+        $300 \times 70 = 21{,}000$ GB, so the saving is
+        $21{,}000/970 \approx \mathbf{21.6:1}$. The base image is read by all
+        300 desktops, so it must sit on the fastest storage available and stay
+        in cache --- the read amplification of \chref{storage} applies at full
+        force.
+  \item Steady state is $300 \times 10 = 3{,}000$ IOPS. For the storm: 150
+        users over 4 minutes with a 90-second boot gives
+        $150 \times (1.5/4) \approx 56$ booting at any instant, so
+        $56 \times 120 = 6{,}750$ IOPS, plus the 150 already-logged-in users'
+        steady 1{,}500: about $\mathbf{8{,}250}$ IOPS, roughly
+        \textbf{2.75 times} the all-day figure --- for four minutes. Size for
+        this, not for the average.
+  \item \textbf{Latency, not bandwidth.} Every keystroke makes a round trip
+        before its character appears, so a high-latency path feels broken no
+        matter how much capacity is spare; under about 50 ms it is invisible,
+        past 150 ms typing feels detached. Measure the round-trip time from the
+        client to the session host, and the protocol's own reported frame
+        latency --- not throughput, which the monitoring has already told you is
+        fine.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{16 --- Virtualization Management Platforms}
+\begin{ans}
+  \item Now: $3 \times 50 + 8 \times 25 = 350$ min a month $= 70$ hours a year.
+        After: $3 \times 5 + 8 \times 3 = 39$ min a month $= 7.8$ hours a year,
+        plus a 32-hour build. First-year saving
+        $= 70 - (7.8 + 32) = \mathbf{30.2}$ hours; thereafter about 62 hours a
+        year. \textbf{Adopt} --- but note it is marginal in year one, so the
+        case rests on the estate still existing in year two and on the drift and
+        review benefits, which are real but not in this arithmetic.
+  \item \textbf{In the image:} everything identical across guests --- the
+        patched operating system, the agents, the standard configuration.
+        \textbf{In user data:} everything that differs --- hostname, network
+        address, SSH keys, role. Wrong way round: a hostname baked into the
+        image means every clone has the same name and the same SSH host key, so
+        they conflict and tooling cannot distinguish them; a security patch
+        applied through user data is re-applied at every boot for ever, slowing
+        each start and never updating the image everybody else builds from.
+  \item \textbf{Convergent} management --- it is the only strategy available for
+        a system that cannot be rebuilt. Over the year: write a configuration
+        definition that describes it as it currently is, apply it in check-only
+        mode until it reports no differences, then bring it under enforcement;
+        in parallel, build and test a replacement from that definition, and when
+        a rebuild succeeds the machine can move to the immutable regime. The
+        intermediate goal is not automation but \emph{a written description that
+        is known to be accurate}.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{17 --- High Availability, Live Migration and Disaster Recovery}
+\begin{ans}
+  \item The ratio is $400/1{,}200 = \mathbf{0.33}$, so it converges.
+        Round 0: $32{,}000/1{,}200 = 26.7$ s, dirtying $10{,}667$ MB.
+        Round 1: $10{,}667/1{,}200 = 8.9$ s, dirtying $3{,}556$ MB.
+        Round 2: $3{,}556/1{,}200 = 3.0$ s, dirtying $1{,}185$ MB.
+        Subsequent rounds are 1.0 s, 0.3 s and 0.1 s, so the total elapsed time
+        is about $\mathbf{40}$ seconds with a switchover pause of tens of
+        milliseconds.
+  \item Each host believes the \emph{other} has failed, because from its own
+        position the symptom is identical. \textbf{Without fencing}, both
+        restart the other's guests, so the same guest runs twice and both
+        instances write to the same disks: not downtime but corruption, which is
+        worse than the outage HA was bought to prevent. \textbf{Quorum} requires
+        a majority before acting; with two hosts neither side has one, so both
+        stop --- which is why a two-node cluster needs a third vote, a witness,
+        and why fencing (powering the suspect host off through its management
+        controller) must happen before anything is restarted.
+  \item $525{,}600 \times 0.0001 = \mathbf{52.6}$ minutes a year. A 90-minute
+        planned upgrade \textbf{exceeds the entire annual budget on its own},
+        so it is not compatible. Either the upgrade must be performed without
+        downtime --- live migration, rolling updates --- or the availability
+        target must be renegotiated to 99.9\%, which allows 8 h 46 min.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{18 --- Performance Monitoring and Capacity Planning}
+\begin{ans}
+  \item \textbf{\%RDY (or steal time)} and \textbf{balloon / host swap-in}.
+        High \%RDY with no memory activity means the guest is not being given a
+        processor --- host contention, and the fix is right-sizing or
+        rebalancing. Low \%RDY with ballooning or host swap means memory
+        pressure, and the fix is reducing overcommit. Both appear from inside
+        the guest as ``the application is slow'', and the guest's own 35\% is
+        consistent with either.
+  \item $1 - 0.95^{12} = 1 - 0.540 = \mathbf{0.46}$, so about \textbf{46\%} of
+        page loads contain at least one call slower than the p95. The tail is
+        not a rare case for the user; it is close to half of their experience.
+  \item With one host down, seven remain, so the figure is
+        $76\% \times 8/7 = \mathbf{87\%}$. That is above the 85\% ceiling at
+        which reclamation begins, so \textbf{no} --- the cluster should not be
+        reported as healthy. It has no real N+1 today, and the 76\% on the
+        dashboard conceals exactly that.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{19 --- Security in Virtualized Environments}
+\begin{ans}
+  \item Guest compromise: $1/600 = \mathbf{0.17\%}$. VM escape: a host carries
+        $600/25 = 24$ guests, so $24/600 = \mathbf{4\%}$. Management plane:
+        $\mathbf{100\%}$. \textbf{Defend the management plane first} --- it is
+        25 times the reach of an escape, it needs no foothold inside any guest,
+        and it is reachable over the network. Do not forget the storage array,
+        which holds all 600 guests' disks and is usually less hardened.
+  \item Two hardware threads on one core share caches, branch predictors and
+        execution resources almost completely, so a side channel between them
+        cannot be closed by flushing at VM entry --- the two threads are running
+        \emph{simultaneously}, not alternately. Where the neighbours are
+        strictly untrusted, the only reliable answer is to stop using the second
+        thread. It costs \textbf{15--30\% of the host's apparent capacity}.
+        Core scheduling recovers much of that by allowing SMT only between
+        siblings of the same guest.
+  \item You are being asked to grant \textbf{host root, twice over}.
+        \texttt{--privileged} grants all capabilities and disables seccomp and
+        AppArmor; the Docker socket allows the agent to start a new container
+        with the host filesystem mounted and privileges set, which is the same
+        thing by another route. Alternatives: (i) run the agent as a host
+        process under systemd with specific, scoped permissions rather than as a
+        container; (ii) give it a read-only, scoped API credential --- most
+        monitoring needs metrics, not the socket --- and if the vendor cannot
+        work without either, run it where it shares a kernel with nothing you
+        care about.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{20 --- GPU and Accelerator Virtualization}
+\begin{ans}
+  \item The reclamation ladder works because host memory can be recovered
+        gradually: pages are shared, then ballooned, then compressed, then
+        swapped, and each rung degrades performance rather than causing failure.
+        None of that exists for GPU memory. There is no balloon driver, no
+        page sharing between contexts and nowhere cheap to swap to, and a
+        compute kernel that needs 40 GB of working set cannot run in 20 GB more
+        slowly --- the allocation simply fails. GPU memory is a hard allocation,
+        not an elastic one.
+  \item Demand is $6 \times 5 = 30$ GPU-hours a day against 24 available, so
+        \textbf{the card is undersized whatever is done}. \emph{Passthrough}:
+        one group at a time, so five groups queue at any moment and the
+        utilisation is 100\% with permanently unmet demand. \emph{A six-way
+        MIG partition at 12 GB each does not exist} --- profiles are fixed, and
+        on an 80 GB card the choices are seven instances of 10 GB (too small for
+        12 GB), three of 20 GB, two of 40 GB or one of 80 GB. The realistic
+        option is three 20 GB instances, giving three groups concurrent,
+        predictable access and a queue for the other three. Predictability is
+        better than passthrough; capacity is still short.
+  \item \texttt{utilization.gpu} reports the fraction of sampled intervals in
+        which \emph{at least one kernel was resident} --- not how much of the
+        hardware was doing work. A job using a single streaming multiprocessor
+        badly will show 100\% while leaving most of the card idle. Measure
+        \textbf{achieved occupancy}, \textbf{memory bandwidth utilisation} and
+        the SM activity counters --- through Nsight or the DCGM profiling
+        metrics --- which distinguish a busy card from a resident kernel.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{21 --- Confidential Computing and Emerging Hardware}
+\begin{ans}
+  \item Because a hostile hypervisor does more than read memory. Encryption
+        stops it \emph{reading}, and leaves it able to manipulate the mapping:
+        the concrete attack is \textbf{page remapping} --- giving the guest a
+        different physical page than it had, or aliasing two guest addresses to
+        one physical page --- and \textbf{replay}, re-presenting an old
+        encrypted page. The data stays encrypted throughout and the guest is
+        compromised anyway. SEV-SNP's reverse map table and TDX's equivalent add
+        the integrity check that refuses a contradictory mapping.
+  \item They are protected against an operator or an attacker \textbf{reading
+        the guest's memory} --- a memory dump, a cold-boot attack, a hypervisor
+        inspecting pages. They are \textbf{not} protected against the attack the
+        technology exists to stop: an operator who boots a \emph{different}
+        image which requests the key at startup. That image's memory is
+        perfectly encrypted while it exfiltrates the database. Without
+        verifying a measurement, they have bought a performance penalty.
+  \item \textbf{Availability} --- the operator can still stop, detain or destroy
+        the machine, so a compliance argument resting on continuity is not
+        helped at all. \textbf{Side channels} --- timing and cache attacks are
+        not fully addressed, and published attacks target these systems
+        specifically, so a claim of absolute confidentiality is
+        overstated. (Equally acceptable: protection against your own application
+        bugs, which leak data the ordinary way, and protection of data once it
+        leaves the TEE.)
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{22 --- Case Studies in Enterprise and Cloud Virtualization}
+\begin{ans}
+  \item At 1.26 the shortfall was small enough to be absorbed by the
+        \textbf{upper rungs of the reclamation ladder} --- transparent page
+        sharing across 64 similar guests, and ballooning, both of which degrade
+        performance imperceptibly. At 1.57 the shortfall exceeded what the guests
+        could give back, so the hypervisor reached \textbf{host swapping}, which
+        is not a slope but a cliff: guest pages went to disk and latency rose by
+        orders of magnitude. The mechanism is the same ladder; the difference is
+        which rung it reached.
+  \item The cloud \textbf{made existing waste legible} --- on premises an
+        over-allocated guest costs nothing once the host is bought, whereas in
+        the cloud every unit of waste is a line on a monthly invoice. The two
+        items accounting for 75\% were \textbf{lift and shift without
+        right-sizing} (44\%) and \textbf{on-demand pricing} (31\%).
+  \item Because quorum requires a majority, and two nodes can never produce one:
+        a clean split leaves each node with one vote out of two, so neither may
+        act and both stop. A third vote at head office breaks the tie. When the
+        link to the witness failed, the site \textbf{operated in a documented
+        degraded mode with HA disabled} --- accepting that a node failure during
+        that window would not be recovered automatically, rather than risking
+        the split brain that automatic recovery without quorum would invite.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{23 --- The Semester Project}
+\begin{ans}
+  \item Any hypothesis containing a number and capable of being false, for
+        example: \emph{``Migrating our six internal services from virtual
+        machines to Kubernetes reduces mean deployment time from 25 minutes to
+        under 5, without increasing p99 request latency by more than 10\%.''}
+        It names two measurable quantities, states thresholds, and could come
+        out either way --- which the original could not, because no result would
+        have contradicted ``is good for our department''.
+  \item That \textbf{the measurement does not support any claim}: the spread of
+        the three runs (7\%, 24\%, $-2$\%) is far larger than the 9\% mean
+        effect, and one run has the opposite sign. Reporting ``a 9\%
+        improvement'' would be reporting noise. The report should say so. Next:
+        find the source of the variance --- neighbours, caching, burst credits,
+        nesting --- control it, and repeat with enough runs to separate the
+        effect from the spread; and if the variance cannot be controlled, report
+        that as the finding.
+  \item Switch to the captured output shipped in \texttt{code/}. The hypothesis
+        is about \emph{partitioning policy and its effect on predictability},
+        which can be tested against recorded measurements from a partitioned
+        card: the analysis, the percentiles and the comparison with the
+        unpartitioned baseline are all still yours to do. State in the method
+        section that the figures are from captured runs rather than your own
+        hardware, and treat them as comparative. What you must \emph{not} do is
+        quietly change the hypothesis to fit what is available.
+\end{ans}

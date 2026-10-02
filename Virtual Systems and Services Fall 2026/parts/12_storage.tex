@@ -3,7 +3,489 @@
 %=====================================================================
 \locator{4}{Part IV --- Storage, Network and Cloud Virtualization}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} block, file and object storage by the interface
+        each presents, and \textbf{say} which a virtual machine needs.
+  \item \textbf{Explain} what a virtual disk file is, and \textbf{compare} raw
+        and qcow2 by what each gives up.
+  \item \textbf{Compute} a thin-provisioning overcommit ratio and
+        \textbf{predict} when a pool will exhaust.
+  \item \textbf{Describe} copy-on-write snapshots and \textbf{explain} why a
+        long snapshot chain degrades reads.
+  \item \textbf{Explain} how software-defined storage places replicas, and
+        \textbf{state} what it replaces.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{paravirt} (virtio-blk, and why an emulated disk controller costs 80\% of
+its throughput) and \chref{what} (encapsulation --- a running machine as a
+file, which this chapter makes literal). From Operating Systems you need
+filesystems, blocks and the page cache.
+\end{prereq}
+
+\begin{keyterms}
+block storage $\bullet$ file storage $\bullet$ object storage $\bullet$ LUN
+$\bullet$ SAN $\bullet$ NAS $\bullet$ iSCSI $\bullet$ datastore $\bullet$
+virtual disk $\bullet$ raw $\bullet$ qcow2 $\bullet$ VMDK $\bullet$ VHDX
+$\bullet$ cluster $\bullet$ L1/L2 table $\bullet$ thick provisioning $\bullet$
+thin provisioning $\bullet$ over-subscription $\bullet$ copy-on-write $\bullet$
+snapshot chain $\bullet$ backing file $\bullet$ read amplification $\bullet$
+software-defined storage $\bullet$ CRUSH $\bullet$ replica $\bullet$ erasure
+coding $\bullet$ IOPS $\bullet$ discard / TRIM
+\end{keyterms}
+
+\section{Three Interfaces}
+
+``Storage'' names three different contracts, and a great deal of confusion in
+this area comes from using one word for all of them.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.4cm}L{4.4cm}L{3.9cm}L{4.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{What it presents} & \textbf{Spoken over} & \textbf{Used for} \\
+\midrule
+\endhead
+\term{Block} & An array of fixed-size blocks, with no notion of a file. Whoever
+mounts it puts a filesystem on it & SAS, Fibre Channel, \term{iSCSI}, NVMe-oF &
+\textbf{Virtual disks.} A guest expects a disk, so it must be block \\
+\term{File} & A directory tree with files, locking and permissions, shared by
+many clients at once & NFS, SMB & Shared datastores, home directories, anything
+several machines must read together \\
+\term{Object} & Whole immutable objects in a flat namespace, addressed by key
+over HTTP & S3 API, Swift & Images, backups, logs, anything written once and
+read many times \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Why a Guest Must Have Block Storage]
+A guest operating system contains a filesystem driver, and a filesystem driver
+issues block reads and writes. It cannot be given an object store, because it
+has no idea what an HTTP PUT is, and giving it a file share only works if
+something underneath turns that into blocks --- which is exactly what a virtual
+disk on NFS does.
+
+\smallskip
+So the chain is always: guest filesystem $\rightarrow$ block device
+$\rightarrow$ virtual disk $\rightarrow$ whatever the host has. The interesting
+engineering is in the last two steps, and the guest never sees any of it.
+\end{conceptbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  bx/.style={rounded corners=2pt, line width=0.8pt, align=center,
+             minimum width=5.0cm, minimum height=0.56cm, inner sep=3pt,
+             font=\scriptsize},
+  g/.style={bx, draw=secondary, fill=secondary!8, text=secondary!80!black},
+  h/.style={bx, draw=primary, fill=primary!10, text=primary},
+  s/.style={bx, draw=goldhl, fill=goldhl!10, text=goldhl!45!black},
+  p/.style={bx, draw=neutral, fill=neutral!15, text=neutral!40!black},
+  ar/.style={-{Stealth[length=1.8mm]}, primary!55, line width=0.8pt},
+  note/.style={font=\scriptsize\itshape, text=neutral, anchor=west, align=left}
+]
+  \node[g] (a) at (0,4.5) {guest application: \texttt{write("hello")}};
+  \node[g] (b) at (0,3.7) {guest filesystem (ext4)};
+  \node[g] (c) at (0,2.9) {guest block device \texttt{/dev/vda}};
+  \node[h] (d) at (0,2.1) {virtio-blk front end / back end};
+  \node[h] (e) at (0,1.3) {\textbf{the virtual disk file} \ \texttt{vm1.qcow2}};
+  \node[h] (f) at (0,0.5) {host filesystem or block device};
+  \node[s] (g) at (0,-0.3) {LUN, pool or distributed cluster};
+  \node[p] (h) at (0,-1.1) {physical media};
+  \foreach \x/\y in {a/b,b/c,c/d,d/e,e/f,f/g,g/h}{\draw[ar] (\x)--(\y);}
+
+  \node[note] at (2.8,4.5) {knows nothing about any of this};
+  \node[note] at (2.8,2.9) {``a disk'' --- the illusion ends here};
+  \node[note] at (2.8,2.1) {\chref{paravirt}: one exit per batch};
+  \node[note] at (2.8,1.3) {\textbf{a file.} This is the whole chapter,\\
+                            and the encapsulation of \chref{what}};
+  \node[note] at (2.8,-0.3) {thin provisioning, snapshots and\\
+                             replication all happen here};
+
+  \draw[decorate, decoration={brace, amplitude=4pt}, accent, line width=0.8pt]
+        (-2.7,4.85) -- (-2.7,2.6);
+  \node[font=\scriptsize\itshape, text=accent!70!black, anchor=east,
+        align=right] at (-2.9,3.7) {everything above\\the line is\\unmodified};
+\end{tikzpicture}}%
+{The path of one write. Each layer below the virtual disk file can be replaced
+without the guest noticing --- which is what makes migration, snapshots and
+replication possible at all.}{storage-stack}
+
+\section{The Virtual Disk}
+
+A virtual disk is a file on the host that the guest sees as a block device.
+Two formats cover almost everything.
+
+\begin{definitionbox}[Raw and qcow2]
+A \term{raw} disk is a byte-for-byte image: block $n$ of the guest is byte
+$n \times 512$ of the file. There is no metadata and no translation, so it is
+as fast as the host filesystem and can be mounted directly with
+\texttt{losetup}.
+
+\smallskip
+\term{qcow2} --- QEMU copy-on-write, version 2 --- adds an indirection table.
+The file is divided into \term{clusters} (64 KB by default) and a two-level
+L1/L2 table maps guest offsets to cluster locations. That indirection buys
+three things raw cannot do: allocate clusters only when written (thin
+provisioning), keep internal snapshots, and reference a \term{backing file} so
+that several disks share one unwritten base.
+
+\smallskip
+VMware's \term{VMDK} and Microsoft's \term{VHDX} are the same idea with
+different metadata, and \texttt{qemu-img convert} moves between all of them.
+\end{definitionbox}
+
+\begin{alertbox}[Raw is faster, and the gap is smaller than people assume]
+qcow2 must consult its L2 table before reaching data, and must allocate and
+update metadata on first write to each cluster. On a freshly created image with
+small random writes the penalty is real --- tens of per cent.
+
+\smallskip
+Two things shrink it. The L2 tables are cached, so a steady-state workload
+mostly hits the cache; and \texttt{qemu-img create -o preallocation=metadata}
+builds the tables up front, removing the first-write cost. With a modern qcow2
+and a warm cache the difference on typical server workloads is usually in the
+low single digits.
+
+\smallskip
+Use raw when you need every last IOPS and will handle snapshots at the layer
+below. Use qcow2 when you want the features, which is most of the time.
 \end{alertbox}
+
+\section{Thin Provisioning, and How It Fails}
+
+\term{Thick provisioning} allocates all of a disk's space when it is created: a
+500 GB disk takes 500 GB immediately. \term{Thin provisioning} allocates only
+what has been written, so that same disk might occupy 40 GB.
+
+Thin provisioning is the storage equivalent of the memory overcommit in
+\chref{cpumem}, and it has the same shape: usually a large saving, occasionally
+a cliff.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  bar/.style={draw=neutral!55, line width=0.7pt},
+  note/.style={font=\scriptsize\itshape, align=left, anchor=west}
+]
+  % --- the three quantities ---
+  \foreach \y/\lab in {2.6/{provisioned \ \ 20 TB}, 1.7/{physical \ \ 10 TB},
+                       0.8/{written \ \ 7.2 TB}}{
+    \node[font=\scriptsize\bfseries, text=neutral!40!black, anchor=east]
+         at (-0.2,\y) {\lab};}
+
+  \draw[bar, fill=secondary!15] (0,2.4) rectangle (12.0,2.8);
+  \node[font=\tiny, text=secondary!80!black] at (6.0,2.6)
+       {what the 40 guests believe they have};
+
+  \draw[bar, fill=primary!18] (0,1.5) rectangle (6.0,1.9);
+  \node[font=\tiny, text=primary] at (3.0,1.7) {what the pool actually holds};
+
+  \draw[bar, fill=greenhl!30] (0,0.6) rectangle (4.32,1.0);
+  \node[font=\tiny, text=greenhl!40!black] at (2.16,0.8) {what they have used};
+  \draw[bar, fill=goldhl!25] (4.32,0.6) rectangle (6.0,1.0);
+  \node[font=\tiny, text=goldhl!40!black] at (5.16,0.8) {2.8 TB};
+
+  \draw[accent, line width=1.2pt, dashed] (6.0,0.4) -- (6.0,2.95);
+  \node[font=\scriptsize\bfseries, text=accent, anchor=south] at (6.0,3.0)
+       {the cliff};
+
+  \draw[-{Stealth[length=2mm]}, greenhl!70, line width=1pt]
+        (4.32,0.35) -- (5.3,0.35);
+  \node[font=\tiny, text=greenhl!45!black, anchor=west] at (5.35,0.35)
+       {+600 GB a month $\Rightarrow$ 4.6 months};
+
+  \node[note, text=accent!70!black] at (0,-0.5)
+       {\textbf{At the dashed line the pool is full.} Guests do not get a
+        warning: a write fails, the guest filesystem sees an I/O error and\\
+        remounts itself read-only. Databases stop. Several guests do this at
+        once, because they share the pool.};
+\end{tikzpicture}}%
+{Thin provisioning, drawn to scale for the worked example. The gap between the
+second and third bars is the saving; the gap between the first and second is
+the exposure.}{thin-provisioning}
+
+\begin{worked}[When Does This Pool Run Out?]
+A datastore of 10 TB serves 40 guests, each with a 500 GB thin-provisioned
+disk. Measured: mean 180 GB written per guest, growing 15 GB per guest per
+month. Decide whether to act, and when.
+
+\smallskip
+\textbf{Step 1 --- the three quantities.}
+\[ \text{provisioned} = 40 \times 500 = 20{,}000 \text{ GB} = 20 \text{ TB} \]
+\[ \text{physical} = 10 \text{ TB} \qquad
+   \text{written} = 40 \times 180 = 7{,}200 \text{ GB} = 7.2 \text{ TB} \]
+
+\smallskip
+\textbf{Step 2 --- the over-subscription ratio.}
+\[ \sigma = \frac{20}{10} = \mathbf{2.0} \]
+Every guest could legitimately fill its disk, and the pool can honour half of
+them.
+
+\smallskip
+\textbf{Step 3 --- current headroom.}
+\[ 10 - 7.2 = 2.8 \text{ TB free, or } 72\% \text{ of the pool consumed} \]
+
+\smallskip
+\textbf{Step 4 --- time to exhaustion at the measured rate.}
+\[ 40 \times 15 = 600 \text{ GB per month} \qquad
+   \frac{2{,}800}{600} = \mathbf{4.6 \text{ months}} \]
+
+\smallskip
+\textbf{Step 5 --- but that is the optimistic figure.} Three things consume the
+pool faster than the trend line:
+\begin{tight}
+  \item \textbf{Snapshots.} Each one holds the blocks its parent has since
+        overwritten. A forgotten snapshot on a busy database can grow by its
+        whole working set.
+  \item \textbf{Deleted files do not return space.} A guest deleting 50 GB
+        frees nothing in the pool unless \texttt{discard}/TRIM is enabled all
+        the way down. Most estates discover this configuration only here.
+  \item \textbf{Correlation.} A patch cycle writes to every guest in the same
+        hour, so consumption arrives in steps, not a slope.
+\end{tight}
+
+\smallskip
+\textbf{Step 6 --- what happens at 100\%.} Not a slowdown. The pool cannot
+satisfy a write; the guest receives an I/O error; its filesystem remounts
+read-only to protect itself. \emph{Many guests hit this within seconds of each
+other}, because they share the pool --- so the failure is simultaneous and
+estate-wide, and recovery requires space that by definition is not there.
+
+\smallskip
+\textbf{Step 7 --- the recommendation.} Act now, not in four months.
+\begin{tight}
+  \item Alert at 80\% of the pool (2 TB free), which at the measured rate is
+        about six weeks away. Alerting at 95\% leaves no time to buy anything.
+  \item Enable \texttt{discard} end to end and reclaim; on a four-year-old
+        estate this commonly returns 10--20\%.
+  \item Report any snapshot older than seven days, every day.
+  \item Add capacity, or reduce $\sigma$ by shrinking the 500 GB disks nobody
+        asked for.
+\end{tight}
+\end{worked}
+
+\section{Snapshots and Copy-on-Write}
+
+A snapshot freezes the disk as it is now. The implementation is the obvious
+one: stop writing to the current file and make it read-only, then direct all
+new writes to a fresh \term{overlay} file that records only what has changed.
+A read checks the overlay first and falls back to the frozen file beneath.
+
+This is \term{copy-on-write}, and it is the same mechanism as the overlayfs of
+\chref{containers}, one layer down.
+
+\begin{conceptbox}[Why a Long Chain Is Slow, and Why It Is Dangerous]
+Each snapshot adds a layer. A read must check each overlay in turn until it
+finds the block, so a chain of twelve snapshots can require twelve lookups
+where one would do --- \term{read amplification}. Writes are worse: the first
+write to a block must copy it up from wherever it currently lives.
+
+\smallskip
+The danger is worse than the latency. Every file in the chain is required: lose
+or corrupt one and every snapshot above it is unreadable. A guest with a
+six-month chain has six months of fragile dependency, and the usual
+discovery is that nobody knows which snapshots are still needed.
+
+\smallskip
+\textbf{A snapshot is not a backup.} It lives on the same storage as the
+original, so it does not survive the array failing, the pool filling, or the
+ransomware that encrypted both. Keep chains short, delete snapshots on a
+schedule, and keep real backups elsewhere. \chref{migration} covers what a real
+backup is.
+\end{conceptbox}
+
+\section{Software-Defined Storage}
+
+The traditional answer to shared storage was a \term{SAN}: a dedicated array,
+dual controllers, a Fibre Channel fabric, and a price to match. The
+software-defined answer is to put ordinary disks in the servers you already
+have and let software make them one pool.
+
+\term{Ceph} is the open example. Data is split into objects; each object's
+placement is computed by \term{CRUSH}, a deterministic function of the object
+name and a map of the cluster's failure domains. There is no lookup table and
+no metadata server in the data path --- any client can compute where a block
+lives, which is what lets it scale to thousands of nodes. VMware's \term{vSAN}
+does the same job inside a vSphere cluster.
+
+\begin{conceptbox}[Replication or Erasure Coding: a Real Choice]
+Both survive failures; they trade capacity against CPU and latency.
+
+\smallskip
+\textbf{Three-way replication} keeps three copies. Usable capacity is a third
+of raw; a read is served by one disk; recovery is a copy. Simple and fast.
+
+\smallskip
+\textbf{Erasure coding} --- say 4 data plus 2 parity --- stores 6 chunks for 4
+chunks of data. Usable capacity is $4/6 = 67\%$ of raw against replication's
+33\%, so a petabyte of raw yields 670 TB instead of 330 TB. The cost is that
+every write computes parity and every degraded read reconstructs it, so
+latency and CPU both rise.
+
+\smallskip
+The usual split: replication for virtual machine disks, where latency matters
+and the data is active; erasure coding for backups, archives and object
+storage, where capacity dominates and nothing is latency-sensitive. Putting a
+busy database on erasure-coded storage is a common and expensive mistake.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Monitoring provisioned capacity instead of written capacity.}
+        The first tells you nothing about when you run out. Alert on the pool's
+        free space, at 80\%.
+  \item \textbf{Treating a snapshot as a backup.} Same storage, same failure,
+        same ransomware.
+  \item \textbf{Leaving snapshots behind after an upgrade.} The chain grows, the
+        pool fills and reads slow down. Report anything older than a week.
+  \item \textbf{Assuming deleting files inside a guest frees pool space.} It
+        does not without \texttt{discard} enabled end to end, which is off by
+        default in many stacks.
+  \item \textbf{Thin-provisioning the pool \emph{and} overcommitting memory
+        \emph{and} oversubscribing CPU on the same host.} Each is defensible
+        alone; together they fail at the same moment, because the event that
+        triggers one triggers the others.
+  \item \textbf{Erasure-coding a database.} Capacity efficiency bought with
+        write latency, on the workload least able to pay it.
+  \item \textbf{Running a guest's disk on a filesystem that is itself
+        copy-on-write, with qcow2 on top.} Two layers of copy-on-write
+        fragment each other. Pick one.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Thin Pools, Snapshots and the Cliff]
+Builds a small thin pool with LVM, fills it, and watches a guest filesystem go
+read-only --- the worked example's step 6, at a safe scale. Expect forty
+minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch12_storage.sh -- thin provisioning, snapshots and exhaustion.
+set -euo pipefail
+
+# --- 1. Virtual disk formats: what they cost on disk. ------------------
+cd /tmp
+qemu-img create -f raw   plain.raw  10G
+qemu-img create -f qcow2 thin.qcow2 10G
+ls -lh plain.raw thin.qcow2          # apparent size
+du -h  plain.raw thin.qcow2          # actual size: this is the point
+qemu-img info thin.qcow2 | head -6
+
+# --- 2. A backing file: many disks, one shared base. ------------------
+qemu-img create -f qcow2 -b thin.qcow2 -F qcow2 child1.qcow2
+qemu-img create -f qcow2 -b thin.qcow2 -F qcow2 child2.qcow2
+du -h child1.qcow2 child2.qcow2      # nearly nothing until written
+qemu-img info child1.qcow2 | grep -i backing
+
+# --- 3. Build a thin pool, deliberately over-subscribed. --------------
+sudo truncate -s 2G /tmp/pv.img
+LOOP=$(sudo losetup --find --show /tmp/pv.img)
+sudo pvcreate "$LOOP" ; sudo vgcreate vsvg "$LOOP"
+sudo lvcreate -L 1.5G --thinpool vspool vsvg
+# Four 1 GB volumes out of a 1.5 GB pool: sigma = 2.7
+for i in 1 2 3 4; do
+  sudo lvcreate -V 1G --thin -n "vol$i" vsvg/vspool
+done
+sudo lvs vsvg -o lv_name,lv_size,data_percent
+
+# --- 4. Put filesystems on them and write a little. -------------------
+for i in 1 2 3 4; do
+  sudo mkfs.ext4 -q "/dev/vsvg/vol$i"
+  sudo mkdir -p "/mnt/v$i" && sudo mount "/dev/vsvg/vol$i" "/mnt/v$i"
+  sudo dd if=/dev/urandom of="/mnt/v$i/data" bs=1M count=200 status=none
+done
+sudo lvs vsvg -o lv_name,data_percent    # pool filling up
+
+# --- 5. Now walk off the cliff. ---------------------------------------
+# Keep writing until the pool cannot satisfy a write.
+sudo dd if=/dev/urandom of=/mnt/v1/more bs=1M count=900 || \
+  echo "write failed -- the pool is full"
+dmesg | tail -5 | grep -iE 'thin|read-only|I/O error' || true
+mount | grep -E '/mnt/v[0-9]'            # look for "ro" on several at once
+
+# --- 6. Snapshots and read amplification. -----------------------------
+cd /tmp
+qemu-img create -f qcow2 base.qcow2 1G
+sudo modprobe nbd max_part=8 || true
+for n in $(seq 1 8); do
+  qemu-img create -f qcow2 -b "$( [ $n -eq 1 ] && echo base.qcow2 \
+    || echo "snap$((n-1)).qcow2" )" -F qcow2 "snap$n.qcow2"
+done
+qemu-img info --backing-chain snap8.qcow2 | grep -c '^image:'
+# Eight files, every one of which is required to read the newest.
+
+# --- 7. Reclaim: discard is what returns space. -----------------------
+sudo fstrim -v /mnt/v2 || echo "discard not supported on this stack"
+sudo lvs vsvg -o lv_name,data_percent
+
+# --- 8. Tear down. ----------------------------------------------------
+for i in 1 2 3 4; do sudo umount "/mnt/v$i" || true; done
+sudo lvremove -f vsvg || true ; sudo vgremove -f vsvg || true
+sudo pvremove -f "$LOOP" || true ; sudo losetup -d "$LOOP" || true
+rm -f /tmp/{plain.raw,thin.qcow2,child*.qcow2,base.qcow2,snap*.qcow2,pv.img}
+\end{lstlisting}
+
+\textbf{What to notice.} Step 5 is the part worth sitting with. The failure is
+not gradual and it is not confined to the volume that caused it: several
+filesystems go read-only together, because the resource they were quietly
+sharing ran out. That is the whole argument for alerting at 80\%.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A pool of 40 TB serves 120 guests with 800 GB disks each, of which a
+        mean 240 GB is written, growing 20 GB per guest per month. Give the
+        over-subscription ratio, the headroom and the time to exhaustion. At
+        what free-space figure would you alert, and why?
+  \item A guest deletes 300 GB of files and the storage team reports no change
+        in pool usage. Explain why, and give the setting that changes it.
+  \item Why is a chain of twelve snapshots both slow to read and dangerous to
+        keep?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Block, file and object are three different contracts. A guest needs
+        block, because its filesystem driver issues block requests.
+  \item A virtual disk is a file the guest sees as a device. raw is a
+        byte-for-byte image; qcow2 adds an L1/L2 indirection that buys thin
+        provisioning, snapshots and backing files.
+  \item Thin provisioning is memory overcommit for disks: usually a large
+        saving, occasionally a cliff. Monitor written capacity, never
+        provisioned, and alert at 80\%.
+  \item Pool exhaustion is not a slowdown. Writes fail, guest filesystems go
+        read-only, and they do it together because they share the pool.
+  \item Snapshots are copy-on-write overlays. Long chains amplify reads and
+        make every file in the chain load-bearing. A snapshot is not a backup.
+  \item Software-defined storage computes placement rather than looking it up.
+        Replication for virtual disks, erasure coding for archives.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A guest operating system requires its storage to be
+        presented as: (a)~object storage; (b)~block storage; (c)~an NFS share;
+        (d)~any of these.
+  \item \textbf{(MCQ)} When a thin pool reaches 100\% of physical capacity:
+        (a)~writes slow down; (b)~the oldest snapshots are deleted; (c)~writes
+        fail and guest filesystems typically remount read-only; (d)~the
+        hypervisor migrates guests away.
+  \item \textbf{(Short)} State what qcow2's indirection table buys over raw,
+        and what it costs.
+  \item \textbf{(Short)} Explain read amplification in a snapshot chain, and
+        why every file in the chain matters.
+  \item \textbf{(Short)} Give the rule for choosing between replication and
+        erasure coding, with the reason.
+  \item \textbf{(Applied)} An estate thin-provisions storage at
+        $\sigma = 2.4$, overcommits memory at 1.3 and oversubscribes CPU at
+        2.0. Explain why these three are more dangerous together than
+        separately, give a scenario that triggers all three at once, and say
+        what you would change first.
+  \item \textbf{(Applied)} You inherit an estate with 400 guests, 1{,}900
+        snapshots and no snapshot policy. Write the plan you would follow to
+        get to a safe state, in order, saying what you would measure before
+        deleting anything.
+\end{reviewq}

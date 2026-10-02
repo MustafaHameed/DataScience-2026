@@ -3,7 +3,515 @@
 %=====================================================================
 \locator{3}{Part III --- Containers and Lightweight Virtualization}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what Docker added to the kernel features of
+        \chref{containers}, and why that --- rather than isolation --- is what
+        changed the industry.
+  \item \textbf{Describe} an image as a stack of content-addressed layers plus
+        a manifest, and \textbf{explain} what a digest guarantees.
+  \item \textbf{Name} the components of the OCI runtime stack and \textbf{say}
+        what each one does.
+  \item \textbf{Order} the instructions in a Dockerfile so that the build cache
+        is not needlessly invalidated, and \textbf{quantify} what the wrong
+        order costs.
+  \item \textbf{Write} a Dockerfile that is multi-stage, pinned and non-root,
+        and \textbf{justify} each of those three properties.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{containers} entire --- namespaces, cgroups and especially overlayfs,
+since an image is layers and a layer is an overlayfs directory. The lab in that
+chapter built a container by hand; this one is about everything that was
+missing from it.
+\end{prereq}
+
+\begin{keyterms}
+image $\bullet$ layer $\bullet$ manifest $\bullet$ image index $\bullet$ digest
+$\bullet$ content addressing $\bullet$ tag $\bullet$ registry $\bullet$
+Dockerfile $\bullet$ build cache $\bullet$ cache invalidation $\bullet$
+multi-stage build $\bullet$ distroless $\bullet$ OCI image specification
+$\bullet$ OCI runtime specification $\bullet$ containerd $\bullet$ runc
+$\bullet$ shim $\bullet$ BuildKit $\bullet$ SBOM $\bullet$ volume
+\end{keyterms}
+
+\section{What Docker Actually Added}
+
+Everything in \chref{containers} existed before Docker. Namespaces had been in
+Linux for a decade, cgroups for six years, and LXC had been packaging both
+since 2008. Google was running billions of containers a week.
+
+Docker's 2013 release added almost nothing to the kernel. What it added was a
+\emph{format} and a \emph{workflow}:
+
+\begin{tight}
+  \item a declarative build file producing a reproducible artefact;
+  \item an image format that is layered, so sharing and incremental transfer
+        are free;
+  \item a registry protocol, so an image could be published and pulled by
+        name;
+  \item one command to run any of it.
+\end{tight}
+
+\begin{conceptbox}[The Problem It Solved Was Not Isolation]
+LXC already isolated things perfectly well. What it did not do was let a
+developer hand an operator something that would behave identically on both
+machines.
+
+\smallskip
+The before-and-after is the whole story. Before: a wiki page saying ``install
+Python 3.9, these fourteen packages, this version of libxml2, set these three
+environment variables'' --- a procedure that worked on the author's laptop and
+drifted everywhere else. After: a file that \emph{is} the procedure, executed
+in a defined base, producing an artefact identified by a hash that either
+matches or does not.
+
+\smallskip
+This is \term{encapsulation} --- the third motive of \chref{what} --- applied
+to an application rather than a machine, and it is why the format won against
+better-engineered rivals. The density of \chref{containers} was discovered to
+be a bonus afterwards.
+\end{conceptbox}
+
+\section{Images, Layers and Digests}
+
+An image is not a file. It is a \term{manifest} --- a small JSON document ---
+listing a configuration object and an ordered set of layers, each referenced by
+the SHA-256 hash of its contents.
+
+\begin{definitionbox}[Content Addressing, Digest and Tag]
+Every layer, configuration and manifest is identified by a \term{digest}: the
+SHA-256 of the bytes themselves. Content addressing has three consequences the
+whole ecosystem rests on:
+
+\begin{tight}
+  \item \textbf{Deduplication is automatic.} Two images sharing a base share
+        its layer digest, so it is stored and transferred once.
+  \item \textbf{Integrity is free.} If the bytes are intact the digest matches;
+        if anything changed, it does not.
+  \item \textbf{Identity is exact.} \texttt{ubuntu@sha256:9b8c\ldots} is one
+        specific image, for ever.
+\end{tight}
+
+\smallskip
+A \term{tag} --- \texttt{ubuntu:22.04} --- is not identity. It is a mutable
+pointer that the publisher may move whenever they like, and routinely does.
+Two builds a week apart from the same tag may use different bytes, which is
+precisely the reproducibility problem Docker was invented to solve, reappearing
+one level up. Pin digests where reproducibility matters.
+\end{definitionbox}
+
+\section{The OCI Stack}
+
+By 2015 the format mattered enough that it needed an owner who was not a
+company. Docker donated it, and the \term{Open Container Initiative} now
+maintains three specifications --- image, runtime and distribution --- which is
+why containers built with Docker run under containerd, CRI-O, Podman and
+Kubernetes without anyone negotiating.
+
+The implementation split up at the same time.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  bx/.style={rounded corners=2pt, line width=0.9pt, align=center,
+             minimum width=4.4cm, minimum height=0.62cm, inner sep=3pt,
+             font=\scriptsize},
+  u/.style={bx, draw=secondary, fill=secondary!8, text=secondary!80!black},
+  d/.style={bx, draw=primary, fill=primary!10, text=primary},
+  k/.style={bx, draw=neutral, fill=neutral!15, text=neutral!40!black},
+  note/.style={font=\scriptsize\itshape, text=neutral, anchor=west, align=left},
+  ar/.style={-{Stealth[length=1.8mm]}, primary!60, line width=0.8pt}
+]
+  \node[u] (cli) at (0,4.2)  {\texttt{docker} CLI \quad / \quad
+                              \texttt{kubectl}};
+  \node[d] (dd)  at (0,3.3)  {\texttt{dockerd} \quad / \quad kubelet};
+  \node[d] (cd)  at (0,2.4)  {\textbf{containerd}};
+  \node[d] (sh)  at (0,1.5)  {\texttt{containerd-shim} \ \ (one per container)};
+  \node[d] (rc)  at (0,0.6)  {\textbf{runc}};
+  \node[k] (kn)  at (0,-0.3) {the Linux kernel};
+  \node[k, draw=greenhl, fill=greenhl!10, text=greenhl!45!black] (ns)
+       at (0,-1.2) {namespaces $\bullet$ cgroups $\bullet$ overlayfs};
+
+  \foreach \a/\b in {cli/dd, dd/cd, cd/sh, sh/rc, rc/kn, kn/ns}{
+    \draw[ar] (\a) -- (\b);}
+
+  \node[note] at (2.5,4.2) {what you type};
+  \node[note] at (2.5,3.3) {API, build, networking,\\volumes};
+  \node[note] at (2.5,2.4) {images, snapshots, the\\lifecycle. Donated to the
+                            CNCF\\in 2017 and now the industry's\\default};
+  \node[note] at (2.5,1.5) {keeps the container alive when\\the daemon
+                            restarts --- which is\\why upgrading Docker no
+                            longer\\kills what is running};
+  \node[note] at (2.5,0.6) {creates the namespaces and\\cgroups, then
+                            \texttt{execve}.\\Reference implementation of the\\
+                            OCI runtime spec. Then it \emph{exits}};
+  \node[note] at (2.5,-1.2) {\chref{containers}'s lab, reached\\by five
+                             layers of tooling};
+
+  \node[rounded corners=3pt, draw=accent!60, fill=accent!5,
+        text=accent!70!black, font=\scriptsize, align=left, inner sep=4pt,
+        text width=7.4cm] at (0.4,-2.6)
+       {\textbf{runc does not stay running.} It sets the container up and
+        replaces itself with the application, so the process you see is yours,
+        not a wrapper's. Everything above the shim can be restarted or
+        replaced without touching a running container --- which is why
+        Kubernetes could drop Docker in 2022 and nobody's workloads
+        noticed.};
+\end{tikzpicture}}%
+{The runtime stack. Each layer was split out of the one above it as the
+ecosystem matured; the bottom two rows are the only ones that are not
+replaceable.}{oci-stack}
+
+\begin{alertbox}[``Kubernetes deprecated Docker'' was widely misread]
+In 2022 Kubernetes removed \texttt{dockershim}, the adapter that let the
+kubelet drive \texttt{dockerd}. Headlines announced that Docker was dead, and a
+great many teams rebuilt images they did not need to rebuild.
+
+\smallskip
+What was removed was one \emph{adapter}. Kubernetes now talks to containerd
+directly --- which is what \texttt{dockerd} was talking to anyway, so a layer
+was deleted rather than a capability. Images built with Docker are OCI images
+and run unchanged, because that is what standardising the format was for.
+
+\smallskip
+Worth remembering as a general lesson: in this ecosystem the \emph{format} is
+the durable thing and the tooling is not.
 \end{alertbox}
+
+\section{The Build Cache, and the Mistake Everyone Makes}
+
+Each instruction in a Dockerfile produces a layer. On rebuild, Docker reuses a
+cached layer if the instruction and all the layers beneath it are unchanged ---
+and crucially, once one layer is invalidated, \emph{every layer above it is
+rebuilt too}.
+
+That single rule decides whether a build takes four seconds or ninety-five, and
+almost every slow build in existence gets it wrong the same way.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  ins/.style={rounded corners=2pt, line width=0.8pt, align=left,
+              minimum width=5.6cm, minimum height=0.54cm, inner sep=4pt,
+              font=\scriptsize\ttfamily},
+  hit/.style={ins, draw=greenhl, fill=greenhl!10, text=greenhl!40!black},
+  miss/.style={ins, draw=accent, fill=accent!10, text=accent!65!black},
+  hd/.style={font=\scriptsize\bfseries, align=center},
+  tm/.style={rounded corners=2pt, draw=neutral!55, fill=white,
+             text=neutral!40!black, font=\scriptsize, minimum width=1.5cm,
+             minimum height=0.54cm}
+]
+  % ---- wrong ----
+  \node[hd, text=accent!70!black] at (0,3.1) {Wrong order};
+  \node[hit]  at (0,2.4)  {FROM python:3.12-slim};
+  \node[miss] at (0,1.78) {COPY . /app};
+  \node[miss] at (0,1.16) {RUN pip install -r req.txt};
+  \node[miss] at (0,0.54) {CMD ["python","main.py"]};
+  \node[tm] at (3.75,2.4)  {cached};
+  \node[tm, draw=accent, text=accent!65!black] at (3.75,1.78) {0.2 s};
+  \node[tm, draw=accent, text=accent!65!black] at (3.75,1.16) {94 s};
+  \node[tm, draw=accent, text=accent!65!black] at (3.75,0.54) {0.1 s};
+  \node[font=\scriptsize\itshape, text=accent!70!black, align=center]
+       at (1.2,-0.15) {one character of code changes\\
+                       $\Rightarrow$ every dependency reinstalled};
+
+  % ---- right ----
+  \node[hd, text=greenhl!45!black] at (9.4,3.1) {Right order};
+  \node[hit]  at (9.4,2.4)  {FROM python:3.12-slim};
+  \node[hit]  at (9.4,1.78) {COPY req.txt /app/};
+  \node[hit]  at (9.4,1.16) {RUN pip install -r req.txt};
+  \node[miss] at (9.4,0.54) {COPY . /app};
+  \node[tm] at (13.15,2.4)  {cached};
+  \node[tm] at (13.15,1.78) {cached};
+  \node[tm] at (13.15,1.16) {cached};
+  \node[tm, draw=accent, text=accent!65!black] at (13.15,0.54) {0.3 s};
+  \node[font=\scriptsize\itshape, text=greenhl!45!black, align=center]
+       at (10.6,-0.15) {the same change\\
+                        $\Rightarrow$ one 2 MB layer rebuilt};
+
+  \node[rounded corners=3pt, draw=primary!50, fill=primary!5, text=primary,
+        font=\scriptsize, align=center, inner sep=4pt, text width=12.2cm]
+       at (6.7,-1.3)
+       {The rule: \textbf{put what changes least at the bottom.} Dependencies
+        change weekly, source code changes hourly --- so the dependency list is
+        copied and installed \emph{before} the source is copied in.};
+\end{tikzpicture}}%
+{The same four instructions in two orders. Nothing else differs, and the
+rebuild costs differ by a factor of 300.}{build-cache}
+
+\begin{worked}[What the Wrong Order Costs a Team]
+A team of six rebuilds this image about 30 times a day between them. Measure
+the cost of the left-hand order against the right-hand one.
+
+\smallskip
+\textbf{Step 1 --- per-build time.} From the figure:
+\[ \text{wrong} = 0.2 + 94 + 0.1 = 94.3 \text{ s} \qquad
+   \text{right} = 0.3 \text{ s} \]
+
+\smallskip
+\textbf{Step 2 --- per day.}
+\[ 30 \times 94.3 = 2{,}829 \text{ s} = \mathbf{47 \text{ minutes}} \qquad
+   30 \times 0.3 = 9 \text{ s} \]
+
+\smallskip
+\textbf{Step 3 --- the bytes pushed.} A rebuilt layer must be uploaded; a
+cached one need not. The dependency layer is 180 MB and the application layer
+is 2 MB:
+\[ \text{wrong} = 30 \times 182 = 5{,}460 \text{ MB} = \mathbf{5.3 \text{ GB
+   a day}} \]
+\[ \text{right} = 30 \times 2 = 60 \text{ MB a day} \]
+
+\smallskip
+\textbf{Step 4 --- and the pulls.} Every deployment target pulls what changed.
+With 12 nodes and 30 deployments:
+\[ \text{wrong} = 12 \times 30 \times 182 \text{ MB} = \mathbf{65 \text{ GB a
+   day}} \qquad \text{right} = 12 \times 30 \times 2 = 0.7 \text{ GB} \]
+
+\smallskip
+\textbf{Step 5 --- read the result.} Reordering two lines saves 47 minutes of
+engineer waiting, 5.3 GB of upload and 64 GB of download, every day. Over a
+working year that is roughly 190 hours and 17 TB.
+
+\smallskip
+\textbf{What the arithmetic does not capture.} The 47 minutes are not spread
+evenly: they are 94 seconds at a time, which is exactly long enough to lose
+concentration and not long enough to do anything else. That cost is larger than
+the number, and it is the real argument for getting the order right.
+\end{worked}
+
+\section{A Dockerfile That Holds Up}
+
+Three properties, each with a reason.
+
+\begin{conceptbox}[Multi-Stage: Build Tools Are Not Runtime Dependencies]
+A compiler, a package manager and a full toolchain are needed to \emph{build}
+and are liabilities at \emph{run time}: they are weight, and they are attack
+surface for anyone who gets a shell.
+
+\smallskip
+A \term{multi-stage build} uses one stage with the toolchain and a second
+containing only the artefact:
+
+\smallskip
+\begin{tight}
+  \item A Go service: builder stage with the Go toolchain, about 900 MB; final
+        stage \texttt{FROM scratch} with one static binary, about 15 MB. A
+        \textbf{60:1} reduction.
+  \item A Python service: compilers for the C extensions in the builder stage;
+        only the slim base and the installed packages in the final one.
+        Typically 1.1 GB down to 210 MB.
+\end{tight}
+
+\smallskip
+\term{Distroless} images go further --- a language runtime and no shell, no
+package manager, no \texttt{ls}. An attacker with code execution has nothing to
+run. The cost is that you cannot \texttt{exec} into it to debug, which is a
+real operational trade and not everyone's.
+\end{conceptbox}
+
+\begin{alertbox}[Pin the base, and know what \texttt{:latest} promises]
+\texttt{FROM ubuntu:latest} promises nothing. It resolves to whatever the
+publisher last pushed, so a build that worked this morning may not this
+afternoon, and the failure appears in CI with no change in your repository.
+
+\smallskip
+\texttt{FROM ubuntu:22.04} is better and is still a moving pointer --- the tag
+is republished with security updates, which you usually want.
+\texttt{FROM ubuntu@sha256:9b8c\ldots} is exact and never changes, which means
+you must update it deliberately to get security fixes.
+
+\smallskip
+The usual resolution: pin digests in production manifests, and run an automated
+job that proposes digest updates as reviewable changes. Choosing between
+reproducibility and patching by accident is the only wrong answer.
+\end{alertbox}
+
+\begin{conceptbox}[Do Not Run as Root]
+A container process running as UID 0 is, without a user namespace
+(\chref{containers}), really root --- and a kernel bug then yields the host
+rather than a container.
+
+\smallskip
+\texttt{USER} in the Dockerfile costs nothing and removes the whole class.
+Combine it with a read-only root filesystem and dropped capabilities at run
+time, and an attacker who achieves code execution has an unprivileged process
+in a filesystem it cannot write. \chref{security} covers the rest of the
+hardening set.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Copying source before installing dependencies.} The worked
+        example above. Reordering two lines is the single highest-return
+        change available in most repositories.
+  \item \textbf{Running \texttt{apt-get update} in a separate layer from
+        \texttt{install}.} The update layer caches, so a later install can
+        fetch a package list months out of date. Always one \texttt{RUN}.
+  \item \textbf{Leaving secrets in a build.} Deleting a file in a later layer
+        does not remove it --- the earlier layer still contains it, and anyone
+        who pulls the image can read it. Use build secrets or a mount.
+  \item \textbf{Treating a tag as an identity.} It is a mutable pointer. Only
+        a digest identifies an image.
+  \item \textbf{Storing data in the container.} The writable layer dies with
+        the container and copy-up is slow. Use a volume.
+  \item \textbf{Equating image size with security.} A 50 MB image with an
+        unpatched library is worse than a 400 MB patched one. Size reduces
+        attack surface and transfer cost; it does not replace patching.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Measuring the Build Cache, and Fixing It]
+Builds the same application both ways and measures the difference; then makes
+it multi-stage and non-root. Needs Docker. Expect thirty minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch09_build.sh -- the build cache, measured, then a sound image.
+set -euo pipefail
+mkdir -p ~/vsapp && cd ~/vsapp
+
+# --- 1. A small application with real dependencies. --------------------
+cat > requirements.txt <<'REQ'
+flask==3.0.3
+requests==2.32.3
+REQ
+cat > main.py <<'PY'
+from flask import Flask
+app = Flask(__name__)
+
+@app.route("/")
+def index():
+    return "virtual systems and services\n"
+PY
+
+# --- 2. The wrong order: source copied before dependencies. -----------
+cat > Dockerfile.wrong <<'DF'
+FROM python:3.12-slim
+WORKDIR /app
+COPY . /app
+RUN pip install --no-cache-dir -r requirements.txt
+CMD ["python", "-m", "flask", "run", "--host=0.0.0.0"]
+DF
+docker build -q -f Dockerfile.wrong -t vsapp:wrong . > /dev/null
+
+# --- 3. The right order: dependency list first, then source. ----------
+cat > Dockerfile.right <<'DF'
+FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . /app
+CMD ["python", "-m", "flask", "run", "--host=0.0.0.0"]
+DF
+docker build -q -f Dockerfile.right -t vsapp:right . > /dev/null
+
+# --- 4. Change one character of source and time both rebuilds. --------
+sed -i 's/services/services!/' main.py
+echo "=== wrong order ===" ; time docker build -q -f Dockerfile.wrong \
+  -t vsapp:wrong . > /dev/null
+echo "=== right order ===" ; time docker build -q -f Dockerfile.right \
+  -t vsapp:right . > /dev/null
+
+# --- 5. Look at the layers, and at what is shared. --------------------
+docker history vsapp:right --format '{{.Size}}\t{{.CreatedBy}}' | head -8
+docker image inspect vsapp:right \
+  --format '{{json .RootFS.Layers}}' | tr ',' '\n'
+# Both images share the python:3.12-slim layers: content addressing at work.
+
+# --- 6. Multi-stage and non-root. -------------------------------------
+cat > Dockerfile.good <<'DF'
+FROM python:3.12-slim AS build
+WORKDIR /app
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir --target=/deps -r requirements.txt
+
+FROM python:3.12-slim
+RUN useradd --create-home --uid 10001 app
+WORKDIR /app
+COPY --from=build /deps /deps
+COPY --chown=app:app . /app
+ENV PYTHONPATH=/deps
+USER app
+CMD ["python", "-m", "flask", "run", "--host=0.0.0.0"]
+DF
+docker build -q -f Dockerfile.good -t vsapp:good . > /dev/null
+docker images vsapp --format '{{.Tag}}\t{{.Size}}'
+
+# --- 7. Prove it is not running as root, and cannot write its root. ---
+docker run --rm vsapp:good id
+docker run --rm --read-only vsapp:good sh -c 'touch /nope' 2>&1 | tail -1
+
+# --- 8. A secret deleted in a later layer is still in the image. ------
+printf 'FROM alpine\nRUN echo hunter2 > /k && rm /k\n' > Dockerfile.leak
+docker build -q -f Dockerfile.leak -t vsapp:leak . > /dev/null
+docker save vsapp:leak | tar -xO 2>/dev/null | grep -ac hunter2 || \
+  echo "search the layer tarballs: the secret is in one of them"
+
+# --- 9. Tear down. ----------------------------------------------------
+docker rmi -f vsapp:wrong vsapp:right vsapp:good vsapp:leak || true
+\end{lstlisting}
+
+\textbf{What to notice.} Step 4 gives you the worked example's two numbers on
+your own machine. Step 8 is the one worth remembering: \texttt{rm} in a
+Dockerfile removes a file from the \emph{view}, not from the image, and
+everything you ever put in a layer is still there for whoever pulls it.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item An image is built from \texttt{FROM node:20} on Monday and again on
+        Friday with no repository changes, and the two behave differently.
+        Explain how, and give the change that prevents it.
+  \item A Dockerfile copies a private key, uses it to clone a repository, then
+        deletes it in the same \texttt{RUN}. Is the key in the image? What if
+        the delete is a separate \texttt{RUN}?
+  \item A team's CI rebuilds a 1.2 GB image on every commit and deploys it to
+        40 nodes. Using the worked example's method, estimate what reordering
+        the Dockerfile would save per day in transfer alone, stating your
+        assumptions.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Docker added a build file, a layered image format, a registry protocol
+        and one command --- not isolation, which already existed. The problem
+        it solved was reproducible delivery.
+  \item An image is a manifest plus content-addressed layers. A digest is
+        identity and integrity; a tag is a mutable pointer and neither.
+  \item The OCI specifications made the format portable, which is why the
+        tooling could be replaced underneath it without breaking anything.
+  \item The runtime stack is CLI, daemon, containerd, shim, runc, kernel. runc
+        exits after setting the container up; the shim is why restarting the
+        daemon does not kill running containers.
+  \item A cache miss invalidates every layer above it. Put what changes least
+        at the bottom: dependency lists before source. The wrong order cost
+        the worked example's team 47 minutes and 70 GB a day.
+  \item Multi-stage, pinned and non-root are the three properties a Dockerfile
+        should have. A file deleted in a later layer is still in the image.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A digest identifies an image by: (a)~its tag; (b)~the
+        SHA-256 of its contents; (c)~its creation date; (d)~its registry URL.
+  \item \textbf{(MCQ)} \texttt{runc}, after setting up a container:
+        (a)~supervises it until exit; (b)~exits, having replaced itself with
+        the application; (c)~becomes the container's PID 1 wrapper;
+        (d)~restarts the daemon.
+  \item \textbf{(Short)} State the build-cache rule in one sentence, and give
+        the ordering principle that follows from it.
+  \item \textbf{(Short)} Explain why a secret removed in a later layer is still
+        recoverable from the image.
+  \item \textbf{(Short)} Give the two reasons a multi-stage build is preferred,
+        and the operational cost of going all the way to distroless.
+  \item \textbf{(Applied)} You inherit a repository whose image is 1.4 GB,
+        builds in four minutes, runs as root and uses \texttt{FROM
+        python:latest}. Write the four changes you would make in priority
+        order, with the measurable improvement you expect from each.
+  \item \textbf{(Applied)} A regulated client requires that any deployed image
+        can be reproduced exactly two years later. Describe what you would pin,
+        what you would store, and what you would automate so that security
+        patching still happens.
+\end{reviewq}

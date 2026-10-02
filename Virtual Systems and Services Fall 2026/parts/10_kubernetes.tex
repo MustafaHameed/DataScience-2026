@@ -3,7 +3,503 @@
 %=====================================================================
 \locator{3}{Part III --- Containers and Lightweight Virtualization}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} the control loop and \textbf{distinguish} declarative
+        from imperative management.
+  \item \textbf{Name} the control-plane and node components and \textbf{trace}
+        what each does when a Deployment is created.
+  \item \textbf{Describe} a Pod, a Deployment and a Service, and \textbf{say}
+        which problem each one solves.
+  \item \textbf{Write} requests and limits for a workload, and \textbf{predict}
+        the scheduling and eviction behaviour that follows.
+  \item \textbf{Diagnose} a workload that will not schedule or will not stay
+        running, from the resource arithmetic and the probe configuration.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{containers} (namespaces, cgroups, and above all that CPU limits throttle
+while memory limits kill --- Kubernetes inherits both) and \chref{docker}
+(images, digests, and the OCI runtime stack the kubelet drives).
+\end{prereq}
+
+\begin{keyterms}
+orchestration $\bullet$ declarative $\bullet$ reconciliation $\bullet$ control
+loop $\bullet$ desired state $\bullet$ API server $\bullet$ etcd $\bullet$
+scheduler $\bullet$ controller manager $\bullet$ kubelet $\bullet$ kube-proxy
+$\bullet$ Pod $\bullet$ sidecar $\bullet$ ReplicaSet $\bullet$ Deployment
+$\bullet$ Service $\bullet$ ClusterIP $\bullet$ Ingress $\bullet$ request
+$\bullet$ limit $\bullet$ QoS class $\bullet$ eviction $\bullet$ liveness probe
+$\bullet$ readiness probe $\bullet$ taint $\bullet$ toleration
+\end{keyterms}
+
+\section{The Problem Containers Created}
+
+\chref{docker} gave us an artefact that starts in a tenth of a second and costs
+ten megabytes. \chref{containers} showed a host could hold two thousand of
+them. Neither says anything about the questions that follow immediately:
+
+Which host should this container run on? What happens when it dies at three in
+the morning? When the host dies? How does traffic find it, given that its
+address changes every restart? How do you replace all sixty copies with a new
+version without dropping a request --- and undo that in forty seconds when it
+is wrong?
+
+Answering those by hand is possible for ten containers and impossible for a
+thousand. \term{Orchestration} is the automation of those answers, and
+Kubernetes is the one that won.
+
+\begin{definitionbox}[Declarative Management and the Control Loop]
+You do not tell Kubernetes what to \emph{do}. You tell it what you \emph{want},
+and it works continuously to make reality match.
+
+\smallskip
+A \term{controller} is a loop that:
+\begin{tight}
+  \item reads the \term{desired state} --- what you declared;
+  \item observes the \term{actual state} --- what exists;
+  \item takes one step to reduce the difference;
+  \item repeats, for ever.
+\end{tight}
+
+\smallskip
+This is \term{reconciliation}, and it is the single idea the whole system is
+built from. ``Run five copies'' is not a command executed once; it is a
+condition continuously enforced. Kill one and a controller notices the
+difference and creates another --- not because anything handled a failure, but
+because four is not five.
+\end{definitionbox}
+
+\begin{conceptbox}[Why Declarative Beats Imperative Here]
+An imperative system executes instructions: \emph{start a container},
+\emph{stop that one}. It must therefore anticipate every way reality can
+diverge --- a node rebooting, a network partition healing, a half-finished
+rollout --- and have an instruction for each. The failure modes multiply
+faster than anyone can enumerate them.
+
+\smallskip
+A declarative system has one failure mode: the difference between desired and
+actual is not shrinking. Every problem reduces to that, and every recovery is
+the same loop running again. It is why a Kubernetes cluster can be left alone
+over a weekend and why \texttt{kubectl apply} is safe to run twice.
+
+\smallskip
+The cost is that you give up knowing exactly \emph{when} things happen. The
+system converges; it does not promise a schedule. Operators used to imperative
+tooling find this unnerving, and the answer is to watch the difference, not the
+steps.
+\end{conceptbox}
+
+\section{What the Cluster Is Made Of}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  bx/.style={rounded corners=2pt, line width=0.8pt, align=center,
+             inner sep=3pt, minimum width=2.6cm, minimum height=0.62cm,
+             font=\scriptsize},
+  cp/.style={bx, draw=primary, fill=primary!10, text=primary},
+  nd/.style={bx, draw=greenhl, fill=greenhl!8, text=greenhl!45!black},
+  st/.style={bx, draw=goldhl, fill=goldhl!12, text=goldhl!45!black},
+  pod/.style={bx, draw=secondary, fill=secondary!8, text=secondary!80!black,
+              minimum width=1.6cm, minimum height=0.5cm},
+  ar/.style={-{Stealth[length=1.8mm]}, line width=0.8pt},
+  note/.style={font=\scriptsize\itshape, text=neutral, align=left}
+]
+  % --- control plane ---
+  \node[rounded corners=3pt, draw=primary!45, fill=primary!3,
+        minimum width=6.0cm, minimum height=3.3cm] at (0,1.5) {};
+  \node[font=\scriptsize\bfseries, text=primary] at (0,2.95) {Control plane};
+  \node[cp] (api) at (0,2.3)  {\textbf{API server}};
+  \node[st] (etcd) at (0,1.5) {etcd \ \ {\tiny the only state}};
+  \node[cp] (sch) at (-1.5,0.6) {scheduler};
+  \node[cp] (ctl) at (1.5,0.6)  {controller\\manager};
+  \draw[ar, primary!60] (api) -- (etcd);
+  \draw[ar, primary!60] (sch) -- (sch |- api.south);
+  \draw[ar, primary!60] (ctl) -- (ctl |- api.south);
+
+  % --- nodes ---
+  \foreach \i/\x in {1/6.2, 2/10.4}{
+    \node[rounded corners=3pt, draw=greenhl!45, fill=greenhl!3,
+          minimum width=3.7cm, minimum height=3.3cm] at (\x,1.5) {};
+    \node[font=\scriptsize\bfseries, text=greenhl!45!black] at (\x,2.95)
+         {Node \i};
+    \node[nd, minimum width=3.1cm] at (\x,2.3) {kubelet};
+    \node[nd, minimum width=3.1cm] at (\x,0.35) {kube-proxy};
+    \node[pod] at (\x-0.8,1.45) {Pod};
+    \node[pod] at (\x+0.8,1.45) {Pod};
+    \draw[ar, greenhl!60] (\x,2.0) -- (\x,1.75);}
+  \draw[ar, primary!55] (api.east) to[out=0,in=180] (4.3,2.3);
+  \draw[ar, primary!55] (3.1,2.1) to[out=0,in=180] (8.5,2.3);
+
+  \node[note, anchor=west] at (-3.2,-0.9)
+       {\textbf{API server} --- the only thing that writes to etcd. Everything
+        else talks to it, and nothing talks to anything else.\\
+        \textbf{etcd} --- the cluster's entire state, in one consistent
+        key-value store. Lose it and you have lost the cluster.\\
+        \textbf{scheduler} --- decides which node an unassigned Pod belongs on.
+        It only writes that decision down; it does not start anything.\\
+        \textbf{controller manager} --- the reconciliation loops: Deployments,
+        ReplicaSets, nodes, endpoints.\\
+        \textbf{kubelet} --- the only component that touches containers. Reads
+        what should be on its node, drives containerd, reports back.\\
+        \textbf{kube-proxy} --- programmes the node's routing so a Service
+        address reaches a healthy Pod.};
+\end{tikzpicture}}%
+{A cluster. The arrows all point at the API server, which is the architectural
+claim: components do not coordinate with each other, they each reconcile
+against one shared record.}{k8s-components}
+
+\begin{conceptbox}[Trace a Deployment Through the Loops]
+\texttt{kubectl apply} a Deployment asking for three replicas. Nothing is
+started by the thing that handled your request.
+
+\begin{tight}
+  \item The \textbf{API server} validates it and writes it to \textbf{etcd}.
+        Your command returns. Nothing is running.
+  \item The \textbf{Deployment controller} notices a Deployment with no
+        ReplicaSet and creates one.
+  \item The \textbf{ReplicaSet controller} notices a ReplicaSet wanting three
+        Pods and zero existing, and creates three Pod objects --- with no node
+        assigned.
+  \item The \textbf{scheduler} notices three unassigned Pods, scores the nodes
+        on free resources and constraints, and writes a node name into each.
+        It still has not started anything.
+  \item Each \textbf{kubelet} notices a Pod assigned to its node, pulls the
+        image and asks containerd to run it.
+  \item The \textbf{endpoints controller} notices Pods that match a Service's
+        selector and adds their addresses; \textbf{kube-proxy} programmes the
+        routing.
+\end{tight}
+
+\smallskip
+Six independent loops, none of which called another. Each noticed a difference
+and reduced it. Now kill a Pod: step 3's controller sees two where three are
+wanted, and the same sequence runs from there. \emph{Failure recovery is not a
+feature; it is the ordinary behaviour of the system.}
+\end{conceptbox}
+
+\section{Pods, Deployments and Services}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.6cm}L{5.4cm}L{6.7cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Object} & \textbf{What it is} & \textbf{The problem it solves} \\
+\midrule
+\endhead
+\term{Pod} & One or more containers sharing a network namespace, IP address
+and storage volumes. The smallest schedulable unit & Some containers must be
+co-located and share \texttt{localhost} --- an application and its log shipper,
+or a \term{sidecar} proxy. You almost never create one directly \\
+\term{ReplicaSet} & Keeps $n$ identical Pods running & The reconciliation loop
+for ``how many''. You almost never create one directly either \\
+\term{Deployment} & Manages ReplicaSets to roll out and roll back versions &
+Changing the image without an outage. It creates a second ReplicaSet, shifts
+Pods across gradually, and keeps the old one so a rollback is one command \\
+\term{Service} & A stable virtual IP and DNS name in front of a changing set of
+Pods & Pod addresses change on every restart. A \term{ClusterIP} does not,
+and kube-proxy keeps its backend list current \\
+\term{Ingress} & HTTP routing from outside the cluster to Services & A Service
+is reachable inside the cluster; this is how the world gets in, with host and
+path rules and TLS \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[A Pod is not a container, and the difference bites]
+A Pod is the unit of \emph{scheduling} and of \emph{IP address}. Every
+container in it runs on the same node, shares one network namespace --- so they
+reach each other on \texttt{localhost} and cannot both bind port 8080 --- and
+can share volumes.
+
+\smallskip
+The error this produces is putting an application and its database in one Pod
+because they belong together. They do not: they scale differently, fail
+differently and are updated differently, and now they cannot be scheduled
+separately or scaled separately. The test is whether the two must be on the
+same machine and share a lifetime. A log shipper must. A database must not.
 \end{alertbox}
+
+\section{Requests, Limits and What the Scheduler Does With Them}
+
+Every container may declare a \term{request} and a \term{limit} for CPU and
+memory. They do completely different jobs and conflating them is the commonest
+source of Kubernetes capacity trouble.
+
+\begin{definitionbox}[Request and Limit]
+The \term{request} is what the \textbf{scheduler} uses. It reserves that much
+on the node, and a node whose remaining allocatable capacity is less than the
+request will not be chosen. The request is a claim on \emph{placement} and is
+reserved whether or not the container uses it.
+
+\smallskip
+The \term{limit} is what the \textbf{kernel} enforces, through the cgroups of
+\chref{containers}. CPU above the limit is throttled; memory above it is an OOM
+kill.
+
+\smallskip
+The gap between them is where a workload may burst, and where the cluster is
+oversubscribed. A Pod requesting 100m of CPU with a 2-core limit is scheduled
+as if it were tiny and may consume twenty times that --- from capacity the
+scheduler has promised to somebody else.
+\end{definitionbox}
+
+\begin{worked}[Why This Pod Will Not Schedule]
+A cluster has four nodes of 16 cores and 64 GB. A team reports that their new
+Deployment sits in \texttt{Pending} and asks for more nodes. Decide whether
+they need any.
+
+\smallskip
+\textbf{What is declared.} 20 replicas, each requesting 2 cores and 8 GB.
+
+\smallskip
+\textbf{Step 1 --- what the nodes actually offer.} Allocatable capacity is not
+total capacity: the kubelet, the container runtime and the operating system are
+reserved first. Typically about 10\% of CPU and 15\% of memory:
+\[ \text{per node} \approx 16 \times 0.90 = 14.4 \text{ cores}, \qquad
+   64 \times 0.85 = 54.4 \text{ GB} \]
+\[ \text{cluster} = 4 \times 14.4 = 57.6 \text{ cores}, \qquad
+   4 \times 54.4 = 217.6 \text{ GB} \]
+
+\smallskip
+\textbf{Step 2 --- what is already running.} Existing workloads request 30
+cores and 120 GB. Remaining:
+\[ 57.6 - 30 = 27.6 \text{ cores} \qquad 217.6 - 120 = 97.6 \text{ GB} \]
+
+\smallskip
+\textbf{Step 3 --- what the new Deployment asks for.}
+\[ 20 \times 2 = 40 \text{ cores} \qquad 20 \times 8 = 160 \text{ GB} \]
+Both exceed what is left. It cannot schedule, and the team is right that
+something must change.
+
+\smallskip
+\textbf{Step 4 --- how many \emph{will} fit?} The scheduler places Pods one at
+a time, so some will run. The binding constraint is memory:
+\[ \left\lfloor \frac{97.6}{8} \right\rfloor = 12 \text{ Pods} \]
+but Pods cannot be split across nodes, so compute it per node. If the existing
+load is even, each node has $54.4 - 30 = 24.4$ GB free, giving
+$\lfloor 24.4/8 \rfloor = 3$ Pods per node $= \mathbf{12}$. Eight stay
+\texttt{Pending} --- which matches what they are seeing.
+
+\smallskip
+\textbf{Step 5 --- are the requests honest?} This is the question nobody asks,
+and it is usually the answer. Measured over the previous week the same
+application used 0.3 cores and 1.2 GB at the 95th percentile. The request of 2
+cores and 8 GB is roughly \textbf{seven times} its actual demand.
+
+\smallskip
+Set requests to p95 plus a margin --- say 0.5 cores and 2 GB --- and limits
+somewhat above:
+\[ 20 \times 0.5 = 10 \text{ cores} \qquad 20 \times 2 = 40 \text{ GB} \]
+Against 27.6 cores and 97.6 GB free, all twenty schedule with room to spare.
+
+\smallskip
+\textbf{Step 6 --- the recommendation.} No new nodes. The cluster was not full;
+it was \emph{reserved}. A request is a promise the scheduler keeps whether the
+workload uses it or not, so inflated requests buy hardware that then sits idle
+--- the server sprawl of \chref{what}, re-created inside a cluster that was
+bought to prevent it.
+\end{worked}
+
+\begin{conceptbox}[QoS Classes: Who Gets Evicted First]
+From the requests and limits, Kubernetes derives a \term{QoS class} that
+decides what happens when a node runs out of memory.
+
+\begin{tight}
+  \item \textbf{Guaranteed} --- every container has limits equal to requests.
+        Evicted last.
+  \item \textbf{Burstable} --- requests set, limits higher or absent. Evicted
+        in the middle, worst offender against its request first.
+  \item \textbf{BestEffort} --- nothing set at all. Evicted first, always.
+\end{tight}
+
+\smallskip
+So omitting requests and limits is not neutral --- it is choosing to be killed
+first. This surprises teams who leave them out to ``keep it simple'', and the
+symptom arrives weeks later as a workload that dies only when the cluster is
+busy.
+\end{conceptbox}
+
+\begin{conceptbox}[Liveness and Readiness Are Not the Same Question]
+Two probes, routinely confused, with opposite consequences.
+
+\smallskip
+A \term{readiness} probe asks \emph{should traffic go here?} Failing it removes
+the Pod from its Service's endpoints. Nothing is killed; the Pod is simply left
+alone until it recovers. Use it for warm-up, for a lost database connection,
+for shedding load.
+
+\smallskip
+A \term{liveness} probe asks \emph{is this process broken beyond recovery?}
+Failing it \textbf{kills the container}. Use it only for genuine deadlock.
+
+\smallskip
+The classic outage: a liveness probe that hits an endpoint which also checks
+the database. The database slows, every replica fails liveness, Kubernetes
+kills all of them, they restart, reconnect in a thundering herd and fail again.
+A readiness probe there would have removed them from rotation and let them
+recover. \emph{If in doubt, use readiness.}
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Setting requests from the limit, or from a guess.} The
+        scheduler reserves the request. Inflated requests waste the cluster
+        exactly as oversized virtual machines waste a host.
+  \item \textbf{Omitting requests entirely.} That is BestEffort, which is
+        evicted first. Not setting them is a decision.
+  \item \textbf{Using a liveness probe where readiness is meant.} Liveness
+        kills. The cascading restart above is the single most common
+        self-inflicted Kubernetes outage.
+  \item \textbf{Setting CPU limits aggressively.} CPU throttling is invisible
+        in most dashboards and shows up as latency. Many teams set CPU requests
+        and no CPU limit deliberately; check \texttt{throttled\_usec} before
+        deciding.
+  \item \textbf{Putting unrelated containers in one Pod.} They now share a
+        lifetime, a node and a scaling decision.
+  \item \textbf{Using \texttt{:latest} in a manifest.} The rollout is not
+        reproducible and a rollback may not roll anything back
+        (\chref{docker}).
+  \item \textbf{Treating Kubernetes as a hypervisor.} It schedules containers
+        on a shared kernel. Every isolation caveat in \chref{containers} still
+        applies, and \chref{lightweight} is what to do about it.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[A Cluster on One Laptop]
+Builds a real cluster with \texttt{kind} --- a real API server, scheduler and
+kubelet; only the node count is a pretence --- and produces each failure mode
+above on purpose. Expect forty-five minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch10_kind.sh -- reconciliation, scheduling and probes, observed.
+set -euo pipefail
+
+# --- 1. A three-node cluster in containers on this machine. ------------
+kind create cluster --name vss --config - <<'YAML'
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
+YAML
+kubectl get nodes -o wide
+# Each "node" is a container (Chapter 9) running a kubelet. Containers
+# all the way down.
+
+# --- 2. Declare a desired state and watch six loops reach it. ----------
+kubectl create deployment web --image=nginx:1.27 --replicas=3
+kubectl get deploy,rs,pods -o wide
+kubectl get events --sort-by=.lastTimestamp | tail -12
+# Read the events bottom-up: scheduled, pulling, created, started.
+
+# --- 3. Reconciliation: delete a Pod and time the replacement. ---------
+kubectl get pods -l app=web
+kubectl delete pod -l app=web --field-selector status.phase=Running \
+  --wait=false | head -1
+sleep 3 ; kubectl get pods -l app=web
+# Nothing "handled" the deletion. Two is not three, so a loop acted.
+
+# --- 4. A Service: a stable address in front of changing Pods. --------
+kubectl expose deployment web --port=80 --target-port=80
+kubectl get svc web
+kubectl get endpoints web          # the Pod IPs, maintained by a controller
+kubectl delete pod -l app=web --wait=false | head -1
+sleep 5 ; kubectl get endpoints web   # different Pod IPs, same Service IP
+
+# --- 5. Make a Pod unschedulable, and read why. -----------------------
+kubectl create deployment big --image=nginx:1.27
+kubectl set resources deployment big --requests=cpu=8,memory=32Gi
+kubectl get pods -l app=big
+kubectl describe pod -l app=big | sed -n '/Events/,$p' | tail -6
+# "0/3 nodes are available: Insufficient cpu" -- the worked example,
+# reported by the scheduler itself.
+
+# --- 6. QoS classes, derived from what you declared. ------------------
+kubectl run guaranteed --image=nginx:1.27 \
+  --overrides='{"spec":{"containers":[{"name":"c","image":"nginx:1.27",
+  "resources":{"requests":{"cpu":"100m","memory":"64Mi"},
+  "limits":{"cpu":"100m","memory":"64Mi"}}}]}}'
+kubectl run besteffort --image=nginx:1.27
+sleep 5
+kubectl get pod guaranteed besteffort \
+  -o custom-columns=NAME:.metadata.name,QOS:.status.qosClass
+
+# --- 7. The cascading-restart outage, on purpose. ---------------------
+# A liveness probe pointing at something that will fail.
+kubectl create deployment fragile --image=nginx:1.27 --replicas=3
+kubectl patch deployment fragile --type=json -p='[{"op":"add",
+  "path":"/spec/template/spec/containers/0/livenessProbe",
+  "value":{"httpGet":{"path":"/nope","port":80},"periodSeconds":5}}]'
+sleep 45
+kubectl get pods -l app=fragile      # RESTARTS climbing on every replica
+kubectl describe pod -l app=fragile | grep -A2 'Liveness' | head -6
+# Now imagine /nope were a real endpoint that checks a slow database.
+
+# --- 8. Tear down. ----------------------------------------------------
+kind delete cluster --name vss
+\end{lstlisting}
+
+\textbf{What to notice.} Step 3 is the whole chapter: nothing detected a
+failure or ran a recovery procedure. A controller compared two numbers and
+acted. Step 7 is the chapter's warning, reproduced in forty-five seconds.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A cluster of six nodes has 12 allocatable cores and 48 GB each.
+        Existing workloads request 40 cores and 190 GB. A Deployment of 15
+        replicas requesting 1 core and 6 GB each is created. How many schedule,
+        and what is the binding resource?
+  \item A team sets no requests or limits anywhere ``to keep things simple''.
+        Name the QoS class this produces and describe the symptom they will
+        eventually see, including when.
+  \item Explain why pointing a liveness probe at an endpoint that checks a
+        shared database can take down every replica at once, and what to use
+        instead.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Kubernetes is declarative: you state desired state and controllers
+        reconcile towards it for ever. Failure recovery is not a feature but
+        the ordinary behaviour of a loop comparing two numbers.
+  \item Everything talks to the API server and nothing talks to anything else.
+        etcd holds the entire cluster state.
+  \item Creating a Deployment runs six independent loops; none calls another.
+  \item A Pod is the unit of scheduling and of IP address. Put containers
+        together only if they must share a node and a lifetime.
+  \item Requests are for the scheduler and are reserved whether used or not;
+        limits are enforced by cgroups, throttling CPU and killing on memory.
+  \item QoS class follows from requests and limits, and decides eviction
+        order. Declaring nothing means being evicted first.
+  \item Readiness removes traffic; liveness kills the container. Using liveness
+        where readiness was meant is the commonest self-inflicted outage.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The component that decides which node a Pod runs on,
+        and then does nothing further, is: (a)~the kubelet; (b)~the scheduler;
+        (c)~kube-proxy; (d)~the API server.
+  \item \textbf{(MCQ)} A container with no requests or limits is in QoS class:
+        (a)~Guaranteed; (b)~Burstable; (c)~BestEffort; (d)~none.
+  \item \textbf{(Short)} State the control loop in four steps and explain why
+        it makes \texttt{kubectl apply} safe to run twice.
+  \item \textbf{(Short)} Explain the difference between a request and a limit,
+        naming which component enforces each.
+  \item \textbf{(Short)} Give a workload for which two containers genuinely
+        belong in one Pod, and one where they do not, with the reason.
+  \item \textbf{(Applied)} A 10-node cluster of 32 cores and 128 GB each is
+        reported ``full'' at 40\% measured utilisation. Explain how both facts
+        can be true, describe what you would measure, and set out the change
+        you would propose and its risk.
+  \item \textbf{(Applied)} During a database slowdown, every replica of three
+        different services restarted repeatedly and the outage lasted far
+        longer than the database problem. Explain the mechanism, and write the
+        probe configuration you would have had in place.
+\end{reviewq}

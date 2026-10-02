@@ -3,7 +3,556 @@
 %=====================================================================
 \locator{2}{Part II --- Hypervisors and Compute Virtualization}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} how VMX root and non-root operation make x86 satisfy
+        the Popek--Goldberg condition without changing a single instruction's
+        encoding.
+  \item \textbf{Describe} what the VMCS holds and \textbf{account} for the cost
+        of a VM exit in terms of the work the processor must do.
+  \item \textbf{Count} the memory accesses in a nested page walk, and
+        \textbf{explain} why two-dimensional paging replaced shadow page tables
+        despite being slower on a TLB miss.
+  \item \textbf{State} what an IOMMU does and why device passthrough is unsafe
+        without one.
+  \item \textbf{Diagnose} a performance problem as an exit-rate problem from
+        measured counters, and \textbf{name} the feature that addresses it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{vmm} above all --- the Popek--Goldberg condition, the seventeen
+offending instructions, and why trap-and-emulate could not be used. This
+chapter is the hardware answer to that chapter's problem, and almost nothing in
+it makes sense without it. You also need virtual memory and page tables from
+Operating Systems.
+\end{prereq}
+
+\begin{keyterms}
+VT-x $\bullet$ AMD-V $\bullet$ SVM $\bullet$ VMX root operation $\bullet$ VMX
+non-root operation $\bullet$ VMCS $\bullet$ VMCB $\bullet$ VM entry $\bullet$
+VM exit $\bullet$ exit reason $\bullet$ world switch $\bullet$ shadow page
+table $\bullet$ extended page tables $\bullet$ nested page tables $\bullet$
+two-dimensional paging $\bullet$ nested page walk $\bullet$ VPID $\bullet$
+IOMMU $\bullet$ VT-d $\bullet$ DMA remapping $\bullet$ interrupt remapping
+\end{keyterms}
+
+\section{What Intel and AMD Had to Fix}
+
+\chref{vmm} left the architecture in an awkward position. Seventeen
+instructions were sensitive but not privileged, so trap-and-emulate was
+unsound; the two workarounds --- binary translation and paravirtualization ---
+each cost something substantial. Intel shipped VT-x in 2005 and AMD shipped
+AMD-V in 2006, and both took the same approach.
+
+The obvious fix would have been to make the seventeen instructions privileged.
+Both vendors rejected it, for a reason worth understanding: it would break
+existing software. A user program that executes \texttt{POPF} today and has its
+write to \texttt{IF} quietly ignored would begin faulting, and backward
+compatibility is the entire commercial basis of the x86 architecture.
+
+So instead of changing what the instructions do, they changed \emph{the mode
+the processor can be in}.
+
+\begin{definitionbox}[VMX Root and Non-Root Operation]
+VT-x adds a new dimension to the privilege model. Orthogonally to rings 0--3,
+the processor is in one of two \term{operations}:
+
+\begin{tight}
+  \item \term{VMX root operation} --- what the hypervisor runs in. Behaves like
+        an ordinary processor, plus a set of new instructions
+        (\texttt{VMXON}, \texttt{VMLAUNCH}, \texttt{VMRESUME}, \texttt{VMREAD},
+        \texttt{VMWRITE}) for managing guests.
+  \item \term{VMX non-root operation} --- what a guest runs in. All four rings
+        are available, so a guest kernel runs in \textbf{ring~0} exactly as it
+        expects. But certain instructions and events cause a \term{VM exit}:
+        control transfers to the hypervisor in root operation.
+\end{tight}
+
+\smallskip
+The guest kernel is no longer deprivileged. It runs in ring~0, reads its own
+privilege level as 0, and sees the descriptor tables it installed. Ring
+aliasing is gone, the seventeen instructions trap, and equivalence holds ---
+without a single instruction changing its meaning.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  mode/.style={rounded corners=3pt, line width=1.1pt, align=center,
+               minimum width=5.6cm, minimum height=2.5cm},
+  b/.style={rounded corners=2pt, line width=0.7pt, align=center,
+            minimum width=4.6cm, minimum height=0.52cm, inner sep=2pt,
+            font=\scriptsize},
+  lb/.style={font=\scriptsize\itshape, align=center}
+]
+  \node[mode, draw=primary, fill=primary!6] (R) at (0,0) {};
+  \node[font=\small\bfseries, text=primary] at (0,1.0) {VMX root operation};
+  \node[b, draw=primary, fill=white, text=primary] at (0,0.35) {hypervisor (ring 0)};
+  \node[b, draw=primary!50, fill=white, text=primary!70] at (0,-0.3)
+       {\texttt{VMLAUNCH} \ \texttt{VMRESUME}};
+  \node[b, draw=primary!50, fill=white, text=primary!70] at (0,-0.92)
+       {\texttt{VMREAD} \ \texttt{VMWRITE}};
+
+  \node[mode, draw=secondary, fill=secondary!6] (N) at (9.4,0) {};
+  \node[font=\small\bfseries, text=secondary!80!black] at (9.4,1.0)
+       {VMX non-root operation};
+  \node[b, draw=secondary, fill=white, text=secondary!80!black] at (9.4,0.35)
+       {guest kernel --- \textbf{ring 0}};
+  \node[b, draw=secondary!50, fill=white, text=secondary!70] at (9.4,-0.3)
+       {guest applications --- ring 3};
+  \node[lb, text=accent] at (9.4,-0.95)
+       {all four rings present; the guest\\cannot tell it is a guest};
+
+  \draw[-{Stealth[length=2.4mm]}, greenhl!70, line width=1.2pt]
+        (2.9,0.55) to[out=25,in=155] (6.5,0.55);
+  \node[lb, text=greenhl!55!black] at (4.7,1.25)
+       {\textbf{VM entry} --- load guest state\\from the VMCS};
+
+  \draw[-{Stealth[length=2.4mm]}, accent, line width=1.2pt]
+        (6.5,-0.75) to[out=-155,in=-25] (2.9,-0.75);
+  \node[lb, text=accent!70!black] at (4.7,-1.55)
+       {\textbf{VM exit} --- save guest state,\\write the exit reason};
+
+  \node[rounded corners=2pt, draw=goldhl, fill=goldhl!10, text=goldhl!55!black,
+        font=\scriptsize, align=center, minimum width=3.2cm, inner sep=3pt]
+       at (4.7,-2.75)
+       {\textbf{VMCS} --- one per virtual CPU\\guest state $\bullet$ host state
+        $\bullet$ controls};
+  \draw[goldhl!70, line width=0.8pt, dashed] (4.7,-2.2) -- (4.7,-1.95);
+\end{tikzpicture}}%
+{VT-x in one picture. The guest runs in ring~0 of a second operating mode, so
+nothing it executes behaves unexpectedly; the hypervisor regains control
+through a hardware transition rather than a trap it had to
+arrange.}{vmx-modes}
+
+\begin{conceptbox}[AMD Did the Same Thing with Different Names]
+AMD-V (originally \emph{Pacifica}, architecturally \term{SVM}) solves the same
+problem with the same structure and an incompatible vocabulary. Guest mode
+corresponds to non-root operation; the \term{VMCB} (virtual machine control
+block) corresponds to the VMCS; \texttt{VMRUN} corresponds to
+\texttt{VMLAUNCH}; \term{nested page tables} correspond to \emph{extended} page
+tables.
+
+\smallskip
+The differences that matter in practice are small but real: the VMCB is a
+plain 4 KB structure a hypervisor reads and writes with ordinary memory
+instructions, whereas the VMCS is opaque and must be accessed through
+\texttt{VMREAD} and \texttt{VMWRITE}, which cost cycles. AMD's design is
+simpler to program; Intel's leaves the processor free to cache VMCS fields in
+whatever internal format it likes.
+
+\smallskip
+This book uses the Intel names throughout and notes the AMD equivalent where it
+differs. Every hypervisor in \chref{platforms} supports both, through an
+abstraction layer written once.
+\end{conceptbox}
+
+\section{The VMCS, and What a Transition Costs}
+
+A \term{VMCS} --- virtual machine control structure --- exists per virtual CPU
+and holds everything needed to switch between the two worlds.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.6cm}L{11.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{VMCS area} & \textbf{What it holds} \\
+\midrule
+\endhead
+\textbf{Guest-state area} & The guest's registers, control registers, segment
+registers, \texttt{RIP} and \texttt{RSP}. Saved automatically on exit, loaded
+automatically on entry \\
+\textbf{Host-state area} & The hypervisor's corresponding state, loaded on
+exit. This is what makes the return to the hypervisor a single hardware
+operation rather than a software convention \\
+\textbf{VM-execution controls} & \emph{Which events cause an exit.} A bitmap
+per instruction class, an exception bitmap, an I/O-port bitmap and an MSR
+bitmap. This is the dial the hypervisor turns to trade control against speed \\
+\textbf{VM-exit information} & Written by the processor on every exit: the
+\term{exit reason}, the faulting address, the instruction length. The
+hypervisor reads this first and dispatches on it \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[The Execution Controls Are the Real Design Surface]
+A novice reading of VT-x is that the processor decides what to trap. It does
+not: the \emph{hypervisor} decides, by setting bits in the execution controls,
+and the engineering is in choosing well.
+
+\smallskip
+Exit on every \texttt{CPUID}? You must, because the guest must not see the
+host's true feature set. Exit on every \texttt{RDTSC}? Only if you care about
+hiding the passage of time, and most hypervisors do not, because the exit cost
+would be ruinous. Exit on every write to \texttt{CR3}? With shadow page tables
+you must; with EPT you need not, and that single bit is most of the next
+section.
+
+\smallskip
+Every bit set buys correctness or isolation and costs an exit. Hypervisor
+performance work is, to a first approximation, the work of clearing bits that
+turn out not to be needed.
+\end{conceptbox}
+
+\begin{alertbox}[A VM exit is a world switch, not a function call]
+On exit the processor must save the guest's entire architectural state, load
+the hypervisor's, and flush or tag anything that was speculating on the guest's
+address space. On the first VT-x parts this cost on the order of 1{,}500 cycles
+in each direction; a decade of optimisation brought it to a few hundred, and it
+has not fallen much since because the work is irreducible.
+
+\smallskip
+That number is why \chref{architectures} could report that binary translation
+beat early hardware assistance: a translated call into the monitor cost tens of
+cycles and did not disturb the pipeline. Hardware assistance won in the end not
+by making exits cheap but by \emph{removing the reasons to exit} --- which is
+what extended page tables and the MSR bitmap are for.
 \end{alertbox}
+
+\section{Two-Dimensional Paging}
+
+Virtualizing the processor was half the problem. The other half is memory, and
+it is harder.
+
+A guest kernel maintains page tables mapping \emph{guest virtual} addresses to
+what it believes are physical addresses. They are not physical: they are
+\term{guest physical} addresses, which the hypervisor must in turn map to
+\term{host physical} addresses. Two translations, and the hardware originally
+performed only one.
+
+\subsection{The first answer: shadow page tables}
+
+The hypervisor builds its own page tables mapping guest virtual directly to
+host physical --- \term{shadow page tables} --- and points the real \texttt{CR3}
+at those. The processor walks them normally, so a TLB miss costs exactly what
+it costs natively.
+
+The price is keeping them consistent. The hypervisor must trap every guest
+write to its own page tables, which means write-protecting them and taking a VM
+exit on each modification. A process fork, which rewrites a great many page
+table entries, becomes thousands of exits.
+
+\subsection{The second answer: let the hardware do both}
+
+\term{Extended page tables} (Intel) and \term{nested page tables} (AMD) add a
+second, hardware-walked translation. The guest's own page tables stay in
+charge of guest-virtual to guest-physical, and the guest may edit them freely
+with no exits at all. A second set of tables, owned by the hypervisor, maps
+guest-physical to host-physical, and the processor walks both.
+
+\begin{worked}[Counting a Nested Page Walk]
+How much does the hardware actually do on a TLB miss under EPT? Count memory
+accesses for 4-level paging on x86-64.
+
+\smallskip
+\textbf{Native, for comparison.} Four levels --- PML4, PDPT, PD, PT --- so a
+TLB miss costs \textbf{4 memory accesses}.
+
+\smallskip
+\textbf{Under EPT.} Every address the walker touches is a \emph{guest
+physical} address, and each one must itself be translated by a 4-level EPT
+walk before it can be used.
+
+\begin{tight}
+  \item Guest \texttt{CR3} holds the GPA of the guest PML4. Translate it:
+        \textbf{4} EPT accesses. Then read the guest PML4 entry: \textbf{1}.
+  \item That entry holds the GPA of the PDPT. Translate it: \textbf{4}. Read
+        the PDPT entry: \textbf{1}.
+  \item GPA of the PD. Translate: \textbf{4}. Read the PD entry: \textbf{1}.
+  \item GPA of the PT. Translate: \textbf{4}. Read the PT entry: \textbf{1}.
+  \item The guest PTE yields the final GPA of the data page. Translate it:
+        \textbf{4}.
+\end{tight}
+
+\smallskip
+\textbf{The total.}
+\[ \underbrace{4 \times (4 + 1)}_{\text{four guest levels}} \;+\;
+   \underbrace{4}_{\text{final translation}} \;=\; \mathbf{24}
+   \text{ memory accesses} \]
+
+\smallskip
+\textbf{So EPT is six times worse than native on a TLB miss}, and worse than
+shadow paging, which costs 4. If that were the whole story, shadow page tables
+would have won.
+
+\smallskip
+\textbf{Why EPT won anyway.} Count the \emph{other} operation. Under shadow
+paging every guest page-table write is a VM exit at several hundred cycles;
+under EPT it is an ordinary memory write at a few cycles. A workload that
+creates processes, maps files or frees memory does this constantly.
+
+\smallskip
+Measured on a fork-heavy build: shadow paging took tens of thousands of exits
+per second; EPT took almost none. The 24-access walk is also mitigated in
+hardware by caching the intermediate EPT translations --- a page-walk cache ---
+so the full 24 is the worst case rather than the common one.
+
+\smallskip
+\textbf{The lesson.} The right structure is not the one with the better
+best case; it is the one whose expensive case is rare. Shadow paging is
+cheaper per TLB miss and catastrophic per page-table edit. EPT is the reverse,
+and page-table edits are far more common than the arithmetic suggests.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  lvl/.style={rounded corners=2pt, line width=0.7pt, align=center,
+              minimum width=1.5cm, minimum height=0.5cm, inner sep=2pt},
+  g/.style={lvl, draw=secondary, fill=secondary!10, text=secondary!80!black},
+  e/.style={lvl, draw=purplehl, fill=purplehl!10, text=purplehl!70!black,
+            minimum width=0.62cm, minimum height=0.42cm, font=\tiny},
+  ar/.style={-{Stealth[length=1.6mm]}, line width=0.7pt}
+]
+  \node[font=\scriptsize\bfseries, text=secondary!80!black, anchor=east]
+       at (-0.95,3.3) {guest walk};
+  \node[font=\scriptsize\bfseries, text=purplehl!70!black, anchor=east]
+       at (-0.95,2.45) {EPT walk for each};
+
+  \foreach \i/\n in {0/{guest\\PML4}, 1/{guest\\PDPT}, 2/{guest\\PD},
+                     3/{guest\\PT}, 4/{data\\page}}{
+    \pgfmathsetmacro{\gx}{\i*3.0}
+    \node[g] at (\gx,3.3) {\n};
+    \foreach \j in {0,1,2,3}{
+      \pgfmathsetmacro{\ex}{\gx-0.93+\j*0.62}
+      \node[e] at (\ex,2.45) {};}
+    \draw[ar, purplehl!60] (\gx,2.72) -- (\gx,3.05);}
+
+  \foreach \i in {0,1,2,3}{
+    \pgfmathsetmacro{\ax}{\i*3.0+0.78}
+    \pgfmathsetmacro{\bx}{\i*3.0+2.22}
+    \draw[ar, secondary!70] (\ax,3.3) -- (\bx,3.3);}
+
+  \node[font=\scriptsize\itshape, text=accent, anchor=west] at (-1.4,1.75)
+       {each purple block is 4 memory accesses $\bullet$
+        4 guest reads $+$ 5 EPT walks of 4 $=$ \textbf{24} accesses,
+        against 4 natively};
+
+  % --- the comparison bar ---
+  \node[font=\scriptsize\bfseries, text=neutral!40!black, anchor=east]
+       at (-0.95,0.85) {TLB miss};
+  \node[font=\scriptsize\bfseries, text=neutral!40!black, anchor=east]
+       at (-0.95,0.25) {page-table write};
+  \foreach \y/\lab/\sh/\ep in {0.85/{}/{4 accesses}/{24 accesses},
+                               0.25/{}/{VM exit, ~500 cycles}/{a few cycles}}{
+    \node[rounded corners=2pt, draw=goldhl, fill=goldhl!8, text=goldhl!55!black,
+          minimum width=4.4cm, minimum height=0.45cm, font=\scriptsize]
+         at (1.6,\y) {shadow: \sh};
+    \node[rounded corners=2pt, draw=purplehl, fill=purplehl!8,
+          text=purplehl!70!black, minimum width=4.4cm, minimum height=0.45cm,
+          font=\scriptsize] at (6.6,\y) {EPT: \ep};}
+  \node[font=\scriptsize\itshape, text=neutral, anchor=west, align=left]
+       at (9.2,0.55) {EPT loses the rare case\\and wins the common one};
+\end{tikzpicture}}%
+{A nested page walk, and the trade it represents. Shadow paging is cheaper on a
+TLB miss and ruinous on every guest page-table edit; extended page tables
+invert both, and edits are the more frequent event.}{nested-paging}
+
+\begin{conceptbox}[VPID: Not Flushing the TLB Every Time]
+One more cost was hiding in the transitions. Early VT-x flushed the entire TLB
+on every VM entry and exit, because the hypervisor and the guest use different
+address spaces and the processor had no way to tell their entries apart. A busy
+guest therefore began every re-entry with a cold TLB.
+
+\smallskip
+\term{VPID} --- virtual processor identifier, AMD's equivalent is the ASID ---
+tags each TLB entry with the virtual CPU it belongs to. Entries survive the
+transition and are simply ignored while another context runs. It is a small
+feature with a large effect, and it is the clearest illustration of the
+pattern in this chapter: the exits were not made cheaper, the work done around
+them was removed.
+\end{conceptbox}
+
+\section{The IOMMU}
+
+The processor is virtualized and memory is virtualized. Devices are not, and
+devices are dangerous, because a device performing DMA writes to \emph{physical}
+addresses and knows nothing about any of this.
+
+Hand a network card directly to a guest --- which \chref{paravirt} will want to
+do for speed --- and the guest's driver programs it with addresses from its own
+guest-physical space. The card would write wherever those happen to land in
+real memory: another guest, or the hypervisor. A single passthrough device
+without protection destroys the resource-control property for the entire host.
+
+\begin{definitionbox}[IOMMU, DMA Remapping, Interrupt Remapping]
+An \term{IOMMU} --- Intel calls the feature \term{VT-d}, AMD calls it AMD-Vi ---
+is a memory management unit that sits between devices and memory, as the MMU
+sits between the processor and memory.
+
+\smallskip
+\term{DMA remapping}: every address a device emits is translated through
+per-device page tables that the hypervisor controls. A device assigned to a
+guest can reach that guest's memory and nothing else. An address outside the
+mapping faults rather than being written.
+
+\smallskip
+\term{Interrupt remapping}: a device cannot raise an arbitrary interrupt vector
+on an arbitrary core. Interrupts are translated too, and delivered only where
+the hypervisor allows.
+
+\smallskip
+Without an IOMMU, device passthrough is not merely risky; it is equivalent to
+giving the guest write access to all of physical memory.
+\end{definitionbox}
+
+\begin{alertbox}[Nested virtualization, and why your lab needs it]
+Running a hypervisor \emph{inside} a guest --- nested virtualization --- means
+the processor must present VMX itself as a virtualizable feature. The outer
+hypervisor intercepts the inner one's \texttt{VMLAUNCH}, merges the inner
+VMCS with its own, and runs the result. It works, and it is how the labs in
+this book run a Type-1 hypervisor on a machine that is already a guest.
+
+\smallskip
+It is also slow: every exit the inner guest takes may become several exits in
+the outer one. Expect a nested guest to be noticeably slower than a
+single-level one, and do not use nesting to measure anything.
+
+\smallskip
+On a laptop it must usually be enabled explicitly. Appendix~A gives the
+commands; the lab below checks it first, because every later chapter's lab
+assumes it.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Believing VT-x made virtualization fast.} It made it
+        \emph{correct} --- the architecture now satisfies Popek--Goldberg. The
+        first generation was often slower than binary translation. Speed came
+        from EPT, VPID and the bitmaps, over roughly a decade.
+  \item \textbf{Assuming EPT is faster at everything.} It is six times slower
+        than native on a TLB miss and six times slower than shadow paging. It
+        wins on the workload, not on the microbenchmark, and a workload with a
+        huge working set and few page-table edits is exactly where shadow
+        paging would still win.
+  \item \textbf{Confusing the MMU with the IOMMU.} The MMU protects memory from
+        the processor; the IOMMU protects memory from \emph{devices}. A host
+        with VT-x but no VT-d can virtualize fine and cannot safely pass a
+        device through.
+  \item \textbf{Leaving virtualization disabled in firmware and blaming the
+        software.} A large share of ``KVM will not start'' is a cleared BIOS
+        bit. Check \texttt{/proc/cpuinfo} first --- the lab's step 1 is there
+        for this reason.
+  \item \textbf{Benchmarking inside a nested guest.} Every measurement is
+        inflated by the outer hypervisor's exits, and by a variable amount.
+        Nesting is for learning, not for numbers.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Watching the Hardware Work]
+Counts real VM exits on a real guest and shows what changes them. Needs KVM and
+a Linux host; \texttt{perf} comes from \texttt{linux-tools}. Expect thirty
+minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch04_exits.sh -- see VMX, EPT and the exit rate with your own eyes.
+set -euo pipefail
+
+# --- 1. Does this processor have the features this chapter describes? ---
+grep -o -m1 -E '\<(vmx|svm)\>' /proc/cpuinfo    # VT-x or AMD-V at all
+grep -o -m1 -E '\<ept\>|\<npt\>' /proc/cpuinfo  # two-dimensional paging
+grep -o -m1 '\<vpid\>' /proc/cpuinfo            # tagged TLB entries
+# VT-d / AMD-Vi shows up as IOMMU groups once enabled in firmware:
+ls /sys/kernel/iommu_groups 2>/dev/null | wc -l
+
+# --- 2. Is nested virtualization on? Every later lab wants it. ---------
+cat /sys/module/kvm_intel/parameters/nested 2>/dev/null \
+  || cat /sys/module/kvm_amd/parameters/nested 2>/dev/null
+# If that prints N or 0, see Appendix A for how to turn it on.
+
+# --- 3. Start the guest from Chapter 1 and find its thread. ------------
+sudo virsh start vss1 || true
+sleep 25
+PID=$(pgrep -f 'qemu.*vss1' | head -1)
+echo "guest qemu pid: $PID"
+
+# --- 4. Count exits by reason, for ten seconds of an idle guest. -------
+# Every line is a different entry in the VM-execution controls.
+sudo perf stat -e 'kvm:kvm_exit' -p "$PID" -- sleep 10
+sudo perf record -e 'kvm:kvm_exit' -p "$PID" -- sleep 10 2>/dev/null
+sudo perf script \
+  | awk '{for(i=1;i<=NF;i++) if($i ~ /reason/) print $(i+1)}' \
+  | sort | uniq -c | sort -rn | head -12
+
+# --- 5. Now give the guest work that forces exits, and compare. --------
+# Network I/O through an emulated device is an exit per register access.
+in_guest () { ssh -o StrictHostKeyChecking=no "ubuntu@$1" "$2"; }
+IP=$(sudo virsh domifaddr vss1 | awk '/ipv4/{split($4,a,"/"); print a[1]}')
+in_guest "$IP" "ping -f -c 2000 10.0.2.2 >/dev/null 2>&1" &
+sudo perf stat -e 'kvm:kvm_exit' -p "$PID" -- sleep 10
+wait
+
+# --- 6. Watch EPT doing its job: no exit for a guest page-table edit. --
+# Fork a few thousand processes; under shadow paging this storms the host.
+in_guest "$IP" "for i in \$(seq 2000); do /bin/true; done"
+sudo perf stat -e 'kvm:kvm_exit' -p "$PID" -- sleep 5
+
+# --- 7. Tear down ------------------------------------------------------
+sudo virsh destroy vss1 || true
+\end{lstlisting}
+
+\textbf{What to notice.} The idle guest still exits, a few thousand times a
+second, almost all of it timer and interrupt work. The flood ping multiplies
+that by a large factor, and the two thousand forks barely move it --- which is
+the worked example's claim, measured. Write the three numbers down.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why did Intel and AMD choose to add a new processor mode rather than
+        simply making the seventeen offending instructions privileged?
+  \item Under 5-level paging, a guest page walk has five levels and so does
+        the EPT walk. How many memory accesses does a nested walk cost, and
+        what is the general formula for an $n$-level scheme?
+  \item A host has VT-x and EPT but the IOMMU is disabled in firmware. State
+        exactly which capability is lost, and why the hypervisor must refuse
+        it rather than merely warn.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item VT-x and AMD-V add a second operating mode rather than changing any
+        instruction, so the guest kernel runs in ring~0 and backward
+        compatibility is preserved. x86 now satisfies the Popek--Goldberg
+        condition.
+  \item The VMCS holds guest state, host state, the controls that decide what
+        causes an exit, and the exit information. The controls are the design
+        surface: every bit set buys control and costs exits.
+  \item A VM exit is a world switch --- around 1{,}500 cycles originally, a few
+        hundred now. Hardware assistance won by removing reasons to exit, not
+        by making exits cheap.
+  \item Shadow page tables cost 4 accesses per TLB miss and a VM exit per guest
+        page-table write. Extended page tables cost 24 accesses per miss and
+        nothing per write. Writes are commoner, so EPT won.
+  \item VPID tags TLB entries so they survive a transition.
+  \item An IOMMU translates and confines device DMA. Without one, passthrough
+        gives a guest write access to all physical memory.
+  \item Nested virtualization works and is slow. Use it to learn, never to
+        measure.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Under VT-x a guest kernel runs in: (a)~ring~1 of root
+        operation; (b)~ring~0 of non-root operation; (c)~ring~3 of non-root
+        operation; (d)~ring~0 of root operation.
+  \item \textbf{(MCQ)} Extended page tables principally reduce: (a)~the cost of
+        a TLB miss; (b)~the number of VM exits caused by guest memory
+        management; (c)~the size of the VMCS; (d)~interrupt latency.
+  \item \textbf{(Short)} Explain what the VM-execution controls are for, and
+        give one example of a bit you would set and one you would clear, with
+        the reason for each.
+  \item \textbf{(Short)} Derive the 24-access figure for a nested page walk,
+        showing where each group of accesses comes from.
+  \item \textbf{(Short)} State what an IOMMU protects against, and describe the
+        concrete failure that occurs without one.
+  \item \textbf{(Applied)} A guest is slow and \texttt{perf} shows 180{,}000 VM
+        exits per second, 80\% of them with an I/O-instruction exit reason.
+        Explain what the guest is most likely doing, name the change you would
+        make, and predict what the exit count would become and why.
+  \item \textbf{(Applied)} You are asked whether a six-year-old server is
+        suitable as a teaching host for this course. List the processor and
+        firmware features you would check, in order, and say which lab in this
+        book each one is needed for.
+\end{reviewq}

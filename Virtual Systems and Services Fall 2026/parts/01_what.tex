@@ -341,9 +341,10 @@ personal computer made irrelevant for thirty years and the data centre made
 urgent again.
 
 \dsfig{%
-% The colour of each event is written out per node rather than carried by a
-% parameterised ev=<colour> style: a TikZ style taking #1 does not survive
-% being an argument of \dsfig.  See the README's figure rules.
+% Colours are written out per node rather than carried by a parameterised
+% ev=<colour> style.  Either works -- the course map in the front matter uses
+% the parameterised form -- but spelling them out keeps the node lines
+% greppable when a part hue changes.
 \begin{tikzpicture}[font=\scriptsize,
   ev/.style={rounded corners=2pt, line width=0.8pt, font=\scriptsize,
              align=center, inner sep=3pt, anchor=south}
@@ -426,7 +427,8 @@ question about any system is \emph{which resource} it virtualizes, because that
 determines what it can promise.
 
 \rowcolors{2}{white}{lightbg}
-\begin{longtable}{@{}L{3.3cm}L{5.0cm}L{3.0cm}L{3.7cm}@{}}
+% four columns: 16.2 cm block less 3 gaps of 2\tabcolsep (0.42 cm) = 14.94 cm
+\begin{longtable}{@{}L{3.2cm}L{4.9cm}L{3.0cm}L{3.6cm}@{}}
 \toprule
 \rowcolor{primary!15}
 \textbf{What is virtualized} & \textbf{So that} & \textbf{Examples} &
@@ -492,7 +494,7 @@ set -euo pipefail
 # vmx = Intel VT-x, svm = AMD-V. Chapter 4 explains what these flags buy.
 # A count of 0 means the feature is absent or disabled in firmware.
 grep -c -E '\<(vmx|svm)\>' /proc/cpuinfo
-lscpu | grep -i 'virtuali[sz]ation' || echo "no virtualization line reported"
+lscpu | grep -i 'virtuali[sz]ation' || echo "no such line reported"
 
 # --- 2. Install the hypervisor and confirm it is usable -----------------
 sudo apt-get install -y qemu-kvm libvirt-daemon-system virtinst \
@@ -503,8 +505,8 @@ sudo virt-host-validate qemu | head -20
 # --- 3. Fetch a cloud image and give it a login -------------------------
 # A cloud image is a disk file with an operating system already installed:
 # encapsulation (section 1.3) before you have even started.
-wget -nc -O ubuntu.img \
-  https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+BASE=https://cloud-images.ubuntu.com/jammy/current
+wget -nc -O ubuntu.img "$BASE/jammy-server-cloudimg-amd64.img"
 cat > user-data <<'YAML'
 #cloud-config
 password: vss2026
@@ -523,7 +525,7 @@ sudo virt-install --name vss1 --memory 2048 --vcpus 2 \
   --import --graphics none --noautoconsole
 
 # --- 5. Look at it from the host ----------------------------------------
-# dominfo is the guest as the hypervisor sees it: an allocation, not a machine.
+# dominfo is the guest as the hypervisor sees it: an allocation.
 sudo virsh list --all
 sudo virsh dominfo vss1
 

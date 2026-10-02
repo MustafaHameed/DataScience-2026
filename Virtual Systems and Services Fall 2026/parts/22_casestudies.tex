@@ -3,7 +3,469 @@
 %=====================================================================
 \locator{6}{Part VI --- Emerging Hardware and Practice}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Analyse} a virtualization decision using the arithmetic of the
+        preceding chapters rather than the vendor's framing.
+  \item \textbf{Identify} the measurement that would have changed each
+        decision, and \textbf{say} when it should have been taken.
+  \item \textbf{Explain} why a technically correct migration can still be a
+        commercial failure.
+  \item \textbf{Apply} the consolidation, overcommit, migration and cost models
+        to a case you have not seen before.
+  \item \textbf{Write} a recommendation that states its assumptions and the
+        evidence that would overturn it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+Everything. Each case below uses the arithmetic of a specific earlier chapter,
+named where it arises, and the point of the chapter is that the arithmetic is
+the same whatever the vendor calls the product.
+\end{prereq}
+
+\begin{keyterms}
+consolidation ratio $\bullet$ right-sizing $\bullet$ lift and shift $\bullet$
+refactoring $\bullet$ egress $\bullet$ reserved capacity $\bullet$ licence
+model $\bullet$ blast radius $\bullet$ edge site $\bullet$ intermittent
+connectivity $\bullet$ post-mortem $\bullet$ counterfactual
+\end{keyterms}
+
+\section{How to Read These}
+
+Four cases. The figures are representative of real deployments rather than
+drawn from one named organisation, and they are constructed so that the
+arithmetic can be checked --- that is what they are for. Each follows the same
+shape: what was decided, what happened, what the numbers said, and the single
+measurement that would have changed the outcome.
+
+\begin{alertbox}[Every number in this chapter is invented, and says so]
+The cases are composites. They are built to be arithmetically consistent and to
+exercise the models of earlier chapters, not to report on any particular
+institution. Where a real, dated fact is used --- a licence change, a published
+vulnerability --- it is cited as such in the chapter that introduced it.
+
+\smallskip
+Treat the figures as you would a worked example: reproduce them, change the
+inputs, and see where the recommendation flips. The skill being taught is the
+flipping point, not the answer.
 \end{alertbox}
+
+\section{Case 1: The Consolidation That Nearly Failed}
+
+\begin{conceptbox}[The decision]
+A university's computing department had 64 physical servers, bought one at a
+time over nine years. It consolidated onto 5 hosts and a shared array. The
+business case cited the arithmetic of \chref{what}: a 12.8:1 ratio, 85\% less
+power, one estate to patch instead of 64.
+
+\smallskip
+Eleven weeks after the migration the estate was described by its own users as
+``slower than the old servers''.
+\end{conceptbox}
+
+\textbf{What the numbers said.} Sizing had been done on \emph{allocated}
+capacity, as \chref{cpumem} warns.
+
+\[ \sigma_{\text{cpu}} = \frac{64 \text{ guests} \times 4 \text{ vCPU}}
+   {5 \times 48 \text{ cores}} = \frac{256}{240} = 1.07 \]
+
+which looks comfortable. But N+1 was not applied, and one host was taken for
+maintenance in week 11:
+
+\[ \sigma_{\text{cpu}}\big|_{N+1} = \frac{256}{4 \times 48} = \frac{256}{192}
+   = 1.33 \]
+
+That alone is survivable. What was not survivable was memory. The 64 old
+servers had 32 GB each; the guests were given 32 GB each because that is what
+they had before, and nobody measured what they used:
+
+\[ \text{allocated} = 64 \times 32 = 2{,}048 \text{ GB} \qquad
+   \text{installed} = 5 \times 384 = 1{,}920 \text{ GB} \]
+
+\[ \sigma_{\text{mem}} = \frac{2{,}048}{1{,}920 \times 0.85} = 1.26 \]
+
+With all five hosts this was absorbed by page sharing and ballooning
+(\chref{cpumem}). With four hosts it was not:
+
+\[ \sigma_{\text{mem}}\big|_{N+1} = \frac{2{,}048}{4 \times 384 \times 0.85}
+   = \frac{2{,}048}{1{,}306} = 1.57 \]
+
+The hosts reached the bottom of the reclamation ladder and began swapping.
+\%RDY was fine throughout, which is why the first week of investigation looked
+at the wrong resource.
+
+\textbf{The measurement that would have changed it.} Active memory, before
+migration. Measured afterwards it was 9.4 GB per workload:
+
+\[ 64 \times 9.4 = 602 \text{ GB} \]
+
+against 1{,}920 GB installed --- the estate needed a third of what was bought,
+and the guests should have been given 12 GB, not 32.
+
+\textbf{What was done.} Right-sizing, over three weeks, guest by guest.
+$\sigma_{\text{mem}}$ fell to 0.59 and $\sigma_{\text{mem}}|_{N+1}$ to 0.74. No
+hardware was added.
+
+\begin{conceptbox}[The lesson, stated generally]
+\emph{Migrating a server is not sizing a guest.} The old machine's
+specification was a purchasing decision from up to nine years earlier, made
+against a different workload, with headroom for growth that never arrived.
+Carrying it across preserves every bad guess ever made and adds the
+hypervisor's overhead on top.
+
+\smallskip
+Measure for a month before migrating; size to the 95th percentile with a stated
+margin; and apply N+1 to \emph{every} ratio you quote, because the failure
+happens on the day one host is away.
+\end{conceptbox}
+
+\section{Case 2: The Cloud Migration That Cost More}
+
+\begin{conceptbox}[The decision]
+A software house of 40 engineers moved its entire estate --- 120 guests,
+development and production --- to a public cloud over four months. The
+projection showed a 15\% saving. The first full month's invoice was 2.3 times
+the projection, and the second was higher.
+\end{conceptbox}
+
+\textbf{Where the money went.} Four causes, in descending order, each traceable
+to a chapter.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.7cm}L{2.2cm}L{4.3cm}L{4.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Cause} & \textbf{Share of overrun} & \textbf{What happened} &
+\textbf{Chapter} \\
+\midrule
+\endhead
+Lift and shift without right-sizing & 44\% & 120 guests moved at their existing
+vCPU and memory, which had never been measured & \chref{cpumem},
+\chref{cloud} \\
+On-demand pricing throughout & 31\% & No reservations, because nobody was
+confident enough to commit. \chref{cloud}'s worked example: on demand was 61\%
+more than owning & \chref{cloud} \\
+Egress & 17\% & Nightly backups written \emph{out} of the cloud to the old
+on-premises array, at \$0.09 per GB & \chref{cloud} \\
+Development guests running continuously & 8\% & 44 non-production guests
+billed $24 \times 7$ for work done $8 \times 5$ & \chref{cloud} \\
+\bottomrule
+\end{longtable}
+
+\textbf{The arithmetic of the fix.} All four were addressed in six weeks, with
+no architectural change.
+
+\begin{tight}
+  \item \textbf{Right-sizing.} Measured p95 across 120 guests; mean allocation
+        fell from 6.2 vCPU and 21 GB to 2.1 vCPU and 7 GB. Compute cost
+        $\times\,0.34$.
+  \item \textbf{Reservations} on the 61 guests that were genuinely steady.
+        \chref{cloud}'s figure for a three-year commitment is 55\%; a one-year
+        commitment was taken instead at 34\%, because the business would not
+        commit for three.
+  \item \textbf{Backups kept in the cloud}, with only a weekly copy leaving.
+        Egress fell by about 85\%.
+  \item \textbf{Development guests stopped out of hours}, a scheduled task:
+        $24 \times 7 = 168$ hours becomes $10 \times 5 = 50$, a 70\%
+        reduction on those 44 guests.
+\end{tight}
+
+The invoice settled at about 0.78 of the on-premises baseline --- close to the
+original projection, reached eight months late.
+
+\begin{conceptbox}[The lesson: lift and shift is a migration strategy, not a cost strategy]
+Lifting and shifting is a perfectly reasonable way to \emph{move}: it is fast,
+it is low-risk, and it decouples the move from the redesign.
+
+\smallskip
+What it is not is a way to save money, and the reason is structural. On
+premises, waste is invisible --- a guest with four times the memory it needs
+costs nothing extra once the host is bought. In the cloud, every unit of waste
+is a line on a monthly invoice. The cloud did not make this estate expensive;
+it made it \emph{legible}, and what became legible was eleven years of
+unmeasured allocation.
+
+\smallskip
+If a migration business case claims savings, ask which of the four items above
+it has budgeted for. If the answer is none, the projection is wrong by roughly
+the factor this case saw.
+\end{conceptbox}
+
+\section{Case 3: Edge Virtualization at Twenty-Three Sites}
+
+\begin{conceptbox}[The decision]
+A logistics company ran a small application at each of 23 depots: stock,
+weighing, dispatch. Each site had two aging PCs under a desk. Connectivity to
+head office was a consumer broadband line, and it failed somewhere in the
+estate most weeks.
+
+\smallskip
+The proposal was to centralise everything into the data centre and give each
+depot a thin client (\chref{desktop}).
+\end{conceptbox}
+
+\textbf{Why centralisation was rejected.} The arithmetic was not about cost but
+about \chref{migration}'s availability vocabulary.
+
+Depot operations must continue when the line is down. Measured over a year,
+each site's link had about 99.2\% availability:
+
+\[ (1 - 0.992) \times 8{,}760 = \mathbf{70 \text{ hours a year}} \]
+
+Seventy hours a year per site of \emph{no dispatch at all}, against the current
+arrangement where a line failure meant only that head office reporting was
+delayed. Centralisation would have improved manageability and made the business
+worse.
+
+\textbf{What was built instead.} One small two-node cluster per depot, running
+three guests: the application, a local database and a management agent.
+Specifically:
+
+\begin{tight}
+  \item \textbf{Immutable images} (\chref{management}). Depots have no
+        technical staff, so nothing is configured on site. A new version is a
+        new image; rollback is the previous image.
+  \item \textbf{Containers, not VMs, for the application} (\chref{containers}),
+        because the hardware budget per site was small and the start-up speed
+        made unattended recovery practical.
+  \item \textbf{Local persistence with asynchronous replication} to head
+        office. RPO of 15 minutes, accepted explicitly: a depot losing 15
+        minutes of dispatch records in a total site failure was judged
+        tolerable, and synchronous replication over a failing consumer line was
+        not possible anyway.
+  \item \textbf{No live migration} (\chref{migration}). Two nodes, so quorum is
+        impossible; a witness ran at head office, and when the line was down
+        the site operated in a documented degraded mode with HA disabled
+        rather than risking the split brain of \chref{migration}.
+\end{tight}
+
+\begin{conceptbox}[The lesson: the constraint is rarely the one in the proposal]
+The proposal was framed as a management problem --- 46 unmanaged PCs --- and
+the answer was framed as centralisation. The actual constraint was a 99.2\%
+network link, which nobody had measured until someone asked for the number.
+
+\smallskip
+Edge deployments invert several assumptions this book has relied on: bandwidth
+is scarce and unreliable, there is no one on site, physical security is weak,
+and the hardware is whatever fits under a desk. The techniques still apply ---
+images, containers, replication, quorum --- but the \emph{weightings} change
+completely.
+
+\smallskip
+The transferable question: \emph{what does this site have to keep doing when
+the link is down?} If the answer is ``nothing'', centralise. If it is
+``everything'', the compute follows the work.
+\end{conceptbox}
+
+\section{Case 4: A Licence Change, and What It Revealed}
+
+\begin{conceptbox}[The decision]
+A hospital trust ran 340 guests on 14 hosts under vSphere. At renewal, a change
+in the vendor's packaging --- bundled subscription rather than perpetual
+per-socket licensing, as the industry saw after 2024 (\chref{platforms}) ---
+raised the quoted renewal by a factor of roughly four.
+
+\smallskip
+Three options were considered: pay, migrate to another platform, or move to a
+public cloud.
+\end{conceptbox}
+
+\textbf{What the comparison looked like.} Over three years, approximately:
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.0cm}L{2.6cm}L{3.2cm}L{4.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Option} & \textbf{Licence} & \textbf{Migration effort} &
+\textbf{Risk} \\
+\midrule
+\endhead
+Stay on vSphere & High & None & Exposed to the next repricing \\
+Migrate to Proxmox or oVirt & Near zero & 340 guests, 9--14 months, two
+engineers & Staff retraining; tooling rebuilt; clinical systems vendors may not
+support it \\
+Public cloud & N/A & Largest; also a data-residency review & Egress; ongoing
+cost; regulatory \\
+\bottomrule
+\end{longtable}
+
+\textbf{The finding that decided it.} Not cost. When the trust catalogued what
+would have to be rebuilt, it discovered that \textbf{nobody could enumerate what
+the estate did}. There was no inventory mapping guests to clinical services, no
+record of which of the 340 were still needed, and 61 guests whose owner could
+not be identified at all.
+
+The migration could not be planned because the thing to be migrated was not
+known.
+
+\textbf{What was done.} A twelve-month discovery and rationalisation programme
+first: inventory, ownership, dependency mapping, decommissioning. It retired 78
+guests --- 23\% of the estate --- that nothing used. Only then was the platform
+decision taken, and by then the licence quantity had fallen with the guest
+count.
+
+\begin{conceptbox}[The lesson: lock-in is not technical]
+Every chapter in this book would say the migration is feasible. The hypervisors
+are comparable (\chref{platforms}), the disk formats convert
+(\chref{storage}), the networking is reproducible (\chref{network}).
+
+\smallskip
+What made it hard was institutional knowledge that had never been written down.
+That is the real lock-in, and it is not specific to any vendor: it accumulates
+in any estate that grows without an inventory, and it is what makes every
+platform change cost three times its estimate.
+
+\smallskip
+The cheapest insurance against a repricing you cannot predict is an inventory
+you maintain. It costs little, it is useful every day for other reasons, and it
+converts a crisis into a project.
+\end{conceptbox}
+
+\section{What the Four Have in Common}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.0cm}L{4.4cm}L{4.3cm}L{4.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Case} & \textbf{Framed as} & \textbf{Actually about} &
+\textbf{Missing measurement} \\
+\midrule
+\endhead
+1 & Consolidation ratio & N+1 memory under maintenance & Active memory, before
+migrating \\
+2 & Cloud versus on premises & Eleven years of unmeasured allocation becoming
+visible & p95 utilisation per guest \\
+3 & Managing 46 unmanaged PCs & What must keep working when the link fails &
+Link availability per site \\
+4 & A licence renewal & Not knowing what the estate does & An inventory with
+owners \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[The pattern]
+In all four, the decision was framed as a technology choice and settled by a
+measurement nobody had taken. In none of them was the chosen technology wrong.
+
+\smallskip
+That is worth carrying into \chref{project} and into professional practice. The
+engineering in this book is the easy part: hypervisors work, containers work,
+migration works. The difficulty is almost always in knowing what you have, what
+it uses and what it must keep doing --- and those are questions of measurement
+and record-keeping, not of architecture.
+
+\smallskip
+When you are handed a proposal, the most useful question is rarely ``is this
+the right technology?''. It is \emph{``what number would change this
+decision, and has anyone taken it?''}
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Quoting a consolidation ratio without N+1.} Case 1 failed on
+        the day one host went away for maintenance.
+  \item \textbf{Carrying old specifications into new guests.} You preserve
+        every purchasing guess ever made and add overhead.
+  \item \textbf{Expecting lift and shift to save money.} It moves the estate;
+        it does not fix it, and the cloud bills for what on premises concealed.
+  \item \textbf{Centralising without measuring the link.} Availability at the
+        edge is a property of the worst site, not the average one.
+  \item \textbf{Treating a platform migration as a technical project.} The cost
+        is in the knowledge that was never written down.
+  \item \textbf{Reading a case study as a recommendation.} Change one input and
+        the answer changes; the skill is knowing which input.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Analysing a Case You Have Not Seen]
+No commands. Work in pairs, 45 minutes, and write a one-page recommendation ---
+this is deliberately the shape of the examination's applied questions and of
+\chref{project}'s report.
+
+\smallskip
+\textbf{The brief.} A college runs 90 guests on 4 hosts (32 cores, 256 GB
+each), bought three years ago, under a platform whose support expires in seven
+months. Measured over the last term:
+
+\begin{tight}
+  \item allocated: 410 vCPU, 1{,}740 GB
+  \item active: 198 GB total, p95; \%RDY p95 11\%
+  \item storage: 24 TB provisioned on an 11 TB thin pool, 7.9 TB written,
+        growing 180 GB a month
+  \item 14 guests have no identified owner
+  \item the finance office requires three-year costings
+\end{tight}
+
+\textbf{Produce:}
+\begin{enumerate}[leftmargin=2.2em, itemsep=3pt, topsep=4pt]
+  \item $\sigma_{\text{cpu}}$ and $\sigma_{\text{mem}}$, with and without N+1.
+  \item The storage over-subscription ratio and the time to pool exhaustion
+        (\chref{storage}).
+  \item The single most urgent finding, with the arithmetic that supports it.
+  \item Three options with three-year costings, using \chref{cloud}'s method
+        for the cloud one.
+  \item A recommendation, the assumptions it rests on, and \textbf{the one
+        measurement that would overturn it}.
+\end{enumerate}
+
+\textbf{Marking yourselves.} A good answer identifies that \%RDY of 11\% and
+$\sigma_{\text{cpu}}$ of 4.0 mean the estate is already contended; that memory
+is wildly over-allocated at 1{,}740 GB against 198 GB active; that the thin
+pool has about 17 months at the current rate but no N+1 storage headroom; and
+that the 14 unowned guests are case 4 in miniature. A weak answer compares
+products.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item In case 1, $\sigma_{\text{mem}}$ was 1.26 with five hosts and 1.57 with
+        four. Explain why the first was survivable and the second was not,
+        naming the mechanism.
+  \item Case 2's estate was not made more expensive by the cloud. State in one
+        sentence what the cloud actually did, and name the two items that
+        together accounted for 75\% of the overrun.
+  \item In case 3, why did a two-node cluster at each depot need a witness
+        elsewhere, and what was done when the link to it failed?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Case 1: a consolidation sized on allocated rather than active memory
+        failed the day a host was taken for maintenance. Quote every ratio with
+        N+1.
+  \item Case 2: a cloud migration cost 2.3 times its projection through lift
+        and shift, on-demand pricing, egress and always-on development guests.
+        The cloud made existing waste legible rather than creating it.
+  \item Case 3: centralising 23 depots would have improved management and cost
+        70 hours a year of operations per site. The constraint was link
+        availability, which nobody had measured.
+  \item Case 4: a licence repricing was blocked not by technology but by the
+        absence of an inventory. Lock-in is institutional, not technical.
+  \item In all four the decision was framed as a technology choice and settled
+        by a missing measurement.
+  \item The question to ask of any proposal: what number would change this, and
+        has anyone taken it?
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} In case 1, the resource that failed was: (a)~CPU;
+        (b)~memory under N+1; (c)~storage capacity; (d)~network bandwidth.
+  \item \textbf{(MCQ)} The largest single contributor to case 2's overrun was:
+        (a)~egress; (b)~on-demand pricing; (c)~lift and shift without
+        right-sizing; (d)~development guests running continuously.
+  \item \textbf{(Short)} Explain why the cloud ``made waste legible'' and what
+        that implies for a migration business case.
+  \item \textbf{(Short)} State the question that decides whether an edge site
+        should keep local compute, and apply it to a supermarket till system.
+  \item \textbf{(Short)} Explain what case 4 means by lock-in being
+        institutional rather than technical.
+  \item \textbf{(Applied)} Work the lab's brief and submit the one-page
+        recommendation.
+  \item \textbf{(Applied)} Choose any one of the four cases and write the
+        counterfactual: what would have happened had the missing measurement
+        been taken six months earlier? Be specific about what would have been
+        decided differently and what it would have cost.
+\end{reviewq}

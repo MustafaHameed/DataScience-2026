@@ -3,7 +3,426 @@
 %=====================================================================
 \locator{6}{Part VI --- Emerging Hardware and Practice}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why a GPU is harder to share than a processor, and
+        \textbf{name} the three sharing models.
+  \item \textbf{Distinguish} time-sliced vGPU from MIG partitioning by what is
+        divided and what is guaranteed.
+  \item \textbf{Compute} the utilisation and cost consequences of each model
+        for a stated set of jobs.
+  \item \textbf{Describe} what a DPU moves off the host, and \textbf{relate} it
+        to \chref{paravirt}.
+  \item \textbf{Choose} a sharing model for a workload and \textbf{state} what
+        it gives up.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{paravirt} entire --- passthrough, VFIO, SR-IOV and the IOMMU are the
+machinery this chapter applies to a different device --- and \chref{cpumem}
+(scheduling and overcommit, which work differently here).
+\end{prereq}
+
+\begin{keyterms}
+GPU passthrough $\bullet$ vGPU $\bullet$ time slicing $\bullet$ MIG $\bullet$
+instance profile $\bullet$ SR-IOV for GPUs $\bullet$ framebuffer $\bullet$
+context switch $\bullet$ mediated device $\bullet$ VFIO-mdev $\bullet$ DPU
+$\bullet$ SmartNIC $\bullet$ infrastructure offload $\bullet$ HBM $\bullet$
+NVLink $\bullet$ fractional GPU
+\end{keyterms}
+
+\section{Why a GPU Is Not a CPU}
+
+\chref{cpumem} divided a processor among guests by scheduling: a vCPU runs for
+a slice, is descheduled, and another runs. The state to save is a few hundred
+bytes of registers, and the switch costs microseconds.
+
+A GPU resists this for three reasons.
+
+\begin{tight}
+  \item \textbf{The state is enormous.} A context includes tens of gigabytes of
+        high-bandwidth memory holding model weights, textures and intermediate
+        results. You cannot save and restore that between time slices; there is
+        nowhere to put it and no time to move it.
+  \item \textbf{The work is long and uninterruptible.} A compute kernel runs to
+        completion. Pre-empting it mid-flight is either impossible or very
+        expensive, depending on the generation.
+  \item \textbf{The memory is the scarce resource, not the compute.} A training
+        job that needs 40 GB of GPU memory cannot run in 20 GB at half speed.
+        It cannot run at all.
+\end{tight}
+
+That last point is the one that matters most. Processor overcommit works
+because time is divisible (\chref{cpumem}); GPU memory is as indivisible as
+host memory, and there is far less of it.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  gpu/.style={rounded corners=3pt, line width=1.1pt, minimum width=4.6cm,
+              minimum height=2.6cm},
+  seg/.style={rounded corners=1.5pt, line width=0.6pt, align=center,
+              font=\tiny, inner sep=1pt},
+  hd/.style={font=\scriptsize\bfseries, align=center},
+  note/.style={font=\scriptsize\itshape, align=center}
+]
+  % --- passthrough ---
+  \node[gpu, draw=purplehl, fill=purplehl!5] at (0,0) {};
+  \node[hd, text=purplehl!70!black] at (0,1.55) {Passthrough};
+  \node[seg, draw=purplehl, fill=purplehl!22, text=purplehl!70!black,
+        minimum width=3.9cm, minimum height=1.7cm] at (0,-0.1)
+       {one guest\\[2pt] 80 GB \ $\bullet$\ all SMs\\[2pt]
+        \textbf{native speed}};
+  \node[note, text=purplehl!70!black] at (0,-1.75)
+       {1 guest per card};
+
+  % --- time sliced vGPU ---
+  \node[gpu, draw=goldhl, fill=goldhl!5] at (5.6,0) {};
+  \node[hd, text=goldhl!45!black] at (5.6,1.55) {vGPU (time sliced)};
+  \foreach \i in {0,1,2,3}{
+    \pgfmathsetmacro{\y}{0.62-\i*0.44}
+    \node[seg, draw=goldhl, fill=goldhl!18, text=goldhl!45!black,
+          minimum width=3.9cm, minimum height=0.38cm] at (5.6,\y)
+         {guest \number\numexpr\i+1\relax \ --- 20 GB, \emph{all} SMs in turn};}
+  \node[note, text=goldhl!45!black] at (5.6,-1.75)
+       {memory split, compute shared\\in time: no guarantee};
+
+  % --- MIG ---
+  \node[gpu, draw=greenhl, fill=greenhl!5] at (11.2,0) {};
+  \node[hd, text=greenhl!45!black] at (11.2,1.55) {MIG (partitioned)};
+  \foreach \i in {0,1,2,3}{
+    \pgfmathsetmacro{\y}{0.62-\i*0.44}
+    \node[seg, draw=greenhl, fill=greenhl!18, text=greenhl!45!black,
+          minimum width=3.9cm, minimum height=0.38cm] at (11.2,\y)
+         {guest \number\numexpr\i+1\relax \ --- 20 GB + \emph{its own} SMs};}
+  \node[note, text=greenhl!45!black] at (11.2,-1.75)
+       {memory \emph{and} compute split\\in hardware: guaranteed};
+
+  \node[rounded corners=3pt, draw=accent!55, fill=accent!5,
+        text=accent!70!black, font=\scriptsize, align=center, inner sep=4pt,
+        text width=12.6cm] at (5.6,-2.75)
+       {The difference between the middle and the right is whether a noisy
+        neighbour exists. Under time slicing one guest's long kernel delays
+        the others; under MIG it cannot, because the streaming
+        multiprocessors are not shared.};
+\end{tikzpicture}}%
+{Three ways to divide one accelerator. Only the right-hand one gives a
+guarantee, and only the left-hand one gives the whole card.}{gpu-sharing}
+
+\section{The Three Models}
+
+\begin{definitionbox}[Passthrough, vGPU and MIG]
+\term{Passthrough} assigns the whole physical GPU to one guest with VFIO and
+the IOMMU, exactly as \chref{paravirt} assigned a network card. Native
+performance, the guest's own vendor driver, and all of \chref{paravirt}'s
+costs: no live migration, memory pinned, one guest per card.
+
+\smallskip
+\term{vGPU} --- NVIDIA's term; a \term{mediated device} in Linux terms --- splits
+the card's memory between several guests and \emph{time slices} the compute
+between them. Each guest gets a fixed framebuffer and a turn at all the
+streaming multiprocessors. Density without a performance guarantee.
+
+\smallskip
+\term{MIG} --- multi-instance GPU, from the A100 onward --- partitions the
+hardware itself. Memory, cache, streaming multiprocessors and memory bandwidth
+are divided into up to seven instances with hardware-enforced boundaries. Each
+instance behaves like a smaller, independent GPU. Density \emph{with} a
+guarantee, at the cost of fixed partition sizes.
+\end{definitionbox}
+
+\begin{conceptbox}[Which One Matches Which Workload]
+The deciding question is whether the workload's demand is steady or bursty, and
+whether it can tolerate interference.
+
+\begin{tight}
+  \item \textbf{Training a large model} --- passthrough, or MIG's largest
+        profile. It needs all the memory and it runs for days; sharing buys
+        nothing.
+  \item \textbf{Inference serving} --- MIG. Many small, latency-sensitive
+        requests that must not be delayed by somebody else's batch job. The
+        guarantee is the point.
+  \item \textbf{Virtual desktops with CAD or rendering} (\chref{desktop}) ---
+        vGPU. Demand is bursty and interactive, users are rarely busy
+        simultaneously, and time slicing exploits exactly that.
+  \item \textbf{Student or research workloads} --- MIG where the hardware
+        supports it, because fairness between users matters more than peak
+        throughput, and one runaway job must not stop the others.
+\end{tight}
+\end{conceptbox}
+
+\begin{worked}[Four Jobs, One Card]
+A department has one 80 GB accelerator and four research groups. Each needs
+18 GB of GPU memory and runs jobs averaging 40 minutes, roughly 6 hours a day
+each. Compare passthrough, vGPU and MIG.
+
+\smallskip
+\textbf{Step 1 --- passthrough.} One guest owns the card.
+\[ \text{concurrent groups} = 1 \qquad
+   \text{utilisation} = \frac{6}{24} = \mathbf{25\%} \]
+The other three queue. Aggregate demand is $4 \times 6 = 24$ hours a day
+against 24 hours available, so the card is theoretically just sufficient ---
+but only if the four groups never want it at the same time, which they will,
+because they work the same hours. Expect long queues at 2 p.m. and an idle card
+at 3 a.m.
+
+\smallskip
+\textbf{Step 2 --- vGPU, four slices of 20 GB.} All four run concurrently.
+Memory fits ($4 \times 20 = 80$). Compute is time sliced, so when all four are
+busy each gets roughly a quarter of the throughput:
+\[ \text{job time when all four are active} = 40 \times 4
+   = \mathbf{160 \text{ minutes}} \]
+When only one is active it gets the whole card and finishes in 40. Throughput
+is good; \emph{predictability is gone}, and a researcher cannot tell whether
+their job will take 40 minutes or 160.
+
+\smallskip
+\textbf{Step 3 --- MIG, four instances.} On an 80 GB card the
+\texttt{2g.20gb} profile gives four instances of 20 GB with a fixed share of
+compute --- about a quarter each, always.
+\[ \text{job time, always} = \frac{40}{0.25} = \mathbf{160 \text{ minutes}} \]
+The same 160 minutes as the worst vGPU case --- but it is \emph{always} 160,
+whether the neighbours are busy or idle.
+
+\smallskip
+\textbf{Step 4 --- compare honestly.}
+\begin{tight}
+  \item Passthrough: fastest single job (40 min), 25\% utilisation, queueing.
+  \item vGPU: 40--160 min depending on neighbours, high utilisation,
+        unpredictable.
+  \item MIG: always 160 min, high utilisation, predictable, and no job can be
+        harmed by another.
+\end{tight}
+
+\smallskip
+\textbf{Step 5 --- the recommendation, and why it is not obvious.} For four
+research groups sharing one departmental card, \textbf{MIG}. The reason is not
+throughput --- vGPU matches or beats it --- but that MIG makes the system
+\emph{explicable}. A researcher who is told ``you have a quarter of a card and
+your job takes 160 minutes'' can plan. One whose job takes 40 minutes on Tuesday
+and 160 on Wednesday for reasons they cannot see will conclude the cluster is
+broken, and will start asking for their own card.
+
+\smallskip
+\textbf{Step 6 --- and when to reverse it.} If the four groups' work were
+genuinely bursty and rarely simultaneous --- interactive visualisation rather
+than batch training --- vGPU would win outright, because time slicing harvests
+exactly the idleness that MIG's fixed partitions would waste.
+\end{worked}
+
+\begin{alertbox}[Three practical constraints that decide this before you do]
+\textbf{Licensing.} NVIDIA vGPU requires a separate software licence per
+concurrent user, renewed annually. It is frequently a larger cost than the
+card over three years, and it is the reason many sites use passthrough or MIG
+instead.
+
+\smallskip
+\textbf{MIG profiles are fixed.} You choose from a published list --- one
+instance of seven-eighths, two of a half, seven of a seventh, and a few
+combinations. You cannot ask for 30\% of a card. Reconfiguring requires
+stopping every workload on it.
+
+\smallskip
+\textbf{Not every card supports every model.} MIG arrived with the A100 and is
+absent from consumer cards entirely; vGPU needs a supported card and the
+licence; passthrough works almost everywhere. Check the specific model before
+designing around a capability.
 \end{alertbox}
+
+\section{DPUs: Moving the Infrastructure Off the Host}
+
+The last few chapters have quietly accumulated work the host performs on behalf
+of guests: the virtual switch of \chref{network}, the encapsulation of VXLAN,
+the storage path of \chref{storage}, the encryption everywhere. On a busy host
+this is a material fraction of the processor --- capacity bought for guests and
+spent on plumbing.
+
+A \term{DPU} (data processing unit, or SmartNIC) is a card with its own
+processors, memory and operating system that takes that work. The virtual
+switch runs on the card. The storage initiator runs on the card. Encryption
+runs on the card. The host's cores go back to the guests.
+
+\begin{conceptbox}[Why This Is a Security Change as Much as a Performance One]
+The obvious benefit is reclaimed cores --- commonly 20--30\% of a host that was
+doing heavy overlay networking.
+
+\smallskip
+The structural benefit is that the infrastructure now runs on a processor the
+host's operating system does not control. A compromised hypervisor cannot
+rewrite the virtual switch's rules if the switch is not on the hypervisor; the
+management path to the DPU is separate. This is \chref{platforms}'s
+disaggregation argument --- Xen's driver domains --- implemented in silicon
+rather than in software, and it is why AWS's Nitro architecture is built this
+way.
+
+\smallskip
+It also completes an arc this book has been tracing since \chref{paravirt}:
+emulate the device, then paravirtualize it, then hand the real one over, and
+finally move the whole supporting apparatus to a computer of its own.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Assuming GPU memory can be overcommitted.} It cannot. A job
+        needing 40 GB in a 20 GB instance does not run slowly; it fails.
+  \item \textbf{Choosing vGPU for latency-sensitive inference.} Time slicing
+        has no guarantee, and the tail latency of \chref{performance} is
+        exactly what suffers.
+  \item \textbf{Forgetting the vGPU licence in the budget.} It can exceed the
+        hardware cost over three years.
+  \item \textbf{Designing for MIG on a card that does not have it.} Check the
+        model, not the vendor.
+  \item \textbf{Expecting to live-migrate a GPU guest.} All of
+        \chref{paravirt}'s passthrough costs apply, and GPU state makes them
+        worse.
+  \item \textbf{Measuring GPU utilisation as a percentage and stopping there.}
+        ``100\% utilisation'' from \texttt{nvidia-smi} means a kernel was
+        resident, not that the hardware was fully used. Look at achieved
+        occupancy and memory bandwidth.
+  \item \textbf{Buying accelerators before measuring queueing.} The worked
+        example's passthrough case was 25\% utilised and still had queues,
+        which is a scheduling problem, not a capacity one.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Partitioning an Accelerator]
+Runs against a real GPU where one is available, and against captured output
+where one is not --- the file is in \texttt{code/} and the exercise is the
+same. Expect thirty minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch20_gpu.sh -- passthrough, MIG and what utilisation really reports.
+set -euo pipefail
+
+# --- 1. Is there an accelerator here at all? ---------------------------
+if ! command -v nvidia-smi >/dev/null; then
+  echo "no GPU on this host -- read code/ch20_capture.txt instead"
+  sed -n '1,40p' "$(dirname "$0")/ch20_capture.txt" 2>/dev/null || true
+  exit 0
+fi
+nvidia-smi --query-gpu=name,memory.total,mig.mode.current \
+  --format=csv
+
+# --- 2. The IOMMU group: what passthrough would have to take. ---------
+# Chapter 4: the whole group moves together, or nothing does.
+for d in $(lspci -D | awk '/NVIDIA/{print $1}'); do
+  grp=$(basename "$(dirname "$(readlink -f \
+        "/sys/bus/pci/devices/$d/iommu_group")")")
+  echo "device $d is in IOMMU group $grp"
+  ls "/sys/kernel/iommu_groups/$grp/devices/"
+done
+# A card and its audio function usually share a group: both must go.
+
+# --- 3. Enable MIG, if this card supports it. -------------------------
+sudo nvidia-smi -i 0 -mig 1 || \
+  echo "MIG not supported on this card -- see the alertbox"
+sudo nvidia-smi mig -i 0 -lgip      # the fixed profiles available
+
+# --- 4. Create four instances, and see them as separate devices. ------
+sudo nvidia-smi mig -i 0 -cgi 2g.20gb,2g.20gb,2g.20gb,2g.20gb -C || true
+nvidia-smi -L                        # four MIG UUIDs, one card
+
+# --- 5. Run the same job on one instance, then on all four. -----------
+JOB='python3 -c "
+import time
+try:
+    import torch
+except ImportError:
+    raise SystemExit(\"install torch to run this step\")
+a = torch.randn(8192, 8192, device=\"cuda\")
+t = time.time()
+for _ in range(50): a = a @ a.T / 1e4
+torch.cuda.synchronize(); print(f\"{time.time()-t:.1f} s\")"'
+
+mig_uuids () {
+  nvidia-smi -L | awk -F'UUID: ' '/MIG/{print $2}' | tr -d ')'
+}
+UUID=$(mig_uuids | head -1)
+echo "=== alone on one instance ==="
+CUDA_VISIBLE_DEVICES="$UUID" bash -c "$JOB"
+
+echo "=== all four instances busy together ==="
+mig_uuids | while read -r u; do
+  CUDA_VISIBLE_DEVICES="$u" bash -c "$JOB" &
+done
+wait
+# Under MIG the single-instance time and the all-busy time should be
+# the SAME. That is the guarantee the worked example is about.
+
+# --- 6. What "utilisation" actually reports. --------------------------
+nvidia-smi --query-gpu=utilization.gpu,utilization.memory,\
+memory.used,memory.total --format=csv -l 1 -c 5
+# utilization.gpu is "a kernel was resident during the sample", not
+# "the hardware was fully used". See the pitfalls.
+
+# --- 7. Tear down the partitions. -------------------------------------
+sudo nvidia-smi mig -i 0 -dci || true
+sudo nvidia-smi mig -i 0 -dgi || true
+sudo nvidia-smi -i 0 -mig 0  || true
+\end{lstlisting}
+
+\textbf{What to notice.} Step 5 is the whole chapter in one measurement. Under
+MIG the two timings match, because the partitions are enforced in hardware.
+Repeat the same test under vGPU time slicing and they will not --- and that
+difference, not throughput, is what you are choosing between.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Explain why GPU memory cannot be overcommitted the way host memory can,
+        referring to \chref{cpumem}'s reclamation ladder.
+  \item Six groups each need 12 GB and run 5 hours a day on one 80 GB card.
+        Compare passthrough and a six-way MIG partition on utilisation and on
+        predictability.
+  \item \texttt{nvidia-smi} reports 100\% GPU utilisation for a job that a
+        colleague says is poorly optimised. Explain how both can be true, and
+        what you would measure instead.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A GPU resists time slicing because its context is tens of gigabytes,
+        its kernels are uninterruptible, and memory --- not compute --- is the
+        scarce, indivisible resource.
+  \item Passthrough gives one guest the whole card at native speed, with all of
+        \chref{paravirt}'s costs.
+  \item vGPU splits memory and time slices compute: density without a
+        guarantee. MIG partitions memory \emph{and} compute in hardware:
+        density with a guarantee, in fixed profiles.
+  \item In the worked example MIG and vGPU gave the same throughput and only
+        MIG gave a predictable answer --- which is usually what shared
+        research and inference infrastructure needs.
+  \item Licensing, fixed profiles and card support frequently decide the
+        question before the engineering does.
+  \item A DPU moves the virtual switch, the storage path and encryption to a
+        computer of its own: 20--30\% of host cores returned, and the
+        infrastructure placed outside the hypervisor's control.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} MIG differs from time-sliced vGPU in that it:
+        (a)~supports more guests; (b)~partitions compute and memory in
+        hardware, so performance is guaranteed; (c)~requires no licence;
+        (d)~allows live migration.
+  \item \textbf{(MCQ)} A job needing 40 GB of GPU memory, given a 20 GB
+        instance, will: (a)~run at half speed; (b)~swap to host memory;
+        (c)~fail; (d)~be queued automatically.
+  \item \textbf{(Short)} Give the three reasons a GPU is harder to share than a
+        CPU, and say which is the most consequential.
+  \item \textbf{(Short)} State a workload suited to vGPU and one suited to MIG,
+        with the reason for each.
+  \item \textbf{(Short)} Explain what a DPU moves off the host and why that is
+        a security change as well as a performance one.
+  \item \textbf{(Applied)} A department will buy one accelerator for eight
+        research students whose jobs need 9 GB each and run in bursts during
+        office hours. Recommend a sharing model, give the expected utilisation,
+        and state the two questions you would answer before purchase.
+  \item \textbf{(Applied)} An inference service has a p99 latency requirement
+        of 150 ms and currently runs on time-sliced vGPU, missing the target
+        intermittently. Explain the mechanism, propose a change, and say what
+        you would measure to confirm the fix.
+\end{reviewq}

@@ -3,7 +3,459 @@
 %=====================================================================
 \locator{4}{Part IV --- Storage, Network and Cloud Virtualization}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what VDI moves and what stays, and \textbf{contrast}
+        persistent with non-persistent desktops.
+  \item \textbf{Describe} what a remote display protocol actually sends, and
+        \textbf{explain} why latency matters more than bandwidth.
+  \item \textbf{Compute} the bandwidth and storage a VDI deployment needs, and
+        \textbf{identify} the resource that fails first.
+  \item \textbf{Distinguish} desktop virtualization from application streaming
+        and from remote browser isolation.
+  \item \textbf{Decide} whether VDI is the right answer to a stated
+        requirement, and \textbf{say} what it costs.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{storage} (thin provisioning and linked clones --- a non-persistent
+desktop estate is the largest copy-on-write deployment most organisations ever
+run) and \chref{cpumem} (overcommit, which VDI pushes harder than any server
+workload).
+\end{prereq}
+
+\begin{keyterms}
+VDI $\bullet$ virtual desktop $\bullet$ persistent desktop $\bullet$
+non-persistent desktop $\bullet$ golden image $\bullet$ linked clone $\bullet$
+instant clone $\bullet$ profile management $\bullet$ remote display protocol
+$\bullet$ PCoIP $\bullet$ Blast $\bullet$ ICA/HDX $\bullet$ RDP $\bullet$
+boot storm $\bullet$ IOPS $\bullet$ session host $\bullet$ published
+application $\bullet$ application streaming $\bullet$ remote browser isolation
+\end{keyterms}
+
+\section{Moving the Computer, Leaving the Screen}
+
+Everything so far has virtualized a server. \term{Virtual desktop
+infrastructure} does it to the thing on somebody's desk: the operating system,
+the applications and the files run in the data centre, and what travels to the
+user is pixels in one direction and keystrokes and mouse movements in the
+other.
+
+The motives are the four of \chref{what}, pointed at a different problem:
+
+\begin{tight}
+  \item \textbf{Isolation and control} --- the data never leaves the data
+        centre, which is the reason regulated industries buy it;
+  \item \textbf{Consolidation} --- a hundred desktops on a few hosts rather
+        than a hundred machines under a hundred desks;
+  \item \textbf{Encapsulation} --- a broken desktop is replaced in ninety
+        seconds, because it is a file;
+  \item \textbf{Access} --- the same desktop from a laptop, a thin client or a
+        tablet, from anywhere.
+\end{tight}
+
+\begin{definitionbox}[Persistent and Non-Persistent Desktops]
+A \term{persistent} desktop is one virtual machine per user, kept between
+sessions. Users install software, change settings and leave files on it,
+exactly as on a physical PC. Familiar, flexible, and it must be patched,
+backed up and managed one hundred times over --- the server sprawl of
+\chref{what}, re-created virtually.
+
+\smallskip
+A \term{non-persistent} desktop is created from a \term{golden image} at logon
+and destroyed at logoff. Every session starts identical and known. Patching
+means updating one image. The user's identity has to be reassembled each time
+from \term{profile management} --- documents on a file share, settings in a
+profile container --- and anything not captured by that is lost at logoff,
+which users discover the hard way.
+
+\smallskip
+Non-persistent is the design that makes the economics work, and profile
+management is where it succeeds or fails. Almost every unhappy VDI deployment
+is a non-persistent one whose profile handling was underestimated.
+\end{definitionbox}
+
+\begin{conceptbox}[Linked and Instant Clones: Chapter 12, Applied at Scale]
+A thousand non-persistent desktops from one image are a thousand
+copy-on-write overlays over one read-only base --- exactly the structure of
+\chref{storage}, and of \chref{containers}'s overlayfs one layer up.
+
+\smallskip
+A \term{linked clone} shares the base disk and keeps a delta per desktop:
+a 60 GB image plus perhaps 2 GB each, so a thousand desktops cost 2 TB rather
+than 60 TB. An \term{instant clone} goes further and forks a \emph{running}
+machine's memory as well, so a new desktop is available in one or two seconds
+rather than ninety.
+
+\smallskip
+The read amplification warning of \chref{storage} applies in full. Every one of
+those thousand desktops reads the same base through the same chain, so the base
+must be on the fastest storage you have and must stay in cache. VDI is where
+storage design stops being a background concern.
+\end{conceptbox}
+
+\section{What Travels Over the Wire}
+
+A remote display protocol is not a video stream. It inspects what changed on
+the screen and sends the cheapest representation of that change: a rectangle of
+pixels, a command to move a region, a glyph, or --- when the content really is
+video --- an H.264 or H.265 stream with the work done on a server GPU.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  bx/.style={rounded corners=2pt, line width=0.8pt, align=center,
+             inner sep=3pt, minimum height=0.56cm, font=\scriptsize},
+  dc/.style={bx, draw=primary, fill=primary!10, text=primary,
+             minimum width=3.4cm},
+  cl/.style={bx, draw=greenhl, fill=greenhl!10, text=greenhl!45!black,
+             minimum width=3.0cm},
+  note/.style={font=\scriptsize\itshape, align=center}
+]
+  \node[rounded corners=3pt, draw=primary!45, fill=primary!3,
+        minimum width=4.4cm, minimum height=3.5cm] at (0,0) {};
+  \node[font=\scriptsize\bfseries, text=primary] at (0,1.95) {Data centre};
+  \node[dc] at (0,1.25) {the desktop guest};
+  \node[dc] at (0,0.55) {its applications};
+  \node[dc] at (0,-0.15) {its files};
+  \node[dc, draw=goldhl, fill=goldhl!12, text=goldhl!45!black] at (0,-0.95)
+       {encoder (often a GPU)};
+
+  \node[rounded corners=3pt, draw=greenhl!45, fill=greenhl!3,
+        minimum width=4.0cm, minimum height=3.5cm] at (10.6,0) {};
+  \node[font=\scriptsize\bfseries, text=greenhl!45!black] at (10.6,1.95)
+       {The user};
+  \node[cl] at (10.6,1.25) {a screen};
+  \node[cl] at (10.6,0.55) {a keyboard and mouse};
+  \node[cl] at (10.6,-0.15) {a decoder};
+  \node[cl, draw=neutral!55, fill=neutral!8, text=neutral!45!black, dashed]
+       at (10.6,-0.95) {no data, ever};
+
+  \draw[-{Stealth[length=2.4mm]}, goldhl, line width=1.2pt]
+        (2.3,0.75) -- (8.5,0.75);
+  \node[note, text=goldhl!45!black] at (5.4,1.15)
+       {changed rectangles, glyphs, move commands,\\
+        H.264 where the content is really video};
+  \node[note, text=goldhl!45!black] at (5.4,0.35)
+       {150 kb/s idle $\bullet$ 2 Mb/s office work $\bullet$ 10--30 Mb/s video};
+
+  \draw[-{Stealth[length=2.4mm]}, secondary, line width=1.2pt]
+        (8.5,-0.55) -- (2.3,-0.55);
+  \node[note, text=secondary!80!black] at (5.4,-1.0)
+       {keystrokes and mouse positions --- a few kb/s};
+
+  \node[rounded corners=3pt, draw=accent!60, fill=accent!5,
+        text=accent!70!black, font=\scriptsize, align=center, inner sep=4pt,
+        text width=10.6cm] at (5.3,-2.4)
+       {\textbf{Latency, not bandwidth, is what users feel.} Every keystroke
+        makes a round trip before its character appears. Under about 50 ms
+        this is invisible; by 150 ms typing feels detached; past 250 ms the
+        desktop is described as broken no matter how much bandwidth is
+        free.};
+\end{tikzpicture}}%
+{A remote desktop session. The asymmetry is extreme --- megabits down, kilobits
+up --- and the quality the user perceives is governed by the small return
+arrow, not the large one.}{vdi-path}
+
+\begin{alertbox}[The two failure modes nobody provisions for]
+\textbf{The boot storm.} Nine o'clock, and nine hundred people log in within
+twenty minutes. Nine hundred desktops boot, read the same base image, load the
+same profile and start the same antivirus scan. Storage that comfortably serves
+the estate all afternoon delivers a fraction of what is suddenly demanded, and
+the queue makes logons take fifteen minutes.
+
+\smallskip
+It is a storage \emph{IOPS} problem, not a capacity or a CPU problem, and it is
+the single commonest reason a VDI pilot succeeds and the rollout fails: fifty
+users never produce it and nine hundred do.
+
+\smallskip
+\textbf{The antivirus scan.} Every desktop scanning its disk at the same hour
+multiplies the same effect, with no user to blame. Stagger it, or use an
+agentless scanner that works from outside the guest.
 \end{alertbox}
+
+\begin{worked}[Sizing a 500-Seat Deployment]
+Five hundred knowledge workers, 2 vCPU and 4 GB each, Windows desktops on an
+image of 60 GB. Size the hosts, the storage and the network, and find what
+fails first.
+
+\smallskip
+\textbf{Step 1 --- memory, which sizes the hosts.} With 10:1 vCPU
+oversubscription acceptable for desktops --- they are idle most of the time ---
+memory is again the constraint. Allow no memory overcommit for desktops, since
+they are interactive and swapping is immediately felt:
+\[ 500 \times 4 = 2{,}000 \text{ GB} \]
+On hosts of 512 GB, reserving 15\% for the hypervisor and headroom:
+\[ \left\lceil \frac{2{,}000}{512 \times 0.85} \right\rceil
+   = \left\lceil \frac{2{,}000}{435} \right\rceil = 5 \text{ hosts} \]
+Add one for N+1: \textbf{6 hosts}.
+
+\smallskip
+\textbf{Step 2 --- check CPU.} $500 \times 2 = 1{,}000$ vCPU on six hosts of 64
+cores $= 384$ cores:
+\[ \sigma_{\text{cpu}} = \frac{1{,}000}{384} = 2.6 \]
+Comfortable for desktop workloads, which sit idle between keystrokes.
+
+\smallskip
+\textbf{Step 3 --- storage capacity, with linked clones.}
+\[ \underbrace{60}_{\text{golden image}} + \underbrace{500 \times 2}_{\text{deltas}}
+   = 1{,}060 \text{ GB} \]
+Against 500 full copies at 60 GB, which would be 30 TB. A \textbf{28:1}
+saving, and the reason non-persistent desktops are affordable.
+
+\smallskip
+\textbf{Step 4 --- storage IOPS, steady state.} A knowledge-worker desktop
+averages about 10 IOPS, roughly 80\% writes:
+\[ 500 \times 10 = 5{,}000 \text{ IOPS} \]
+Any modern NVMe array handles this without noticing.
+
+\smallskip
+\textbf{Step 5 --- storage IOPS, at the boot storm.} A booting Windows desktop
+demands around 100 IOPS for perhaps two minutes. Nine hundred -- here 500 --
+logging in over 20 minutes means roughly 50 booting concurrently at any moment
+if arrivals are even:
+\[ 50 \times 100 = 5{,}000 \text{ IOPS extra} \]
+But arrivals are \emph{not} even. If half the estate logs in during the busiest
+five minutes:
+\[ \frac{250 \text{ desktops} \times 2 \text{ min boot}}{5 \text{ min}}
+   = 100 \text{ concurrent} \qquad 100 \times 100 = 10{,}000 \text{ IOPS} \]
+plus the 5{,}000 steady state: \textbf{15{,}000 IOPS, three times the
+all-day figure, for five minutes.}
+
+\smallskip
+\textbf{Step 6 --- network.} At 2 Mb/s per session for office work:
+\[ 500 \times 2 = 1{,}000 \text{ Mb/s} = 1 \text{ Gb/s} \]
+If a tenth are watching video at 15 Mb/s:
+\[ 450 \times 2 + 50 \times 15 = 900 + 750 = 1{,}650 \text{ Mb/s} \]
+A 10 Gb/s data-centre uplink is ample; a site's \emph{internet} link may not be,
+and remote users' home connections certainly vary.
+
+\smallskip
+\textbf{Step 7 --- what fails first.} Not memory, not CPU, not capacity, not
+average IOPS. \textbf{Peak IOPS at logon}, by a factor of three over everything
+else, for five minutes a day. Size the storage for step 5 and the rest follows;
+size it for step 4 --- which is what the average suggests --- and the estate
+works beautifully except at nine o'clock, which is when everybody forms their
+opinion of it.
+\end{worked}
+
+\section{Virtualizing the Application Instead}
+
+Delivering a whole desktop is often more than the problem requires.
+
+\term{Published applications} (Citrix Virtual Apps, Azure Virtual Desktop in
+multi-session mode) run many users' sessions on one shared \term{session host}
+operating system and present individual application windows rather than a
+desktop. Far denser than VDI --- dozens of users per host rather than a handful
+--- because the operating system is shared. The cost is the one from
+\chref{containers}: shared kernel, so one user's badly-behaved application
+affects the others, and software that assumes it owns the machine misbehaves.
+
+\term{Application streaming} goes further and delivers the application to the
+user's own device, in a container that keeps it from touching the local
+installation.
+
+\term{Remote browser isolation} applies the idea to the one application
+everybody runs. The browser executes in the data centre or at a provider, and
+only rendered output reaches the endpoint, so a malicious page compromises a
+container that is discarded afterwards. It is a security control rather than a
+productivity one, and \chref{security} returns to it.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.4cm}L{3.5cm}L{3.5cm}L{4.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{Isolation} & \textbf{Density} & \textbf{Use it when} \\
+\midrule
+\endhead
+Persistent VDI & One guest per user & Lowest & Users need to install software,
+or have genuinely individual environments \\
+Non-persistent VDI & One guest per session & Moderate & A standard desktop for
+many similar users; patching one image \\
+Published apps & Shared session host & Highest & A few applications, many
+users, no desktop needed \\
+Application streaming & Container on the endpoint & N/A & Local performance
+with central control of versions \\
+Browser isolation & Disposable container per session & High & The threat is
+the web, not the application \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[When VDI Is the Wrong Answer]
+VDI is expensive, operationally demanding and unforgiving of under-sizing. It
+is worth it when at least one of these is true:
+
+\begin{tight}
+  \item data must not leave the data centre, for regulatory or contractual
+        reasons;
+  \item users are numerous, similar, and need a standard environment;
+  \item access is needed from many places or from untrusted devices;
+  \item the endpoints are thin clients with a long life and little to steal.
+\end{tight}
+
+\smallskip
+It is the wrong answer when users are few, when their needs are individual,
+when the work is graphically heavy without a GPU budget (\chref{gpu}), or ---
+most often --- when the real problem is patch management and a better endpoint
+management tool would cost a tenth as much.
+
+\smallskip
+The question to ask of any VDI proposal is: \emph{what is it that the data
+centre must hold?} If there is a crisp answer, VDI is likely right. If the
+answer is ``it would be tidier'', it is not.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Sizing storage on average IOPS.} The boot storm is three times
+        the average and it decides the user's opinion.
+  \item \textbf{Piloting with fifty users and extrapolating.} Fifty users never
+        produce a boot storm. Pilot the peak, not the mean.
+  \item \textbf{Underestimating profile management.} Non-persistent desktops
+        fail on this more than on anything technical.
+  \item \textbf{Optimising bandwidth and ignoring latency.} Users feel the
+        round trip on every keystroke. A fat, distant link is worse than a thin,
+        near one.
+  \item \textbf{Overcommitting desktop memory as if they were servers.} A
+        swapping desktop is noticed instantly by the person using it.
+  \item \textbf{Running in-guest antivirus on a schedule.} Every desktop
+        scanning at once reproduces the boot storm with no users to show for
+        it.
+  \item \textbf{Treating VDI as a cost-saving measure.} It moves cost from
+        endpoints to the data centre and adds licensing. Buy it for control,
+        access or compliance, and be pleased if it also saves money.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[A Remote Desktop, and What It Sends]
+Builds a remote desktop session and measures what crosses the wire under three
+kinds of work, then adds latency and sees which matters. Expect thirty-five
+minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch15_vdi.sh -- a remote desktop, measured, then made to feel slow.
+set -euo pipefail
+
+# --- 1. A desktop guest, from the Chapter 1 image. ---------------------
+sudo virsh start vss1 || true ; sleep 25
+ip_of () {
+  sudo virsh domifaddr "$1" | awk '/ipv4/{split($4,a,"/"); print a[1]}'
+}
+IP=$(ip_of vss1)
+G () { ssh -o StrictHostKeyChecking=no "ubuntu@$IP" "$1"; }
+G "sudo apt-get -qq install -y xfce4 xrdp firefox && sudo systemctl \
+   enable --now xrdp"
+
+# --- 2. Connect with an RDP client and leave it idle. -----------------
+# From the host: xfreerdp /v:$IP /u:ubuntu, or any RDP client.
+sudo apt-get install -y freerdp2-x11 iftop tcpdump
+echo "connect now, then press return"; read -r _
+
+# --- 3. Measure the three cases of the figure. ------------------------
+measure () {
+  echo "=== $1 ==="
+  sudo timeout 20 tcpdump -ni any "host $IP and port 3389" -q 2>/dev/null \
+    | wc -l
+}
+measure "idle -- do nothing for 20 s"
+echo "now type continuously in a text editor, then press return"; read -r _
+measure "typing"
+echo "now play a video full screen, then press return"; read -r _
+measure "video"
+# Packet counts stand in for bandwidth; the ratios are what matter.
+
+# --- 4. Now the thing users actually feel: latency. -------------------
+# Add 150 ms each way and use the session again. Nothing else changes.
+sudo tc qdisc add dev virbr0 root netem delay 150ms
+echo "use the session now -- type a sentence. Press return when done."
+read -r _
+sudo tc qdisc del dev virbr0 root
+echo "and again with no added delay. The bandwidth was identical."
+
+# --- 5. The boot storm, at small scale. -------------------------------
+# Clone four desktops from one base and start them together; watch IOPS.
+for n in 1 2 3 4; do
+  sudo qemu-img create -f qcow2 -b /var/lib/libvirt/images/vss1.qcow2 \
+       -F qcow2 "/var/lib/libvirt/images/d$n.qcow2" 20G
+done
+ls -lh /var/lib/libvirt/images/d*.qcow2   # linked clones: nearly empty
+iostat -x 2 2 > /tmp/before.txt
+for n in 1 2 3 4; do
+  sudo virt-install --name "d$n" --memory 1024 --vcpus 1 \
+    --disk "/var/lib/libvirt/images/d$n.qcow2",format=qcow2 \
+    --import --graphics none --noautoconsole --os-variant ubuntu22.04 &
+done
+wait ; iostat -x 5 3 | tail -12      # the storm, four desktops wide
+
+# --- 6. Tear down. ----------------------------------------------------
+for n in 1 2 3 4; do
+  sudo virsh destroy "d$n" 2>/dev/null || true
+  sudo virsh undefine "d$n" --remove-all-storage 2>/dev/null || true
+done
+sudo virsh destroy vss1 || true
+\end{lstlisting}
+
+\textbf{What to notice.} Step 4 is the chapter. The bandwidth in that test was
+exactly what it was in step 3, and the session became unusable anyway. Then
+look at step 5's \texttt{iostat} output and multiply by a hundred.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A 300-seat non-persistent deployment uses a 70 GB golden image with 3 GB
+        deltas. Give the storage capacity needed, and the saving against full
+        clones.
+  \item At 10 IOPS steady state per desktop, and 120 IOPS for a 90-second boot,
+        estimate peak IOPS if 150 of those 300 users log in within four
+        minutes. Compare with the steady-state figure.
+  \item A user reports that their remote desktop is ``laggy'' although the
+        monitoring shows the link is 80\% idle. Explain what is probably
+        happening and what you would measure.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item VDI runs the desktop in the data centre and sends pixels out,
+        keystrokes back. Buy it for control, access or compliance.
+  \item Persistent desktops are familiar and must be managed individually;
+        non-persistent ones are built from a golden image at logon and succeed
+        or fail on profile management.
+  \item Linked and instant clones are \chref{storage}'s copy-on-write at scale
+        --- a 28:1 capacity saving in the worked example, and a read-amplified
+        base that must stay fast.
+  \item The display protocol sends changed regions, not video. Bandwidth is
+        asymmetric and modest; \emph{latency} is what users feel, on every
+        keystroke.
+  \item Peak logon IOPS is three times the all-day figure and is what sizing
+        must be based on. It is why pilots succeed and rollouts fail.
+  \item Published applications are denser and share a kernel; browser isolation
+        applies the idea as a security control.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The resource that most often limits a VDI deployment
+        is: (a)~host memory; (b)~peak storage IOPS at logon; (c)~network
+        bandwidth; (d)~CPU.
+  \item \textbf{(MCQ)} A non-persistent desktop keeps a user's documents and
+        settings by: (a)~storing them in the golden image; (b)~profile
+        management on separate storage; (c)~the delta disk; (d)~it does not
+        keep them.
+  \item \textbf{(Short)} Explain why latency matters more than bandwidth in a
+        remote desktop session, in terms of what happens to a keystroke.
+  \item \textbf{(Short)} Describe a boot storm and give two ways to reduce it.
+  \item \textbf{(Short)} State the trade between published applications and
+        full VDI, naming the chapter whose argument it repeats.
+  \item \textbf{(Applied)} Size a 1{,}200-seat deployment of 2 vCPU, 8 GB
+        desktops on 768 GB hosts with a 80 GB image and 4 GB deltas. Give host
+        count, capacity, steady and peak IOPS, and bandwidth, and name what
+        fails first.
+  \item \textbf{(Applied)} A faculty proposes VDI so that students can use
+        specialist software from their own laptops. Write the questions you
+        would ask, the two alternatives you would price against it, and the
+        circumstances under which you would recommend each.
+\end{reviewq}

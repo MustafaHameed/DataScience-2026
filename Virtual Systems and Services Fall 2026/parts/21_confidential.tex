@@ -3,7 +3,480 @@
 %=====================================================================
 \locator{6}{Part VI --- Emerging Hardware and Practice}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} how the trust model inverts, and \textbf{say} what the
+        guest stops trusting.
+  \item \textbf{Explain} memory encryption with per-guest keys, and
+        \textbf{say} what it does and does not protect against.
+  \item \textbf{Describe} remote attestation and \textbf{explain} why
+        encryption without it is nearly worthless.
+  \item \textbf{Compare} AMD SEV-SNP, Intel TDX and ARM CCA by maturity and
+        availability as of late 2026.
+  \item \textbf{Decide} whether a stated workload justifies a confidential VM,
+        and \textbf{state} the cost.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{security} (the attack surface, and in particular who is trusted) and
+\chref{hardware} (VMX, the VMCS and extended page tables, which are what this
+hardware modifies). \chref{cloud}'s shared responsibility model is the
+commercial arrangement this chapter challenges.
+\end{prereq}
+
+\begin{keyterms}
+confidential computing $\bullet$ trusted execution environment $\bullet$ TEE
+$\bullet$ trust model $\bullet$ memory encryption $\bullet$ SEV $\bullet$
+SEV-ES $\bullet$ SEV-SNP $\bullet$ TDX $\bullet$ trust domain $\bullet$ ARM CCA
+$\bullet$ realm $\bullet$ SGX $\bullet$ enclave $\bullet$ attestation $\bullet$
+attestation report $\bullet$ measurement $\bullet$ chain of trust $\bullet$
+confidential container $\bullet$ CXL $\bullet$ composable infrastructure
+\end{keyterms}
+
+\section{The Trust Model Inverts}
+
+Every chapter so far has assumed the hypervisor is trustworthy. It schedules
+guests, allocates their memory and mediates their devices, and a guest has no
+choice but to rely on it. \chref{security} worried about an attacker
+\emph{reaching} the hypervisor; it never questioned the hypervisor itself.
+
+Confidential computing questions it. The guest is given a way to run on
+hardware it does not own, operated by people it has not met, \emph{without
+trusting them with its data}.
+
+This matters commercially rather than philosophically. A hospital will not put
+patient records in a public cloud if the provider's administrators can read
+them. A bank will not run a model on hardware whose operator could copy the
+weights. The cloud's answer has always been contracts and audits; confidential
+computing offers a technical answer instead.
+
+\begin{definitionbox}[Trusted Execution Environment]
+A \term{TEE} is an execution context whose memory and registers are protected
+from everything outside it --- including the hypervisor, the host operating
+system, the firmware and anyone with physical access.
+
+\smallskip
+For a confidential VM this means:
+\begin{tight}
+  \item memory is \textbf{encrypted} with a key the guest's own hardware context
+        holds and the host cannot read;
+  \item register state is protected across every VM exit, so the hypervisor
+        cannot inspect the guest's execution;
+  \item the guest can \textbf{prove} what it is --- which hardware, which
+        firmware, which image --- to a remote party.
+\end{tight}
+
+\smallskip
+The hypervisor still \emph{schedules} the guest, allocates it memory and gives
+it devices. It simply cannot see inside it.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  bx/.style={rounded corners=2pt, line width=0.9pt, align=center,
+             inner sep=3pt, minimum height=0.6cm, font=\scriptsize},
+  t/.style={bx, draw=greenhl, fill=greenhl!14, text=greenhl!45!black},
+  u/.style={bx, draw=accent, fill=accent!10, text=accent!70!black},
+  hd/.style={font=\scriptsize\bfseries, align=center},
+  note/.style={font=\scriptsize\itshape, align=center}
+]
+  % --- conventional ---
+  \node[hd, text=primary] at (3.0,4.3) {Conventional};
+  \node[t, minimum width=2.6cm] at (1.6,3.5) {guest};
+  \node[t, minimum width=2.6cm] at (4.4,3.5) {guest};
+  \node[t, minimum width=5.6cm] at (3.0,2.7) {hypervisor};
+  \node[t, minimum width=5.6cm] at (3.0,1.9) {firmware};
+  \node[t, minimum width=5.6cm] at (3.0,1.1) {hardware};
+  \node[t, minimum width=5.6cm] at (3.0,0.3) {the operator};
+  \node[note, text=greenhl!45!black] at (3.0,-0.4)
+       {the guest trusts \emph{all} of this};
+
+  % --- confidential ---
+  \node[hd, text=primary] at (10.6,4.3) {Confidential};
+  \node[t, minimum width=2.6cm] at (9.2,3.5) {guest};
+  \node[u, minimum width=2.6cm, draw=neutral!55, fill=neutral!10,
+        text=neutral!45!black] at (12.0,3.5) {another guest};
+  \node[u, minimum width=5.6cm] at (10.6,2.7) {hypervisor};
+  \node[u, minimum width=5.6cm] at (10.6,1.9) {firmware};
+  \node[t, minimum width=5.6cm] at (10.6,1.1) {hardware \ \
+        {\scriptsize\mdseries CPU + its root of trust}};
+  \node[u, minimum width=5.6cm] at (10.6,0.3) {the operator};
+  \node[note, text=accent!70!black] at (10.6,-0.4)
+       {red is \emph{untrusted} --- and still runs the machine};
+
+  \draw[decorate, decoration={brace, amplitude=4pt}, greenhl, line width=0.9pt]
+        (13.6,3.8) -- (13.6,0.8);
+  \node[note, text=greenhl!45!black, anchor=west, align=left] at (13.9,2.3)
+       {the trusted base\\
+        shrinks to the\\
+        guest and the\\
+        silicon};
+\end{tikzpicture}}%
+{The inversion. The hypervisor still schedules the guest and allocates its
+memory; it simply loses the ability to read it. Everything red is in the
+attack path and outside the trust boundary.}{trust-inversion}
+
+\section{What the Hardware Does}
+
+\begin{conceptbox}[Memory Encryption, and Why Encryption Alone Is Not Enough]
+The memory controller encrypts and decrypts transparently with a key tied to
+the guest, held in the processor and never exposed to software. Host memory
+dumped from outside yields ciphertext.
+
+\smallskip
+That defeats the straightforward attacks --- a hypervisor reading guest pages,
+a memory image taken from a running host, cold-boot attacks on the DIMMs. AMD's
+first \term{SEV} (2017) did this much, and researchers quickly showed it was
+not enough.
+
+\smallskip
+The reason is that a hostile hypervisor does more than read. It can
+\emph{remap} pages --- give the guest a different physical page than it had ---
+\emph{replay} old encrypted pages, or \emph{alias} two guest addresses to one
+physical page. The data stays encrypted throughout and the guest is still
+compromised.
+
+\smallskip
+\term{SEV-ES} (2018) added register-state protection across VM exits.
+\term{SEV-SNP} (2020) added the missing piece: \emph{integrity}. A reverse map
+table records which guest owns each physical page, and the hardware refuses a
+mapping that contradicts it. Intel's \term{TDX} was designed with equivalent
+protections from the start.
+
+\smallskip
+The lesson generalises: confidentiality without integrity is a weaker property
+than it sounds, and the first generation of almost every such system learns
+this the same way.
+\end{conceptbox}
+
+\begin{definitionbox}[Attestation]
+\term{Attestation} is the guest proving what it is to a remote party before that
+party entrusts it with anything.
+
+\smallskip
+The hardware measures the guest's initial state --- firmware, kernel, initial
+memory image --- and produces an \term{attestation report} containing those
+measurements, the processor's security version, and a signature chaining to a
+key the silicon vendor certified.
+
+\smallskip
+The verifier checks the signature, confirms the hardware is genuine and
+up to date, and compares the measurement against what it expected. Only then
+does it release the decryption key, the model weights or the database
+credentials.
+
+\smallskip
+\textbf{Encryption without attestation protects nothing useful.} If you cannot
+verify what is running, a hostile operator simply boots a modified image that
+asks you politely for the data --- and that image's memory is beautifully
+encrypted while it exfiltrates. Attestation is the part that makes the
+encryption meaningful, and it is the part deployments most often skip.
+\end{definitionbox}
+
+\section{Where the Platforms Stand}
+
+Dated October 2026. This is the fastest-moving material in the book; check
+before relying on any row.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.6cm}L{4.0cm}L{4.0cm}L{4.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{AMD SEV-SNP} & \textbf{Intel TDX} & \textbf{ARM CCA} \\
+\midrule
+\endhead
+Unit protected & The whole VM & The whole VM (a \term{trust domain}) & The whole
+VM (a \term{realm}) \\
+Introduced & SEV 2017, SNP 2020 & 2023 & Announced 2021 \\
+Maturity & The most deployed; generally available across major clouds &
+Production confidential VMs on Azure and Google Cloud, with newer machine
+families still arriving in preview during 2026 & Specification mature,
+\emph{silicon and cloud availability still limited}; previews rather than
+general availability \\
+Watch for & Attestation report format changed to v4 with a firmware update ---
+parsers written for v3 break & A TDX firmware vulnerability was disclosed and
+patched in early 2026; keep firmware current & Expect availability to change
+fastest of the three \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The predecessor that is not this: Intel SGX]
+SGX protected an \emph{enclave} --- a region inside one process --- rather than
+a whole virtual machine. The application had to be rewritten and split, with
+the sensitive part inside the enclave and everything else outside, across a
+narrow and awkward boundary. Enclave memory was also small, in the low hundreds
+of megabytes on most parts.
+
+\smallskip
+It saw real use and it did not become general infrastructure, for the obvious
+reason: nobody wants to re-architect an application to run it somewhere.
+
+\smallskip
+TDX, SEV-SNP and CCA all learned from that. They protect an \emph{unmodified
+virtual machine}, so an existing workload moves in without being rewritten ---
+which is the same bargain \chref{vmm} struck when it insisted on running
+unmodified guests, made again two decades later.
 \end{alertbox}
+
+\begin{worked}[Does This Workload Justify a Confidential VM?]
+A hospital wants to run analytics over patient records in a public cloud. The
+compliance team objects that the provider's staff could read the data. Decide
+whether confidential computing answers the objection, and what it costs.
+
+\smallskip
+\textbf{Step 1 --- what is actually being claimed?} Not that the provider
+\emph{would}, but that they \emph{could}, and that the hospital cannot
+demonstrate otherwise to its regulator. The requirement is therefore
+evidentiary, not merely technical.
+
+\smallskip
+\textbf{Step 2 --- what a confidential VM gives.}
+\begin{tight}
+  \item memory encrypted with a key the host cannot read;
+  \item integrity protection against remapping and replay (SNP or TDX);
+  \item an attestation report the hospital can verify before releasing the
+        database key.
+\end{tight}
+The provider's administrators can still stop the machine, and still see how
+much memory and processor it uses. They cannot read the records.
+
+\smallskip
+\textbf{Step 3 --- what it does \emph{not} give.} Four gaps worth stating to
+the compliance team before they believe too much:
+\begin{tight}
+  \item \textbf{Availability.} The operator can still destroy or detain the
+        machine. Confidentiality and integrity; not availability.
+  \item \textbf{Side channels.} Timing and cache attacks
+        (\chref{security}) are not fully addressed, and some published attacks
+        target exactly these systems.
+  \item \textbf{Your own bugs.} A flaw in the application inside the enclave
+        leaks the data the normal way.
+  \item \textbf{Data in use elsewhere.} The moment records leave for an
+        unprotected service, the guarantee ends. The boundary must cover the
+        whole path.
+\end{tight}
+
+\smallskip
+\textbf{Step 4 --- the cost.} Performance overhead is workload-dependent and
+generally modest --- commonly in the region of 2--8\% for ordinary server
+workloads, more where I/O is heavy, because encrypted guests use bounce buffers
+for device transfers. Instance choice is restricted to supported families, and
+some features --- live migration (\chref{migration}), certain memory management
+--- may be unavailable or restricted.
+
+\smallskip
+The larger cost is operational: attestation must be built, verified and
+maintained. Somebody must decide what measurement is expected, store it, check
+it, and update it with every image change. \textbf{A confidential VM whose
+attestation nobody verifies is a normal VM with a performance penalty.}
+
+\smallskip
+\textbf{Step 5 --- the recommendation.} Yes, with a condition. Use a
+confidential VM \emph{and} build the attestation flow, so the database key is
+released only to a verified measurement. Record the expected measurement under
+change control. If the project cannot commit to maintaining that, the honest
+advice is to keep the data on premises, because the alternative is a control
+that exists only on a slide.
+\end{worked}
+
+\section{Composable Infrastructure and CXL}
+
+One more direction the hardware is moving, included because the 2017 outline
+asked about the future of virtualization and this is a plausible part of it.
+
+Every host in this book is a fixed box: so many cores, so much memory, bought
+together and discarded together. A host with spare memory cannot lend it to the
+host next to it, so every machine carries headroom nobody else can use ---
+stranded capacity, at scale.
+
+\term{CXL} --- Compute Express Link --- allows memory to be attached to a fabric
+rather than to a socket, so a pool of memory can be allocated to whichever host
+needs it. The ambition, \term{composable infrastructure}, is to assemble a
+machine from pooled components for a workload and return them afterwards.
+
+\begin{conceptbox}[Why This Is the Same Idea as Chapter 1]
+Pooled memory, allocated on demand and returned, is \emph{virtualization of the
+memory bus} --- multiplexing, by the definition of \chref{what}. The motive is
+the one from the opening pages: capacity bought and left idle because it could
+not be shared.
+
+\smallskip
+The obstacle is the one the whole book keeps meeting: latency. Fabric-attached
+memory is slower than socket-attached memory, as NUMA's remote node is slower
+than its local one (\chref{cpumem}) --- only more so. Early deployments are
+therefore tiered, with hot pages local and cold pages pooled, which is exactly
+the memory-reclamation ladder of \chref{cpumem} wearing different clothes.
+
+\smallskip
+Treat this section as a direction, not a product. The useful thing to carry
+away is that you already have the framework to evaluate it when a vendor
+arrives: ask what is multiplexed, what the lie costs, and who maintains it.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Deploying encryption without attestation.} You have hidden the
+        data from an attacker who was not going to read it, and not from one
+        who boots a modified image.
+  \item \textbf{Believing the first generation is enough.} Plain SEV lacked
+        integrity and was broken by remapping. Use SEV-SNP or TDX.
+  \item \textbf{Assuming availability is protected.} It is not. The operator
+        can still stop your machine.
+  \item \textbf{Assuming side channels are solved.} They are not, and published
+        attacks target these systems specifically.
+  \item \textbf{Hard-coding an attestation report format.} AMD's move to v4
+        broke parsers written for v3.
+  \item \textbf{Forgetting the rest of the path.} The guarantee ends where the
+        data leaves the TEE.
+  \item \textbf{Planning on ARM CCA availability.} As of late 2026 it is
+        previews, not general availability. Check before designing around it.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Attestation, Verified]
+Inspects a confidential VM and verifies an attestation report. Where no
+suitable processor is available, the captured reports in \texttt{code/} make
+the verification exercise identical. Expect thirty-five minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch21_attest.sh -- is this guest confidential, and can it prove it?
+set -euo pipefail
+
+# --- 1. Does this processor support any of the three? -----------------
+grep -o -m1 -E '\<(sev|sev_es|sev_snp|tdx_guest)\>' /proc/cpuinfo || \
+  echo "no TEE features on this host"
+ls /sys/firmware/ 2>/dev/null | grep -iE 'tdx|sev' || true
+dmesg | grep -iE 'SEV-SNP|TDX|Memory Encryption' | head -5 || true
+
+# --- 2. From inside a guest: am I confidential? -----------------------
+# Each platform exposes itself differently; check all three.
+[ -e /dev/sev-guest ]  && echo "AMD SEV-SNP guest device present"
+[ -e /dev/tdx_guest ]  && echo "Intel TDX guest device present"
+systemd-detect-virt
+# On a normal guest, none of these exist. That is the point of step 4.
+
+# --- 3. Ask the hardware for an attestation report. -------------------
+# snpguest (AMD) or trustee/tdx tools (Intel). A 64-byte nonce from the
+# verifier goes in; a signed report comes out.
+NONCE=$(openssl rand -hex 32)
+if [ -e /dev/sev-guest ] && command -v snpguest >/dev/null; then
+  snpguest report report.bin request.txt --random
+  snpguest display report report.bin | head -30
+else
+  echo "no TEE here -- using the captured report in code/"
+  cp "$(dirname "$0")/ch21_report.txt" report.txt 2>/dev/null || true
+  sed -n '1,30p' report.txt 2>/dev/null || true
+fi
+
+# --- 4. The three fields that matter, and why. ------------------------
+cat <<'NOTES'
+  measurement    the hash of the guest's initial state. Compare this
+                 with what you built; if it differs, something else
+                 is running and you must NOT release the key.
+  report_data    your nonce, echoed back. Proves the report is fresh
+                 and not a recording of an earlier genuine boot.
+  signature +    chains to a key the silicon vendor certified. Proves
+  cert chain     the report came from real hardware, not from software
+                 pretending very convincingly.
+NOTES
+
+# --- 5. Verify the chain. This is the step people skip. ---------------
+if command -v snpguest >/dev/null; then
+  snpguest fetch ca-der milan ./certs           # vendor certificates
+  snpguest fetch vcek-der milan ./certs report.bin
+  snpguest verify certs ./certs
+  snpguest verify attestation ./certs report.bin && \
+    echo "VERIFIED: genuine hardware, measurement as reported"
+else
+  echo "verification exercise: compare the measurement in report.txt"
+  echo "with code/ch21_expected_measurement.txt and decide."
+fi
+
+# --- 6. Now the attack this defends against. --------------------------
+# A hostile operator boots a DIFFERENT image that asks for your key.
+# Its memory is perfectly encrypted while it exfiltrates. The only
+# thing that stops it is step 5 refusing the measurement.
+diff <(grep -i measurement report.txt 2>/dev/null || echo a) \
+     <(cat "$(dirname "$0")/ch21_expected_measurement.txt" 2>/dev/null \
+       || echo b) >/dev/null \
+  && echo "measurement matches -- release the key" \
+  || echo "measurement DIFFERS -- refuse. This is the whole mechanism."
+
+# --- 7. What it costs: the same benchmark, confidential or not. ------
+# On a cloud that offers both, run this on a confidential and a normal
+# instance of the same family and compare.
+sysbench cpu --threads=4 --time=20 run 2>/dev/null | grep -E 'events/s' \
+  || echo "install sysbench to measure the overhead"
+dd if=/dev/zero of=/tmp/t bs=1M count=2048 oflag=direct 2>&1 | tail -1
+rm -f /tmp/t
+# I/O usually shows the larger penalty: encrypted guests bounce device
+# transfers through shared buffers.
+\end{lstlisting}
+
+\textbf{What to notice.} Step 6 is the chapter. Encryption was working perfectly
+in both the honest and the hostile case; the only thing that distinguished them
+was a hash comparison that somebody had to perform. Skip step 5 and you have
+bought a performance penalty.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Explain why memory encryption without integrity protection was
+        insufficient, naming one concrete attack it failed to stop.
+  \item A team deploys confidential VMs but releases the database key from a
+        configuration file at boot, without checking any report. State exactly
+        what they are protected against and what they are not.
+  \item Name two properties confidential computing does \emph{not} provide, and
+        say why each matters to a compliance argument.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Confidential computing inverts the trust model: the guest stops
+        trusting the hypervisor, the firmware and the operator, and trusts only
+        itself and the silicon.
+  \item A TEE encrypts guest memory with a key the host cannot read, protects
+        register state across exits, and lets the guest prove what it is.
+  \item Encryption alone was not enough: a hostile hypervisor can remap, replay
+        and alias pages. SEV-SNP and TDX add integrity.
+  \item Attestation is what makes the encryption meaningful. A confidential VM
+        whose attestation nobody verifies is a normal VM with a performance
+        penalty.
+  \item As of late 2026 SEV-SNP is the most widely deployed, TDX is in
+        production on major clouds with newer families still arriving, and ARM
+        CCA remains limited in availability.
+  \item It does not protect availability, does not solve side channels, and
+        does not help with your own bugs. Overhead is commonly 2--8\%, more for
+        I/O.
+  \item CXL and composable infrastructure are the same multiplexing idea
+        applied to the memory bus, with latency as the familiar obstacle.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} SEV-SNP added, over SEV-ES: (a)~larger enclaves;
+        (b)~integrity protection against page remapping and replay;
+        (c)~live migration; (d)~support for containers.
+  \item \textbf{(MCQ)} Without attestation, memory encryption fails to stop:
+        (a)~a cold-boot attack; (b)~a hypervisor reading guest pages; (c)~an
+        operator booting a modified image that requests the data; (d)~a
+        physical memory dump.
+  \item \textbf{(Short)} Explain the three fields of an attestation report and
+        what each one proves.
+  \item \textbf{(Short)} Why did Intel SGX not become general infrastructure,
+        and what did the VM-scoped designs do differently?
+  \item \textbf{(Short)} State three things confidential computing does not
+        protect.
+  \item \textbf{(Applied)} A bank wants to run a proprietary model on a public
+        cloud without the provider being able to copy the weights. Set out the
+        design, the verification step that makes it real, what it costs, and
+        the residual risks you would record.
+  \item \textbf{(Applied)} Using the framework of \chref{what} --- what is
+        multiplexed, what does the lie cost, who maintains it --- evaluate CXL
+        pooled memory as a vendor would present it to you, and write the three
+        questions you would ask.
+\end{reviewq}

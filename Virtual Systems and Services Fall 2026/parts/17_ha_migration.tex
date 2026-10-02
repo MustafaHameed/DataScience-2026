@@ -3,7 +3,509 @@
 %=====================================================================
 \locator{5}{Part V --- Management, Performance and Security}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} pre-copy live migration round by round, and
+        \textbf{state} the condition under which it converges.
+  \item \textbf{Compute} the number of rounds and the total transfer for a
+        given guest, dirty rate and link speed.
+  \item \textbf{Explain} what happens when it does not converge, and
+        \textbf{compare} auto-convergence with post-copy.
+  \item \textbf{Distinguish} high availability from fault tolerance from
+        disaster recovery, and \textbf{express} each as RPO and RTO.
+  \item \textbf{Compute} the downtime budget implied by an availability target,
+        and \textbf{say} what each additional nine costs.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{cpumem} (memory, and the fact that a running guest's pages change under
+you) and \chref{storage} (shared storage, without which almost nothing here
+works). \chref{paravirt}'s warning that an assigned device cannot be migrated
+is the exception that proves this chapter's rule.
+\end{prereq}
+
+\begin{keyterms}
+live migration $\bullet$ pre-copy $\bullet$ post-copy $\bullet$ dirty page
+$\bullet$ dirty rate $\bullet$ convergence $\bullet$ switchover $\bullet$
+stop-and-copy $\bullet$ auto-convergence $\bullet$ page fault over the network
+$\bullet$ high availability $\bullet$ fault tolerance $\bullet$ cluster
+$\bullet$ quorum $\bullet$ split brain $\bullet$ fencing $\bullet$ STONITH
+$\bullet$ RPO $\bullet$ RTO $\bullet$ availability $\bullet$ nines $\bullet$
+3-2-1 rule $\bullet$ immutable backup
+\end{keyterms}
+
+\section{Moving a Running Machine}
+
+Nothing else in computing does this. A guest serving traffic moves from one
+physical host to another, keeps its memory, its open connections and its
+in-flight work, and pauses for a time its users cannot perceive. It is the
+capability that makes everything in \chref{management} possible: hosts can be
+patched, rebalanced and retired without anyone scheduling an outage.
+
+The difficulty is stated in one sentence: \emph{the memory you are copying is
+being modified while you copy it}.
+
+\begin{definitionbox}[Pre-Copy Live Migration]
+The standard algorithm, used by every platform in \chref{platforms}:
+
+\begin{tight}
+  \item \textbf{Round 0.} Copy all of the guest's memory to the destination
+        while it keeps running. Track which pages are written during the copy
+        --- these are \term{dirty pages}.
+  \item \textbf{Round $n$.} Copy the pages dirtied during round $n-1$. The
+        guest is still running, so this dirties more.
+  \item \textbf{Repeat} until the remaining dirty set is small enough to copy
+        within the acceptable pause.
+  \item \textbf{Switchover.} Pause the guest, copy the last few pages and the
+        processor state, and resume it on the destination. Typically tens of
+        milliseconds.
+\end{tight}
+
+\smallskip
+Each round copies less than the one before, \emph{provided} the guest dirties
+memory more slowly than the network transfers it. That proviso is the whole
+engineering problem.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  rb/.style={draw=secondary, fill=secondary!25, line width=0.5pt},
+  sw/.style={draw=accent, fill=accent!35, line width=0.7pt},
+  lb/.style={font=\scriptsize\bfseries, text=neutral!40!black, anchor=east},
+  note/.style={font=\scriptsize\itshape, align=left, anchor=west}
+]
+  % converging case
+  \node[font=\scriptsize\bfseries, text=greenhl!45!black, anchor=west]
+       at (0,3.35) {Converges: dirty rate 200 MB/s, link 1 GB/s};
+  \node[lb] at (-0.2,2.75) {round 0};
+  \draw[rb] (0,2.6) rectangle (8.0,2.92);
+  \node[font=\tiny, text=secondary!80!black] at (4.0,2.76) {16 GB, 16.0 s};
+  \node[lb] at (-0.2,2.3) {round 1};
+  \draw[rb] (0,2.15) rectangle (1.6,2.47);
+  \node[font=\tiny, text=secondary!80!black, anchor=west] at (1.75,2.31)
+       {3.2 GB, 3.2 s};
+  \node[lb] at (-0.2,1.85) {round 2};
+  \draw[rb] (0,1.7) rectangle (0.32,2.02);
+  \node[font=\tiny, text=secondary!80!black, anchor=west] at (0.47,1.86)
+       {640 MB, 0.64 s};
+  \node[lb] at (-0.2,1.4) {round 3};
+  \draw[rb] (0,1.25) rectangle (0.064,1.57);
+  \node[font=\tiny, text=secondary!80!black, anchor=west] at (0.21,1.41)
+       {128 MB, 0.13 s};
+  \node[lb] at (-0.2,0.95) {switchover};
+  \draw[sw] (0,0.8) rectangle (0.08,1.12);
+  \node[font=\tiny, text=accent!70!black, anchor=west] at (0.23,0.96)
+       {\textbf{paused $\approx$ 50 ms} --- users notice nothing};
+
+  % non-converging case
+  \node[font=\scriptsize\bfseries, text=accent!70!black, anchor=west]
+       at (0,0.25) {Does not converge: dirty rate 1.2 GB/s, link 1 GB/s};
+  \foreach \i/\y in {0/-0.35, 1/-0.8, 2/-1.25, 3/-1.7}{
+    \node[lb] at (-0.2,\y+0.16) {round \i};
+    \pgfmathsetmacro{\w}{8.0*pow(1.2,\i)}
+    \draw[draw=accent, fill=accent!18, line width=0.5pt]
+          (0,\y) rectangle (\w,\y+0.32);}
+  \node[note, text=accent!70!black] at (10.2,-1.0)
+       {each round has \emph{more}\\
+        to copy than the last.\\
+        It never ends.};
+
+  \node[rounded corners=3pt, draw=primary!50, fill=primary!5, text=primary,
+        font=\scriptsize, align=center, inner sep=4pt, text width=12.4cm]
+       at (6.0,-2.6)
+       {The condition is simply \textbf{dirty rate $<$ transfer rate}. When it
+        holds, each round shrinks by the ratio of the two and convergence is
+        geometric. When it does not, no amount of patience helps.};
+\end{tikzpicture}}%
+{Pre-copy migration, drawn to scale for the worked example. The upper case
+finishes in 20 seconds with a 50 ms pause; the lower one never finishes at
+all.}{pre-copy}
+
+\begin{worked}[Will This Guest Migrate?]
+A 16 GB guest is to be migrated over a 10 Gb/s link. Measured: the link
+sustains about 1 GB/s after overheads, and the guest dirties memory at 200 MB/s.
+
+\smallskip
+\textbf{Step 1 --- the convergence condition.}
+\[ \text{dirty rate } 200 \text{ MB/s} \;<\; \text{transfer rate }
+   1{,}000 \text{ MB/s} \quad \checkmark \]
+Each round will be $200/1000 = 0.2$ of the one before.
+
+\smallskip
+\textbf{Step 2 --- round by round.}
+\[ \text{round 0: } \frac{16{,}000}{1{,}000} = 16.0 \text{ s},
+   \text{ dirtying } 16.0 \times 200 = 3{,}200 \text{ MB} \]
+\[ \text{round 1: } 3.2 \text{ s, dirtying } 640 \text{ MB} \qquad
+   \text{round 2: } 0.64 \text{ s, dirtying } 128 \text{ MB} \]
+\[ \text{round 3: } 0.13 \text{ s, dirtying } 26 \text{ MB} \qquad
+   \text{round 4: } 0.026 \text{ s, dirtying } 5 \text{ MB} \]
+
+\smallskip
+\textbf{Step 3 --- when to stop.} With a 50 ms pause budget the switchover can
+move $0.05 \times 1{,}000 = 50$ MB. Round 4 leaves 5 MB, comfortably under it,
+so the hypervisor stops after round 4.
+
+\smallskip
+\textbf{Step 4 --- totals.}
+\[ \text{elapsed} = 16.0 + 3.2 + 0.64 + 0.13 + 0.026 \approx \mathbf{20
+   \text{ s}} \]
+\[ \text{transferred} = 16{,}000 + 3{,}200 + 640 + 128 + 26 \approx 20
+   \text{ GB} \]
+\[ \text{guest paused} = \mathbf{\approx 50 \text{ ms}} \]
+A TCP connection does not notice 50 ms. Neither does a user.
+
+\smallskip
+\textbf{Step 5 --- now a busy database on the same link.} Same 16 GB, but
+dirtying at 1.2 GB/s:
+\[ 1{,}200 > 1{,}000 \quad \times \]
+Round 0 takes 16 s and dirties 19.2 GB --- \emph{more than the guest has}.
+Round 1 is larger than round 0. The migration runs for ever, consuming the link
+the whole time.
+
+\smallskip
+\textbf{Step 6 --- three ways out.}
+\begin{tight}
+  \item \textbf{A faster link.} At 25 Gb/s the transfer rate is about 2.5 GB/s
+        and $1.2 < 2.5$ converges. This is why migration networks are
+        separate and fast.
+  \item \textbf{Auto-convergence.} The hypervisor deliberately throttles the
+        guest's vCPUs --- 10\%, then 20\%, and so on --- which reduces the
+        dirty rate until the condition holds. The guest is slowed on purpose
+        to let it move.
+  \item \textbf{Post-copy.} Switch over \emph{first}, then fetch pages on
+        demand. See below.
+\end{tight}
+
+\smallskip
+\textbf{Step 7 --- what to take away.} Migration time is governed by memory
+size; migration \emph{success} is governed by the ratio of dirty rate to link
+speed. A guest that will not migrate is nearly always a write-heavy one on a
+link that is too slow, and the fix is usually the network, not the guest.
+\end{worked}
+
+\begin{conceptbox}[Post-Copy: the Opposite Risk]
+Post-copy inverts the order. The guest is paused almost immediately, its
+processor state is sent, and it \emph{resumes on the destination} with almost
+no memory. Pages are fetched from the source as the guest faults on them, over
+the network.
+
+\smallskip
+\textbf{For:} total migration time is bounded and predictable --- every page is
+sent exactly once, so there is no convergence problem at all. A guest that
+cannot migrate any other way will migrate this way.
+
+\smallskip
+\textbf{Against, and it is serious:} between switchover and completion, the
+guest's memory lives on \emph{two} hosts. If the network or the source fails in
+that window, the guest is unrecoverable --- its pages exist nowhere complete.
+Pre-copy's failure mode is ``the migration did not happen''; post-copy's is
+``the guest is gone''.
+
+\smallskip
+The usual arrangement is hybrid: begin with pre-copy, and if it has not
+converged after a few rounds, switch to post-copy for the remainder. That gets
+pre-copy's safety for most of the transfer and post-copy's termination
+guarantee for the tail.
+\end{conceptbox}
+
+\section{High Availability, Fault Tolerance and Quorum}
+
+Live migration is \emph{planned} movement. The unplanned case is a host
+failing, and the answer is different.
+
+\term{High availability} restarts the failed host's guests on surviving hosts.
+The guests crash and reboot: everything in memory is lost, and the service is
+down for as long as a boot takes --- a minute or two. It is cheap, it is
+automatic, and it is what almost every cluster runs.
+
+\term{Fault tolerance} runs a shadow copy of the guest on a second host in
+lockstep, so a host failure is invisible --- zero downtime, zero data loss. It
+costs double the resources, limits the guest's size and vCPU count severely,
+and is reserved for the few workloads that genuinely justify it.
+
+\begin{alertbox}[Split brain, and why fencing is not optional]
+A cluster decides a host has failed because it stopped answering. But
+``stopped answering'' and ``stopped running'' are different things: a network
+partition leaves the host alive, still writing to shared storage, and
+convinced the others failed.
+
+\smallskip
+If the surviving side restarts those guests, the same guest now runs twice,
+both instances writing to the same disks. The result is not downtime; it is
+\emph{corruption}, and it is worse than the outage that was being avoided.
+
+\smallskip
+Two mechanisms prevent it. \term{Quorum}: only a partition holding more than
+half the votes may act, so a minority partition stops. This is why clusters
+have odd numbers of members or a witness. And \term{fencing}, bluntly named
+\term{STONITH} --- shoot the other node in the head: before restarting
+anything, the survivors forcibly power off the suspect host through its
+management controller or its storage fabric.
+
+\smallskip
+A cluster without fencing is not a highly available cluster. It is a system
+with one additional, correlated way to lose your data.
 \end{alertbox}
+
+\section{RPO, RTO and the Cost of a Nine}
+
+Disaster recovery is about the site, not the host, and two numbers specify it.
+
+\begin{definitionbox}[RPO and RTO]
+\term{RPO} --- recovery point objective --- is how much \emph{data} you may
+lose, expressed as time. An RPO of one hour means losing up to an hour of work
+is acceptable, which means replicating or backing up at least hourly.
+
+\smallskip
+\term{RTO} --- recovery time objective --- is how long you may be \emph{down}.
+An RTO of four hours means service must be restored within four hours of the
+declaration.
+
+\smallskip
+They are independent and they cost differently. Nightly backups to tape give an
+RPO of 24 hours and an RTO of perhaps a day. Synchronous replication to a
+second site gives an RPO near zero --- and an RTO that still depends entirely on
+how quickly somebody can bring the second site up, which is a rehearsal
+question, not a technology one.
+\end{definitionbox}
+
+\begin{worked}[What Each Nine Costs]
+A service is offered at ``four nines''. Work out what that means and what the
+next nine would require.
+
+\smallskip
+\textbf{Step 1 --- the downtime budget.} A year is
+$365 \times 24 \times 60 = 525{,}600$ minutes.
+\[ 99.9\% : \; 525{,}600 \times 0.001 = 526 \text{ min}
+   = \mathbf{8 \text{ h } 46 \text{ min a year}} \]
+\[ 99.99\% : \; 52.6 \text{ min a year} = \mathbf{4.4 \text{ min a month}} \]
+\[ 99.999\% : \; 5.3 \text{ min a year} = \mathbf{26 \text{ seconds a month}} \]
+
+\smallskip
+\textbf{Step 2 --- what fits in each budget.}
+\begin{tight}
+  \item \textbf{99.9\%}: 8 h 46 min allows a monthly patching window of 40
+        minutes and still leaves room for one unplanned incident. Achievable
+        with HA and careful scheduling.
+  \item \textbf{99.99\%}: 52 minutes a year. A single HA restart of a guest
+        costs 1--2 minutes, so you may have about thirty of them --- \emph{and
+        no planned downtime at all}. Every patch must be applied by live
+        migration.
+  \item \textbf{99.999\%}: 5 minutes a year. One HA restart is 20--40\% of the
+        annual budget. This requires fault tolerance or clustered application
+        software, and it requires that no human decision is in the recovery
+        path, because nobody reads an alert in 26 seconds.
+\end{tight}
+
+\smallskip
+\textbf{Step 3 --- the cost shape.} Each nine divides the budget by ten and
+roughly multiplies the cost by three to five: a second site, a second set of
+licences, tested automation, rehearsals, and staff who can be woken.
+
+\smallskip
+\textbf{Step 4 --- the question to ask instead.} Before accepting an
+availability target, ask what the \emph{outage} actually costs per hour. A
+service losing \$200 an hour cannot justify the \$150{,}000 a year that five
+nines would cost; one losing \$200{,}000 an hour can justify a great deal.
+Availability targets chosen without that number are chosen by whoever is most
+anxious.
+
+\smallskip
+\textbf{Step 5 --- and the measurement everyone forgets.} An availability
+figure is meaningless without a stated measurement window and a definition of
+``down''. 99.99\% measured monthly permits 4.4 minutes every month; measured
+annually it permits 52 minutes in one incident. Those are very different
+promises, and the difference is where disputes happen.
+\end{worked}
+
+\begin{conceptbox}[A Snapshot Is Not a Backup, Restated]
+\chref{storage} made this point about storage; it is worth making again about
+disaster recovery, because the failure is so common.
+
+\smallskip
+The \term{3-2-1 rule}: three copies of the data, on two different media, with
+one off site. A snapshot fails all three --- it is on the same storage, the
+same medium, the same site, and it depends on the original.
+
+\smallskip
+Ransomware has added a fourth requirement: at least one copy must be
+\term{immutable} --- write-once, with a retention lock the backup
+administrator's own credentials cannot override. Attackers who gain
+administrative access delete the backups first, and an estate whose backup
+server trusts the same directory as everything else has one credential between
+it and total loss.
+
+\smallskip
+And the rule that outranks all of them: \textbf{a backup you have not restored
+is a hypothesis}. Test restores on a schedule, and time them --- that
+measurement is your real RTO, as opposed to the one in the document.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Expecting any guest to live-migrate.} A write-heavy guest on a
+        slow link will not converge. Check the dirty rate against the link
+        before promising a maintenance window.
+  \item \textbf{Running a cluster without fencing.} Split brain corrupts data,
+        which is worse than the outage HA was bought to prevent.
+  \item \textbf{Using an even number of cluster members with no witness.} A
+        clean split leaves neither side with quorum and both stop.
+  \item \textbf{Confusing HA with fault tolerance.} HA restarts the guest; the
+        service \emph{is} down and everything in memory is lost.
+  \item \textbf{Quoting an availability figure without a window and a
+        definition of down.} 99.99\% monthly and 99.99\% annually are different
+        promises.
+  \item \textbf{Treating replication as backup.} Replication faithfully copies
+        the deletion and the encryption to the second site, usually within
+        seconds.
+  \item \textbf{Never testing a restore.} Then the RTO is a guess, and it is
+        always optimistic.
+  \item \textbf{Forgetting that a passthrough device prevents migration}
+        (\chref{paravirt}). Plan the exception before you need to patch the
+        host.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Migrating a Running Guest, and Failing To]
+Live-migrates a guest between two hosts with no dropped pings, then makes the
+guest dirty memory fast enough that it will not converge. Needs two hosts, or
+two nested ones. Expect forty-five minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch17_migrate.sh -- pre-copy convergence, observed and then broken.
+set -euo pipefail
+DEST=${1:?usage: ch17_migrate.sh <destination-host>}
+
+# --- 1. Both hosts must see the same disk. ----------------------------
+# Shared storage is the precondition for everything in this chapter.
+showmount -e "$DEST" 2>/dev/null || \
+  echo "set up NFS or iSCSI first -- see Appendix A"
+sudo virsh pool-list --all
+
+# --- 2. Start the guest and give it something to serve. --------------
+sudo virsh start vss1 || true ; sleep 25
+IP=$(sudo virsh domifaddr vss1 | awk '/ipv4/{split($4,a,"/");print a[1]}')
+G () { ssh -o StrictHostKeyChecking=no "ubuntu@$IP" "$1"; }
+G "sudo apt-get -qq install -y stress-ng python3 && \
+   nohup python3 -m http.server 8000 >/dev/null 2>&1 &"
+
+# --- 3. Watch continuity: ping and HTTP, both running throughout. ----
+ping -i 0.2 "$IP" > /tmp/ping.log &
+PINGPID=$!
+( while true; do curl -s -o /dev/null -w '%{http_code} ' \
+    "http://$IP:8000/" ; sleep 0.2; done ) > /tmp/http.log &
+CURLPID=$!
+
+# --- 4. Migrate it, and time the whole thing. ------------------------
+time sudo virsh migrate --live --verbose --persistent --undefinesource \
+  vss1 "qemu+ssh://$DEST/system"
+
+sleep 2 ; kill $PINGPID $CURLPID 2>/dev/null || true
+echo "--- dropped pings ---"
+grep -c 'icmp_seq' /tmp/ping.log
+tail -2 /tmp/ping.log           # look at the loss percentage
+echo "--- non-200 responses ---"
+tr ' ' '\n' < /tmp/http.log | grep -vc '^200$' || echo 0
+# A correct migration drops nothing. The 50 ms pause is inside one
+# ping interval.
+
+# --- 5. Now make it refuse to converge. ------------------------------
+# stress-ng --vm writes continuously, so the dirty rate exceeds the link.
+sudo virsh migrate --live vss1 "qemu+ssh://$DEST/system" || true   # back
+sleep 10
+G "nohup stress-ng --vm 2 --vm-bytes 75% --vm-keep --timeout 300s \
+   >/dev/null 2>&1 &"
+sleep 5
+echo "--- migrating a guest that dirties faster than the link ---"
+sudo virsh migrate --live --verbose --timeout 60 \
+  --timeout-suspend vss1 "qemu+ssh://$DEST/system" || \
+  echo "did not converge within 60 s -- exactly section 17.1"
+
+# --- 6. Make it converge by throttling the guest on purpose. ---------
+sudo virsh migrate --live --verbose --auto-converge \
+  --auto-converge-initial 20 --auto-converge-increment 10 \
+  vss1 "qemu+ssh://$DEST/system"
+# The guest was deliberately slowed so that it could move.
+
+# --- 7. Measure the dirty rate directly, for the arithmetic. ---------
+sudo virsh domdirtyrate-calc vss1 --seconds 10 || true
+sleep 12 ; sudo virsh domstats vss1 --dirtyrate | grep -i dirty
+
+# --- 8. Unplanned failure: what HA does instead. ---------------------
+# No graceful anything: cut the guest off and see what survives.
+sudo virsh destroy vss1
+echo "the guest is gone; HA would now restart it elsewhere, and"
+echo "everything in its memory is lost. That is the difference."
+
+# --- 9. Tear down. ---------------------------------------------------
+sudo virsh start vss1 || true
+\end{lstlisting}
+
+\textbf{What to notice.} Step 4 should drop no pings at all: the guest moved
+between physical machines while serving HTTP and nothing noticed. Step 5 is the
+same command failing for the reason the worked example predicts, and step 6 is
+the hypervisor buying convergence with the guest's performance.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A 32 GB guest dirties memory at 400 MB/s and the migration link
+        sustains 1.2 GB/s. Give the ratio, the size of the first three rounds,
+        and the approximate total elapsed time.
+  \item A two-host cluster loses the network between the hosts. Both are alive
+        and both can reach the storage. Explain what each host believes, what
+        happens without fencing, and what quorum would do differently.
+  \item A service promises 99.99\% availability measured annually. Give the
+        downtime budget, and say whether a 90-minute planned upgrade once a
+        year is compatible with it.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Pre-copy migration copies memory in rounds while the guest runs, then
+        pauses briefly to send the remainder. It converges only if the dirty
+        rate is below the transfer rate.
+  \item A 16 GB guest at 200 MB/s over 1 GB/s converges in about 20 seconds
+        with a 50 ms pause. At 1.2 GB/s it never converges at all.
+  \item The fixes are a faster link, auto-convergence (throttling the guest on
+        purpose), or post-copy --- which always terminates but loses the guest
+        if the network fails mid-transfer.
+  \item High availability restarts guests after a host failure; fault tolerance
+        runs a lockstep shadow. HA loses memory and takes a minute; FT costs
+        double.
+  \item Quorum and fencing prevent split brain. A cluster without fencing has
+        added a way to corrupt data.
+  \item RPO is data lost, RTO is time down, and they cost differently. Each
+        additional nine divides the budget by ten and multiplies the cost by
+        three to five.
+  \item 3-2-1, plus one immutable copy, plus tested restores. A backup you have
+        not restored is a hypothesis.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Pre-copy live migration converges when: (a)~the guest
+        has fewer than 8 vCPUs; (b)~the dirty rate is lower than the transfer
+        rate; (c)~shared storage is used; (d)~the guest is idle.
+  \item \textbf{(MCQ)} The characteristic risk of post-copy migration is:
+        (a)~it never terminates; (b)~the guest's memory is split across two
+        hosts, so a failure in that window loses it; (c)~it needs more
+        bandwidth; (d)~it cannot be used with shared storage.
+  \item \textbf{(Short)} Explain auto-convergence and what it trades.
+  \item \textbf{(Short)} Define RPO and RTO, and give a configuration that
+        produces a low RPO and a high RTO.
+  \item \textbf{(Short)} State the 3-2-1 rule and explain which parts of it a
+        snapshot fails.
+  \item \textbf{(Applied)} A 64 GB database guest must be moved for host
+        maintenance. It dirties memory at 2.1 GB/s and the migration network
+        is 10 Gb/s. Show that it will not converge, give three options with
+        their consequences for the database's users, and recommend one.
+  \item \textbf{(Applied)} A department is asked to commit to 99.99\%
+        availability for a student-facing system. Write the response: the
+        downtime budget, what it rules out operationally, what it would cost to
+        deliver, and the question you would ask the requester first.
+\end{reviewq}

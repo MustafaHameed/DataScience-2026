@@ -3,7 +3,545 @@
 %=====================================================================
 \locator{2}{Part II --- Hypervisors and Compute Virtualization}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} how a hypervisor schedules virtual processors onto
+        physical ones, and \textbf{interpret} ready time as the measure of
+        whether it is succeeding.
+  \item \textbf{Explain} why giving a guest more virtual processors can make it
+        slower, using co-scheduling.
+  \item \textbf{Compute} CPU and memory overcommit ratios, and \textbf{decide}
+        from measured figures whether a host can take another guest.
+  \item \textbf{Order} the four memory reclamation techniques by cost and
+        \textbf{state} what each one does to guest performance.
+  \item \textbf{Describe} NUMA and \textbf{explain} why a guest sized larger
+        than a socket may lose a third of its memory bandwidth.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{hardware} (extended page tables, which are what make guest memory
+management cheap) and \chref{platforms} (the four schedulers). From Operating
+Systems you need process scheduling and the idea of a working set.
+\end{prereq}
+
+\begin{keyterms}
+vCPU $\bullet$ pCPU $\bullet$ time slice $\bullet$ ready time $\bullet$ \%RDY
+$\bullet$ co-scheduling $\bullet$ co-stop $\bullet$ relaxed co-scheduling
+$\bullet$ overcommit ratio $\bullet$ working set $\bullet$ active memory
+$\bullet$ transparent page sharing $\bullet$ ballooning $\bullet$ balloon
+driver $\bullet$ memory compression $\bullet$ hypervisor swapping $\bullet$
+memory tax $\bullet$ NUMA $\bullet$ NUMA node $\bullet$ vNUMA $\bullet$ node
+interleaving
+\end{keyterms}
+
+\section{Scheduling a Processor That Is Not There}
+
+A guest configured with four virtual processors believes it has four
+processors. It runs four run queues, balances threads across them, and spins
+on locks expecting the other holder to be making progress. None of that is
+true: a \term{vCPU} is a thread the hypervisor schedules onto a \term{pCPU},
+and between one guest instruction and the next it may have been off the
+processor for milliseconds.
+
+For CPU-bound work this is nearly free --- the guest's instructions run on the
+real processor at full speed, as \chref{architectures} measured. The costs
+appear when guests contend, and they are measured by one number.
+
+\begin{definitionbox}[Ready Time]
+\term{Ready time} is the proportion of time a vCPU was \emph{runnable but not
+scheduled} --- the guest had work, and no physical core was free for it.
+VMware reports it as \term{\%RDY} per vCPU; KVM exposes the same quantity as
+steal time, which the guest itself can see in \texttt{top} as \texttt{\%st}.
+
+\smallskip
+It is the single most useful number in capacity planning, because it
+distinguishes the two cases that look identical from inside the guest: a guest
+that is slow because its own work is slow, and a guest that is slow because it
+is not being given a processor.
+
+\smallskip
+Rules of thumb, widely used and worth knowing: under 5\% is healthy, 5--10\%
+deserves investigation, and sustained figures above 10\% mean the host is
+oversubscribed. \chref{performance} treats the measurement properly.
+\end{definitionbox}
+
+\section{Why More vCPUs Can Be Slower}
+
+The first instinct on finding a slow guest is to give it more processors. It
+is often exactly wrong, and the reason is \term{co-scheduling}.
+
+A guest kernel assumes its processors run simultaneously. A thread holding a
+spinlock on vCPU~0 will be released shortly, so a thread on vCPU~1 spins rather
+than sleeping. If vCPU~0 is \emph{descheduled} while holding that lock, vCPU~1
+spins for a whole time slice --- burning a physical core to wait for a virtual
+one that is not running.
+
+Early hypervisors avoided this by strict co-scheduling: never run a guest's
+vCPUs unless \emph{all} of them can run together. That removes the problem and
+creates a worse one --- an eight-vCPU guest waits for eight free cores, and on a
+busy host it waits a long time. Modern schedulers use \term{relaxed
+co-scheduling}: a vCPU is allowed to fall behind its siblings by a small margin,
+and is forced to catch up only when the skew grows too large. The waiting that
+results is reported as \term{co-stop}.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  lab/.style={font=\scriptsize\bfseries, text=neutral!40!black, anchor=east},
+  run/.style={draw=greenhl!70, fill=greenhl!25, line width=0.5pt},
+  wait/.style={draw=accent!70, fill=accent!18, line width=0.5pt},
+  note/.style={font=\scriptsize\itshape, align=left, anchor=west}
+]
+  % ---- 2-vCPU guest: fits easily ----
+  \node[font=\scriptsize\bfseries, text=primary, anchor=west] at (0,3.5)
+       {A 2-vCPU guest on a busy host};
+  \foreach \i/\y in {0/3.0, 1/2.55}{
+    \node[lab] at (-0.15,\y) {vCPU \i};
+    \foreach \s in {0,1,2,3,4,5,6,7}{
+      \pgfmathsetmacro{\x}{\s*0.78}
+      \draw[run] (\x,\y-0.16) rectangle ++(0.72,0.32);}}
+  \node[note, text=greenhl!55!black] at (6.5,2.78)
+       {both vCPUs almost always\\find a free core};
+
+  % ---- 8-vCPU guest: waits ----
+  \node[font=\scriptsize\bfseries, text=primary, anchor=west] at (0,1.9)
+       {The same work given 8 vCPUs};
+  \foreach \i in {0,...,7}{
+    \pgfmathsetmacro{\y}{1.4-\i*0.3}
+    \node[lab] at (-0.15,\y) {vCPU \i};
+    \foreach \s in {0,...,7}{
+      \pgfmathsetmacro{\x}{\s*0.78}
+      \pgfmathsetmacro{\r}{mod(\i+\s,3)}
+      \ifdim\r pt>0.5pt
+        \draw[run] (\x,\y-0.11) rectangle ++(0.72,0.22);
+      \else
+        \draw[wait] (\x,\y-0.11) rectangle ++(0.72,0.22);
+      \fi}}
+  \node[note, text=accent!70!black] at (6.5,0.1)
+       {red is \emph{ready}: the vCPU had work\\
+        and no core was free. More vCPUs\\
+        means more chances to wait, and the\\
+        guest's spinlocks make waiting\\
+        cost its siblings too.};
+
+  \draw[-{Stealth[length=2mm]}, neutral!60, line width=0.9pt]
+        (0,-1.25) -- (6.3,-1.25);
+  \node[font=\scriptsize\itshape, text=neutral, anchor=west] at (0,-1.6)
+       {time};
+  \node[rounded corners=2pt, draw=greenhl, fill=greenhl!15, inner sep=2pt,
+        font=\tiny, text=greenhl!55!black] at (7.5,-1.25) {running};
+  \node[rounded corners=2pt, draw=accent, fill=accent!12, inner sep=2pt,
+        font=\tiny, text=accent!70!black] at (9.0,-1.25) {ready (waiting)};
+\end{tikzpicture}}%
+{Why a bigger guest can be a slower guest. Right-sizing downward is the most
+common successful intervention in a contended cluster, and the one
+administrators are most reluctant to make.}{vcpu-scheduling}
+
+\begin{alertbox}[The rule that follows: size for what is used, not what is asked for]
+Users ask for vCPUs the way they ask for disk --- more is safer. It is not. A
+guest given eight vCPUs and using two has not merely wasted six; it has made
+itself harder to schedule, raised its own ready time and raised everyone
+else's.
+
+\smallskip
+The operational rule is to allocate what measurement justifies and add more
+when ready time and utilisation both say so. \chref{performance} gives the
+procedure; the point here is that the arithmetic of overcommit does not capture
+it, because two guests with the same total vCPU count behave differently
+according to how those vCPUs are grouped.
 \end{alertbox}
+
+\section{Memory, and Why It Is the Constraint}
+
+\chref{what} asserted that memory, not processor time, usually decides how many
+guests fit. The reason is that the two resources are elastic in different ways.
+
+A processor can be oversubscribed because \emph{time} is divisible: two guests
+each wanting a core can have it alternately, and the result is slower, not
+wrong. Memory cannot be divided in time. A page either holds a guest's data or
+it does not, and a guest denied a page it is using does not slow down slightly
+--- it swaps, and swapping is a hundredfold penalty, not a percentage.
+
+So hypervisors oversubscribe memory cautiously, using four techniques of
+increasing desperation.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  rung/.style={rounded corners=3pt, line width=1pt, align=left,
+               text width=5.5cm, inner sep=5pt, font=\scriptsize},
+  cost/.style={rounded corners=2pt, line width=0.8pt, align=center,
+               minimum width=2.1cm, minimum height=0.62cm, font=\scriptsize},
+  hd/.style={font=\scriptsize\bfseries}
+]
+  \node[rung, draw=greenhl, fill=greenhl!7, text=greenhl!45!black] (s1) at (0,3.3)
+       {\textbf{1. Transparent page sharing}\\
+        Identical pages across guests are stored once, copy-on-write. Forty
+        guests running the same operating system share most of their kernel.};
+  \node[rung, draw=secondary, fill=secondary!7, text=secondary!75!black] (s2) at (0,1.5)
+       {\textbf{2. Ballooning}\\
+        A driver inside the guest allocates memory and tells the hypervisor it
+        may take those pages. The \emph{guest} chooses what to give up, using
+        its own page replacement.};
+  \node[rung, draw=goldhl, fill=goldhl!7, text=goldhl!45!black] (s3) at (0,-0.3)
+       {\textbf{3. Memory compression}\\
+        Pages that would be swapped are compressed into a cache in RAM
+        instead. Slower than memory, far faster than disk.};
+  \node[rung, draw=accent, fill=accent!7, text=accent!65!black] (s4) at (0,-1.95)
+       {\textbf{4. Hypervisor swapping}\\
+        Guest pages are written to disk by the hypervisor, which does not know
+        which ones matter. The last resort, and a cliff.};
+
+  \node[cost, draw=greenhl, fill=white, text=greenhl!45!black] at (4.9,3.3)
+       {free};
+  \node[cost, draw=secondary, fill=white, text=secondary!75!black] at (4.9,1.5)
+       {cheap};
+  \node[cost, draw=goldhl, fill=white, text=goldhl!45!black] at (4.9,-0.3)
+       {noticeable};
+  \node[cost, draw=accent, fill=accent!10, text=accent!65!black] at (4.9,-1.95)
+       {\textbf{catastrophic}};
+
+  \draw[-{Stealth[length=2.4mm]}, neutral!60, line width=1.1pt]
+        (6.4,3.8) -- (6.4,-2.5);
+  \node[font=\scriptsize\itshape, text=neutral, anchor=west, align=left]
+       at (6.6,0.6) {increasing\\pressure,\\increasing\\damage};
+
+  \node[font=\scriptsize\itshape, text=accent!65!black, anchor=north west,
+        align=left] at (-2.9,-3.0)
+       {The gap between steps 3 and 4 is the one that matters: the first three
+        degrade gracefully and the fourth does not.\\
+        A host reaching step 4 has been oversubscribed, not tuned.};
+\end{tikzpicture}}%
+{The reclamation ladder. A hypervisor works down it as pressure rises; an
+administrator's job is to ensure it never reaches the bottom
+rung.}{reclamation-ladder}
+
+\begin{conceptbox}[Why Ballooning Works, and Why It Feels Wrong]
+Ballooning looks like a trick, and students reasonably ask why the hypervisor
+does not simply take the pages.
+
+\smallskip
+Because it does not know which ones to take. From outside, every guest page
+looks alike; the hypervisor cannot tell a hot database buffer from a page of
+cache the guest would discard without noticing. Taking the wrong page costs a
+disk read in the guest, and the hypervisor would be guessing.
+
+\smallskip
+The guest kernel, by contrast, has spent decades getting good at exactly this
+question. So the balloon driver asks the guest for memory in the one language
+the guest understands --- it allocates it, as any program would --- and the
+guest runs its own page replacement to decide what to give up. The hypervisor
+then takes the pages backing the balloon, which it knows are not in use.
+
+\smallskip
+The consequence worth remembering: \textbf{ballooning requires the guest to
+cooperate}. A guest without the balloon driver installed cannot be reclaimed
+from gracefully, and pressure on that host goes straight from step~1 to
+step~3. Installing guest tools is not cosmetic.
+\end{conceptbox}
+
+\begin{worked}[Can This Host Take Four More Guests?]
+A host of 2 $\times$ 32 cores and 512 GB currently runs 28 guests, each
+configured with 4 vCPUs and 16 GB. Measured over a month: mean \%RDY 4\%,
+95th percentile 9\%; mean active memory 6.2 GB per guest. A team asks for four
+more identical guests. Decide.
+
+\smallskip
+\textbf{Step 1 --- CPU overcommit now and after.}
+\[ \sigma_{\text{cpu}} = \frac{28 \times 4}{64} = \frac{112}{64}
+   = \mathbf{1.75} \qquad\text{after: } \frac{32 \times 4}{64}
+   = \frac{128}{64} = \mathbf{2.00} \]
+Ready time is already at 9\% at the 95th percentile, which is the edge of the
+acceptable band. Raising oversubscription by 14\% will not improve it.
+
+\smallskip
+\textbf{Step 2 --- memory \emph{allocated}.}
+\[ 28 \times 16 = 448 \text{ GB} \qquad\text{after: } 32 \times 16
+   = \mathbf{512 \text{ GB}} \]
+The host has 512 GB \emph{in total}, and the hypervisor itself needs some ---
+call it 6\%, about 32 GB, for its own code, the per-guest overhead and the page
+tables of \chref{hardware}. So the request allocates 512 GB of 480 GB usable:
+\textbf{32 GB short} before a single guest does anything.
+
+\smallskip
+\textbf{Step 3 --- memory \emph{active}.} Today the guests actually touch
+\[ 28 \times 6.2 = 173.6 \text{ GB} \]
+of 448 GB allocated --- 39\%. After the change, $32 \times 6.2 = 198.4$ GB,
+still far below 480 GB. So on \emph{today's behaviour} the memory fits
+comfortably.
+
+\smallskip
+\textbf{Step 4 --- which of Steps 2 and 3 should decide?} This is the real
+question, and the answer is: Step 3 for the normal case, Step 2 for the bad
+one. Overcommitting memory is safe exactly as long as the guests do not all
+become active together --- and the events that make them active together
+(a patch window, a backup run, a traffic spike, a failover from another host)
+are correlated by construction.
+
+\smallskip
+If all 32 guests touched their full allocation, demand would be 512 GB against
+480 GB usable: 32 GB short, about 1 GB per guest to be reclaimed. Page sharing
+and ballooning would absorb that --- rungs 1 and 2 --- so the host would not
+swap. That is survivable.
+
+\smallskip
+\textbf{Step 5 --- the recommendation.} \textbf{Refuse the request as stated,
+and make a counter-offer.} The binding problem is CPU, not memory: 9\% ready at
+the 95th percentile is the symptom of a host already at its limit, and
+$\sigma_{\text{cpu}} = 2.0$ will make it worse for all 32 guests, not just the
+new four.
+
+\smallskip
+The counter-offer is to right-size. If the existing 28 guests are, like most,
+using two vCPUs of their four, reducing them to 2 vCPUs gives
+$\sigma_{\text{cpu}} = (28 \times 2 + 4 \times 4)/64 = 72/64 = 1.13$ --- and
+the four new guests fit with ready time \emph{lower} than it is today.
+\chref{performance} is how you establish whether that premise holds.
+\end{worked}
+
+\begin{alertbox}[Do not read a memory overcommit ratio without an active figure]
+$\sigma_{\text{mem}} = 1.25$ tells you almost nothing on its own. If the guests
+are using a third of what they were given, it is comfortable. If they are using
+all of it, the host is already swapping.
+
+\smallskip
+Allocation is a promise; active memory is a fact. Plan against the fact, size
+the safety margin against the promise, and know which of the two you are
+quoting whenever you quote a number.
+\end{alertbox}
+
+\section{NUMA}
+
+A two-socket server does not have one pool of memory. Each socket has its own
+memory controller and its own attached DIMMs; a core reaches its own socket's
+memory quickly and the other socket's memory across an interconnect, more
+slowly. This is \term{NUMA} --- non-uniform memory access --- and a remote
+access typically costs something in the region of 1.5 to 2 times a local one in
+latency, with lower bandwidth.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  sock/.style={rounded corners=3pt, line width=1.1pt, minimum width=5.0cm,
+               minimum height=2.3cm},
+  core/.style={rounded corners=1pt, line width=0.5pt, minimum width=0.52cm,
+               minimum height=0.42cm, font=\tiny},
+  mem/.style={rounded corners=2pt, line width=0.9pt, minimum width=4.4cm,
+              minimum height=0.55cm, font=\scriptsize, align=center},
+  note/.style={font=\scriptsize\itshape, align=center}
+]
+  \node[sock, draw=primary, fill=primary!5] at (0,0) {};
+  \node[font=\scriptsize\bfseries, text=primary] at (0,0.95) {Socket 0};
+  \foreach \i in {0,...,7}{
+    \pgfmathsetmacro{\x}{-1.85+mod(\i,4)*0.62}
+    \pgfmathsetmacro{\y}{0.45-floor(\i/4)*0.5}
+    \node[core, draw=primary!60, fill=white, text=primary] at (\x,\y) {};}
+  \node[mem, draw=primary, fill=primary!12, text=primary] at (0,-0.78)
+       {256 GB local};
+
+  \node[sock, draw=purplehl, fill=purplehl!5] at (6.4,0) {};
+  \node[font=\scriptsize\bfseries, text=purplehl!70!black] at (6.4,0.95)
+       {Socket 1};
+  \foreach \i in {0,...,7}{
+    \pgfmathsetmacro{\x}{4.55+mod(\i,4)*0.62}
+    \pgfmathsetmacro{\y}{0.45-floor(\i/4)*0.5}
+    \node[core, draw=purplehl!60, fill=white, text=purplehl] at (\x,\y) {};}
+  \node[mem, draw=purplehl, fill=purplehl!12, text=purplehl!70!black]
+       at (6.4,-0.78) {256 GB local};
+
+  \draw[{Stealth[length=2mm]}-{Stealth[length=2mm]}, accent, line width=1.1pt]
+        (2.55,0.1) -- (3.85,0.1);
+  \node[note, text=accent!70!black] at (3.2,0.62) {interconnect};
+  \node[note, text=accent!70!black] at (3.2,-0.4) {1.5--2$\times$\\the latency};
+
+  \node[rounded corners=2pt, draw=greenhl, fill=greenhl!10,
+        text=greenhl!45!black, font=\scriptsize, align=left, inner sep=4pt,
+        text width=5.3cm] at (-1.0,-2.5)
+       {\textbf{A guest that fits one socket}\\
+        16 vCPU, 200 GB. Placed entirely on socket 0: every access local.};
+  \node[rounded corners=2pt, draw=accent, fill=accent!8,
+        text=accent!65!black, font=\scriptsize, align=left, inner sep=4pt,
+        text width=5.3cm] at (5.4,-2.5)
+       {\textbf{A guest that does not}\\
+        40 vCPU, 400 GB. Spans both. Roughly half its accesses cross the
+        interconnect --- unless the guest is told, and can act on it.};
+\end{tikzpicture}}%
+{NUMA on a two-socket host. The green guest is a sizing decision, not a tuning
+option: once a guest is wider than a socket, no amount of hypervisor
+configuration makes its memory local again.}{numa}
+
+\begin{conceptbox}[vNUMA: Telling the Guest the Truth]
+A guest that must span sockets can still be scheduled well, but only if it
+knows. \term{vNUMA} exposes the host's NUMA topology to the guest, so the guest
+kernel's own NUMA-aware scheduler and allocator can keep each thread's memory
+on the node where the thread runs. Databases and JVMs do this competently.
+
+\smallskip
+Two consequences follow, and both are commonly missed. First, vNUMA is usually
+enabled automatically only above a threshold --- historically eight or nine
+vCPUs --- so a guest just under it that still spans sockets gets no topology at
+all. Second, the topology is fixed when the guest boots: migrating it
+(\chref{migration}) to a host with a different socket layout leaves the guest
+optimising for a machine it is no longer on.
+
+\smallskip
+The rule that survives all of this: \textbf{size guests to fit inside a NUMA
+node wherever you can}. It is the cheapest performance decision in this chapter
+and it is made at provisioning time, where nobody is looking.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Adding vCPUs to a slow guest.} If the guest is slow because the
+        host is contended, more vCPUs raise its ready time and everyone
+        else's. Measure \%RDY before changing anything.
+  \item \textbf{Quoting an overcommit ratio with no active-memory figure.}
+        Allocation is a promise and activity is a fact; a ratio without the
+        second is not a capacity statement.
+  \item \textbf{Treating the four reclamation techniques as interchangeable.}
+        Page sharing is free and ballooning is cheap; swapping is a cliff,
+        not a slope. A host that swaps is misconfigured, not merely busy.
+  \item \textbf{Running guests without the balloon driver and then
+        overcommitting.} Without guest cooperation the hypervisor skips the
+        graceful rung entirely.
+  \item \textbf{Ignoring NUMA until there is a problem.} It is decided when the
+        guest is sized. A 40-vCPU guest on a 32-core socket cannot be tuned
+        back into locality.
+  \item \textbf{Disabling page sharing because of side-channel advice, without
+        noticing the memory cost.} Sharing between guests was restricted by
+        default after 2014 for good reasons, but on a host of forty identical
+        guests it was recovering a substantial fraction of memory. Know which
+        trade you have made.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Making a Host Hurt, on Purpose]
+Drives one host into CPU contention and then into memory pressure, and watches
+each symptom appear. Use a laptop you are not relying on; it will become
+unresponsive at step 5. Expect forty minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch06_pressure.sh -- ready time and the reclamation ladder, observed.
+set -euo pipefail
+G () { ssh -o StrictHostKeyChecking=no "ubuntu@$1" "$2"; }
+
+# --- 1. How many physical cores are we actually working with? ----------
+nproc ; lscpu | grep -E 'Socket|Core|NUMA'
+
+# --- 2. Build four guests, each with as many vCPUs as the host has. ----
+# Deliberate oversubscription: 4 guests x nproc vCPUs on nproc cores.
+for n in 1 2 3 4; do
+  sudo qemu-img create -f qcow2 -b /var/lib/libvirt/images/vss1.qcow2 \
+       -F qcow2 "/var/lib/libvirt/images/p$n.qcow2" 10G
+  sudo virt-install --name "p$n" --memory 2048 --vcpus "$(nproc)" \
+    --disk "/var/lib/libvirt/images/p$n.qcow2",format=qcow2 \
+    --disk seed.iso,device=cdrom --os-variant ubuntu22.04 \
+    --import --graphics none --noautoconsole
+done
+sleep 40
+
+# --- 3. Baseline: one guest busy, three idle. --------------------------
+ip_of () {
+  sudo virsh domifaddr "$1" | awk '/ipv4/{split($4,a,"/"); print a[1]}'
+}
+IP1=$(ip_of p1)
+G "$IP1" "sudo apt-get -qq install -y stress-ng sysstat"
+G "$IP1" "stress-ng --cpu \$(nproc) --timeout 30s --metrics-brief"
+
+# --- 4. Now make all four busy and read steal time in the guest. -------
+# %st in the guest IS the ready time of section 6.1, seen from inside.
+for n in 2 3 4; do
+  IP=$(ip_of "p$n")
+  G "$IP" "sudo apt-get -qq install -y stress-ng" || true
+  G "$IP" "nohup stress-ng --cpu \$(nproc) --timeout 60s >/dev/null 2>&1 &"
+done
+sleep 5
+G "$IP1" "mpstat 2 5 | tail -4"       # watch the %steal column climb
+
+# --- 5. Memory pressure: ask for far more than the host has. -----------
+# Watch the balloon move before anything swaps.
+sudo virsh dommemstat p1
+for n in 1 2 3 4; do
+  G "$(ip_of "p$n")" "nohup stress-ng --vm 1 --vm-bytes 85% \
+           --timeout 60s >/dev/null 2>&1 &" || true
+done
+sleep 20
+sudo virsh dommemstat p1               # balloon / swap_in / swap_out
+free -m ; vmstat 2 4                   # the host's own view
+
+# --- 6. Right-size, and measure the same thing again. ------------------
+# Two vCPUs each instead of nproc: the overcommit ratio drops fourfold.
+for n in 1 2 3 4; do sudo virsh destroy "p$n"; \
+  sudo virsh setvcpus "p$n" 2 --config --maximum --config; \
+  sudo virsh setvcpus "p$n" 2 --config; sudo virsh start "p$n"; done
+sleep 40
+G "$IP1" "mpstat 2 5 | tail -4"        # %steal should be far lower
+
+# --- 7. Tear down. -----------------------------------------------------
+for n in 1 2 3 4; do
+  sudo virsh destroy "p$n" || true
+  sudo virsh undefine "p$n" --remove-all-storage || true
+done
+\end{lstlisting}
+
+\textbf{What to notice.} Step 4's \texttt{\%steal} is the worked example's
+\%RDY, measured from inside the guest, and step 6 shows that halving the vCPU
+count made every guest \emph{faster}. That is the chapter's least intuitive
+claim and you have now produced it yourself.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A host of 48 cores runs 20 guests of 6 vCPUs each. Give the CPU
+        overcommit ratio. Mean \%RDY is 14\%. State what you would do and what
+        you would measure first.
+  \item Explain why the hypervisor asks the guest to give up memory through a
+        balloon driver rather than simply reclaiming pages itself.
+  \item A guest is configured with 40 vCPUs and 400 GB on a host with two
+        32-core sockets and 256 GB per socket. Name the problem, say why no
+        hypervisor setting fixes it, and give the one change that would.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A vCPU is a thread scheduled onto a physical core. Ready time ---
+        \%RDY, or steal time inside the guest --- measures how often it had
+        work and no core. Under 5\% healthy, over 10\% oversubscribed.
+  \item More vCPUs can make a guest slower: a guest's spinlocks assume its
+        processors run together, and relaxed co-scheduling makes a wide guest
+        wait. Right-sizing downward is the commonest effective fix.
+  \item Processor time is divisible and memory is not, which is why memory
+        usually decides guest density.
+  \item The reclamation ladder: page sharing (free), ballooning (cheap,
+        needs the guest driver), compression (noticeable), hypervisor swapping
+        (a cliff). The job is to never reach the fourth.
+  \item Overcommit ratios mean nothing without an active-memory figure.
+        Allocation is a promise; activity is a fact.
+  \item NUMA is decided at provisioning time. Size guests inside a node where
+        you can; where you cannot, make sure vNUMA tells the guest the truth.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Ready time measures: (a)~how long the guest took to
+        boot; (b)~the fraction of time a vCPU was runnable but not scheduled;
+        (c)~the hypervisor's own CPU use; (d)~time spent in VM exits.
+  \item \textbf{(MCQ)} Ballooning requires: (a)~extended page tables; (b)~an
+        IOMMU; (c)~a cooperating driver inside the guest; (d)~shared storage.
+  \item \textbf{(Short)} Explain co-scheduling and why relaxed co-scheduling
+        replaced the strict form.
+  \item \textbf{(Short)} Give the four reclamation techniques in order and say
+        what each costs the guest.
+  \item \textbf{(Short)} Why is a memory overcommit ratio of 1.3 potentially
+        safe while a CPU overcommit ratio of 1.3 is almost always safe?
+  \item \textbf{(Applied)} A host of 2 $\times$ 24 cores and 384 GB runs 30
+        guests of 4 vCPUs and 12 GB. Measured: \%RDY mean 7\%, p95 15\%; active
+        memory 4.1 GB per guest. A team wants six more identical guests.
+        Work through the same five steps as the chapter's worked example and
+        give a recommendation with a counter-offer.
+  \item \textbf{(Applied)} A database guest is reported as slow. It has 32
+        vCPUs and 512 GB on a two-socket host with 24 cores and 384 GB per
+        socket. List what you would measure, in order, and for each possible
+        finding say what you would change.
+\end{reviewq}

@@ -3,6 +3,212 @@
 %=====================================================================
 \normalfigures
 
-\begin{alertbox}[Not written yet]
-This appendix is a placeholder.
-\end{alertbox}
+Organised by task rather than by tool, because that is how the question
+arrives. Keep this open beside the labs.
+
+\section{Is This Machine Capable?}
+
+\begin{lstlisting}[language=bash]
+grep -c -E '\<(vmx|svm)\>' /proc/cpuinfo   # VT-x / AMD-V present
+grep -o -m1 -E '\<(ept|npt)\>' /proc/cpuinfo   # two-dimensional paging
+ls /sys/kernel/iommu_groups | wc -l        # IOMMU on (Chapter 4)
+cat /sys/module/kvm_intel/parameters/nested    # nesting (or kvm_amd)
+sudo virt-host-validate qemu               # everything, with verdicts
+systemd-detect-virt                        # am I already a guest?
+sudo dmidecode -s system-manufacturer      # which hypervisor, if so
+lscpu | grep -E 'Socket|Core|NUMA|Thread'  # topology (Chapter 6)
+\end{lstlisting}
+
+\section{Virtual Machines: \texttt{virsh}}
+
+\begin{lstlisting}[language=bash]
+# --- lifecycle --------------------------------------------------------
+virsh list --all                     # every guest and its state
+virsh start NAME                     # power on
+virsh shutdown NAME                  # ask the guest to stop (ACPI)
+virsh destroy NAME                   # pull the power. Not the same thing
+virsh undefine NAME --remove-all-storage --snapshots-metadata
+virsh console NAME                   # serial console; Ctrl-] to leave
+virsh autostart NAME                 # start with the host
+
+# --- inspecting -------------------------------------------------------
+virsh dominfo NAME                   # the allocation
+virsh dumpxml NAME                   # the whole definition
+virsh domstats NAME --vcpu --balloon --block --interface
+virsh dommemstat NAME                # balloon, swap_in, swap_out (Ch 6)
+virsh domdirtyrate-calc NAME --seconds 10   # then domstats --dirtyrate
+virsh domblklist NAME                # which files back which disks
+
+# --- changing ---------------------------------------------------------
+virsh setvcpus NAME 4 --config --maximum
+virsh setvcpus NAME 4 --config
+virsh setmaxmem NAME 8G --config
+virsh setmem NAME 8G --config
+virt-xml NAME --edit --network model=virtio      # Chapter 7
+virt-xml NAME --edit target=vda --disk bus=virtio
+
+# --- snapshots (Chapter 12) -------------------------------------------
+virsh snapshot-create-as NAME tag "why I took it"
+virsh snapshot-list NAME
+virsh snapshot-revert NAME tag --running
+virsh snapshot-delete NAME tag
+
+# --- migration (Chapter 17) -------------------------------------------
+virsh migrate --live --verbose --persistent --undefinesource \
+      NAME qemu+ssh://DEST/system
+virsh migrate --live --auto-converge NAME qemu+ssh://DEST/system
+virsh migrate-setspeed NAME 1000     # MiB/s cap
+virsh domjobinfo NAME                # progress of a running migration
+\end{lstlisting}
+
+\section{Virtual Disks: \texttt{qemu-img}}
+
+\begin{lstlisting}[language=bash]
+qemu-img create -f qcow2 disk.qcow2 20G
+qemu-img create -f qcow2 -b base.qcow2 -F qcow2 child.qcow2   # Ch 12
+qemu-img info disk.qcow2
+qemu-img info --backing-chain disk.qcow2     # the whole chain
+qemu-img convert -O raw disk.qcow2 disk.raw  # also vmdk, vhdx, vpc
+qemu-img resize disk.qcow2 +10G
+qemu-img check disk.qcow2
+qemu-img snapshot -l disk.qcow2              # internal snapshots
+du -h disk.qcow2 ; ls -lh disk.qcow2         # actual vs apparent size
+\end{lstlisting}
+
+\section{Containers: \texttt{docker}}
+
+\begin{lstlisting}[language=bash]
+# --- images (Chapter 9) -----------------------------------------------
+docker build -t name:tag .
+docker history name:tag --format '{{.Size}}\t{{.CreatedBy}}'
+docker image inspect name:tag --format '{{json .RootFS.Layers}}'
+docker save name:tag | tar -t | head          # the layers, as files
+docker pull repo@sha256:...                   # pin a digest, not a tag
+
+# --- running ----------------------------------------------------------
+docker run --rm -it image sh
+docker run --init image            # a real PID 1 (Chapter 8)
+docker stats --no-stream
+docker inspect -f '{{.HostConfig.Privileged}}' CONTAINER
+
+# --- hardening (Chapter 19) -------------------------------------------
+docker run --user 10001:10001 --cap-drop=ALL \
+  --security-opt=no-new-privileges --read-only --tmpfs /tmp \
+  --pids-limit 100 --memory 256m --cpus 0.5 image
+
+# --- the kernel primitives underneath (Chapter 8) ---------------------
+ls -l /proc/self/ns/                          # this process's namespaces
+unshare --pid --mount --uts --ipc --net --fork --mount-proc CMD
+systemd-cgls                                  # the cgroup tree
+cat /sys/fs/cgroup/CGROUP/cpu.stat            # throttled_usec
+cat /sys/fs/cgroup/CGROUP/memory.max
+\end{lstlisting}
+
+\section{Kubernetes: \texttt{kubectl}}
+
+\begin{lstlisting}[language=bash]
+kubectl get pods -o wide --all-namespaces
+kubectl describe pod NAME | sed -n '/Events/,$p'   # why it will not run
+kubectl get events --sort-by=.lastTimestamp | tail -20
+kubectl top nodes ; kubectl top pods               # needs metrics-server
+kubectl get pod NAME -o custom-columns=\
+NAME:.metadata.name,QOS:.status.qosClass           # Chapter 10
+kubectl describe node NAME | sed -n '/Allocated/,$p'   # requests
+kubectl set resources deployment NAME --requests=cpu=500m,memory=2Gi
+kubectl rollout status deployment NAME
+kubectl rollout undo deployment NAME
+kubectl logs -f POD --previous                     # the run that crashed
+\end{lstlisting}
+
+\section{Networking}
+
+\begin{lstlisting}[language=bash]
+# --- namespaces and virtual interfaces (Chapter 13) -------------------
+ip netns add NAME ; ip netns exec NAME CMD
+ip link add veth0 type veth peer name veth1
+ip link add br0 type bridge ; ip link set veth0 master br0
+bridge fdb show br br0                  # the switch's MAC table
+bridge link show
+
+# --- overlays ---------------------------------------------------------
+ip link add vx0 type vxlan id 100 remote IP local IP dstport 4789 dev eth0
+ip -d link show vx0                     # confirm the VNI
+ip link set vx0 mtu 1450                # the arithmetic of Chapter 13
+
+# --- diagnosis --------------------------------------------------------
+ping -M do -s 1472 HOST                 # find the real path MTU
+tracepath HOST                          # reports the MTU at each hop
+tcpdump -ni IFACE udp port 4789         # watch the encapsulation
+ethtool -k IFACE | grep -i offload      # is VXLAN offloaded?
+ss -tuln                                # what is listening
+tc qdisc add dev IFACE root netem delay 150ms    # simulate latency
+tc qdisc del dev IFACE root
+\end{lstlisting}
+
+\section{Storage}
+
+\begin{lstlisting}[language=bash]
+# --- thin pools (Chapter 12) ------------------------------------------
+pvcreate /dev/sdX ; vgcreate vg /dev/sdX
+lvcreate -L 100G --thinpool pool vg
+lvcreate -V 50G --thin -n vol vg/pool
+lvs vg -o lv_name,lv_size,data_percent,metadata_percent
+fstrim -v /mountpoint                   # return freed blocks to the pool
+
+# --- measurement ------------------------------------------------------
+iostat -x 2                             # aqu-sz and await are the ones
+fio --name=t --rw=randread --bs=4k --size=1G --direct=1 \
+    --runtime=30 --time_based --output-format=json
+dd if=/dev/zero of=/tmp/t bs=1M count=2048 oflag=direct
+lsblk -t                                # queue depths and scheduler
+\end{lstlisting}
+
+\section{Measurement}
+
+\begin{lstlisting}[language=bash]
+# --- from inside a guest (Chapter 18) ---------------------------------
+mpstat 2 5                              # %steal is ready time, from inside
+vmstat 2 5                              # si/so are swap; r is run queue
+top                                     # %st in the CPU line
+
+# --- from the host ----------------------------------------------------
+perf stat -e 'kvm:kvm_exit' -p PID -- sleep 10       # VM exits (Ch 4)
+perf record -e 'kvm:kvm_exit' -p PID -- sleep 10 ; perf script
+virsh domstats --vcpu                   # wait and delay per vCPU
+sar -u -r -b 2 5                        # cpu, memory, block, together
+
+# --- generating load --------------------------------------------------
+stress-ng --cpu 4 --timeout 60s --metrics-brief
+stress-ng --vm 2 --vm-bytes 80% --vm-keep --timeout 60s
+iperf3 -s -D ; iperf3 -c HOST -t 20 -P 4
+\end{lstlisting}
+
+\section{Shell Idioms Used in the Labs}
+
+If any of these are unfamiliar, this is the section the prerequisite self-check
+was pointing at.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{5.4cm}L{9.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Idiom} & \textbf{What it does} \\
+\midrule
+\endhead
+\texttt{set -euo pipefail} & Stop on the first error, on an unset variable, and
+on a failure anywhere in a pipeline. Every lab script begins with it \\
+\texttt{VAR=\$(command)} & Capture a command's output into a variable \\
+\texttt{cmd \textbar{} awk '/pat/\{print \$2\}'} & Print the second field of
+lines matching a pattern --- how the labs extract an address \\
+\texttt{cmd \textbar{}\textbar{} true} & Do not let a failure here stop the
+script; used around teardown \\
+\texttt{name () \{ \ldots{} \}} & Define a function. The labs use these to keep
+lines under 76 columns \\
+\texttt{cmd <<'EOF' \ldots{} EOF} & A here-document. Quoted \texttt{'EOF'} means
+nothing inside is expanded --- important for YAML and for anything containing
+\texttt{\$} \\
+\texttt{\&} then \texttt{wait} & Run in the background, then wait for all
+background jobs. Used to make several guests busy at once \\
+\texttt{for x in \$(seq 1 4); do \ldots{} done} & Repeat with a counter \\
+\bottomrule
+\end{longtable}

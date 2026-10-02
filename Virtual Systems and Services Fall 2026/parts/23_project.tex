@@ -3,7 +3,391 @@
 %=====================================================================
 \locator{6}{Part VI --- Emerging Hardware and Practice}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Choose} a project that can be built, measured and defended in
+        the time available.
+  \item \textbf{State} a hypothesis your deployment will test, with the
+        measurement that settles it.
+  \item \textbf{Build} a virtualized service and \textbf{measure} it honestly,
+        controlling for the five ways a virtualized benchmark lies.
+  \item \textbf{Write} a report whose conclusions are supported by your own
+        figures.
+  \item \textbf{Present} and \textbf{defend} the work, including what did not
+        work.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+The whole book. The project is assessed on whether you can apply it, and the
+strongest projects are the ones that use the arithmetic of \chref{cpumem},
+\chref{storage} and \chref{performance} on something the student built
+themselves.
+\end{prereq}
+
+\begin{keyterms}
+hypothesis $\bullet$ baseline $\bullet$ control $\bullet$ confounder $\bullet$
+repeatability $\bullet$ percentile $\bullet$ teardown $\bullet$ reproducibility
+$\bullet$ scope $\bullet$ deliverable $\bullet$ rubric $\bullet$ peer review
+\end{keyterms}
+
+\section{What the Project Is}
+
+Build a virtualized or containerized service, measure something about it that
+you did not know before you started, and report what you found.
+
+Three deliverables, listed in the order they are worth marks:
+
+\begin{tight}
+  \item a \textbf{working deployment}, demonstrated live in Week 16;
+  \item a \textbf{report} of 2{,}500--3{,}500 words containing your own
+        measurements;
+  \item a \textbf{ten-minute presentation} with five minutes of questions.
+\end{tight}
+
+The project is set in Week 9 and due in Week 16 (Appendix~G). Teams of two or
+three; individual work is permitted but not encouraged, because the defence is
+easier when somebody has already argued with you about it.
+
+\begin{alertbox}[The commonest way to lose marks is scope]
+The strongest projects in this course are narrow. ``Measure the throughput cost
+of three virtio queue configurations'' earns more than ``build a private
+cloud'', because the first can be finished, measured and defended in seven
+weeks and the second cannot.
+
+\smallskip
+A project that builds a great deal and measures nothing is the single most
+common failure mode. The deployment is the apparatus; the measurement is the
+work.
 \end{alertbox}
+
+\section{Choosing One}
+
+A good project has a \term{hypothesis} --- a statement that could turn out to be
+false --- and a measurement that settles it. Here are examples at the right
+scale; your own, if it has the same shape, is better.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.4cm}L{5.4cm}L{4.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Project} & \textbf{The hypothesis it tests} & \textbf{Chapters} \\
+\midrule
+\endhead
+Device model throughput & Paravirtualized devices cost less host CPU per unit
+of work than emulated ones, and the ratio depends on request size &
+\chref{paravirt}, \chref{performance} \\
+Container density ceiling & Memory, not CPU, limits container density, and the
+ratio to VMs depends on the workload's own footprint & \chref{containers} \\
+Live migration convergence & Migration succeeds iff the dirty rate is below the
+transfer rate, and auto-convergence buys success with guest performance &
+\chref{migration} \\
+Thin pool behaviour at exhaustion & Guest filesystems fail together, not
+individually, and \texttt{discard} measurably changes the time to exhaustion &
+\chref{storage} \\
+Overlay MTU and throughput & The cost of each of the three MTU fixes, measured,
+including the one that only helps TCP & \chref{network} \\
+Isolation overhead & gVisor's cost is proportional to system-call rate, not to
+CPU work & \chref{lightweight} \\
+Right-sizing an estate & A measured estate needs materially less than it was
+allocated, and \%RDY falls when vCPUs are removed & \chref{cpumem},
+\chref{performance} \\
+Cloud cost model & The three-year TCO of a real workload, on premises and in
+two clouds, with the assumption that dominates identified & \chref{cloud} \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[The test for a hypothesis]
+Write your hypothesis down and then ask: \emph{what result would prove this
+wrong?}
+
+\smallskip
+If you cannot answer, it is not a hypothesis --- it is a plan to build
+something. ``Containers are lighter than VMs'' fails the test, because no
+measurement could contradict it. ``On this workload, the container-to-VM memory
+density ratio is under 4:1 because the application's own footprint dominates''
+passes: it names a number, and the number could come out at 20:1 and refute
+you.
+
+\smallskip
+A refuted hypothesis, honestly reported, earns full marks. A confirmed one you
+could not have refuted earns few.
+\end{conceptbox}
+
+\section{Measuring Honestly}
+
+This is where most of the marks are, and \chref{performance} is the chapter to
+re-read. Five controls, and your report must state how you handled each.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.2cm}L{5.1cm}L{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Threat} & \textbf{What it does to your result} &
+\textbf{What to do about it} \\
+\midrule
+\endhead
+Neighbours & The host is shared, so your figure includes everyone else's work &
+Run at several times of day; report the distribution; state what else was
+running \\
+Timekeeping & A descheduled guest's own clock drifts & Time from the host where
+possible; use a paravirtual clock source \\
+Caching & The host page cache serves your ``disk'' reads & Use files larger than
+host RAM, or \texttt{direct=1}; state which \\
+Burst credits & A short cloud benchmark runs on credits & Never use burstable
+instances; say which family you used \\
+Nesting & The outer hypervisor inflates everything, variably & Measure on
+bare metal, or state clearly that figures are nested and comparative only \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Three rules that separate a good report from a weak one]
+\textbf{Report percentiles, not means.} \chref{performance} showed why: the
+mean sits below almost all the mass. Give p50, p95 and p99, and say how many
+samples.
+
+\smallskip
+\textbf{Report the baseline.} A number with nothing to compare it to is not a
+measurement. Every result should be \emph{against native}, \emph{against the
+default configuration}, or \emph{against the other arm}.
+
+\smallskip
+\textbf{Repeat, and show the spread.} Three runs minimum. If your three runs
+differ by more than the effect you are claiming, you have not measured the
+effect --- you have measured the noise, and saying so is a legitimate finding.
+\end{conceptbox}
+
+\section{The Report}
+
+Roughly this shape. Marks follow the rubric below, not the word count.
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=3pt, topsep=4pt]
+  \item \textbf{The question} (200 words). The hypothesis, and why it is worth
+        testing. Name the chapter it comes from.
+  \item \textbf{Background} (400). What the reader needs from this book to
+        follow you. Cite chapters rather than re-explaining them.
+  \item \textbf{Method} (600). The apparatus, in enough detail that somebody
+        else could rebuild it. Hardware, versions, configuration. The five
+        controls above, each addressed explicitly.
+  \item \textbf{Results} (700). Your figures. Tables and plots with units and
+        sample counts. No interpretation in this section.
+  \item \textbf{Discussion} (800). What the figures mean. Whether the
+        hypothesis survived. What surprised you. What you would do differently.
+  \item \textbf{Threats to validity} (300). What could make your conclusion
+        wrong. Every honest report has this section and it costs no marks to
+        write --- omitting it costs several.
+  \item \textbf{Conclusion and further work} (200).
+  \item \textbf{Appendix}: your scripts, your raw data, your teardown
+        procedure.
+\end{enumerate}
+
+\begin{alertbox}[Negative and inconclusive results are full-mark results]
+If your measurement shows no difference where you expected one, report that. If
+your three runs disagreed and you ran out of time to find out why, report that
+too, with what you would do next.
+
+\smallskip
+What loses marks is a conclusion the figures do not support --- claiming a 12\%
+improvement from runs that varied by 30\%, or reporting a mean that hides the
+tail. The examiners can read your appendix.
+\end{alertbox}
+
+\section{The Presentation}
+
+Ten minutes, five for questions. Expect to be asked: \emph{how do you know?},
+\emph{what else could explain that?}, and \emph{what would change your
+conclusion?}
+
+Peer review is part of Week 16: each team reviews another's deployment against
+the rubric and submits half a page. It is marked on the quality of the review,
+not on how generous it is.
+
+\begin{conceptbox}[Demonstrate live, and have a recording]
+The deployment is demonstrated running. Things fail in front of audiences, so
+record a working run beforehand and have it ready --- using it costs nothing,
+and having nothing to show costs a great deal.
+
+\smallskip
+If something breaks live, say what you think happened. Diagnosing a failure in
+front of the room, out loud, using the counters from \chref{performance}, is
+the single most convincing thing that can happen in a project presentation.
+\end{conceptbox}
+
+\section{Marking}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.6cm}L{1.6cm}L{9.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Component} & \textbf{Weight} & \textbf{What earns the marks} \\
+\midrule
+\endhead
+Deployment & 25\% & It works, it is reproducible from your own instructions,
+and it is torn down cleanly. Complexity earns nothing by itself \\
+Measurement & 30\% & A real hypothesis; controls addressed; percentiles;
+baseline; repetition. \textbf{The largest single component} \\
+Report & 25\% & Clear, structured, conclusions supported by the figures, honest
+threats-to-validity section \\
+Presentation and defence & 15\% & Explained clearly; questions answered;
+failures discussed rather than hidden \\
+Peer review & 5\% & A specific, useful, fair review of another team \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[What distinguishes a first from a pass]
+A passing project builds something that works and reports what it did.
+
+\smallskip
+A first-class project does three further things. It states a hypothesis that
+could have been refuted. It controls for at least three of the five threats
+and says so. And it reaches a conclusion the author did not expect at the
+start --- which is only possible if the measurement was capable of surprising
+them.
+
+\smallskip
+Notice that none of the three requires more building. They require deciding, at
+the outset, what you are trying to find out.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Building for six weeks and measuring in the last one.} Build
+        for two, measure for four. The measurement is where the marks are.
+  \item \textbf{A scope that cannot be finished.} ``Build a private cloud'' is
+        not a project; one measured property of one is.
+  \item \textbf{Measuring once.} One run is an anecdote.
+  \item \textbf{Reporting means.} Percentiles, always.
+  \item \textbf{No baseline.} A figure with nothing to compare it to says
+        nothing.
+  \item \textbf{Benchmarking in a nested guest without saying so.} State it,
+        and treat the figures as comparative only.
+  \item \textbf{Hiding what failed.} The failure is usually the most
+        interesting part, and the examiners will ask.
+  \item \textbf{Leaving cloud resources running.} Every lab in this book ends
+        with a teardown step for a reason. A forgotten instance bills until
+        somebody notices.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Week 9: Your Proposal]
+One page, submitted in Week 9, and the thing most likely to determine your
+final mark. Expect ninety minutes, and do it with your team.
+
+\begin{lstlisting}[language=bash]
+# ch23_proposal.md -- one page, submitted in Week 9.
+# Fill in every section. If you cannot fill one in, that is the
+# section to work on, not the one to delete.
+
+# --- 1. The hypothesis --------------------------------------------
+# One sentence, containing a number or a comparison, that could turn
+# out to be FALSE.
+#   Bad : "Containers are more efficient than virtual machines."
+#   Good: "On a 256 MB Flask service, container-to-VM memory density
+#          is below 4:1, because the application footprint dominates
+#          the per-instance overhead."
+
+# --- 2. What would refute it --------------------------------------
+# State the result that would prove you wrong. If you cannot, go
+# back to 1.
+
+# --- 3. The apparatus ---------------------------------------------
+# Hardware you will use. Hypervisor and versions. How many guests.
+# What you will install. Say explicitly whether it is nested.
+
+# --- 4. The measurement -------------------------------------------
+# What exactly you will measure, with which tool, how many times,
+# and which percentiles you will report.
+#   metric:      ...
+#   tool:        ...
+#   repetitions: at least 3
+#   report:      p50, p95, p99 and the spread
+
+# --- 5. The controls ----------------------------------------------
+# One line each on the five threats of section 23.3:
+#   neighbours:   ...
+#   timekeeping:  ...
+#   caching:      ...
+#   burst credits:...
+#   nesting:      ...
+
+# --- 6. The baseline ----------------------------------------------
+# What are you comparing against? Native? Default configuration?
+# The other arm?
+
+# --- 7. Weekly plan -----------------------------------------------
+#   wk 10  proposal agreed; apparatus specified
+#   wk 11  deployment built; first measurement attempted
+#   wk 12  measurement working; baseline captured   <-- gate
+#   wk 13  full runs; experiments FROZEN at the end of this week
+#   wk 14  analysis; report drafted
+#   wk 15  report finished; presentation rehearsed
+#   wk 16  demonstrate, present, peer review
+# The week 13 freeze is not a suggestion. Teams that are still
+# changing the apparatus in week 15 have no time to analyse it.
+
+# --- 8. What could go wrong ---------------------------------------
+# Name the two most likely failures and what you will do instead.
+# "The GPU is unavailable" -> "use the captured output in code/".
+
+# --- 9. Teardown --------------------------------------------------
+# How every resource you create will be destroyed, and when.
+\end{lstlisting}
+
+\textbf{What to notice.} Sections 1, 2 and 5 are the ones that decide the
+mark, and they are the ones with no building in them. A proposal that is strong
+on 3 and weak on 1 describes a deployment, not a project.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Rewrite this as a testable hypothesis: ``We will investigate whether
+        Kubernetes is good for our department.''
+  \item A team reports a 9\% throughput improvement from a configuration
+        change. Their three runs gave 7\%, 24\% and $-2$\%. What should the
+        report conclude, and what should they do next?
+  \item Your project needs a GPU and none is available in Week 12. Using the
+        proposal's section 8, write what you would do instead, without changing
+        the hypothesis.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Build a service, measure something you did not know, report it. The
+        measurement is 30\% of the mark and the deployment 25\%.
+  \item A hypothesis is a statement that could be refuted. If no result would
+        prove you wrong, you have a build plan, not a project.
+  \item Narrow scope beats ambition. Build for two weeks, measure for four.
+  \item Control for neighbours, timekeeping, caching, burst credits and
+        nesting, and say in the report how you did.
+  \item Percentiles, a baseline, and at least three repetitions. If the runs
+        vary more than the effect, you measured noise --- and saying so is a
+        result.
+  \item Negative and inconclusive results earn full marks. Conclusions the
+        figures do not support do not.
+  \item Freeze the apparatus in Week 13. Teams still changing it in Week 15
+        have no time to analyse anything.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The largest single component of the project mark is:
+        (a)~the deployment; (b)~the measurement; (c)~the report;
+        (d)~the presentation.
+  \item \textbf{(MCQ)} A hypothesis is testable if: (a)~it is about a popular
+        technology; (b)~some possible result would prove it false; (c)~it can
+        be built in seven weeks; (d)~it cites three chapters.
+  \item \textbf{(Short)} State the five threats to a virtualized measurement
+        and one control for each.
+  \item \textbf{(Short)} Explain why a refuted hypothesis can earn full marks
+        and a confirmed one may not.
+  \item \textbf{(Short)} Why is the Week 13 experiment freeze in the plan?
+  \item \textbf{(Applied)} Take any one project from the table in Section 23.2
+        and write its proposal sections 1, 2, 4 and 6 in full.
+  \item \textbf{(Applied)} You are peer-reviewing a team whose report claims
+        containers start 300 times faster than virtual machines, from one
+        measurement of each, taken on a shared laboratory machine during a
+        lecture. Write the half-page review: what is sound, what is not, and
+        the two changes that would most improve it.
+\end{reviewq}

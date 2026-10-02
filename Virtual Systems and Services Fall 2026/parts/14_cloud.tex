@@ -3,7 +3,512 @@
 %=====================================================================
 \locator{4}{Part IV --- Storage, Network and Cloud Virtualization}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} the five characteristics NIST requires of a cloud, and
+        \textbf{test} a given service against them.
+  \item \textbf{Distinguish} IaaS, PaaS, SaaS and FaaS by what the provider
+        operates and what you still own.
+  \item \textbf{Explain} the shared responsibility model and \textbf{identify}
+        which side a given failure falls on.
+  \item \textbf{Compute} a three-year total cost of ownership for a workload on
+        premises and in a cloud, and \textbf{say} which assumption dominates.
+  \item \textbf{Choose} a deployment and pricing model for a stated
+        requirement, and \textbf{state} what it commits you to.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+Everything so far. An instance is \chref{platforms}'s hypervisor,
+\chref{cpumem}'s scheduler, \chref{paravirt}'s virtio, \chref{storage}'s thin
+pool and \chref{network}'s overlay, rented by the hour. This chapter adds no
+mechanism --- only the commercial arrangement around it.
+\end{prereq}
+
+\begin{keyterms}
+NIST definition $\bullet$ on-demand self-service $\bullet$ broad network access
+$\bullet$ resource pooling $\bullet$ rapid elasticity $\bullet$ measured
+service $\bullet$ IaaS $\bullet$ PaaS $\bullet$ SaaS $\bullet$ FaaS $\bullet$
+serverless $\bullet$ public cloud $\bullet$ private cloud $\bullet$ hybrid
+$\bullet$ multi-cloud $\bullet$ region $\bullet$ availability zone $\bullet$
+instance family $\bullet$ on-demand $\bullet$ reserved instance $\bullet$
+savings plan $\bullet$ spot instance $\bullet$ egress $\bullet$ shared
+responsibility $\bullet$ total cost of ownership $\bullet$ lock-in
+\end{keyterms}
+
+\section{What Makes a Cloud a Cloud}
+
+``Cloud'' is used loosely enough to be useless as a technical term, so it is
+worth having a test. The US National Institute of Standards and Technology
+published one in 2011 and it has aged well: five characteristics, all five
+required.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.7cm}L{5.6cm}L{5.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Characteristic} & \textbf{What it requires} & \textbf{What fails the
+test} \\
+\midrule
+\endhead
+\term{On-demand self-service} & You provision capacity yourself, without
+talking to anybody & A hosting provider where a new server is a support ticket
+and two days \\
+\term{Broad network access} & Reachable over standard protocols from standard
+clients & A service requiring a leased line and a vendor client \\
+\term{Resource pooling} & Many tenants share one pool; you do not know or care
+which hardware & A dedicated rack assigned to you permanently \\
+\term{Rapid elasticity} & Capacity grows and \emph{shrinks} quickly, apparently
+without limit & Scaling up in minutes but requiring a contract change to scale
+down \\
+\term{Measured service} & Usage is metered and billed by what you used &
+A flat annual fee regardless of consumption \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[The Clause That Catches Most ``Private Clouds'']
+Four of the five are easy to satisfy with a well-run vSphere estate. The one
+that is not is \emph{rapid elasticity}, and specifically the word
+\emph{shrinks}.
+
+\smallskip
+A department that buys three hosts can provision guests on demand, pool them,
+meter them and reach them over the network. What it cannot do is return
+capacity. The hardware is bought; shutting a guest down saves a little
+electricity and nothing else. Elasticity in the NIST sense requires that unused
+capacity stops costing money, and that requires somebody else to be able to
+rent it.
+
+\smallskip
+This is the honest difference between a private cloud and a well-managed
+virtualization estate, and it is worth stating plainly because a great deal of
+marketing depends on blurring it. What a private cloud genuinely buys is the
+\emph{interface} --- self-service, API-driven, metered --- which is valuable on
+its own. It does not buy the economics.
+\end{conceptbox}
+
+\section{The Service Models}
+
+The models differ in one thing: where the line falls between what the provider
+operates and what you do.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  cell/.style={rounded corners=1.5pt, line width=0.6pt, align=center,
+               minimum width=2.9cm, minimum height=0.46cm, inner sep=1pt,
+               font=\scriptsize},
+  you/.style={cell, draw=secondary, fill=secondary!12,
+              text=secondary!80!black},
+  them/.style={cell, draw=neutral!55, fill=neutral!10, text=neutral!45!black},
+  hd/.style={font=\scriptsize\bfseries, text=primary, align=center}
+]
+  \foreach \i/\t in {0/{On premises}, 1/{IaaS}, 2/{PaaS}, 3/{SaaS}}{
+    \pgfmathsetmacro{\x}{\i*3.1}
+    \node[hd] at (\x,4.55) {\t};}
+  \node[hd] at (12.4,4.55) {FaaS};
+
+  \foreach \j/\lyr in {0/{application}, 1/{data}, 2/{runtime},
+                       3/{middleware}, 4/{OS}, 5/{hypervisor},
+                       6/{servers}, 7/{storage and network}}{
+    \pgfmathsetmacro{\y}{4.0-\j*0.5}
+    \node[font=\scriptsize\bfseries, text=neutral!40!black, anchor=east]
+         at (-1.65,\y) {\lyr};}
+
+  % on premises: you own everything
+  \foreach \j in {0,...,7}{
+    \pgfmathsetmacro{\y}{4.0-\j*0.5}
+    \node[you] at (0,\y) {you};}
+  % IaaS: provider from hypervisor down
+  \foreach \j in {0,...,4}{
+    \pgfmathsetmacro{\y}{4.0-\j*0.5}
+    \node[you] at (3.1,\y) {you};}
+  \foreach \j in {5,6,7}{
+    \pgfmathsetmacro{\y}{4.0-\j*0.5}
+    \node[them] at (3.1,\y) {provider};}
+  % PaaS: provider from OS down
+  \foreach \j in {0,1}{
+    \pgfmathsetmacro{\y}{4.0-\j*0.5}
+    \node[you] at (6.2,\y) {you};}
+  \foreach \j in {2,...,7}{
+    \pgfmathsetmacro{\y}{4.0-\j*0.5}
+    \node[them] at (6.2,\y) {provider};}
+  % SaaS: provider everything
+  \foreach \j in {0,...,7}{
+    \pgfmathsetmacro{\y}{4.0-\j*0.5}
+    \node[them] at (9.3,\y) {provider};}
+  \node[you, minimum height=0.46cm] at (9.3,4.0) {your data};
+  % FaaS
+  \node[you] at (12.4,4.0) {your code};
+  \node[you] at (12.4,3.5) {you};
+  \foreach \j in {2,...,7}{
+    \pgfmathsetmacro{\y}{4.0-\j*0.5}
+    \node[them] at (12.4,\y) {provider};}
+
+  \draw[accent, line width=1.3pt] (1.55,0.25) -- (1.55,4.25);
+  \draw[accent, line width=1.3pt] (4.65,1.75) -- (4.65,4.25);
+  \draw[accent, line width=1.3pt] (7.75,2.75) -- (7.75,4.25);
+  \draw[accent, line width=1.3pt] (10.85,3.75) -- (10.85,4.25);
+
+  \node[font=\scriptsize\itshape, text=accent, anchor=north west, align=left]
+       at (-2.4,-0.25)
+       {The red line is the boundary of responsibility, and it only ever moves
+        up. Everything below it is operated by somebody else --- and
+        everything\\
+        below it is also something you can no longer tune, patch on your own
+        schedule, or debug when it misbehaves.};
+\end{tikzpicture}}%
+{The service models as one picture. FaaS sits beside SaaS rather than beyond
+it, because what you still own there is code rather than
+configuration.}{service-models}
+
+\begin{conceptbox}[``Serverless'' Means Somebody Else's Server, Started Fast]
+FaaS deserves one clarification because the name actively misleads. There are
+servers. What is removed is any notion of a server you provision, size or keep
+running: you supply a function, the provider runs it when something calls it,
+and you pay per invocation and per millisecond.
+
+\smallskip
+\chref{lightweight} is how it is implemented. A function invocation on AWS
+Lambda runs in a Firecracker microVM, which is why the model is economically
+possible at all: an isolation boundary that costs 125 ms and 5 MB can be
+created per request, and one that costs 25 s and 400 MB cannot.
+
+\smallskip
+So the commercial model in this chapter rests directly on the engineering of
+the last. That is the clearest instance in this book of a technical property
+--- boot time --- determining what can be sold.
+\end{conceptbox}
+
+\section{Deployment Models, and What an Instance Is}
+
+\term{Public} is a provider's shared pool. \term{Private} is a pool for one
+organisation, on its premises or hosted. \term{Hybrid} connects the two, with
+workloads placed by policy. \term{Multi-cloud} spreads across more than one
+provider --- usually for leverage or regulatory reasons, occasionally for
+availability, and always at the cost of using the least-common-denominator of
+both.
+
+A provider's capacity is organised as \term{regions} (a geographic area, with
+its own pricing and its own legal jurisdiction) containing
+\term{availability zones} (independent data centres, separate power and
+cooling, linked by low-latency fibre). The rule that follows: spread across
+zones for availability, across regions for disaster recovery and for data
+residency.
+
+\begin{alertbox}[An instance type is a promise about scheduling, not just a size]
+Instance families are the vocabulary of \chref{cpumem} made commercial.
+General purpose, compute optimised, memory optimised and storage optimised
+differ in their core-to-memory ratio --- and, less visibly, in whether their
+vCPUs are oversubscribed.
+
+\smallskip
+A \emph{burstable} instance (AWS's \texttt{t} family, and its equivalents) is
+explicitly oversubscribed: you are granted a baseline fraction of a core and
+accumulate credits when below it. Exhaust the credits and you are throttled to
+the baseline, which may be 5\% of a core. The ready time of \chref{cpumem} is
+here sold as a product feature, and a great many ``the server suddenly became
+slow after three weeks'' incidents are exhausted CPU credits.
+
+\smallskip
+Read the oversubscription policy of any instance family before benchmarking on
+it, and never benchmark on a burstable one.
 \end{alertbox}
+
+\section{Paying For It}
+
+Three ways to buy the same instance, differing in what you commit to.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.8cm}L{3.4cm}L{3.0cm}L{5.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Model} & \textbf{You commit to} & \textbf{Typical saving} &
+\textbf{Suitable for} \\
+\midrule
+\endhead
+\term{On-demand} & Nothing & --- & Unpredictable load, development, anything
+short-lived \\
+\term{Reserved} / savings plan & One or three years of spend & 34\% for one
+year, \textbf{55\% for three} (no upfront, EC2 instance plan) & Steady baseline
+load you are confident will still exist \\
+\term{Spot} & Nothing, but can be reclaimed on short notice & 70--90\% &
+Batch, CI, rendering, anything that can checkpoint and restart \\
+\bottomrule
+\end{longtable}
+
+\begin{worked}[Three Years, On Premises and in the Cloud]
+The forty workloads of \chref{what}, each needing 4 vCPUs and 16 GB. Compare
+three years on premises with three years on AWS. Figures are US list prices for
+\texttt{us-east-1}, checked in October 2026; \textbf{re-check before quoting
+them}, because they move.
+
+\smallskip
+\textbf{On premises.} From \chref{what}: three hosts, 13.3:1 consolidation.
+\begin{tight}
+  \item Hardware: $3 \times \$18{,}000 = \$54{,}000$
+  \item Shared storage array: $\$20{,}000$
+  \item Power and cooling: 2.1 kW at PUE 1.6 is 3.36 kW;
+        $3.36 \times 8{,}760 \times 3 = 88{,}300$ kWh at \$0.12 $=
+        \$10{,}600$
+  \item Rack space and facility: \$500 a month $= \$18{,}000$
+  \item Staff: 0.3 of an engineer at \$45{,}000 $= \$40{,}500$
+\end{tight}
+\[ \text{total} = 54{,}000 + 20{,}000 + 10{,}600 + 18{,}000 + 40{,}500
+   = \mathbf{\$143{,}100} \]
+
+\smallskip
+\textbf{Cloud, on demand.} An \texttt{m7i.xlarge} is 4 vCPU and 16 GB at
+\$0.2016 per hour:
+\[ 0.2016 \times 8{,}760 = \$1{,}766 \text{ per instance-year} \]
+\[ 1{,}766 \times 3 \times 40 = \mathbf{\$211{,}900} \]
+Plus 100 GB of gp3 storage each at \$0.08 per GB-month
+($40 \times 100 \times 0.08 \times 36 = \$11{,}520$) and 2 TB a month of egress
+at \$0.09 per GB ($\$6{,}480$ over three years):
+\[ 211{,}900 + 11{,}520 + 6{,}480 = \mathbf{\$229{,}900} \]
+
+\smallskip
+\textbf{Cloud, three-year reservation.} A three-year EC2 instance savings plan
+with no upfront payment saves 55\%:
+\[ 211{,}900 \times 0.45 = \$95{,}400 \]
+\[ 95{,}400 + 11{,}520 + 6{,}480 = \mathbf{\$113{,}400} \]
+
+\smallskip
+\textbf{Step 1 --- the comparison.}
+\begin{tight}
+  \item On premises: \$143{,}100
+  \item Cloud, on demand: \$229{,}900 --- \textbf{61\% more}
+  \item Cloud, three-year reserved: \$113{,}400 --- \textbf{21\% less}
+\end{tight}
+
+\smallskip
+\textbf{Step 2 --- so which is it?} Both of the usual slogans are wrong. The
+same workload on the same provider is either substantially cheaper or
+substantially more expensive than owning the hardware, and \emph{the only thing
+that changed was the purchasing decision}. A team that lifts and shifts onto
+on-demand instances and never revisits it will conclude the cloud is expensive,
+and will be right about their own bill and wrong about the cloud.
+
+\smallskip
+\textbf{Step 3 --- what the arithmetic leaves out, in both directions.}
+
+\emph{Favouring the cloud:} the on-premises figure assumes the three hosts are
+right. Buy for peak and they are idle; buy for average and you have an outage
+at peak. It also ignores the refresh in year four, the spare host you should
+have, and the fact that 0.3 of an engineer is not a thing you can hire.
+
+\emph{Favouring on premises:} the cloud figure assumes forty instances running
+continuously for three years, which is the case least suited to the cloud. If
+half the workloads could run only in office hours --- $8 \times 5$ instead of
+$24 \times 7$, a 76\% reduction for those --- the cloud figure falls by roughly
+\$36{,}000 more, and nothing equivalent is available on premises.
+
+\smallskip
+\textbf{Step 4 --- the honest conclusion.} The decision is not technical. It
+turns on how variable the load is, how confident you are of a three-year
+commitment, and whether you have the staff. Steady and predictable favours
+owning; variable or uncertain favours renting; and whichever you choose,
+revisiting the purchasing model annually is worth more than the choice itself.
+\end{worked}
+
+\begin{alertbox}[Egress is the charge that surprises people]
+Compute, storage and inbound traffic are priced in ways that feel proportionate.
+Outbound data --- \term{egress} --- is not. At around \$0.09 per GB, moving
+100 TB out of a cloud costs roughly \$9{,}000, and moving it \emph{in} is free.
+
+\smallskip
+That asymmetry is the economic shape of \term{lock-in}: nothing prevents you
+leaving, and the bill for leaving grows with how much you have stored. Price
+the exit when you design the architecture, not when you need it. Keep the data
+you may have to move somewhere its egress is cheap, and know the figure.
+\end{alertbox}
+
+\section{Shared Responsibility}
+
+Every provider publishes a version of the same diagram, and every provider's
+version says the same thing: they are responsible for the security \emph{of}
+the cloud, and you are responsible for security \emph{in} it.
+
+Concretely, under IaaS the provider owns the physical facility, the hardware,
+the hypervisor and the network fabric. You own the guest operating system and
+its patching, your application, your data and its encryption, your identity and
+access configuration, and your firewall rules.
+
+\begin{conceptbox}[Which Side Is This Failure On?]
+Nearly every large cloud data breach of the past decade has fallen on the
+customer's side of that line, and usually on the same two items.
+
+\begin{tight}
+  \item An object store left publicly readable. The provider's default is
+        private; somebody changed it.
+  \item Credentials committed to a public repository, or an over-broad role
+        attached to an instance.
+\end{tight}
+
+\smallskip
+Neither is a cloud vulnerability. Both are configuration, and both are on your
+side of the diagram. Meanwhile the provider's side --- the hypervisor of
+\chref{platforms}, the isolation of \chref{security} --- has a strong record,
+which is the opposite of what most risk discussions assume.
+
+\smallskip
+The practical reading: when evaluating cloud risk, spend your effort on your
+own configuration, your identity model and your data, because that is where the
+incidents actually are.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Comparing on-demand cloud prices with owned hardware.} It is
+        the most expensive way to buy and the least representative. Compare
+        like with like: a three-year commitment against a three-year asset.
+  \item \textbf{Calling a vSphere estate a private cloud.} Check it against the
+        five characteristics, especially whether capacity can be \emph{returned}.
+  \item \textbf{Lifting and shifting without resizing.} A 16-vCPU guest that
+        used two becomes a 16-vCPU instance billed for sixteen. The
+        right-sizing of \chref{cpumem} is worth more in the cloud, because
+        waste is now a monthly invoice.
+  \item \textbf{Benchmarking on a burstable instance.} You are measuring credit
+        balance, not performance.
+  \item \textbf{Ignoring egress until the exit.} Price it at design time.
+  \item \textbf{Assuming multi-cloud buys availability.} It buys the
+        intersection of two feature sets, two operational models and two sets
+        of outages. It buys leverage and sometimes compliance; availability is
+        usually cheaper within one provider across zones.
+  \item \textbf{Treating the shared responsibility diagram as marketing.} It is
+        the contract, and it is where the incidents are.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[One Workload, Three Clouds]
+Launches the same instance on AWS, Azure and GCP free tiers, compares what each
+exposes, and tears everything down. \textbf{Step 7 is not optional:} a forgotten
+instance bills until somebody notices. Expect fifty minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch14_threeclouds.sh -- one guest on three providers, then delete.
+set -euo pipefail
+
+# --- 1. Authenticate to whichever accounts you have. -------------------
+aws sts get-caller-identity   2>/dev/null || echo "no aws credentials"
+az account show --query name  2>/dev/null || echo "no azure login"
+gcloud config get-value project 2>/dev/null || echo "no gcp project"
+
+# --- 2. AWS: a free-tier instance. ------------------------------------
+AMI=$(aws ssm get-parameters --names \
+  /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64 \
+  --query 'Parameters[0].Value' --output text)
+aws ec2 run-instances --image-id "$AMI" --instance-type t3.micro \
+  --count 1 --tag-specifications \
+  'ResourceType=instance,Tags=[{Key=Name,Value=vss-lab}]' \
+  --query 'Instances[0].InstanceId' --output text | tee aws-id.txt
+
+# --- 3. Azure: the same shape. ----------------------------------------
+az group create -n vss-lab -l eastus -o none
+az vm create -g vss-lab -n vss1 --image Ubuntu2204 --size Standard_B1s \
+  --generate-ssh-keys --public-ip-sku Basic -o table
+
+# --- 4. GCP: likewise. ------------------------------------------------
+gcloud compute instances create vss1 --machine-type=e2-micro \
+  --zone=us-central1-a --image-family=debian-12 \
+  --image-project=debian-cloud
+
+# --- 5. Ask each guest what it is running on. -------------------------
+# Every provider exposes a metadata service on 169.254.169.254. The
+# answers show you the hypervisor of Chapter 5 underneath all three.
+cat <<'PROBE' > probe.sh
+systemd-detect-virt
+sudo dmidecode -s system-manufacturer 2>/dev/null
+curl -s -H 'Metadata-Flavor: Google' \
+  169.254.169.254/computeMetadata/v1/instance/machine-type 2>/dev/null
+curl -s 169.254.169.254/latest/meta-data/instance-type 2>/dev/null
+PROBE
+echo "copy probe.sh to each instance and run it"
+
+# --- 6. What each one costs, from the provider's own API. -------------
+aws pricing get-products --service-code AmazonEC2 --region us-east-1 \
+  --filters 'Type=TERM_MATCH,Field=instanceType,Value=m7i.xlarge' \
+            'Type=TERM_MATCH,Field=location,Value=US East (N. Virginia)' \
+  --max-results 1 --query 'PriceList[0]' --output text 2>/dev/null \
+  | head -c 400 || echo "needs the pricing:GetProducts permission"
+
+# --- 7. TEAR DOWN. Do this even if a step above failed. ---------------
+aws ec2 terminate-instances --instance-ids "$(cat aws-id.txt)" \
+  --query 'TerminatingInstances[0].CurrentState.Name' --output text || true
+az group delete -n vss-lab --yes --no-wait || true
+gcloud compute instances delete vss1 --zone=us-central1-a --quiet || true
+
+# --- 8. Confirm nothing survives. -------------------------------------
+aws ec2 describe-instances --filters 'Name=tag:Name,Values=vss-lab' \
+  'Name=instance-state-name,Values=running,pending' \
+  --query 'Reservations[].Instances[].InstanceId' --output text
+az group list --query "[?name=='vss-lab'].name" -o tsv
+gcloud compute instances list --filter='name=vss1' --format='value(name)'
+# All three should print nothing.
+\end{lstlisting}
+
+\textbf{What to notice.} Step 5 is the point of the whole chapter: three
+providers, three billing models, three APIs --- and underneath, the same
+hypervisor, the same virtio devices and the same overlay network you built by
+hand in \chref{network}. The cloud is this book, rented.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A university runs a self-service vSphere portal where departments
+        provision guests themselves and are charged internally per
+        guest-month. Test it against the five NIST characteristics and say
+        which, if any, it fails.
+  \item A workload runs 10 hours a day, 5 days a week. Using the worked
+        example's hourly rate, compute its annual on-demand cost, and say why
+        a three-year reservation would probably be a mistake.
+  \item An object store containing student records was found publicly
+        readable. Which side of the shared responsibility line is this on, and
+        what would you change to stop it recurring?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item NIST's five characteristics are a usable test. Most ``private clouds''
+        fail on elasticity, because capacity cannot be returned.
+  \item IaaS, PaaS, SaaS and FaaS differ only in where the responsibility line
+        falls. It only ever moves upward, and everything below it is also
+        something you can no longer tune or debug.
+  \item Serverless is somebody else's server started in 125 ms. It is
+        economically possible because of \chref{lightweight}.
+  \item Spread across availability zones for availability, across regions for
+        disaster recovery and data residency.
+  \item On demand, the same workload cost 61\% more than owning the hardware;
+        with a three-year commitment it cost 21\% less. The purchasing
+        decision mattered more than the platform.
+  \item Egress is charged and ingress is not. That asymmetry is what lock-in
+        actually is; price it at design time.
+  \item You are responsible for security \emph{in} the cloud. Nearly every
+        major breach has been on the customer's side of that line.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The NIST characteristic most private clouds fail is:
+        (a)~measured service; (b)~rapid elasticity; (c)~broad network access;
+        (d)~resource pooling.
+  \item \textbf{(MCQ)} Under IaaS, patching the guest operating system is the
+        responsibility of: (a)~the provider; (b)~the customer; (c)~shared
+        equally; (d)~the hypervisor vendor.
+  \item \textbf{(Short)} Explain why a burstable instance is a poor choice for
+        benchmarking, in terms of \chref{cpumem}'s vocabulary.
+  \item \textbf{(Short)} State what egress pricing has to do with lock-in, with
+        a worked figure.
+  \item \textbf{(Short)} Why does FaaS depend on the engineering of
+        \chref{lightweight}?
+  \item \textbf{(Applied)} Repeat the worked example for a workload that runs
+        only during a four-month teaching semester each year. Give the three
+        figures and the recommendation, and state which assumption your answer
+        is most sensitive to.
+  \item \textbf{(Applied)} A department proposes moving its entire estate to a
+        single public cloud. Write the five questions you would require answers
+        to before approving it, and say what answer to each would change the
+        recommendation.
+\end{reviewq}

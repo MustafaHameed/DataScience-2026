@@ -3,7 +3,548 @@
 %=====================================================================
 \locator{1}{Part I --- Foundations of Virtualization}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} Type-1 from Type-2 hypervisors by where the monitor
+        runs, and \textbf{explain} why KVM does not fit the distinction
+        cleanly.
+  \item \textbf{Compare} full virtualization, paravirtualization and
+        hardware-assisted virtualization by what each one does with an
+        instruction the guest may not execute.
+  \item \textbf{Place} any given product on a two-axis taxonomy: which layer it
+        virtualizes, and which technique it uses.
+  \item \textbf{Compute} virtualization overhead from measured timings, and
+        \textbf{explain} why the figure differs by an order of magnitude
+        between a CPU-bound and an I/O-bound workload.
+  \item \textbf{Choose} an architecture for a stated requirement and defend the
+        choice against the two strongest alternatives.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{what} --- the definition of the layer, the distinction between
+virtualization and emulation, and the four motives. This chapter names the ways
+the layer can be built; \chref{vmm} then proves which of them are correct.
+\end{prereq}
+
+\begin{keyterms}
+Type-1 hypervisor $\bullet$ Type-2 hypervisor $\bullet$ bare-metal $\bullet$
+hosted $\bullet$ full virtualization $\bullet$ binary translation $\bullet$
+paravirtualization $\bullet$ hypercall $\bullet$ hardware-assisted
+virtualization $\bullet$ guest additions $\bullet$ PV driver $\bullet$
+OS-level virtualization $\bullet$ virtualization overhead $\bullet$ attack
+surface $\bullet$ trusted computing base
+\end{keyterms}
+
+\section{Two Places to Stand}
+
+A hypervisor has to be \emph{underneath} the guest. There are only two places
+to put it: directly on the hardware, or on top of an operating system that is
+already there. Goldberg named these Type-1 and Type-2 in 1973 and the names
+have stuck, although --- as the end of this section argues --- they have worn
+less well than the people who use them tend to admit.
+
+\begin{definitionbox}[Type-1 and Type-2 Hypervisors]
+A \term{Type-1} or \term{bare-metal} hypervisor runs directly on the hardware.
+It \emph{is} the operating system of the machine, in the sense that nothing
+else mediates its access to the processor, memory and devices. VMware ESXi,
+Microsoft Hyper-V and Xen are Type-1.
+
+\smallskip
+A \term{Type-2} or \term{hosted} hypervisor runs as a program on an ordinary
+operating system, alongside the browser and the editor. It asks that operating
+system for memory and for device access, like any other application. VMware
+Workstation, Oracle VirtualBox and Parallels Desktop are Type-2.
+
+\smallskip
+The test is not ``does a general-purpose operating system exist on this
+machine?'' --- ESXi has a management console and Hyper-V has a full Windows
+parent partition. The test is \emph{whether the hypervisor needs that operating
+system's permission to touch the hardware}.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  box/.style={rounded corners=2pt, line width=0.8pt, align=center,
+              minimum height=0.72cm, inner sep=3pt},
+  hw/.style={box, draw=neutral, fill=neutral!15, text=neutral!40!black,
+             minimum width=6.4cm},
+  os/.style={box, draw=purplehl, fill=purplehl!10, text=purplehl!70!black},
+  hv/.style={box, draw=primary, fill=primary!14, text=primary,
+             font=\scriptsize\bfseries},
+  gu/.style={box, draw=secondary, fill=secondary!8, text=secondary!80!black,
+             minimum width=1.95cm},
+  note/.style={font=\scriptsize\itshape, text=accent, align=center}
+]
+  % ---- Type 1, left ----
+  \node[font=\small\bfseries, text=primary] at (3.2,5.15) {Type-1 (bare-metal)};
+  \node[hw]              (h1) at (3.2,0.4)  {Hardware};
+  \node[hv, minimum width=6.4cm] (v1) at (3.2,1.5) {Hypervisor};
+  \node[gu]              (a1) at (1.1,2.9)  {Guest OS};
+  \node[gu]              (b1) at (3.2,2.9)  {Guest OS};
+  \node[gu]              (c1) at (5.3,2.9)  {Guest OS};
+  \node[gu, draw=purplehl, fill=purplehl!8, text=purplehl!70!black,
+        minimum width=1.95cm] (m1) at (1.1,3.95) {Mgmt\\console};
+  \node[box, draw=secondary, fill=white, text=secondary!80!black,
+        minimum width=1.95cm] (p1) at (3.2,3.95) {Apps};
+  \node[box, draw=secondary, fill=white, text=secondary!80!black,
+        minimum width=1.95cm] (q1) at (5.3,3.95) {Apps};
+  \draw[-{Stealth[length=1.8mm]}, primary!55] (v1) -- (h1);
+
+  % ---- Type 2, right ----
+  \node[font=\small\bfseries, text=primary] at (11.0,5.15) {Type-2 (hosted)};
+  \node[hw]              (h2) at (11.0,0.4) {Hardware};
+  \node[os, minimum width=6.4cm] (o2) at (11.0,1.5) {Host operating system};
+  \node[hv, minimum width=4.1cm] (v2) at (12.05,2.6) {Hypervisor (an application)};
+  \node[box, draw=purplehl, fill=purplehl!8, text=purplehl!70!black,
+        minimum width=1.95cm] (w2) at (8.9,2.6) {Browser,\\editor};
+  \node[gu]              (a2) at (11.0,3.8) {Guest OS};
+  \node[gu]              (b2) at (13.1,3.8) {Guest OS};
+  \draw[-{Stealth[length=1.8mm]}, primary!55] (v2) -- (v2 |- o2.north);
+  \draw[-{Stealth[length=1.8mm]}, purplehl!55] (o2) -- (h2);
+  \draw[-{Stealth[length=1.8mm]}, purplehl!55] (w2) -- (w2 |- o2.north);
+
+  \node[note] at (3.2,-0.42) {one layer between guest and silicon};
+  \node[note] at (11.0,-0.42) {two layers, and the lower one was not\\
+                               written with a guest in mind};
+\end{tikzpicture}}%
+{The only two places a hypervisor can stand. The right-hand stack is easier to
+install and slower at everything, because every device access the guest makes
+is translated twice.}{type1-type2}
+
+\begin{conceptbox}[KVM Is the Case That Breaks the Taxonomy]
+Ask five administrators whether KVM is Type-1 or Type-2 and you will get both
+answers with equal confidence. Both are defensible, which tells you the
+question is poorly posed rather than hard.
+
+\smallskip
+KVM is a module loaded into the Linux kernel. Once loaded, Linux \emph{is} the
+hypervisor: it schedules virtual CPUs with the same scheduler it uses for
+processes, and reaches the hardware with no layer beneath it. By the test above
+--- does it need another operating system's permission? --- it is Type-1.
+
+\smallskip
+But Linux was a general-purpose operating system first and acquired this role
+second; it runs your shell and your web server on the same kernel. By the
+informal test most people actually apply --- is this a dedicated hypervisor
+product? --- it looks Type-2.
+
+\smallskip
+The resolution is to stop asking. The questions that have operational answers
+are: \emph{how large is the trusted computing base?} (ESXi: roughly 150 MB;
+Linux with KVM: a kernel of several hundred megabytes and every driver in it),
+and \emph{what else runs on this host?} Those two determine the security and
+the performance arguments, and the Roman numeral determines neither.
+\end{conceptbox}
+
+\section{Three Ways to Keep the Promise}
+
+The promise of \chref{what} was that an unmodified operating system runs above
+the layer. A guest kernel is written to execute privileged instructions ---
+change the page tables, disable interrupts, talk to a disk controller --- and
+the hypervisor cannot simply let it. There are three ways to deal with that,
+and the history of this field is largely the history of moving from the first
+to the third.
+
+\rowcolors{2}{white}{lightbg}
+% column 1 holds \term{Paravirtualization} -- 3.5 cm is what that word needs
+% in bold at 10.95 pt, and it will not hyphenate inside an L column.
+\begin{longtable}{@{}L{3.5cm}L{4.6cm}L{3.2cm}L{3.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Technique} & \textbf{What happens to a privileged instruction} &
+\textbf{Guest changes} & \textbf{Cost} \\
+\midrule
+\endhead
+\term{Full virtualization} (binary translation) & The hypervisor scans the
+guest's kernel code before it runs and rewrites the dangerous instructions into
+safe calls into itself & \textbf{None.} The guest is unaware & Translation
+work, a cache of translated blocks, and great complexity in the hypervisor \\
+\term{Paravirtualization} & The guest kernel is modified so that it never
+issues the instruction: it calls the hypervisor deliberately, through a
+\term{hypercall} & \textbf{Source changes} to the guest kernel & Fast and
+simple, but the guest must cooperate --- which rules out an operating system
+you cannot recompile \\
+\term{Hardware-assisted} & The processor itself traps the instruction and hands
+control to the hypervisor, with the guest's state saved automatically & None &
+A trap costs hundreds to thousands of cycles. \chref{hardware} is how that cost
+was brought down \\
+\bottomrule
+\end{longtable}
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  lane/.style={rounded corners=3pt, line width=0.9pt, minimum width=4.6cm,
+               minimum height=3.5cm},
+  st/.style={rounded corners=2pt, line width=0.7pt, align=center,
+             minimum width=3.5cm, minimum height=0.56cm, inner sep=2pt,
+             font=\scriptsize},
+  ar/.style={-{Stealth[length=1.8mm]}, line width=0.8pt}
+]
+  % --- full virtualization ---
+  \node[lane, draw=secondary!55, fill=secondary!4] (L1) at (2.5,0) {};
+  \node[font=\scriptsize\bfseries, text=secondary!80!black] at (2.5,1.95)
+       {Full virtualization};
+  \node[st, draw=secondary, fill=white, text=secondary!80!black] (a1) at (2.5,1.25)
+       {guest kernel runs \texttt{POPF}};
+  \node[st, draw=accent, fill=accent!8, text=accent!70!black] (b1) at (2.5,0.45)
+       {hypervisor already\\rewrote it};
+  \node[st, draw=secondary, fill=white, text=secondary!80!black] (c1) at (2.5,-0.5)
+       {safe code runs instead};
+  \node[st, draw=neutral, fill=neutral!8, text=neutral!40!black] (d1) at (2.5,-1.3)
+       {guest never notices};
+  \draw[ar, secondary!60] (a1) -- (b1); \draw[ar, secondary!60] (b1) -- (c1);
+  \draw[ar, secondary!60] (c1) -- (d1);
+
+  % --- paravirtualization ---
+  \node[lane, draw=greenhl!55, fill=greenhl!4] (L2) at (7.8,0) {};
+  \node[font=\scriptsize\bfseries, text=greenhl!55!black] at (7.8,1.95)
+       {Paravirtualization};
+  \node[st, draw=greenhl, fill=white, text=greenhl!55!black] (a2) at (7.8,1.25)
+       {guest kernel was edited};
+  \node[st, draw=accent, fill=accent!8, text=accent!70!black] (b2) at (7.8,0.45)
+       {it issues a \emph{hypercall}\\instead};
+  \node[st, draw=greenhl, fill=white, text=greenhl!55!black] (c2) at (7.8,-0.5)
+       {hypervisor does the work};
+  \node[st, draw=neutral, fill=neutral!8, text=neutral!40!black] (d2) at (7.8,-1.3)
+       {guest knows, and helps};
+  \draw[ar, greenhl!60] (a2) -- (b2); \draw[ar, greenhl!60] (b2) -- (c2);
+  \draw[ar, greenhl!60] (c2) -- (d2);
+
+  % --- hardware assisted ---
+  \node[lane, draw=purplehl!55, fill=purplehl!4] (L3) at (13.1,0) {};
+  \node[font=\scriptsize\bfseries, text=purplehl!70!black] at (13.1,1.95)
+       {Hardware-assisted};
+  \node[st, draw=purplehl, fill=white, text=purplehl!70!black] (a3) at (13.1,1.25)
+       {guest kernel runs \texttt{POPF}};
+  \node[st, draw=accent, fill=accent!8, text=accent!70!black] (b3) at (13.1,0.45)
+       {the \emph{processor} traps\\to the hypervisor};
+  \node[st, draw=purplehl, fill=white, text=purplehl!70!black] (c3) at (13.1,-0.5)
+       {hypervisor emulates it};
+  \node[st, draw=neutral, fill=neutral!8, text=neutral!40!black] (d3) at (13.1,-1.3)
+       {guest never notices};
+  \draw[ar, purplehl!60] (a3) -- (b3); \draw[ar, purplehl!60] (b3) -- (c3);
+  \draw[ar, purplehl!60] (c3) -- (d3);
+\end{tikzpicture}}%
+{The same instruction, three architectures. Only the middle one requires the
+guest's cooperation; only the right-hand one requires the processor's. The
+red step is where the work is done, and it is a different party each
+time.}{three-techniques}
+
+\begin{alertbox}[Nobody ships one of these alone any more]
+The table above is a taxonomy of techniques, not of products. Every current
+hypervisor is a hybrid.
+
+\smallskip
+A modern KVM guest uses \emph{hardware assistance} for privileged instructions,
+\emph{paravirtualized} drivers (virtio, \chref{paravirt}) for disk and network
+because emulating real hardware is far slower, and occasionally \emph{emulation}
+for a device nobody has optimised. Xen began as the paravirtualization project
+and has supported hardware-assisted guests since 2006. VMware built its
+reputation on binary translation and now uses it only where hardware assistance
+is unavailable or slower.
+
+\smallskip
+So the right question about a product is never ``which one is it?'' but ``which
+one does it use \emph{for this operation}?'' --- and the answer usually differs
+between the processor, the disk and the network card.
 \end{alertbox}
+
+\begin{worked}[What the Layer Actually Costs]
+Four configurations, two workloads, measured on the same host. Compute the
+overhead of each configuration and explain the pattern.
+
+\smallskip
+\textbf{Workload A --- CPU-bound} (compiling a kernel; lower is better):
+\begin{tight}
+  \item native 240 s \quad $\bullet$\quad Type-1 245 s \quad $\bullet$\quad
+        Type-2 259 s \quad $\bullet$\quad container 241 s
+\end{tight}
+
+\smallskip
+\textbf{Workload B --- I/O-bound} (sequential read, MB/s; higher is better):
+\begin{tight}
+  \item native 980 \quad $\bullet$\quad Type-1 with an \emph{emulated} disk
+        controller 185 \quad $\bullet$\quad Type-1 with a \emph{virtio} disk 940
+        \quad $\bullet$\quad container 975
+\end{tight}
+
+\smallskip
+\textbf{Step 1 --- CPU overhead.} Overhead is the extra time as a fraction of
+native:
+\[ \text{Type-1} = \frac{245 - 240}{240} = \mathbf{2.1\%} \qquad
+   \text{Type-2} = \frac{259 - 240}{240} = \mathbf{7.9\%} \]
+\[ \text{container} = \frac{241 - 240}{240} = \mathbf{0.4\%} \]
+
+\smallskip
+\textbf{Step 2 --- I/O overhead.} Here express the loss as a fraction of native
+throughput:
+\[ \text{emulated} = 1 - \frac{185}{980} = \mathbf{81\%\ lost} \qquad
+   \text{virtio} = 1 - \frac{940}{980} = \mathbf{4.1\%\ lost} \]
+
+\smallskip
+\textbf{Step 3 --- read the pattern.} The CPU numbers are small because a
+compile is almost entirely ordinary arithmetic, and ordinary arithmetic runs on
+the real processor at full speed in every configuration. The layer only costs
+you where it has to \emph{intervene}.
+
+\smallskip
+The I/O numbers are enormous for exactly that reason. An emulated disk
+controller means the hypervisor pretends, in software, to be a specific piece
+of 1990s hardware: every register the guest driver writes is a trap, and a
+single disk read becomes dozens of them. Replacing it with virtio ---
+paravirtualization, \chref{paravirt} --- replaces those dozens of traps with
+one hypercall carrying a batch of requests, and 81\% lost becomes 4\%.
+
+\smallskip
+\textbf{The lesson for a design.} Virtualization overhead is not a property of
+the hypervisor; it is a property of how often the guest crosses the boundary.
+Measure the crossing rate, not the product.
+\end{worked}
+
+\section{Where Containers Sit}
+
+Everything so far virtualizes the machine. The alternative is to virtualize the
+operating system --- to leave one kernel in place and give each group of
+processes a private view of it. \chref{containers} develops this properly; the
+purpose here is to put it on the same map, because the two are routinely
+presented as rivals when they are neighbours.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  cell/.style={rounded corners=2pt, line width=0.8pt, align=center,
+               minimum width=3.4cm, minimum height=1.0cm, inner sep=3pt},
+  hd/.style={font=\scriptsize\bfseries, text=primary, align=center},
+  ax/.style={font=\scriptsize\itshape, text=neutral!40!black}
+]
+  \node[hd] at (2.4,2.65) {Full virtualization\\(binary translation)};
+  \node[hd] at (6.4,2.65) {Paravirtualization};
+  \node[hd] at (10.4,2.65) {Hardware-assisted};
+  \node[hd] at (14.4,2.65) {Namespaces\\and cgroups};
+
+  \node[hd, align=right, anchor=east] at (0.3,1.35)
+       {Virtualize the\\\emph{machine}};
+  \node[hd, align=right, anchor=east] at (0.3,-0.25)
+       {Virtualize the\\\emph{operating system}};
+
+  \node[cell, draw=secondary, fill=secondary!8, text=secondary!80!black]
+       at (2.4,1.35) {VMware Workstation\\(early), QEMU\\with TCG};
+  \node[cell, draw=greenhl, fill=greenhl!8, text=greenhl!55!black]
+       at (6.4,1.35) {Xen PV,\\virtio drivers,\\Hyper-V enlightenments};
+  \node[cell, draw=purplehl, fill=purplehl!8, text=purplehl!70!black]
+       at (10.4,1.35) {ESXi, Hyper-V,\\KVM, Xen HVM,\\Firecracker};
+  \node[cell, draw=neutral!60, fill=neutral!8, text=neutral!45!black,
+        dashed] at (14.4,1.35) {not applicable};
+
+  \node[cell, draw=neutral!60, fill=neutral!8, text=neutral!45!black,
+        dashed] at (2.4,-0.25) {not applicable};
+  \node[cell, draw=neutral!60, fill=neutral!8, text=neutral!45!black,
+        dashed] at (6.4,-0.25) {not applicable};
+  \node[cell, draw=goldhl, fill=goldhl!8, text=goldhl!55!black]
+       at (10.4,-0.25) {gVisor, Kata,\\Firecracker\\\emph{(both rows)}};
+  \node[cell, draw=greenhl, fill=greenhl!12, text=greenhl!55!black,
+        line width=1.4pt] at (14.4,-0.25) {Docker, containerd,\\LXC, systemd-nspawn};
+
+  \node[ax, anchor=north west] at (-2.0,-1.25)
+       {The bottom-right cell is Part III. The bottom-middle cell is Chapter 11:
+        designs that put a machine back underneath a container.};
+\end{tikzpicture}}%
+{Two questions, not one: \emph{which layer} is virtualized, and \emph{by what
+technique}. Products are placed by what they principally do; most occupy
+more than one cell in practice.}{taxonomy}
+
+\begin{conceptbox}[The Trade Is Isolation Against Density]
+A virtual machine carries its own kernel. That costs a few hundred megabytes of
+memory and tens of seconds of boot time, and buys an isolation boundary the
+hardware enforces: a guest that compromises its own kernel has still not
+escaped.
+
+\smallskip
+A container shares the host kernel. That costs almost nothing --- megabytes,
+milliseconds --- and buys an isolation boundary the \emph{kernel} enforces: a
+process that finds a kernel bug is on the host, beside every other container.
+The Linux system-call interface is roughly 350 calls wide, and every one of
+them is attack surface.
+
+\smallskip
+Neither is better. A hosting provider running untrusted code from strangers
+wants the hardware boundary. A company running fifty of its own microservices
+wants the density. \chref{lightweight} is what happened when people wanted both,
+and the answer turned out to be a very small virtual machine.
+\end{conceptbox}
+
+\section{Choosing}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{5.0cm}L{4.2cm}L{5.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{If the requirement is} & \textbf{Choose} & \textbf{Because} \\
+\midrule
+\endhead
+A production server estate & Type-1, hardware-assisted & Lowest overhead,
+smallest trusted computing base, and the management and migration tooling only
+exists here \\
+Running three operating systems on your laptop to learn & Type-2 & Installs in
+minutes, coexists with everything else, and the 8\% you lose does not matter \\
+Untrusted code from strangers & Type-1, one guest per tenant & The isolation
+boundary is enforced by the processor, not by a 350-call kernel interface \\
+Fifty of your own services, deployed often & Containers & Density, and seconds
+rather than minutes to start \\
+Untrusted code \emph{and} container density & \chref{lightweight} ---
+microVMs & A kernel per tenant, with a 125 ms boot and 5 MB of overhead \\
+An operating system you cannot modify (an appliance, a legacy system) & Anything
+but pure paravirtualization & Paravirtualization needs the guest's source \\
+A different processor architecture & Emulation, not virtualization & The
+instruction set has to be translated, and that is a different and much slower
+job \\
+\bottomrule
+\end{longtable}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Treating Type-1 and Type-2 as a performance ranking.} The
+        difference in the worked example was six percentage points on CPU and
+        nothing at all on properly-driven I/O. The real differences are the
+        size of the trusted computing base, the management tooling, and whether
+        the machine does anything else.
+  \item \textbf{Saying ``paravirtualization'' when you mean ``PV drivers''.}
+        Almost every guest running today uses paravirtualized \emph{drivers}
+        while being a fully virtualized \emph{guest}. The kernel was not
+        modified; a driver was installed. These are different claims and the
+        second is much weaker.
+  \item \textbf{Quoting a virtualization overhead figure without the
+        workload.} ``About 3\%'' is true of arithmetic and absurd of an
+        emulated network card. Always state what was measured.
+  \item \textbf{Forgetting that guest additions are not optional in
+        practice.} A Type-2 guest without them has no shared clipboard, no
+        resized display and a tenth of the I/O throughput. Students who
+        conclude ``virtual machines are slow'' have usually just not installed
+        them.
+  \item \textbf{Assuming containers replaced virtual machines.} The dominant
+        production pattern is containers \emph{inside} virtual machines: every
+        managed Kubernetes service runs its nodes as cloud instances, which are
+        guests. The layers compose; they do not compete.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Three Architectures, One Workload]
+Measures the overhead of the same job under a Type-2 hypervisor, a Type-1
+hypervisor and a container, on one laptop. Needs the stack from Appendix~A.
+Expect thirty minutes, most of it waiting.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch02_overhead.sh -- measure the cost of the layer, three ways.
+set -euo pipefail
+WORK='echo "scale=4000; 4*a(1)" | bc -l'   # seconds of pure arithmetic
+
+# The guest's address, however libvirt chose to hand it out today.
+ip_of () {
+  sudo virsh domifaddr "$1" | awk '/ipv4/{split($4,a,"/"); print a[1]}'
+}
+in_guest () { ssh -o StrictHostKeyChecking=no "ubuntu@$(ip_of vss1)" "$1"; }
+
+# --- 1. The baseline: no layer at all ----------------------------------
+echo "=== native ==="
+time bash -c "$WORK" > /dev/null
+
+# --- 2. Type-1: KVM, hardware-assisted ---------------------------------
+# vss1 is the guest built in Chapter 1's lab.
+sudo virsh start vss1 || true
+sleep 25
+echo "=== type-1 (kvm) ==="
+in_guest "time bash -c '$WORK' > /dev/null"
+
+# --- 3. A container: no second kernel ----------------------------------
+echo "=== container ==="
+time docker run --rm ubuntu:22.04 bash -c \
+     "apt-get -qq update && apt-get -qq install -y bc && $WORK" > /dev/null
+
+# --- 4. Now the part that actually matters: I/O -------------------------
+# Compare an emulated disk controller against a paravirtualized one.
+# The guest must be stopped to change its disk bus.
+sudo virsh destroy vss1
+echo "=== emulated SATA controller ==="
+sudo virt-xml vss1 --edit target=vda --disk bus=sata
+sudo virsh start vss1 ; sleep 25
+in_guest "sudo dd if=/dev/sda of=/dev/null bs=1M count=512 iflag=direct"
+
+sudo virsh destroy vss1
+echo "=== virtio (paravirtualized) ==="
+sudo virt-xml vss1 --edit target=sda --disk bus=virtio
+sudo virsh start vss1 ; sleep 25
+in_guest "sudo dd if=/dev/vda of=/dev/null bs=1M count=512 iflag=direct"
+
+# --- 5. Tear down -------------------------------------------------------
+sudo virsh destroy vss1 || true
+\end{lstlisting}
+
+\textbf{What to notice.} The three CPU numbers will be within a few per cent of
+each other and the two disk numbers will not be within a factor of three. Write
+both pairs down: the worked example above claims a pattern, and this is you
+checking it on your own hardware rather than believing it.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A hypervisor runs on a stripped Linux installation that exists only to
+        boot it and offers no shell to users. Is it Type-1 or Type-2, and what
+        is the more useful question to ask about it instead?
+  \item A guest completes a numerical job in 412 s where the host takes 400 s,
+        and reads a disk at 210 MB/s where the host reads at 1{,}050 MB/s.
+        Give both overheads, and say which single configuration change you
+        would make first.
+  \item Why can paravirtualization not be used for a guest operating system
+        whose vendor has gone out of business, and what is used instead?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Type-1 runs on the hardware; Type-2 runs on a host operating system.
+        The useful questions behind the labels are the size of the trusted
+        computing base and what else the machine does.
+  \item KVM fits neither label cleanly, which is a fact about the labels.
+  \item Three techniques handle a privileged instruction: binary translation
+        rewrites it, paravirtualization replaces it with a hypercall the
+        modified guest issues deliberately, and hardware assistance makes the
+        processor trap it.
+  \item No product uses one technique alone. Ask which one is used \emph{for
+        this operation}.
+  \item Virtualization overhead is a property of how often the guest crosses
+        the boundary, not of the hypervisor. A few per cent on arithmetic;
+        80\% on an emulated device; 4\% on the same device paravirtualized.
+  \item Containers virtualize the operating system rather than the machine,
+        trading a hardware-enforced isolation boundary for density. Neither is
+        better, and in production they are usually stacked.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The defining test for a Type-1 hypervisor is that:
+        (a)~no operating system is present on the host; (b)~it does not need
+        another operating system's permission to reach the hardware; (c)~it has
+        no graphical interface; (d)~it is sold commercially.
+  \item \textbf{(MCQ)} A guest kernel is recompiled so that it calls the
+        hypervisor instead of executing a privileged instruction. This is:
+        (a)~binary translation; (b)~hardware-assisted virtualization;
+        (c)~paravirtualization; (d)~emulation.
+  \item \textbf{(Short)} State what each of the three techniques requires of a
+        party other than the hypervisor: the guest, the processor, or neither.
+  \item \textbf{(Short)} Explain why virtualization overhead on a compile is
+        around 2\% while overhead on an emulated network card can exceed 80\%.
+  \item \textbf{(Short)} Give two concrete operational consequences of a
+        hypervisor having a 150 MB trusted computing base rather than a 600 MB
+        one.
+  \item \textbf{(Applied)} A hosting company will run customer-supplied code.
+        It is considering (i)~one container per customer on shared hosts,
+        (ii)~one virtual machine per customer, (iii)~microVMs. Density, cost
+        and isolation all matter. Argue for one, and state precisely what each
+        of the other two would have to change for you to pick it instead.
+  \item \textbf{(Applied)} You inherit a Type-2 estate on which guests are
+        reported as ``unusably slow''. List, in the order you would check them,
+        five things that could cause this, and say what measurement would
+        confirm or eliminate each.
+\end{reviewq}

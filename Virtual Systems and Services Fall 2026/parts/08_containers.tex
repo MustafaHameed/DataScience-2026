@@ -3,7 +3,507 @@
 %=====================================================================
 \locator{3}{Part III --- Containers and Lightweight Virtualization}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} where a container cuts the stack, and \textbf{contrast}
+        it with where a hypervisor cuts it.
+  \item \textbf{Name} the Linux namespaces and \textbf{state} what each one
+        isolates.
+  \item \textbf{Use} control groups to limit a process tree's CPU and memory,
+        and \textbf{explain} what happens when a limit is reached.
+  \item \textbf{Describe} how an overlay filesystem gives every container a
+        private root from shared read-only layers.
+  \item \textbf{Compute} the density and start-up advantage of containers over
+        virtual machines, and \textbf{state} precisely what is given up for it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{architectures} (the taxonomy figure, which placed containers on the
+second row) and \chref{cpumem} (overcommit and the working set). From Operating
+Systems you need processes, the process tree, file descriptors and mount
+points. Nothing in Part~II's hardware material is required --- which is itself
+the point of this chapter.
+\end{prereq}
+
+\begin{keyterms}
+OS-level virtualization $\bullet$ container $\bullet$ namespace $\bullet$ mount
+namespace $\bullet$ PID namespace $\bullet$ network namespace $\bullet$ user
+namespace $\bullet$ control group $\bullet$ cgroup v2 $\bullet$ cgroup
+controller $\bullet$ union filesystem $\bullet$ overlayfs $\bullet$ lower dir
+$\bullet$ upper dir $\bullet$ copy-up $\bullet$ capability $\bullet$ seccomp
+$\bullet$ chroot $\bullet$ rootless container $\bullet$ shared kernel
+\end{keyterms}
+
+\section{A Different Place to Cut}
+
+Every chapter so far has virtualized \emph{hardware}: a processor that is not a
+processor, memory that is not where the guest thinks, a disk that is a file.
+The guest runs its own kernel on that imaginary machine.
+
+A container asks a cheaper question. If all the workloads are going to run on
+Linux anyway, why buy forty copies of Linux? Leave one kernel in place, and
+give each group of processes a private \emph{view} of it: its own filesystem
+root, its own process numbers, its own network interfaces, its own users. The
+processes are ordinary processes on the host kernel. They simply cannot see
+anything they were not shown.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  bx/.style={rounded corners=2pt, line width=0.8pt, align=center,
+             inner sep=2pt, minimum height=0.5cm, font=\scriptsize},
+  hw/.style={bx, draw=neutral, fill=neutral!15, text=neutral!40!black,
+             minimum width=6.4cm},
+  hv/.style={bx, draw=primary, fill=primary!12, text=primary,
+             minimum width=6.4cm},
+  os/.style={bx, draw=purplehl, fill=purplehl!12, text=purplehl!70!black},
+  ap/.style={bx, draw=secondary, fill=secondary!8, text=secondary!80!black},
+  cut/.style={accent, line width=1.3pt, dashed},
+  note/.style={font=\scriptsize\itshape, text=accent, align=center}
+]
+  % ---- virtual machines ----
+  \node[font=\small\bfseries, text=primary] at (3.2,4.65) {Virtual machines};
+  \node[hw] at (3.2,0)    {hardware};
+  \node[hv] at (3.2,0.72) {hypervisor};
+  \foreach \i/\x in {0/1.1, 1/3.2, 2/5.3}{
+    \node[os, minimum width=1.9cm] at (\x,1.65) {guest kernel};
+    \node[os, minimum width=1.9cm, fill=purplehl!6] at (\x,2.25)
+         {libraries};
+    \node[ap, minimum width=1.9cm] at (\x,2.85) {app};}
+  \draw[cut] (-0.1,1.22) -- (6.5,1.22);
+  \node[note] at (3.2,3.55) {three kernels, 200--500 MB\\of overhead each};
+
+  % ---- containers ----
+  \node[font=\small\bfseries, text=primary] at (11.6,4.65) {Containers};
+  \node[hw] at (11.6,0)    {hardware};
+  \node[os, minimum width=6.4cm] at (11.6,0.72) {\textbf{one} host kernel};
+  \foreach \x in {9.5, 11.6, 13.7}{
+    \node[os, minimum width=1.9cm, fill=purplehl!6] at (\x,1.65) {libraries};
+    \node[ap, minimum width=1.9cm] at (\x,2.25) {app};}
+  \draw[cut] (8.3,1.22) -- (14.9,1.22);
+  \node[note] at (11.6,3.55) {one kernel, a few MB\\of overhead each};
+
+  \node[font=\scriptsize\bfseries, text=accent, anchor=west] at (6.7,1.22)
+       {the cut};
+  \node[font=\scriptsize\bfseries, text=accent, anchor=east] at (8.2,1.22)
+       {the cut};
+
+  \node[rounded corners=3pt, draw=accent!60, fill=accent!5,
+        text=accent!70!black, font=\scriptsize, align=center, inner sep=4pt,
+        text width=12.6cm] at (7.4,-1.1)
+       {Above the dashed line is what each workload gets privately; below it is
+        what they share. Moving the line up buys density and spends
+        isolation.};
+\end{tikzpicture}}%
+{The whole of Part III in one picture. Nothing else about containers is a new
+idea --- only the height at which the stack is cut.}{where-the-cut-is}
+
+\begin{definitionbox}[Container]
+A \term{container} is a group of processes on a shared kernel, given a private
+view of the system by \term{namespaces} and a bounded share of its resources by
+\term{control groups}, usually running from a filesystem image assembled by a
+\term{union filesystem}.
+
+\smallskip
+There is no ``container'' object in the Linux kernel. The kernel has
+namespaces, cgroups, capabilities and mounts; a container is a convention about
+using them together, and Docker's contribution was the convention and the
+packaging, not the mechanism.
+\end{definitionbox}
+
+\section{Namespaces}
+
+A namespace wraps one global system resource so that processes inside it see
+their own instance of it. Eight exist, added over eighteen years.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.5cm}L{1.3cm}L{5.4cm}L{5.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Namespace} & \textbf{Year} & \textbf{What it isolates} &
+\textbf{Consequence inside} \\
+\midrule
+\endhead
+\term{mount} & 2002 & The set of mount points & A private filesystem tree ---
+this is the one that makes an image work \\
+\term{UTS} & 2006 & Hostname and domain name & \texttt{hostname} returns
+something of its own \\
+\term{IPC} & 2006 & System V IPC, POSIX message queues & Shared memory
+segments cannot be reached from outside \\
+\term{PID} & 2008 & Process identifiers & The first process is PID 1, and the
+host's processes are invisible \\
+\term{network} & 2009 & Interfaces, routes, firewall rules, ports & Its own
+\texttt{lo} and \texttt{eth0}; two containers may both bind port 80 \\
+\term{user} & 2013 & User and group identifiers & \texttt{root} inside can map
+to an unprivileged user outside --- the basis of rootless containers \\
+\term{cgroup} & 2016 & The cgroup hierarchy root & A container cannot see where
+it sits in the host's resource tree \\
+\term{time} & 2020 & The boot and monotonic clocks & Used mainly for
+checkpoint and restore \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[PID 1 Is Not a Detail]
+Inside a PID namespace the first process is numbered 1, and the kernel treats
+PID 1 specially everywhere: it must reap orphaned children, and signals with
+default actions are \emph{not} delivered to it unless it has installed a
+handler.
+
+\smallskip
+Two consequences bite in production. A container whose PID 1 is an ordinary
+application does not reap orphans, so a process that forks accumulates zombies
+until the PID limit is reached. And \texttt{docker stop} sends
+\texttt{SIGTERM}, which an application that installed no handler simply
+ignores --- the runtime then waits ten seconds and sends \texttt{SIGKILL},
+which is why so many containers take exactly ten seconds to stop and lose
+in-flight work.
+
+\smallskip
+Both are fixed by running a tiny init as PID 1, which is what
+\texttt{docker run --init} does. Knowing \emph{why} is the difference between
+applying the flag and diagnosing the symptom.
+\end{conceptbox}
+
+\begin{alertbox}[The user namespace is the one that changed the security story]
+Before user namespaces, \texttt{root} inside a container was \texttt{root} on
+the host: the same UID 0, with the same power over the shared kernel, and one
+escape was a total compromise.
+
+\smallskip
+A user namespace maps identifiers. UID 0 inside can be UID 100000 outside, so a
+process that believes it is root holds no privilege the host recognises. This
+is what makes \term{rootless containers} possible --- an unprivileged user
+running containers with no daemon and no setuid helper, which is Podman's
+default and now an option in Docker.
+
+\smallskip
+It is not enabled by default in every runtime, and a container run as root
+without it is still a process running as real root beside your other services.
+\chref{security} returns to this.
 \end{alertbox}
+
+\section{Control Groups}
+
+Namespaces decide what a container can \emph{see}. They say nothing about how
+much it can \emph{use}: a process in a private namespace can still consume
+every core and all the memory on the host.
+
+\term{Control groups} supply the limits. Processes are arranged in a tree, and
+each node carries controllers --- \texttt{cpu}, \texttt{memory}, \texttt{io},
+\texttt{pids} --- that account for and cap consumption. Version~2, now the
+default everywhere, replaced v1's separate per-controller hierarchies with a
+single unified tree.
+
+\begin{conceptbox}[What a Limit Does When It Is Reached]
+The two important limits fail in completely different ways, and conflating them
+is a common source of mystification.
+
+\smallskip
+\textbf{CPU is throttled.} A container limited to 0.5 of a core that asks for
+more is simply scheduled less: it runs at half speed. Nothing fails. You see it
+as latency, and in \texttt{cpu.stat} as a rising \texttt{throttled\_usec}.
+
+\smallskip
+\textbf{Memory is killed.} A container that exceeds its memory limit has a
+process killed by the OOM killer --- usually the largest, usually the one you
+cared about. There is no graceful degradation, because there is nothing to
+degrade: the page is needed or it is not.
+
+\smallskip
+This is the same asymmetry as \chref{cpumem}: time is divisible and memory is
+not. It is why the commonest container incident is an application restarting
+every few hours with exit code 137 --- which is $128 + 9$, signal 9, the OOM
+kill --- and why memory limits deserve far more thought than CPU limits.
+\end{conceptbox}
+
+\section{The Image, and the Union Filesystem}
+
+A container needs a root filesystem. Giving each one a private copy would cost
+hundreds of megabytes apiece and lose most of the density the chapter has been
+claiming.
+
+\term{Overlayfs} solves it by stacking directories. Several read-only
+\term{lower} layers are presented as one tree, with a single writable
+\term{upper} layer on top. A read finds the file in the topmost layer that has
+it. A write triggers a \term{copy-up}: the file is copied into the upper layer
+and modified there, leaving the shared layer untouched.
+
+\dsfig{%
+\begin{tikzpicture}[font=\scriptsize,
+  lyr/.style={rounded corners=2pt, line width=0.8pt, align=left,
+              minimum width=5.4cm, minimum height=0.56cm, inner sep=4pt,
+              font=\scriptsize},
+  ro/.style={lyr, draw=secondary, fill=secondary!8, text=secondary!80!black},
+  rw/.style={lyr, draw=greenhl, fill=greenhl!12, text=greenhl!45!black},
+  ct/.style={rounded corners=2pt, draw=purplehl, line width=0.9pt,
+             fill=purplehl!8, text=purplehl!70!black, align=center,
+             minimum width=1.9cm, minimum height=0.56cm, font=\scriptsize},
+  note/.style={font=\scriptsize\itshape, text=neutral, anchor=west, align=left}
+]
+  \node[ro] at (0,0)    {\texttt{ubuntu:22.04} \quad 77 MB};
+  \node[ro] at (0,0.66) {\texttt{+ python3} \quad 42 MB};
+  \node[ro] at (0,1.32) {\texttt{+ our dependencies} \quad 18 MB};
+  \node[ro] at (0,1.98) {\texttt{+ our application} \quad 2 MB};
+  \node[rw] at (0,2.74) {writable layer --- \emph{per container}, empty at start};
+
+  \node[note] at (3.0,0)    {shared by every container};
+  \node[note] at (3.0,0.66) {built from this image};
+  \node[note] at (3.0,1.32) {stored once on disk};
+  \node[note] at (3.0,1.98) {and once in page cache};
+
+  \foreach \i/\x in {1/7.6, 2/9.8, 3/12.0}{
+    \node[ct] at (\x,2.74) {container \i};
+    \draw[-{Stealth[length=1.6mm]}, purplehl!60, line width=0.7pt]
+          (\x,2.42) -- (\x,2.1);}
+  \node[rounded corners=3pt, draw=secondary!50, fill=secondary!4,
+        minimum width=6.4cm, minimum height=1.9cm] at (9.8,1.0) {};
+  \node[font=\scriptsize, text=secondary!80!black, align=center] at (9.8,1.0)
+       {one copy of the four\\read-only layers,\\139 MB in total};
+
+  \node[rounded corners=2pt, draw=accent, fill=accent!6, text=accent!70!black,
+        font=\scriptsize, align=left, inner sep=4pt, text width=6.0cm]
+       at (9.6,-1.25)
+       {\textbf{Copy-up.} Container 2 edits
+        \texttt{/etc/app.conf}: the file is copied into \emph{its} writable
+        layer and changed there. Containers 1 and 3 still see the original.};
+  \node[rounded corners=2pt, draw=neutral!55, fill=neutral!6,
+        text=neutral!40!black, font=\scriptsize, align=left, inner sep=4pt,
+        text width=5.6cm] at (0.1,-1.25)
+       {\textbf{Three containers on disk:} 139 MB shared, plus whatever each
+        one has written. Three virtual machines: three full root
+        filesystems.};
+\end{tikzpicture}}%
+{Overlayfs. The layers are why pulling a second image from the same base
+downloads almost nothing, and why a thousand containers of one image cost
+little more on disk than one.}{overlayfs}
+
+\begin{worked}[Density and Start-Up, Costed]
+A host of 64 cores and 512 GB must run as many copies as possible of one
+service that needs 256 MB of memory. Compare virtual machines with containers.
+
+\smallskip
+\textbf{Step 1 --- memory per instance, as a virtual machine.}
+\begin{tight}
+  \item the application: 256 MB;
+  \item a guest Linux that can run it: 512 MB is a realistic floor;
+  \item per-guest hypervisor overhead --- the VMCS, the EPT tables, the device
+        models of \chref{paravirt}: call it 100 MB.
+\end{tight}
+\[ 256 + 512 + 100 = 868 \text{ MB per guest} \]
+
+\smallskip
+\textbf{Step 2 --- memory per instance, as a container.}
+\begin{tight}
+  \item the application: 256 MB;
+  \item no guest kernel --- the host's is shared;
+  \item runtime overhead: a few MB. Call it 4 MB.
+\end{tight}
+\[ 256 + 4 = 260 \text{ MB per container} \]
+
+\smallskip
+\textbf{Step 3 --- how many fit.} Reserve 32 GB for the host, leaving 480 GB:
+\[ \text{VMs} = \frac{480 \times 1024}{868} = 566 \qquad
+   \text{containers} = \frac{480 \times 1024}{260} = \mathbf{1{,}890} \]
+A ratio of \textbf{3.3 : 1} --- and note it is not the hundredfold figure
+containers are often credited with, because the \emph{application's} 256 MB
+dominates both sides. The container advantage is large exactly when the
+workload is small.
+
+\smallskip
+\textbf{Step 4 --- the disk, where the ratio is larger.} 566 guests each with a
+2 GB root disk is 1.1 TB, even thin-provisioned. 1{,}890 containers from one
+139 MB image share that image: 139 MB plus each container's writes. Call it
+10 MB each:
+\[ 139 + 1{,}890 \times 10 = 19 \text{ GB, against } 1{,}100 \text{ GB}
+   \;\approx\; \mathbf{58 : 1} \]
+
+\smallskip
+\textbf{Step 5 --- start-up, where it is larger still.} A guest boots a kernel,
+initialises virtual hardware and starts an init system: 20--40 s. A container
+is \texttt{clone()} with some flags, a mount and an \texttt{execve}: 50--200 ms.
+\[ \frac{30 \text{ s}}{0.1 \text{ s}} = \mathbf{300 : 1} \]
+
+\smallskip
+\textbf{Step 6 --- what the three ratios are actually telling you.} Memory
+density, 3:1, is the least impressive number and the one usually quoted. The
+ones that changed how software is deployed are disk and start-up: when an
+instance costs 10 MB and starts in a tenth of a second, you can afford to run
+one per request, scale on demand, and redeploy continuously. \chref{kubernetes}
+is what people built once that became true.
+\end{worked}
+
+\begin{alertbox}[What the ratios cost: one kernel, one failure]
+Every container on that host shares one kernel. A kernel panic takes all 1{,}890
+down; a kernel privilege-escalation bug gives any one of them the host. The
+Linux system-call interface is around 350 calls wide and every one is reachable
+from inside a container, where a virtual machine's guest would have to escape
+its own kernel first and then the hypervisor.
+
+\smallskip
+That is the trade, stated numerically: 3$\times$ the density, 300$\times$ the
+start-up speed, and an isolation boundary enforced by software rather than by
+the processor. \chref{lightweight} is the chapter where people decline to
+choose.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Calling a container a lightweight virtual machine.} There is no
+        virtual machine and no guest kernel. The phrase predicts the wrong
+        things about security, about kernel modules, and about what
+        \texttt{uname} reports inside.
+  \item \textbf{Expecting a container to run a different kernel.} It cannot. A
+        container ``running CentOS'' on an Ubuntu host is CentOS \emph{user
+        space} on Ubuntu's kernel. Nothing needing a specific kernel version or
+        a kernel module will work.
+  \item \textbf{Running an application directly as PID 1 and wondering about
+        zombies or ten-second stops.} Use an init, and know why.
+  \item \textbf{Setting CPU limits carefully and memory limits by guesswork.}
+        CPU throttles; memory kills. Exit code 137 is the OOM killer and it is
+        the commonest container incident there is.
+  \item \textbf{Writing large amounts of data to the container's writable
+        layer.} Copy-up through overlayfs is slow, and the layer disappears
+        with the container. Mount a volume.
+  \item \textbf{Assuming a container is isolated because it has a private
+        namespace.} Namespaces hide things; they do not reduce the kernel
+        attack surface. \chref{security} separates the two properly.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Building a Container by Hand]
+No Docker. Builds an isolated process tree from the kernel primitives, so that
+the next chapter's tooling is recognisable rather than magical. Needs a Linux
+host and root. Expect thirty minutes.
+
+\begin{lstlisting}[language=bash]
+#!/usr/bin/env bash
+# ch08_byhand.sh -- namespaces, cgroups and overlayfs, without a runtime.
+set -euo pipefail
+ROOT=/tmp/vsroot
+
+# --- 1. What namespaces does an ordinary process already have? ---------
+# Every process is in a namespace; a container just gets different ones.
+ls -l /proc/self/ns/
+
+# --- 2. A root filesystem to be the container's world. -----------------
+sudo apt-get install -y debootstrap util-linux
+sudo mkdir -p "$ROOT"
+sudo debootstrap --variant=minbase jammy "$ROOT" \
+     http://archive.ubuntu.com/ubuntu/
+
+# --- 3. Enter new namespaces. This is the whole mechanism. -------------
+# --pid --mount --uts --ipc --net: one flag per namespace from the table.
+sudo unshare --pid --mount --uts --ipc --net --fork --mount-proc \
+     chroot "$ROOT" /bin/bash -c '
+       hostname container-1
+       mount -t proc proc /proc
+       echo "--- inside ---"
+       hostname            # the UTS namespace
+       ps aux              # the PID namespace: we are PID 1, host invisible
+       ip addr             # the network namespace: only lo, and it is down
+       exit'
+
+# --- 4. Prove the host is unaffected. ----------------------------------
+hostname ; ps aux | wc -l
+
+# --- 5. Limit it with a control group. ---------------------------------
+# cgroup v2: one unified tree under /sys/fs/cgroup.
+sudo mkdir -p /sys/fs/cgroup/vsdemo
+echo "+cpu +memory" | sudo tee /sys/fs/cgroup/cgroup.subtree_control
+echo "50000 100000" | sudo tee /sys/fs/cgroup/vsdemo/cpu.max   # half a core
+echo "100M"         | sudo tee /sys/fs/cgroup/vsdemo/memory.max
+
+# Put a busy process in it and watch it be throttled, not killed.
+sudo bash -c 'echo $$ > /sys/fs/cgroup/vsdemo/cgroup.procs; \
+              timeout 10 yes > /dev/null' &
+sleep 11
+cat /sys/fs/cgroup/vsdemo/cpu.stat | grep throttled
+
+# --- 6. Now cross the memory limit, and watch it be killed. -----------
+# CPU throttles; memory kills. This is the asymmetry of section 8.3.
+sudo bash -c 'echo $$ > /sys/fs/cgroup/vsdemo/cgroup.procs; \
+              head -c 200M /dev/zero | tail -c 1' || \
+  echo "killed, exit $? -- 137 is 128+9, the OOM killer"
+dmesg | tail -3 | grep -i 'out of memory' || true
+
+# --- 7. Share one root between two containers with overlayfs. ---------
+sudo mkdir -p /tmp/ovl/{upper1,upper2,work1,work2,m1,m2}
+for i in 1 2; do
+  sudo mount -t overlay overlay \
+    -o lowerdir="$ROOT",upperdir=/tmp/ovl/upper$i,workdir=/tmp/ovl/work$i \
+    /tmp/ovl/m$i
+done
+# Write in one; the other and the shared lower layer are untouched.
+sudo touch /tmp/ovl/m1/etc/only-in-one
+ls /tmp/ovl/m1/etc/only-in-one
+ls /tmp/ovl/m2/etc/only-in-one 2>&1 | tail -1
+sudo du -sh /tmp/ovl/upper1 /tmp/ovl/upper2 "$ROOT"
+
+# --- 8. Tear down. ----------------------------------------------------
+for i in 1 2; do sudo umount /tmp/ovl/m$i || true; done
+sudo rmdir /sys/fs/cgroup/vsdemo || true
+sudo rm -rf /tmp/ovl "$ROOT"
+\end{lstlisting}
+
+\textbf{What to notice.} Step 3 is a container. There is no daemon, no image
+format and no runtime --- one command, five flags and a directory. Everything
+\chref{docker} adds is packaging and distribution on top of exactly this.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A container restarts every few hours with exit code 137. Say what that
+        code means, which limit is responsible, and why the symptom is a kill
+        rather than a slowdown.
+  \item A team wants to run a container that loads a kernel module for a custom
+        device. Explain why this cannot work as stated, and give the two
+        options available to them.
+  \item Three containers run from the same 400 MB image, and each writes 50 MB
+        of logs into its own filesystem. How much disk is used, and what single
+        change would stop the logs counting at all?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A container cuts the stack above the kernel instead of below it: one
+        kernel, many private views of it. Everything else follows from that.
+  \item Eight namespaces isolate what a process can see --- mount, UTS, IPC,
+        PID, network, user, cgroup, time. The user namespace is what makes
+        rootless containers possible.
+  \item PID 1 is special: it must reap orphans and ignores default-action
+        signals. Run an init unless you have handled both.
+  \item Control groups bound what a process tree may use. CPU limits throttle;
+        memory limits kill. The asymmetry is the same one as in \chref{cpumem}.
+  \item Overlayfs stacks read-only layers under one writable layer, with
+        copy-up on write, so many containers share one image.
+  \item Measured against virtual machines: roughly 3:1 on memory, 58:1 on disk,
+        300:1 on start-up. The last two are what changed how software is
+        deployed.
+  \item The cost is a single shared kernel and a 350-call attack surface.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The namespace that gives a container its own filesystem
+        tree is: (a)~PID; (b)~mount; (c)~UTS; (d)~user.
+  \item \textbf{(MCQ)} A container exceeding its memory limit is: (a)~throttled;
+        (b)~swapped by the host; (c)~has a process killed by the OOM killer;
+        (d)~given memory from another container.
+  \item \textbf{(Short)} Explain copy-up, and say what it implies about writing
+        large files inside a container.
+  \item \textbf{(Short)} Why can a container not run a different kernel from
+        its host, and what is actually different about a ``CentOS container''
+        on an Ubuntu host?
+  \item \textbf{(Short)} State the two behaviours that make PID 1 special, and
+        the symptom each produces when ignored.
+  \item \textbf{(Applied)} Repeat the worked example for a service needing
+        2 GB rather than 256 MB, on the same host. Give the three ratios and
+        explain why the memory ratio changed so much while the start-up ratio
+        did not.
+  \item \textbf{(Applied)} A team proposes moving forty internal services from
+        virtual machines to containers on shared hosts. Write the three
+        questions you would ask before agreeing, and say what answer to each
+        would make you recommend \chref{lightweight}'s approach instead.
+\end{reviewq}
