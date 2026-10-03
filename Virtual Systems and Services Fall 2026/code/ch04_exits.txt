@@ -1,0 +1,73 @@
+Captured output for Chapter 4, for readers whose firmware forbids nested
+virtualization. Representative of a 2-vCPU Ubuntu guest under KVM on an
+Intel host.
+
+=====================================================================
+STEP 1  --  processor features
+=====================================================================
+$ grep -o -m1 -E '\<(vmx|svm)\>' /proc/cpuinfo
+vmx
+$ grep -o -m1 -E '\<ept\>|\<npt\>' /proc/cpuinfo
+ept
+$ grep -o -m1 '\<vpid\>' /proc/cpuinfo
+vpid
+$ ls /sys/kernel/iommu_groups | wc -l
+58
+
+=====================================================================
+STEP 4  --  an IDLE guest, ten seconds
+=====================================================================
+ Performance counter stats for process id '48217':
+
+            31,804      kvm:kvm_exit
+
+      10.003117265 seconds time elapsed
+
+exits by reason:
+  18422  EXTERNAL_INTERRUPT
+   9104  MSR_WRITE
+   2811  HLT
+    977  PREEMPTION_TIMER
+    338  EPT_VIOLATION
+     98  IO_INSTRUCTION
+     54  CPUID
+
+  About 3,200 exits a second with the guest doing nothing. Almost all
+  of it is timer and interrupt work.
+
+=====================================================================
+STEP 5  --  the same guest under a flood ping
+=====================================================================
+ Performance counter stats for process id '48217':
+
+         1,284,663      kvm:kvm_exit
+
+      10.002894451 seconds time elapsed
+
+exits by reason:
+   712940  IO_INSTRUCTION
+  448127  EXTERNAL_INTERRUPT
+  104882  MSR_WRITE
+   16233  EPT_VIOLATION
+    2481  HLT
+
+  Forty times the idle rate, and the dominant reason has changed to
+  IO_INSTRUCTION -- the emulated network device of Chapter 7, one exit
+  per register access. This is the measurement behind review question 6.
+
+=====================================================================
+STEP 6  --  two thousand forks, five seconds
+=====================================================================
+ Performance counter stats for process id '48217':
+
+            17,219      kvm:kvm_exit
+
+       5.002441883 seconds time elapsed
+
+  THE POINT. Two thousand processes created, each rewriting page tables,
+  and the exit rate is BELOW the idle rate per second. Under shadow
+  paging this would have been tens of thousands of exits per second,
+  because every guest page-table write would have trapped. Extended page
+  tables let the guest edit its own tables with ordinary memory writes.
+
+  That is the worked example's claim, measured.

@@ -1,0 +1,59 @@
+Captured SEV-SNP attestation report, for readers without a confidential VM.
+Produced by: snpguest display report report.bin
+Representative of an AMD EPYC Genoa host with SEV-SNP enabled.
+
+Version:                      3
+Guest SVN:                    0
+Policy:
+  ABI Major:                  0
+  ABI Minor:                  31
+  SMT Allowed:                0          <-- SMT disabled (Chapter 19)
+  Migrate MA:                 0
+  Debug Allowed:              0          <-- debugging refused: good
+  Single Socket Required:     0
+Family ID:                    00000000000000000000000000000000
+Image ID:                     00000000000000000000000000000000
+VMPL:                         0
+Signature Algorithm:          1 (ECDSA P-384 with SHA-384)
+Current TCB:
+  Microcode:                  72
+  SNP:                        23
+  Bootloader:                 10
+Platform Info:
+  SMT Enabled:                0
+  TSME Enabled:               1
+Report Data:
+  3f9a2c81e4d7b05a6c1f8e39d2074bc5
+  8a1e6f03c97d24b5e08a3f16d9c45b72   <-- the nonce you supplied, echoed
+Measurement:
+  7e3a9f1c5b8d2046a1f7c93e5d0b84762af1398c6e20d547bb93a1f0c8e5d7265c0a94e1f83b6d27a4e0c91f5b38d6a2
+  (48 bytes; compare this with ch21_expected_measurement.txt)
+Host Data:                    00000000000000000000000000000000
+ID Key Digest:                e1c7...  (48 bytes)
+Report ID:                    b4f2...  (32 bytes)
+Chip ID:                      9d31...  (64 bytes)
+Signature:                    (96 bytes, ECDSA P-384)
+
+VERIFICATION, as step 5 of the lab performs it:
+  $ snpguest verify certs ./certs
+  The AMD ARK was self-signed!
+  The AMD ASK was signed by the AMD ARK!
+  The VCEK was signed by the AMD ASK!
+  $ snpguest verify attestation ./certs report.bin
+  Reported TCB Boot Loader from certificate matches the attestation report.
+  Reported TCB Microcode from certificate matches the attestation report.
+  Reported TCB SNP from certificate matches the attestation report.
+  VEK signed the Attestation Report!
+
+What each of the three fields proves (checkpoint question 2):
+  Measurement  -- WHAT is running. Compare with the expected file. If it
+                  differs, a different image booted: do not release the key.
+  Report Data  -- that the report is FRESH. It echoes the nonce you sent,
+                  so it cannot be a recording of an earlier genuine boot.
+  Signature    -- that the report came from GENUINE AMD hardware, chaining
+                  through the VCEK and ASK to the AMD root key.
+
+  Skip the comparison and all of this is decoration: an operator who boots
+  a modified image gets a perfectly valid, perfectly signed report with a
+  DIFFERENT measurement, and its memory is beautifully encrypted while it
+  sends your data somewhere else.

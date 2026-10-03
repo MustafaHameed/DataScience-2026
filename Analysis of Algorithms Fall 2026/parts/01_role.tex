@@ -1,0 +1,505 @@
+%=====================================================================
+\chapter{The Role of Algorithms, and What Efficient Means}\label{ch:role}
+%=====================================================================
+\locator{1}{Part I --- Analysing an Algorithm}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} what an algorithm is, and \textbf{distinguish} it from a
+        program that implements it.
+  \item \textbf{Describe} the random-access machine model this course measures
+        against, and \textbf{name} three things it deliberately ignores.
+  \item \textbf{Explain} why the interesting question about an algorithm is
+        asymptotic, and \textbf{compute} how long a given algorithm takes at a
+        given input size.
+  \item \textbf{Predict} the ratio by which a running time grows when the input
+        doubles, from the algorithm's order of growth, and \textbf{check} the
+        prediction by measurement.
+  \item \textbf{Explain} why a faster computer running a worse algorithm loses,
+        and \textbf{find} the input size at which it starts losing.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+Nothing in this book. You need to be able to read a loop and to have written
+programs that sort or search --- \emph{Data Structures} is the published
+prerequisite and this chapter assumes only its first fortnight. Appendix~A sets
+up the compiler, and you will want it from Section~1.4 onward.
+\end{prereq}
+
+\begin{keyterms}
+algorithm $\bullet$ problem $\bullet$ instance $\bullet$ correctness $\bullet$
+random-access machine $\bullet$ RAM model $\bullet$ primitive operation
+$\bullet$ running time $\bullet$ input size $\bullet$ order of growth $\bullet$
+asymptotic analysis $\bullet$ constant factor $\bullet$ space complexity
+$\bullet$ time--space trade-off
+\end{keyterms}
+
+\section{Two Programs That Agree on Every Answer}
+
+Here are two ways to decide whether a sorted array of a million names contains
+one particular name.
+
+The first walks the array from the start, comparing as it goes, and stops when
+it finds the name or runs off the end. The second looks at the middle element,
+discards the half that cannot contain the name, and repeats.
+
+Both are correct. Both return the same answer for every input. Run them on the
+same machine with the same compiler and the first takes, on a million names,
+about half a million comparisons; the second takes twenty. Not twenty thousand
+--- twenty.
+
+That gap is the subject of this course, and the first thing to notice about it
+is that it has nothing to do with programming. It is not a faster loop, a
+better compiler or a tighter data structure. It is a different \emph{idea},
+and the difference between the two ideas survives every change of language,
+machine and decade.
+
+\begin{definitionbox}[Problem, Instance, Algorithm]
+A \term{problem} is a specification: a description of the input it accepts and
+the output it must produce. ``Sorting'' is a problem --- given a sequence of
+$n$ numbers, produce a permutation of them in non-decreasing order.
+
+\smallskip
+An \term{instance} is one particular input: $\langle 31, 41, 59, 26 \rangle$.
+
+\smallskip
+An \term{algorithm} is a finite, unambiguous procedure that produces the
+correct output for \emph{every} instance. It is \term{correct} if it halts on
+every instance with the right answer --- and ``every'' is doing real work in
+that sentence, which is why \chref{invariants} exists.
+
+\smallskip
+A \emph{program} is an algorithm written in a language, for a machine. This
+book analyses algorithms and measures programs, and is careful about which it
+is doing.
+\end{definitionbox}
+
+\section{The Model: What Counts as One Step}
+
+To say an algorithm takes ``half a million comparisons'' we need to agree what
+a step is. Real machines make that awkward: an addition and a division cost
+differently, memory access costs differently depending on the cache, and the
+processor may be executing four instructions at once.
+
+So we measure against an idealisation.
+
+\begin{definitionbox}[The Random-Access Machine]
+The \term{RAM model} assumes:
+
+\begin{tight}
+  \item instructions execute one at a time, with no concurrency;
+  \item each \term{primitive operation} --- arithmetic, comparison, assignment,
+        reading or writing one memory cell, following one array index --- costs
+        one unit of time;
+  \item memory is unlimited and every cell costs the same to reach.
+\end{tight}
+
+\smallskip
+The \term{running time} $T(n)$ of an algorithm is then the number of primitive
+operations it performs on an input of size $n$.
+\end{definitionbox}
+
+\begin{conceptbox}[Three Lies in That Model, and Why They Are Worth Telling]
+Every clause of the definition is false of a real machine, deliberately.
+
+\smallskip
+\textbf{Not all operations cost the same.} On a current processor an integer
+addition takes about one cycle and an integer division about twenty. The model
+prices them equally.
+
+\smallskip
+\textbf{Not all memory costs the same.} A read served by the level-1 cache
+takes about four cycles; one that goes to main memory takes a few hundred ---
+a factor of fifty, which the model ignores entirely. \chref{graphs} is where
+this starts to be visible in the measurements.
+
+\smallskip
+\textbf{Instructions do not execute one at a time.} Processors reorder,
+pipeline and predict branches.
+
+\smallskip
+The model is nevertheless the right one, for the reason the next section gives:
+every one of those lies is a \emph{constant factor}, and the differences this
+course is about are not. A fifty-fold cache penalty is swamped by the
+difference between $n$ and $n^2$ before $n$ reaches a thousand. Where the
+constant factors do matter --- and they sometimes do --- this book measures
+rather than models, which is what the \emph{Try it yourself} boxes are for.
+\end{conceptbox}
+
+\section{Why the Question Is Asymptotic}
+
+We do not ask how long an algorithm takes. We ask how the time \emph{grows}
+with the input, and we answer with the dominant term, discarding constants.
+That sounds like giving up information. It is the opposite: it is the only way
+to say something that stays true.
+
+\dsfig{%
+\begin{tikzpicture}
+\begin{semilogyaxis}[
+  width=11.4cm, height=6.4cm,
+  xlabel={input size $n$}, ylabel={operations},
+  xmin=1, xmax=100, ymin=1, ymax=1e12,
+  grid=major, grid style={neutral!20},
+  legend pos=outer north east, legend cell align=left,
+  legend style={font=\scriptsize, draw=neutral!40},
+  tick label style={font=\scriptsize},
+  label style={font=\scriptsize},
+  every axis plot/.append style={line width=1pt, samples=120}
+]
+\addplot[greenhl, domain=1:100] {ln(x)/ln(2)};        \addlegendentry{$\lg n$}
+\addplot[secondary, domain=1:100] {x};                \addlegendentry{$n$}
+\addplot[primary, domain=1:100] {x*ln(x)/ln(2)};      \addlegendentry{$n \lg n$}
+\addplot[purplehl, domain=1:100] {x^2};               \addlegendentry{$n^2$}
+\addplot[goldhl, domain=1:100] {x^3};                 \addlegendentry{$n^3$}
+\addplot[accent, domain=1:40] {2^x};                  \addlegendentry{$2^n$}
+\end{semilogyaxis}
+\end{tikzpicture}}%
+{The six orders of growth this book is mostly about, on a logarithmic vertical
+axis --- note that each gridline is a factor of a hundred. At $n = 100$ the
+gap between $n\lg n$ and $n^2$ is already a factor of fifteen, and the gap
+between $n^2$ and $2^n$ does not fit on the page.}{growth}
+
+\begin{alertbox}[What an exponential actually means]
+$2^n$ is not ``slow''. It is a wall.
+
+\smallskip
+At $n = 50$, an algorithm doing $2^n$ operations on a machine executing
+$10^{10}$ of them a second takes
+\[ \frac{2^{50}}{10^{10}} = \frac{1.13 \times 10^{15}}{10^{10}}
+   \approx 1.1 \times 10^{5}\ \text{s} \approx 31\ \text{hours}. \]
+At $n = 60$ it takes about \textbf{36 days}; at $n = 80$, about a hundred
+thousand years. Buying a computer a thousand times faster moves $n = 50$ to
+$n \approx 60$ and no further.
+
+\smallskip
+That is why \chref{complexity} matters, and why ``we will just use a faster
+machine'' is not an answer to it.
+\end{alertbox}
+
+\begin{worked}[The Faster Computer Loses]
+Computer A executes $10^{10}$ primitive operations a second and runs insertion
+sort, which takes about $2n^2$ operations. Computer B executes $10^{7}$ a
+second --- a thousand times slower --- and runs merge sort, which takes about
+$50 n \lg n$. Sort ten million numbers on each.
+
+\smallskip
+\textbf{Step 1 --- Computer A.}
+\[ \frac{2 \times (10^{7})^{2}}{10^{10}}
+   = \frac{2 \times 10^{14}}{10^{10}}
+   = 2 \times 10^{4}\ \text{s} = \mathbf{5\ \text{hours}\ 33\ \text{minutes}} \]
+
+\smallskip
+\textbf{Step 2 --- Computer B.} First $\lg(10^{7}) = 7 \lg 10 = 7 \times 3.322
+= 23.25$.
+\[ \frac{50 \times 10^{7} \times 23.25}{10^{7}}
+   = 50 \times 23.25 = 1{,}163\ \text{s}
+   = \mathbf{19\ \text{minutes}\ 23\ \text{seconds}} \]
+
+\smallskip
+\textbf{Step 3 --- the comparison.} The machine that is \emph{a thousand times
+slower} finishes \textbf{17 times sooner}, because its algorithm is better.
+The hardware advantage is not small and it is not enough.
+
+\smallskip
+\textbf{Step 4 --- where does B overtake A?} Set the two times equal:
+\[ \frac{2n^{2}}{10^{10}} = \frac{50 n \lg n}{10^{7}}
+   \quad\Longrightarrow\quad 2n = 5 \times 10^{4} \lg n
+   \quad\Longrightarrow\quad n = 2.5 \times 10^{4} \lg n. \]
+There is no closed form, so iterate from $n = 10^{5}$:
+\[ 2.5\!\times\!10^{4}\!\times\!16.6 = 4.15\!\times\!10^{5}
+   \;\to\; 4.66\!\times\!10^{5} \;\to\; 4.71\!\times\!10^{5}
+   \;\to\; 4.71\!\times\!10^{5}. \]
+So A wins below about $n = \mathbf{471{,}000}$ and loses above it --- and loses
+by more, the larger the input gets.
+
+\smallskip
+\textbf{Step 5 --- what the arithmetic is really saying.} Not that constant
+factors are unimportant. A constant of 25 between the two algorithms bought A
+nearly half a million elements' worth of advantage, which for many real
+problems is the whole range of interest. It is saying that constants buy a
+\emph{bounded} advantage and a better order of growth buys an unbounded one,
+and that you should know which regime you are in.
+\end{worked}
+
+\section{The Claim, Measured}
+
+The worked example is arithmetic about a hypothetical machine. The claim it
+rests on --- that a quadratic algorithm's time quadruples when the input
+doubles, and an $n\lg n$ one's roughly doubles --- is testable on the machine in
+front of you, and ought to be tested.
+
+\begin{conceptbox}[What the ratios should be]
+For $T(n) = cn^{2}$,
+\[ \frac{T(2n)}{T(n)} = \frac{c(2n)^{2}}{cn^{2}} = 4, \]
+independent of $c$ and of $n$. The constant cancels, which is exactly why the
+ratio is worth measuring: it tests the \emph{order of growth} without needing
+to know anything about the machine.
+
+\smallskip
+For $T(n) = cn\lg n$,
+\[ \frac{T(2n)}{T(n)} = \frac{2n(\lg n + 1)}{n \lg n} = 2 + \frac{2}{\lg n}, \]
+which is a little above 2 and drifts \emph{down} towards 2 as $n$ grows. At
+$n = 1000$ it predicts $2 + 2/9.97 = 2.20$.
+\end{conceptbox}
+
+\begin{worked}[The Prediction Against the Measurement]
+Running \texttt{code/ch01\_growth.cpp} on the machine described in Appendix~A
+(MSVC 19.44, \texttt{/O2}), median of five runs, random permutations:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & insertion (ms) & ratio & merge (ms) & ratio \\
+\midrule
+1{,}000  &   0.15 & ---  & 0.06 & ---  \\
+2{,}000  &   0.58 & 3.87 & 0.14 & 2.22 \\
+4{,}000  &   2.41 & 4.13 & 0.30 & 2.20 \\
+8{,}000  &   9.35 & 3.88 & 0.65 & 2.14 \\
+16{,}000 &  37.08 & 3.97 & 1.51 & 2.32 \\
+32{,}000 & 145.86 & 3.93 & 2.94 & 1.96 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Insertion sort.} Predicted 4; measured 3.87, 4.13, 3.88, 3.97, 3.93.
+Mean 3.96.
+
+\smallskip
+\textbf{Merge sort.} Predicted $2 + 2/\lg n$ --- 2.20 at $n = 1000$, falling to
+2.14 by $n = 8000$. Measured 2.22, 2.20, 2.14, 2.32, 1.96. The first three
+agree to within a per cent; the last two straddle the prediction.
+
+\smallskip
+\textbf{Read the last column honestly.} The 2.32 and the 1.96 are not the
+theory failing. They are two measurements of a quantity near 2.15 with a few
+per cent of noise, and a ratio magnifies noise in both terms. The way to tell
+noise from a real effect is to look at the \emph{pattern}: insertion's five
+ratios scatter about 4 and merge's about 2.2, and neither drifts.
+
+\smallskip
+\textbf{And notice what the measurement cost.} At $n = 32{,}000$ insertion
+sort took 146 ms and merge sort 2.9 ms --- a factor of 50. At $n = 1{,}000$ the
+factor was 2.5. The gap is not fixed; it widens with every doubling, and that
+is the whole content of ``asymptotically faster''.
+\end{worked}
+
+\begin{alertbox}[The asymptotics are not the whole story, and this book says so twice]
+The same program, run on small inputs, gives this:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrl@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & insertion ($\mu$s) & merge ($\mu$s) & \\
+\midrule
+ 20 & 0.20 & 0.30 & insertion wins \\
+ 40 & 0.50 & 0.60 & insertion wins \\
+ 60 & 0.70 & 1.00 & insertion wins \\
+ 70 & 1.20 & 1.10 & merge wins \\
+100 & 2.20 & 1.60 & merge wins \\
+200 & 7.40 & 4.60 & merge wins \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+The crossover is at about $n = 65$ on this machine. Below it the
+``worse'' algorithm is faster, every time, because merge sort's recursion and
+its auxiliary array cost more than insertion sort's whole quadratic loop on
+sixty elements.
+
+\smallskip
+This is not a curiosity. It is why every production sort in the world --- the
+C++ standard library's included --- switches to insertion sort below a
+threshold of roughly this size. \chref{quicksort} returns to it.
+\end{alertbox}
+
+\section{Space, and the Trade Against Time}
+
+Time is not the only resource. \term{Space complexity} counts the memory an
+algorithm needs beyond its input, and the two are often tradeable: a lookup
+table turns a computation into a memory access, and \chref{dpone}'s whole
+technique is spending memory to avoid recomputation.
+
+\begin{conceptbox}[Which Resource Binds?]
+For most of the twentieth century, memory was the scarce one. It is now
+usually not: a machine with 32 GB can hold an array of four billion integers,
+and most problems that fit in a lecture do not come close.
+
+\smallskip
+What has replaced it is \emph{memory locality}. An algorithm using twice the
+memory but touching it in order can comfortably beat one using half as much in
+a scattered pattern, because of the cache the RAM model promised to ignore.
+\chref{graphs} measures exactly this.
+
+\smallskip
+So: analyse space because the exam asks and because occasionally it binds; but
+when two algorithms have the same order of growth and different speeds, look at
+the access pattern before the byte count.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Confusing the algorithm with the program.} ``My sort is slow''
+        is usually a statement about an implementation; ``insertion sort is
+        quadratic'' is a statement about an idea. Fixing the first will not
+        change the second.
+  \item \textbf{Timing an unoptimised build.} A debug build can be five to ten
+        times slower and --- worse --- slower by \emph{different} factors for
+        different code, so the comparison is meaningless. Appendix~A insists
+        on \texttt{/O2}.
+  \item \textbf{Timing once.} A single run contains whatever else the machine
+        was doing. Every measurement in this book is the median of several.
+  \item \textbf{Believing the asymptotics at small $n$.} The crossover above is
+        at $n = 65$. If your inputs are always smaller than that, the better
+        order of growth is buying you nothing.
+  \item \textbf{Believing the constants matter at large $n$.} The symmetric
+        error. At $n = 32{,}000$ the ``unimportant'' factor of 50 was entirely
+        due to the order of growth.
+  \item \textbf{Reporting a mean of timings.} One scheduler interruption drags
+        a mean a long way. Use the median, and say how many runs.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Growth, Measured]
+Reproduces both tables above on your own machine. Appendix~A sets up the
+compiler. Expect twenty minutes, most of it reading the output.
+
+\begin{lstlisting}[language=C++]
+// ch01_growth.cpp -- what "the question is asymptotic" looks like.
+// Build: cl /O2 /EHsc /std:c++17 ch01_growth.cpp      (see Appendix A)
+
+// --- 1. The two algorithms, written plainly -------------------------
+static void insertion_sort(std::vector<int>& a) {
+    for (size_t j = 1; j < a.size(); ++j) {
+        int key = a[j];
+        size_t i = j;
+        while (i > 0 && a[i - 1] > key) { a[i] = a[i - 1]; --i; }
+        a[i] = key;
+    }
+}
+
+static void merge_sort(std::vector<int>& a, std::vector<int>& buf,
+                       size_t lo, size_t hi) {
+    if (hi - lo < 2) return;
+    size_t mid = lo + (hi - lo) / 2;
+    merge_sort(a, buf, lo, mid);
+    merge_sort(a, buf, mid, hi);
+    size_t i = lo, j = mid, k = lo;
+    while (i < mid && j < hi) buf[k++] = (a[i] <= a[j]) ? a[i++] : a[j++];
+    while (i < mid) buf[k++] = a[i++];
+    while (j < hi)  buf[k++] = a[j++];
+    std::copy(buf.begin() + lo, buf.begin() + hi, a.begin() + lo);
+}
+
+// --- 2. Timing that is honest ---------------------------------------
+// The MEDIAN of several runs: a mean is dragged by one scheduler
+// hiccup, and the minimum flatters the cache.
+template <class F>
+static double time_ms(F&& f, int reps) {
+    std::vector<double> t;
+    for (int r = 0; r < reps; ++r) {
+        auto t0 = std::chrono::steady_clock::now();
+        f();
+        auto t1 = std::chrono::steady_clock::now();
+        t.push_back(
+            std::chrono::duration<double, std::milli>(t1 - t0).count());
+    }
+    std::sort(t.begin(), t.end());
+    return t[t.size() / 2];
+}
+
+// --- 3. Double n each time, and watch the ratios --------------------
+// Predicted: 4 for insertion sort, 2 + 2/lg(n) for merge sort.
+for (size_t n = 1000; n <= 32000; n *= 2) {
+    auto base = random_input(n, 12345);
+    std::vector<int> buf(n);
+    double ti = time_ms([&]{ auto a = base; insertion_sort(a); }, 5);
+    double tm = time_ms([&]{ auto a = base;
+                             merge_sort(a, buf, 0, n); }, 5);
+    printf("%8zu %12.2f %7.2f %12.2f %7.2f\n",
+           n, ti, ti / prev_i, tm, tm / prev_m);
+    prev_i = ti; prev_m = tm;
+}
+
+// --- 4. Now find where they cross -----------------------------------
+// The other half of the point: below the crossover the "worse"
+// algorithm is faster, and every production sort knows it.
+for (size_t n = 10; n <= 200; n += 10) {
+    /* same two timings, many more repetitions because the times
+       are microseconds; print both and mark which one won */
+}
+\end{lstlisting}
+
+\textbf{What to notice.} Your absolute times will differ from the book's --- a
+different processor, a different compiler, a different afternoon. The
+\emph{ratios} should not. If your insertion-sort column is not near 4, something
+is wrong with the measurement, not with the theory: check that you built with
+optimisation on, and that nothing else was running.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item An algorithm takes 3 seconds on an input of size 1{,}000 and 48 seconds
+        on an input of size 4{,}000. What is its order of growth, and how did
+        you decide?
+  \item Computer A runs $n^{3}$ operations at $10^{9}$ per second; computer B
+        runs $100 n^{2}$ at $10^{7}$ per second. At $n = 10^{4}$, which
+        finishes first, and by what factor?
+  \item The RAM model prices a cache hit and a main-memory access the same,
+        although they differ by a factor of about fifty. Give one situation in
+        which that lie is harmless and one in which it is not.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A problem is a specification, an instance is one input, an algorithm is
+        a procedure correct on \emph{every} instance. A program implements an
+        algorithm; this book analyses the second and measures the first.
+  \item The RAM model costs every primitive operation at one unit. All three of
+        its assumptions are false of real hardware, and all three are constant
+        factors --- which is why the model is still the right one.
+  \item We ask how running time \emph{grows}, not what it is, because the
+        growth is the part that survives a change of machine.
+  \item Constants buy a bounded advantage; a better order of growth buys an
+        unbounded one. A computer 1{,}000 times faster still lost by a factor
+        of 17, and the crossover was at $n \approx 471{,}000$.
+  \item Doubling the input multiplies a quadratic time by 4 and an $n \lg n$
+        time by $2 + 2/\lg n$. Measured on this machine: 3.96 and 2.17.
+  \item Below $n \approx 65$ insertion sort beat merge sort on the same
+        machine. Asymptotics describe the limit, and the limit is not
+        everywhere.
+  \item Measure with optimisation on, several times, and report the median.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The RAM model assumes: (a)~memory access is free;
+        (b)~every primitive operation costs one unit of time; (c)~instructions
+        execute in parallel; (d)~arithmetic is exact to arbitrary precision.
+  \item \textbf{(MCQ)} If $T(n) = cn^{2}$, then $T(2n)/T(n)$ equals:
+        (a)~2; (b)~$2 + 2/\lg n$; (c)~4; (d)~it depends on $c$.
+  \item \textbf{(Short)} Explain why discarding constant factors makes an
+        analysis \emph{more} useful rather than less.
+  \item \textbf{(Short)} Give the three assumptions of the RAM model and, for
+        each, one way real hardware violates it.
+  \item \textbf{(Short)} A colleague says ``we do not need a better algorithm,
+        we will buy a faster server''. Give the shortest argument that settles
+        the question, and say what information you would need first.
+  \item \textbf{(Applied)} Algorithm P takes $0.5 n^{2}$ operations and
+        algorithm Q takes $200 n \lg n$. Find the input size at which Q
+        overtakes P, showing the iteration. Then say what you would recommend
+        to a team whose inputs never exceed 2{,}000.
+  \item \textbf{(Applied)} Design a measurement that would distinguish an
+        $\bigO{n\lg n}$ algorithm from an $\bigO{n}$ one, given only a compiled
+        binary you can time. State the sizes you would use, how many
+        repetitions, what you would compute, and what result would make you
+        say the evidence is inconclusive.
+\end{reviewq}

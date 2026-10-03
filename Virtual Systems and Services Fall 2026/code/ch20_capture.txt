@@ -1,0 +1,106 @@
+Captured output for Chapter 20, for readers without an NVIDIA GPU.
+Representative of an 80 GB A100 under MIG. Use these figures for the lab's
+analysis steps; the exercise is the comparison, not the capture.
+
+=====================================================================
+STEP 1  --  the card, before partitioning
+=====================================================================
+$ nvidia-smi --query-gpu=name,memory.total,mig.mode.current --format=csv
+name, memory.total [MiB], mig.mode.current
+NVIDIA A100-SXM4-80GB, 81920 MiB, Disabled
+
+=====================================================================
+STEP 2  --  IOMMU groups: what passthrough would have to take
+=====================================================================
+device 0000:07:00.0 is in IOMMU group 41
+0000:07:00.0
+device 0000:07:00.1 is in IOMMU group 41
+0000:07:00.0  0000:07:00.1
+
+  Note: the card and its audio function share group 41. Passthrough moves
+  the whole group or nothing, which is Chapter 4's point.
+
+=====================================================================
+STEP 3  --  the fixed profiles available
+=====================================================================
+$ sudo nvidia-smi mig -i 0 -lgip
++-----------------------------------------------------------------------+
+| GPU instance profiles:                                                |
+| GPU   Name             ID    Instances   Memory     P2P    SM    DEC   |
+|                              Free/Total   GiB              CE    JPEG  |
+|=======================================================================|
+|   0  MIG 1g.10gb       19     7/7        9.75       No     14     0    |
+|   0  MIG 1g.10gb+me    20     1/1        9.75       No     14     1    |
+|   0  MIG 1g.20gb       15     4/4       19.62       No     14     1    |
+|   0  MIG 2g.20gb       14     3/3       19.62       No     28     1    |
+|   0  MIG 3g.40gb        9     2/2       39.50       No     42     2    |
+|   0  MIG 4g.40gb        5     1/1       39.50       No     56     2    |
+|   0  MIG 7g.80gb        0     1/1       79.25       No     98     5    |
++-----------------------------------------------------------------------+
+
+  Note for checkpoint question 2: there is no six-way profile, and no
+  12 GB profile. The choices are 7 x 10 GB, 4 x 20 GB, 3 x 20 GB,
+  2 x 40 GB or 1 x 80 GB. This is the alertbox's "profiles are fixed".
+
+=====================================================================
+STEP 4  --  four instances created
+=====================================================================
+$ sudo nvidia-smi mig -i 0 -cgi 2g.20gb,2g.20gb,2g.20gb -C
+Successfully created GPU instance ID  3 on GPU  0 using profile MIG 2g.20gb
+Successfully created GPU instance ID  4 on GPU  0 using profile MIG 2g.20gb
+Successfully created GPU instance ID  5 on GPU  0 using profile MIG 2g.20gb
+
+  Only THREE were created: 2g.20gb has 3 instances total, not 4. The
+  lab's request for four is deliberately slightly wrong, so that you
+  read the profile table rather than trusting the command.
+
+$ nvidia-smi -L
+GPU 0: NVIDIA A100-SXM4-80GB (UUID: GPU-6f2c1a8e-...)
+  MIG 2g.20gb  Device  0: (UUID: MIG-9a3b7c21-...)
+  MIG 2g.20gb  Device  1: (UUID: MIG-4e8d5f03-...)
+  MIG 2g.20gb  Device  2: (UUID: MIG-b17a29ce-...)
+
+=====================================================================
+STEP 5  --  the measurement that matters
+=====================================================================
+alone on one instance:
+  41.8 s
+
+all three instances busy together:
+  42.1 s
+  41.9 s
+  42.3 s
+
+  THE POINT. The single-instance time and the all-busy times agree to
+  within 1%. The partitions are enforced in hardware, so a neighbour
+  cannot take your streaming multiprocessors.
+
+For comparison, the same test under time-sliced vGPU (4 users):
+alone:                    41.6 s
+all four busy together:  166.4 s   159.8 s   171.2 s   163.5 s
+
+  Four times slower, and varying by 7% between users. Same throughput
+  overall; no guarantee to any individual. That difference is what
+  Chapter 20's worked example is choosing between.
+
+=====================================================================
+STEP 6  --  what "utilisation" actually reports
+=====================================================================
+$ nvidia-smi --query-gpu=utilization.gpu,utilization.memory,\
+memory.used,memory.total --format=csv -l 1 -c 5
+utilization.gpu [%], utilization.memory [%], memory.used [MiB], memory.total [MiB]
+100 %, 12 %, 18244 MiB, 81920 MiB
+100 %, 11 %, 18244 MiB, 81920 MiB
+100 %, 13 %, 18244 MiB, 81920 MiB
+100 %, 12 %, 18244 MiB, 81920 MiB
+100 %,  9 %, 18244 MiB, 81920 MiB
+
+  Read these two columns together. utilization.gpu is 100% -- a kernel
+  was resident in every sample. utilization.memory is 12% -- the memory
+  interface is almost idle. The job is occupying the card without using
+  much of it, which is exactly the case in checkpoint question 3.
+
+  Nsight Compute on the same kernel reported:
+    achieved occupancy        23.4 %
+    memory throughput        198 GB/s  (of 2039 GB/s peak)
+    SM busy                   31.7 %

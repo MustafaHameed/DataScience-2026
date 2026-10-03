@@ -1,0 +1,697 @@
+%=====================================================================
+\chapter{Asymptotic Notation}\label{ch:asymptotics}
+%=====================================================================
+\locator{1}{Part I --- Analysing an Algorithm}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} the formal definitions of $O$, $\Omega$, $\Theta$, $o$
+        and $\omega$, and \textbf{explain} what each one quantifies over
+        \emph{(CLO-5)}.
+  \item \textbf{Prove} that a given function belongs to a given asymptotic
+        class by exhibiting the witnesses $c$ and $n_{0}$, and
+        \textbf{disprove} membership by contradiction.
+  \item \textbf{Use} the limit test, and \textbf{recognise} the case in which it
+        does not apply.
+  \item \textbf{Order} the standard functions by growth, and \textbf{apply}
+        transitivity and the sum rule to simplify a bound.
+  \item \textbf{Identify} the four common abuses of the notation, and
+        \textbf{state} what each one conceals.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{role} and \chref{cases}. From Appendix~B you need the logarithm
+identities and, for Section~3.5 only, L'H\^opital's rule.
+\end{prereq}
+
+\begin{keyterms}
+asymptotic upper bound $\bullet$ asymptotic lower bound $\bullet$ tight bound
+$\bullet$ witness $\bullet$ $O$ $\bullet$ $\Omega$ $\bullet$ $\Theta$ $\bullet$
+$o$ $\bullet$ $\omega$ $\bullet$ transitivity $\bullet$ transpose symmetry
+$\bullet$ sum rule $\bullet$ limit test $\bullet$ trichotomy
+\end{keyterms}
+
+\section{Three Bounds, Defined}
+
+\chref{role} said we discard constants and keep the dominant term. That is a
+practice, not a definition, and the practice can be abused. This chapter gives
+it a definition precise enough to prove things with.
+
+Throughout, $f$ and $g$ map the positive integers to the non-negative reals ---
+running times, so never negative.
+
+\begin{definitionbox}[$O$, $\Omega$ and $\Theta$]
+\textbf{Upper bound.} $O(g(n))$ is the \emph{set} of functions
+\[ O(g(n)) = \bigl\{\, f(n) \;:\;
+   \exists\, c > 0,\ \exists\, n_{0} > 0,\
+   \forall\, n \ge n_{0},\ 0 \le f(n) \le c\,g(n) \,\bigr\}. \]
+
+\smallskip
+\textbf{Lower bound.}
+\[ \Omega(g(n)) = \bigl\{\, f(n) \;:\;
+   \exists\, c > 0,\ \exists\, n_{0} > 0,\
+   \forall\, n \ge n_{0},\ 0 \le c\,g(n) \le f(n) \,\bigr\}. \]
+
+\smallskip
+\textbf{Tight bound.}
+\[ \Theta(g(n)) = \bigl\{\, f(n) \;:\;
+   \exists\, c_{1}, c_{2} > 0,\ \exists\, n_{0} > 0,\
+   \forall\, n \ge n_{0},\
+   0 \le c_{1} g(n) \le f(n) \le c_{2} g(n) \,\bigr\}. \]
+
+\smallskip
+The constants $c$ (or $c_{1}, c_{2}$) and $n_{0}$ are the \term{witnesses}. To
+prove a bound you produce them; to disprove one you show none can exist.
+\end{definitionbox}
+
+\begin{alertbox}[``$f(n) = O(g(n))$'' is an abuse of the equals sign, and you should know it]
+$O(g)$ is a set, so the honest statement is $f \in O(g)$. Everyone writes
+$f(n) = O(g(n))$ anyway, including this book, and the convention is harmless as
+long as you remember that it is \textbf{one-directional}:
+
+\begin{tight}
+  \item $n = O(n^{2})$ is true.
+  \item $O(n^{2}) = n$ is meaningless.
+  \item From $f = O(n^{2})$ and $h = O(n^{2})$ you \emph{cannot} conclude
+        $f = h$.
+\end{tight}
+
+\smallskip
+Read the ``$=$'' as ``is'' --- as in ``Rawalpindi is a city'', which does not
+make every city Rawalpindi.
+\end{alertbox}
+
+\section{Proving a Bound From the Definition}
+
+The definitions are existential, so a proof is a construction: name $c$, name
+$n_{0}$, verify the inequality.
+
+\begin{theorem}[A quadratic is $O(n^{2})$]
+$3n^{2} + 10n + 7 = O(n^{2})$.
+\end{theorem}
+
+\begin{proof}
+We must produce $c$ and $n_{0}$ with $3n^{2} + 10n + 7 \le cn^{2}$ for all
+$n \ge n_{0}$. For $n \ge 1$ we have $n \le n^{2}$ and $1 \le n^{2}$, so
+\[ 3n^{2} + 10n + 7 \;\le\; 3n^{2} + 10n^{2} + 7n^{2} \;=\; 20n^{2}. \]
+Taking $c = 20$ and $n_{0} = 1$ satisfies the definition.
+\end{proof}
+
+\begin{conceptbox}[The witnesses are not unique, and need not be tight]
+That proof produced $c = 20$. A sharper argument gives a smaller one: for
+$n \ge 10$, $10n + 7 \le n^{2}$, so $c = 4$ and $n_{0} = 10$ also work.
+
+\smallskip
+\textbf{Both proofs are equally valid}, because the definition asks only that
+\emph{some} pair exist. Students waste effort hunting for the smallest $c$; the
+definition does not reward it. Pick the crudest bound that closes the
+inequality --- here, replacing every term by the largest one.
+\end{conceptbox}
+
+\begin{lemma}[Polynomials]\label{lem:poly}
+Let $p(n) = \sum_{i=0}^{d} a_{i} n^{i}$ with $a_{d} > 0$. Then
+$p(n) = \bigTh{n^{d}}$.
+\end{lemma}
+
+\begin{proof}
+\textbf{Upper bound.} Let $A = \sum_{i=0}^{d} |a_{i}|$. For $n \ge 1$ every
+$n^{i} \le n^{d}$, so $p(n) \le A n^{d}$, giving $c_{2} = A$.
+
+\smallskip
+\textbf{Lower bound.} Write $p(n) = a_{d}n^{d} + r(n)$ where
+$r(n) = \sum_{i<d} a_{i}n^{i}$. By the same argument $|r(n)| \le B n^{d-1}$
+with $B = \sum_{i<d}|a_{i}|$. Hence
+\[ p(n) \;\ge\; a_{d}n^{d} - Bn^{d-1}
+   \;=\; n^{d}\Bigl(a_{d} - \frac{B}{n}\Bigr)
+   \;\ge\; \frac{a_{d}}{2}\,n^{d}
+   \quad\text{whenever } n \ge \frac{2B}{a_{d}}. \]
+So $c_{1} = a_{d}/2$ and $n_{0} = \max\{1,\, 2B/a_{d}\}$ complete the pair of
+bounds, and $p(n) = \bigTh{n^{d}}$ by definition.
+\end{proof}
+
+\begin{corollary}[Only the degree survives]
+The degree of a polynomial running time is the only thing about it that
+survives asymptotic analysis. $0.001n^{3}$ grows faster than $1000n^{2}$.
+\end{corollary}
+
+Disproof is the other direction, and it is a proof by contradiction.
+
+\begin{theorem}[A quadratic is not linear]\label{thm:notlin}
+$n^{2} \ne O(n)$.
+\end{theorem}
+
+\begin{proof}
+Suppose it were. Then there exist $c > 0$ and $n_{0} > 0$ such that
+$n^{2} \le cn$ for all $n \ge n_{0}$. Since $n > 0$ we may divide by $n$:
+\[ n \le c \qquad \text{for all } n \ge n_{0}. \]
+But $c$ is a fixed constant, so taking $n = \max\{n_{0},\, \lceil c \rceil +
+1\}$ gives $n \ge n_{0}$ and $n > c$ simultaneously --- contradicting the line
+above. No such $c$ exists.
+\end{proof}
+
+\begin{theorem}[$\Theta$ is exactly $O$ and $\Omega$ together]\label{thm:thetaboth}
+$f(n) = \bigTh{g(n)}$ if and only if $f(n) = \bigO{g(n)}$ and
+$f(n) = \bigOm{g(n)}$.
+\end{theorem}
+
+\begin{proof}
+($\Rightarrow$) Suppose $f = \bigTh{g}$ with witnesses $c_{1}, c_{2}, n_{0}$.
+Then $f(n) \le c_{2}g(n)$ for $n \ge n_{0}$, which is the definition of
+$O$ with $c = c_{2}$; and $c_{1}g(n) \le f(n)$ for $n \ge n_{0}$, which is the
+definition of $\Omega$ with $c = c_{1}$.
+
+\smallskip
+($\Leftarrow$) Suppose $f = \bigO{g}$ with witnesses $c_{u}, n_{u}$ and
+$f = \bigOm{g}$ with witnesses $c_{\ell}, n_{\ell}$. Put $n_{0} =
+\max\{n_{u}, n_{\ell}\}$. For every $n \ge n_{0}$ both inequalities hold at
+once, so
+\[ c_{\ell}\,g(n) \;\le\; f(n) \;\le\; c_{u}\,g(n), \]
+which is the definition of $\Theta$ with $c_{1} = c_{\ell}$ and
+$c_{2} = c_{u}$.
+\end{proof}
+
+\begin{conceptbox}[Why that theorem earns its place]
+It is the most-used result in the subject and it is two lines long, so it is
+tempting to skip. Do not: it is what licenses the standard division of labour
+in every later analysis.
+
+\smallskip
+To establish a $\Theta$ bound you prove an upper bound and a lower bound
+\emph{separately}, by completely different arguments. \chref{lowerbound} proves
+$\Omega(n\lg n)$ for comparison sorting by a decision-tree argument that has
+nothing in common with \chref{mergesort}'s $\bigO{n \lg n}$ recurrence --- and
+Theorem~\ref{thm:thetaboth} is the reason the two halves combine into
+$\bigTh{n\lg n}$.
+\end{conceptbox}
+
+\section{The Strict Bounds: \texorpdfstring{$o$ and $\omega$}{o and omega}}
+
+$O$ allows $f$ and $g$ to grow at the same rate. The strict forms forbid it,
+and the change in the definition is the position of one quantifier.
+
+\begin{definitionbox}[$o$ and $\omega$]
+\[ o(g(n)) = \bigl\{\, f(n) :
+   \forall\, c > 0,\ \exists\, n_{0} > 0,\
+   \forall\, n \ge n_{0},\ 0 \le f(n) < c\,g(n) \,\bigr\} \]
+\[ \omega(g(n)) = \bigl\{\, f(n) :
+   \forall\, c > 0,\ \exists\, n_{0} > 0,\
+   \forall\, n \ge n_{0},\ 0 \le c\,g(n) < f(n) \,\bigr\} \]
+
+\smallskip
+\textbf{The whole difference is $\exists c$ against $\forall c$.} For $O$ it is
+enough that \emph{one} constant works. For $o$, \emph{every} constant must
+work, however small --- so $f$ must become negligible relative to $g$, not
+merely bounded by it.
+\end{definitionbox}
+
+\begin{worked}[Testing the Quantifier]
+\textbf{Is $2n^{2} = o(n^{2})$?} Take $c = 1$. We would need $2n^{2} < n^{2}$
+for all large $n$, i.e. $2 < 1$. So \textbf{no} --- and the reasoning shows why:
+$o$ requires the ratio to vanish, and $2n^{2}/n^{2} = 2$ for every $n$.
+
+\smallskip
+\textbf{Is $2n = o(n^{2})$?} Given any $c > 0$, we need $2n < cn^{2}$, i.e.
+$n > 2/c$. So $n_{0} = \lceil 2/c \rceil + 1$ works. Since we produced an
+$n_{0}$ \emph{for every} $c$, \textbf{yes}.
+
+\smallskip
+\textbf{The pattern.} $f = o(g)$ exactly when $f = \bigO{g}$ but
+$f \ne \bigTh{g}$ --- the bound holds and is \emph{not} tight.
+\end{worked}
+
+\section{Properties, and the Analogy With Inequality}
+
+\begin{theorem}[Transitivity]\label{thm:trans}
+If $f(n) = \bigO{g(n)}$ and $g(n) = \bigO{h(n)}$, then
+$f(n) = \bigO{h(n)}$.
+\end{theorem}
+
+\begin{proof}
+Take witnesses $c_{1}, n_{1}$ for the first and $c_{2}, n_{2}$ for the second,
+and let $n_{0} = \max\{n_{1}, n_{2}\}$. For $n \ge n_{0}$,
+\[ f(n) \;\le\; c_{1}\,g(n) \;\le\; c_{1}\bigl(c_{2}\,h(n)\bigr)
+   \;=\; (c_{1}c_{2})\,h(n), \]
+where the second inequality may be multiplied by $c_{1} > 0$ without reversing.
+So $c = c_{1}c_{2}$ and $n_{0}$ are witnesses for $f = \bigO{h}$. The same
+argument, with the inequalities reversed, gives transitivity for $\Omega$, and
+Theorem~\ref{thm:thetaboth} then gives it for $\Theta$.
+\end{proof}
+
+\begin{lemma}[Sum rule]\label{lem:sum}
+If $f_{1} = \bigO{g_{1}}$ and $f_{2} = \bigO{g_{2}}$, then
+$f_{1} + f_{2} = \bigO{\max\{g_{1}, g_{2}\}}$.
+\end{lemma}
+
+\begin{proof}
+With witnesses $c_{1}, n_{1}$ and $c_{2}, n_{2}$, put $n_{0} = \max\{n_{1},
+n_{2}\}$ and $M(n) = \max\{g_{1}(n), g_{2}(n)\}$. For $n \ge n_{0}$,
+\[ f_{1}(n) + f_{2}(n) \le c_{1}g_{1}(n) + c_{2}g_{2}(n)
+   \le c_{1}M(n) + c_{2}M(n) = (c_{1}+c_{2})M(n). \qedhere \]
+\end{proof}
+
+Lemma~\ref{lem:sum} is why ``keep the dominant term'' is legitimate: a program
+that does an $\bigO{n^{2}}$ pass and then an $\bigO{n}$ pass is $\bigO{n^{2}}$,
+and we do not have to think about it again.
+
+\begin{conceptbox}[The analogy with $\le$, and the one place it fails]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.4cm}L{1.8cm}L{10.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Asymptotic} & \textbf{Reads as} & \textbf{Properties it really has} \\
+\midrule
+\endhead
+$f = \bigO{g}$   & $f \le g$ & transitive; reflexive ($f = \bigO{f}$) \\
+$f = \bigOm{g}$  & $f \ge g$ & transitive; reflexive \\
+$f = \bigTh{g}$  & $f = g$   & transitive, reflexive \emph{and} symmetric ---
+  an equivalence relation, which the other four are not \\
+$f = o(g)$       & $f < g$   & transitive; \emph{not} reflexive \\
+$f = \omega(g)$  & $f > g$   & transitive; not reflexive \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Transpose symmetry} also holds: $f = \bigO{g}$ exactly when
+$g = \bigOm{f}$, and $f = o(g)$ exactly when $g = \omega(f)$.
+
+\smallskip
+\textbf{But trichotomy fails.} For real numbers, exactly one of $a < b$,
+$a = b$, $a > b$ holds. For functions there is a fourth possibility:
+\emph{incomparable}. Let
+\[ f(n) = n^{1 + \sin n}. \]
+As $n$ runs over the integers $\sin n$ oscillates densely in $[-1, 1]$, so the
+exponent oscillates in $[0, 2]$. Infinitely often $f(n)$ is near $n^{0} = 1$,
+which kills any $\Omega(n)$ bound; infinitely often it is near $n^{2}$, which
+kills any $O(n)$ bound. So $f$ is \textbf{neither $\bigO{n}$ nor
+$\bigOm{n}$} --- the two functions simply cannot be ordered.
+
+\smallskip
+Pathological, and worth one paragraph: it is the reason the next section's limit
+test needs a disclaimer, and the reason you may not argue ``$f$ is not
+$\bigO{g}$, therefore $f$ is $\bigOm{g}$''.
+\end{conceptbox}
+
+\section{The Limit Test}
+
+Constructing witnesses is reliable and slow. For most functions met in
+practice, a limit settles the question at once.
+
+\begin{theorem}[Limit test]\label{thm:limit}
+Suppose $L = \displaystyle\lim_{n \to \infty} \frac{f(n)}{g(n)}$ exists, with
+$L = \infty$ allowed. Then
+\[ L = 0 \implies f = o(g); \qquad
+   0 < L < \infty \implies f = \bigTh{g}; \qquad
+   L = \infty \implies f = \omega(g). \]
+\end{theorem}
+
+\begin{proof}
+We prove the middle case; the others are similar. Let $0 < L < \infty$. By the
+definition of a limit, taking $\varepsilon = L/2$ there is an $n_{0}$ such that
+for all $n \ge n_{0}$,
+\[ \Bigl| \frac{f(n)}{g(n)} - L \Bigr| < \frac{L}{2}
+   \quad\Longrightarrow\quad
+   \frac{L}{2} \;<\; \frac{f(n)}{g(n)} \;<\; \frac{3L}{2}. \]
+Multiplying through by $g(n) > 0$ gives
+$\tfrac{L}{2}g(n) < f(n) < \tfrac{3L}{2}g(n)$, so $c_{1} = L/2$ and
+$c_{2} = 3L/2$ witness $f = \bigTh{g}$.
+\end{proof}
+
+\begin{alertbox}[The test is one-directional]
+Theorem~\ref{thm:limit} assumes the limit \emph{exists}. If it does not, the
+test says nothing at all --- it does not say the functions are incomparable.
+
+\smallskip
+For $f(n) = n^{1+\sin n}$ and $g(n) = n$ the ratio $n^{\sin n}$ oscillates
+forever and the limit does not exist; here the functions do turn out to be
+incomparable. But $f(n) = n(2 + \sin n)$ also has no limiting ratio against
+$g(n) = n$, and yet $f = \bigTh{n}$ plainly, with $c_{1} = 1$ and $c_{2} = 3$.
+When the limit fails, go back to the witnesses.
+\end{alertbox}
+
+\begin{worked}[Logarithms Lose to Every Power]
+\textbf{Claim:} $\lg n = o(n^{\varepsilon})$ for every constant
+$\varepsilon > 0$ --- however small.
+
+\smallskip
+\textbf{Step 1.} Both $\lg n \to \infty$ and $n^{\varepsilon} \to \infty$, so
+the ratio is of the form $\infty/\infty$ and L'H\^opital's rule applies.
+Treat $n$ as a real variable $x$ and use $\lg x = \ln x / \ln 2$:
+\[ \lim_{x\to\infty} \frac{\lg x}{x^{\varepsilon}}
+   = \lim_{x\to\infty} \frac{(1/(x \ln 2))}{\varepsilon x^{\varepsilon - 1}}
+   = \lim_{x\to\infty} \frac{1}{\varepsilon \ln 2 \cdot x^{\varepsilon}}
+   = 0. \]
+
+\smallskip
+\textbf{Step 2.} The limit is $0$, so by Theorem~\ref{thm:limit},
+$\lg n = o(n^{\varepsilon})$.
+
+\smallskip
+\textbf{Step 3 --- what it means.} Take $\varepsilon = 0.01$. The claim is that
+$\lg n$ is eventually negligible beside $n^{0.01}$, a function so flat it looks
+constant on any plot you can draw. ``Eventually'' is doing heavy work: at
+$n = 10^{6}$, $\lg n \approx 20$ while $n^{0.01} \approx 1.15$, so the
+inequality has not begun to hold. It holds from about $n = 10^{530}$.
+
+\smallskip
+\textbf{Step 4 --- the lesson.} Asymptotic statements are about limits, and a
+limit carries no promise about $n = 10^{6}$. This is the same lesson as
+\chref{role}'s crossover at $n = 65$, in a more extreme form.
+\end{worked}
+
+\begin{conceptbox}[The hierarchy worth memorising]
+Each function below is $o$ of the one after it, for any constants
+$\varepsilon > 0$, $k \ge 1$ and $a > 1$:
+\[ 1 \;\prec\; \lg\lg n \;\prec\; \lg n \;\prec\; (\lg n)^{k}
+    \;\prec\; n^{\varepsilon} \;\prec\; n \;\prec\; n \lg n
+    \;\prec\; n^{2} \;\prec\; n^{k} \;\prec\; a^{n} \;\prec\; n! \]
+
+\smallskip
+At $n = 10^{6}$, taking one operation per nanosecond:
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.0cm}L{4.4cm}L{6.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{$g(n)$} & \textbf{Operations} & \textbf{Time} \\
+\midrule
+\endhead
+$\lg n$       & 20                  & 20 nanoseconds \\
+$n$           & $10^{6}$            & 1 millisecond \\
+$n \lg n$     & $2.0 \times 10^{7}$ & 20 milliseconds \\
+$n^{2}$       & $10^{12}$           & 17 minutes \\
+$n^{3}$       & $10^{18}$           & 32 years \\
+$2^{n}$       & ---                 & no physical comparison exists \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+The gap from $n\lg n$ to $n^{2}$ --- 20 milliseconds to 17 minutes --- is the
+one most algorithm design is about.
+\end{conceptbox}
+
+\section{What \texorpdfstring{$\Theta$}{Theta} Asserts, Measured}
+
+$f = \bigTh{g}$ says $f(n)/g(n)$ is eventually trapped between two positive
+constants. That is a claim about a ratio, so it can be tested directly --- and
+tested against \emph{rival} exponents, which is the sharper experiment.
+
+\begin{worked}[Ruling Out the Exponents Either Side]
+\texttt{code/ch03\_fit.cpp} times insertion sort and divides by three candidate
+functions. Each column is normalised to $1.000$ at the first row, because the
+constant itself is machine-specific and the question is only whether the column
+\emph{stays put}. Median of nine runs.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & $T$ (ms) & $T/n^{1.9}$ & $T/n^{2.0}$ & $T/n^{2.1}$ \\
+\midrule
+  4{,}000 &    2.45 & 1.000 & 1.000 & 1.000 \\
+  8{,}000 &   10.22 & 1.116 & 1.041 & 0.972 \\
+ 16{,}000 &   39.19 & 1.146 & 0.998 & 0.869 \\
+ 32{,}000 &  162.82 & 1.276 & 1.036 & 0.842 \\
+ 64{,}000 &  678.31 & 1.424 & 1.079 & 0.818 \\
+128{,}000 & 2595.28 & 1.460 & 1.032 & 0.730 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Read the three columns as three hypotheses.}
+\begin{tight}
+  \item $T/n^{1.9}$ \emph{rises} by 46\%, without turning over. If
+        $T = \bigTh{n^{1.9}}$ this column would be trapped between constants;
+        it is climbing, so $n^{1.9}$ is too small.
+  \item $T/n^{2.0}$ stays inside $[0.998,\, 1.079]$ --- a spread of 8\% across
+        a 32-fold range of $n$. That is a ratio trapped between two
+        constants, which is exactly the definition.
+  \item $T/n^{2.1}$ \emph{falls} by 27\%, monotonically. So $n^{2.1}$ is too
+        large: $T = o(n^{2.1})$, an upper bound that is not tight.
+\end{tight}
+
+\smallskip
+\textbf{The experiment therefore does more than confirm the exponent} --- it
+excludes the two exponents either side, which is what distinguishes evidence
+for $\bigTh{n^{2}}$ from mere consistency with it.
+\end{worked}
+
+\begin{worked}[The Same Test for $n \lg n$, Which Is Harder]
+$n \lg n$ sits only a whisker above $n$, so this test needs both a wider range
+of $n$ and more careful timing.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & $T$ (ms) & $T/n$ & $T/(n \lg n)$ & $T/n^{1.2}$ \\
+\midrule
+  100{,}000 &   11.49 & 1.000 & 1.000 & 1.000 \\
+  200{,}000 &   23.89 & 1.040 & 0.980 & 0.905 \\
+  400{,}000 &   52.63 & 1.145 & 1.022 & 0.868 \\
+  800{,}000 &  107.19 & 1.166 & 0.988 & 0.769 \\
+1{,}600{,}000 &  237.89 & 1.294 & 1.043 & 0.743 \\
+3{,}200{,}000 &  489.47 & 1.331 & 1.023 & 0.666 \\
+6{,}400{,}000 & 1036.62 & 1.410 & 1.036 & 0.614 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{$T/(n\lg n)$ stays within 4.3\% of 1} over a 64-fold range of $n$. The
+rivals both fail: $T/n$ climbs 41\%, $T/n^{1.2}$ falls 39\%.
+
+\smallskip
+\textbf{Now the detail that makes this more than a curve fit.} If $T$ really is
+$cn\lg n$, then $T/n = c\lg n$, so the $T/n$ column should itself grow like
+$\lg n$. Over this range that predicts a rise of
+\[ \frac{\lg(6{,}400{,}000)}{\lg(100{,}000)}
+   = \frac{22.61}{16.61} = 1.361. \]
+Measured: $\mathbf{1.410}$, within 4\% of the prediction. The drift in the
+failing column is not noise --- it is the $\lg n$ factor, measured.
+
+\smallskip
+\textbf{And what it took to get there.} The first draft of this program
+allocated a fresh vector inside the timed region. At these sizes the allocation
+cost more than the sort it was supposed to be measuring, and the
+$T/(n \lg n)$ column came out as $1.000, 1.134, 0.804, 1.342, 0.839$ --- noise,
+from which nothing follows. The fix was to allocate once outside the loop,
+refill with \texttt{std::copy}, and \emph{measure the refill separately and
+subtract it}; the \texttt{copy} column in the program's output is that
+measurement, and it is how you can tell the subtraction was small enough to
+trust. Appendix~A collects the rest of these rules.
+\end{worked}
+
+\section{Four Abuses, and What Each Conceals}
+
+\begin{alertbox}[1. Using $O$ when you mean $\Theta$]
+``Insertion sort is $\bigO{n^{2}}$'' is true. So is ``insertion sort is
+$\bigO{n^{100}}$'', and so is ``$\bigO{2^{n}}$'' --- an upper bound stays true
+however loose it gets. If you know the bound is tight, say $\Theta$ and claim
+the credit; if you do not, $O$ is honest and you should expect to be asked.
+
+\smallskip
+The reverse error is worse: reading somebody's $\bigO{\cdot}$ as if it were a
+$\bigTh{\cdot}$, and concluding an algorithm is slower than it is.
+\end{alertbox}
+
+\begin{alertbox}[2. $\Omega$ as an excuse]
+``My algorithm is $\bigOm{n}$'' is a boast about a \emph{lower} bound, which
+for an algorithm is bad news, not good. Lower bounds are interesting about
+\emph{problems} --- ``every comparison sort is $\bigOm{n\lg n}$'',
+\chref{lowerbound} --- because they say no algorithm can do better. About your
+own code, $\bigOm{\cdot}$ means ``at least this slow''.
+\end{alertbox}
+
+\begin{alertbox}[3. Dropping the case]
+$\bigTh{\cdot}$ says nothing about which input you had in mind. Quicksort is
+$\bigTh{n^{2}}$ in the worst case and $\bigTh{n \lg n}$ in expectation; both
+are true and they differ by a factor of thousands. \textbf{Name the case every
+time} --- the notation has no slot for it, so the sentence must.
+\end{alertbox}
+
+\begin{alertbox}[4. Forgetting that the constants went somewhere]
+Asymptotic notation deliberately discards exactly the information that decides
+which program to run at your actual $n$. From \texttt{ch03\_fit.cpp}:
+$100n\lg n < n^{2}$ first holds at $n = \mathbf{997}$ --- not at $n = 10$.
+Below a thousand elements the quadratic algorithm wins, and $\bigTh{\cdot}$
+cannot tell you that.
+
+\smallskip
+The notation is a tool for comparing \emph{ideas}. Choosing an
+\emph{implementation} needs the constants back, which means measuring --- the
+other half of every chapter in this book.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Writing $O(2n^{2})$ or $O(n^{2} + n)$.} Legal but illiterate:
+        the point of the notation is that constants and lower terms are already
+        gone. Write $\bigO{n^{2}}$.
+  \item \textbf{Hunting for the smallest $c$.} The definition asks for
+        existence. Any witness pair is a complete proof.
+  \item \textbf{Concluding $f = \bigOm{g}$ from ``$f \ne \bigO{g}$''.}
+        Trichotomy fails; $n^{1+\sin n}$ is the counterexample.
+  \item \textbf{Using the limit test without checking the limit exists.}
+        When it does not, the test is silent, not negative.
+  \item \textbf{Comparing $\bigO{\cdot}$ bounds to rank two algorithms.} Both
+        being $\bigO{n^{2}}$ tells you nothing about which is faster, nor even
+        that either is quadratic.
+  \item \textbf{Saying ``$\lg n$ is basically constant''.} It is $o(n^{\varepsilon})$
+        for every $\varepsilon$, and it is also 20 at $n = 10^{6}$ and 30 at
+        $n = 10^{9}$. Negligible in the limit is not the same as negligible.
+  \item \textbf{Timing inside an allocation.} Not a notation error, but the
+        reason the second worked example nearly reported nonsense.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Fitting a Curve, and Excluding the Rivals]
+Reproduces both tables in Section~3.6 and the crossover figure. Expect
+thirty minutes; part A takes about a minute of CPU at $n = 128{,}000$.
+
+\begin{lstlisting}[language=C++]
+// ch03_fit.cpp -- what Theta(g) actually asserts, tested.
+// Build: cl /O2 /EHsc /std:c++17 ch03_fit.cpp        (see Appendix A)
+
+// --- 1. Insertion sort against three candidate exponents -----------
+// Only one of the three columns can stay constant, and which one
+// does is the empirical content of "Theta(n^2)".
+//
+// Normalising to the FIRST row makes that row's noise everybody's
+// noise, so the first row must not be a sub-millisecond timing:
+// start at n = 4000 and take the median of nine runs.
+double b19 = 0, b20 = 0, b21 = 0;
+for (size_t n = 4000; n <= 128000; n *= 2) {
+    auto base = random_input(n, 2024);
+    std::vector<int> work(n);
+    double t = time_ms([&]{
+        std::copy(base.begin(), base.end(), work.begin());
+        insertion_sort(work);
+    }, 9);
+    double x = (double)n;
+    double r19 = t / std::pow(x, 1.9);
+    double r20 = t / std::pow(x, 2.0);
+    double r21 = t / std::pow(x, 2.1);
+    if (b19 == 0) { b19 = r19; b20 = r20; b21 = r21; }
+    printf("%8zu %10.2f %10.3f %10.3f %10.3f\n",
+           n, t, r19/b19, r20/b20, r21/b21);
+}
+
+// --- 2. Merge sort against n*lg(n) and its two rivals --------------
+// n*lg(n) is only a whisker above n, so this is a far harder test
+// than part 1, and it needs better hygiene to pass.
+//
+// The first draft allocated a fresh vector inside the timed region.
+// At these sizes that allocation costs more than it measures -- the
+// T/(n lg n) column came out as 1.000, 1.134, 0.804, 1.342, 0.839,
+// which says nothing at all.
+//
+// The fix: allocate ONCE outside the timing and refill with
+// std::copy, then measure the refill alone and subtract it.
+for (size_t n = 100000; n <= 6400000; n *= 2) {
+    auto base = random_input(n, 2024);
+    std::vector<int> work(n), buf(n);
+    double tc = time_ms([&]{
+        std::copy(base.begin(), base.end(), work.begin());
+    }, 11);
+    double tt = time_ms([&]{
+        std::copy(base.begin(), base.end(), work.begin());
+        merge_sort(work, buf, 0, n);
+    }, 11);
+    double t = tt - tc;          // the sort, with the refill removed
+    /* print tc so the reader can check the subtraction was small,
+       then t/n, t/(n lg n) and t/n^1.2 normalised to the first row */
+}
+
+// --- 3. Where an asymptotically worse function is still smaller ----
+// Theta is a statement about a limit, and the limit can be a long way
+// off. Report the crossover rather than pretending there is none:
+// 100 n lg n < n^2 requires 100 lg n < n.
+for (size_t n = 2; n < 100000; ++n) {
+    double x = (double)n;
+    if (100.0 * x * std::log2(x) < x * x) {
+        printf("\n   crossover: n lg n first wins at n = %zu\n", n);
+        break;
+    }
+}
+\end{lstlisting}
+
+\textbf{What to notice.} The \texttt{copy} column in part 2 is there to be
+audited, not admired: if it ever approaches the \texttt{total} column, the
+subtraction is doing too much work and the experiment should be redesigned
+rather than reported.
+
+\smallskip
+\textbf{Then try to break it.} Add a $T/n^{2.05}$ column to part 1. It will
+drift down, but only slightly --- and that is the honest limit of this method.
+Timing can separate $n^{1.9}$ from $n^{2.1}$ over a 32-fold range; it cannot
+separate $n^{2}$ from $n^{2.02}$, and no amount of care will make it. Say what
+an experiment can resolve before you claim a result from it.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Prove that $5n^{3} + 200n^{2} + 17 = \bigO{n^{3}}$ by exhibiting
+        witnesses $c$ and $n_{0}$, and verify your inequality at $n = n_{0}$.
+  \item Is $n^{2} = o(n^{2}\lg n)$? Justify your answer from the definition,
+        not from the limit test.
+  \item A student writes: ``my algorithm is $\bigO{n^{3}}$ and my colleague's is
+        $\bigO{n^{2}}$, so mine is slower.'' Give the two distinct reasons this
+        conclusion does not follow.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item $O$, $\Omega$ and $\Theta$ are \emph{sets} of functions, defined by the
+        existence of witnesses $c$ and $n_{0}$. ``$f = \bigO{g}$'' means
+        $f \in \bigO{g}$ and may not be read backwards.
+  \item To prove a bound, exhibit witnesses --- any witnesses. To disprove one,
+        derive a contradiction, as for $n^{2} \ne \bigO{n}$.
+  \item $f = \bigTh{g}$ iff $f = \bigO{g}$ and $f = \bigOm{g}$, which is what
+        lets upper and lower bounds be proved by unrelated arguments and
+        combined.
+  \item $o$ and $\omega$ differ from $O$ and $\Omega$ only in having
+        $\forall c$ where those have $\exists c$, which forces the ratio to
+        vanish or diverge.
+  \item All five are transitive; only $\Theta$ is an equivalence relation; and
+        trichotomy fails --- $n^{1+\sin n}$ is comparable to $n$ in no
+        direction at all.
+  \item The limit test decides the question whenever the limit exists, and is
+        silent, not negative, when it does not.
+  \item Measured: $T/n^{2.0}$ for insertion sort held within 8\% across a
+        32-fold range of $n$ while $T/n^{1.9}$ rose 46\% and $T/n^{2.1}$ fell
+        27\%. For merge sort $T/(n\lg n)$ held within 4.3\% across a 64-fold
+        range, and the drift in the failing $T/n$ column matched the predicted
+        $\lg n$ growth to within 4\%.
+  \item The notation discards precisely what decides which program to run:
+        $100n\lg n$ does not beat $n^{2}$ until $n = 997$.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} $f(n) = \bigTh{g(n)}$ holds if and only if:
+        (a)~$f = \bigO{g}$; (b)~$f = \bigOm{g}$; (c)~both of these;
+        (d)~$f = o(g)$.
+  \item \textbf{(MCQ)} Which is \emph{false}? (a)~$n = \bigO{n^{2}}$;
+        (b)~$n^{2} = \bigO{n}$; (c)~$2^{n+1} = \bigO{2^{n}}$;
+        (d)~$\lg n = o(n)$.
+  \item \textbf{(Short)} State the formal definition of $\bigO{g(n)}$ and
+        explain the role of each quantifier \emph{(CLO-5)}.
+  \item \textbf{(Short)} Explain the difference between $\bigO{g}$ and $o(g)$
+        in terms of the quantifier on $c$, and give a function that is in the
+        first but not the second.
+  \item \textbf{(Short)} Why is a lower bound a desirable result about a
+        problem but an undesirable one about your own algorithm?
+  \item \textbf{(Applied)} Prove $\bigTh{\cdot}$ is transitive, using
+        Theorems~\ref{thm:thetaboth} and~\ref{thm:trans} rather than arguing
+        from the definition directly.
+  \item \textbf{(Applied)} You time an unknown algorithm and find that
+        $T(n)/n^{2}$ falls steadily while $T(n)/(n\lg n)$ rises steadily across
+        your whole range of $n$. What can you conclude, what can you not, and
+        what would you measure next?
+\end{reviewq}

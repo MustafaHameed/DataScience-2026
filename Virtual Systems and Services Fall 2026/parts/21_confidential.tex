@@ -398,12 +398,18 @@ fi
 # --- 6. Now the attack this defends against. --------------------------
 # A hostile operator boots a DIFFERENT image that asks for your key.
 # Its memory is perfectly encrypted while it exfiltrates. The only
-# thing that stops it is step 5 refusing the measurement.
-diff <(grep -i measurement report.txt 2>/dev/null || echo a) \
-     <(cat "$(dirname "$0")/ch21_expected_measurement.txt" 2>/dev/null \
-       || echo b) >/dev/null \
-  && echo "measurement matches -- release the key" \
-  || echo "measurement DIFFERS -- refuse. This is the whole mechanism."
+# thing that stops it is this comparison.
+D=$(dirname "$0")
+hex () { grep -o -m1 -E '[0-9a-f]{96}' "$1"; }   # the 48-byte measurement
+GOT=$(hex report.txt)
+WANT=$(hex "$D/ch21_expected_measurement.txt")
+echo "got:  ${GOT:-<none>}"
+echo "want: ${WANT:-<none>}"
+if [ -n "$GOT" ] && [ "$GOT" = "$WANT" ]; then
+  echo "MATCH -- release the key"
+else
+  echo "DIFFERS -- refuse. This comparison is the whole mechanism."
+fi
 
 # --- 7. What it costs: the same benchmark, confidential or not. ------
 # On a cloud that offers both, run this on a confidential and a normal

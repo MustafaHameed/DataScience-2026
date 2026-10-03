@@ -1,0 +1,512 @@
+%=====================================================================
+\chapter{Input Size, Input Nature, and the Three Cases}\label{ch:cases}
+%=====================================================================
+\locator{1}{Part I --- Analysing an Algorithm}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} the size of an input for an array, a matrix, a graph
+        and a number, and \textbf{justify} why a number's size is its bit
+        count.
+  \item \textbf{Explain} what is meant by the best, expected and worst case
+        behaviour of an algorithm \emph{(CLO-1)}.
+  \item \textbf{Identify} the characteristics of the data, or the other
+        conditions and assumptions, that lead an algorithm to different
+        behaviours \emph{(CLO-2)}.
+  \item \textbf{Derive} the best, worst and average case running time of
+        insertion sort and linear search, and \textbf{say} which to report and
+        why.
+  \item \textbf{Distinguish} an average taken over inputs from an expectation
+        taken over an algorithm's own random choices.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{role} --- the RAM model and the idea of an order of growth. You will
+also need to be comfortable that $\lg$ means $\log_{2}$, and that
+$\sqrt{2^{b}} = 2^{b/2}$.
+\end{prereq}
+
+\begin{keyterms}
+input size $\bullet$ bit length $\bullet$ sparse $\bullet$ dense $\bullet$
+best case $\bullet$ worst case $\bullet$ average case $\bullet$ expected
+running time $\bullet$ input distribution $\bullet$ uniform random permutation
+$\bullet$ randomised algorithm $\bullet$ adversary $\bullet$
+pseudo-polynomial
+\end{keyterms}
+
+\section{The Size of the Input}
+
+Everything in \chref{role} was written as a function of $n$ without ever saying
+what $n$ counts. For an array that is obvious enough. For the other things
+algorithms take as input it is a decision, and a decision that changes the
+answer.
+
+\begin{definitionbox}[Input Size]
+The \term{input size} is whatever parameter the running time is most naturally
+expressed in --- but it must be a measure of \emph{how much input there is},
+not of what the input says.
+
+\medskip
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.0cm}L{11.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Input} & \textbf{Size, by convention} \\
+\midrule
+\endhead
+\textbf{array, list} & $n$, the number of elements \\
+\textbf{string} & $n$, the number of characters \\
+\textbf{$n \times n$ matrix} & $n$, the side --- so an $\bigO{n^{3}}$ algorithm
+  is \emph{linear} in the $n^{2}$ numbers it reads, which is worth saying out
+  loud \\
+\textbf{graph} & \emph{two} parameters: $|V|$ vertices and $|E|$ edges \\
+\textbf{number} & $b$, the number of \emph{bits} needed to write it \\
+\bottomrule
+\end{longtable}
+\end{definitionbox}
+
+Two of those rows need an argument.
+
+\subsection*{Graphs take two parameters, and that is not a technicality}
+
+A graph has $|V|$ vertices and $|E|$ edges, and $|E|$ can be anywhere from $0$
+to $|V|(|V|-1)/2$. A bound of $\bigO{|V| + |E|}$ and a bound of
+$\bigO{|V|^{2}}$ are the same thing on a \term{dense} graph and wildly
+different on a \term{sparse} one.
+
+\begin{worked}[The Same Bound, Two Graphs]
+Breadth-first search is $\bigO{|V| + |E|}$ from an adjacency list.
+
+\smallskip
+\textbf{A road network:} 2 million junctions, and each junction meets about
+three roads, so $|E| \approx 3 \times 10^{6}$.
+\[ |V| + |E| \approx 2\!\times\!10^{6} + 3\!\times\!10^{6} = 5 \times 10^{6}. \]
+
+\smallskip
+\textbf{A social graph of the same vertex count}, each person connected to
+500 others, so $|E| \approx 2\!\times\!10^{6} \times 500 / 2 = 5 \times
+10^{8}$.
+\[ |V| + |E| \approx 5 \times 10^{8}. \]
+
+\smallskip
+\textbf{A factor of 100}, on the same algorithm, at the same $|V|$. This is
+why \chref{graphs} comes before the graph algorithms rather than after them,
+and why every bound in Part~V is quoted in both parameters.
+\end{worked}
+
+\subsection*{A number's size is its length, not its value}
+
+This one students get wrong, and it is the root of a famous confusion that
+\chref{dptwo} and \chref{complexity} both depend on.
+
+\begin{alertbox}[Why not just use $N$ itself?]
+Because the input to a program is \emph{written down}, and a number $N$ is
+written in about $b = \lfloor \lg N \rfloor + 1$ bits. Typing one more digit
+multiplies $N$ by ten while adding three and a bit bits of input.
+
+\smallskip
+If we measured size by value, then an algorithm that loops $N$ times would be
+``linear'' --- and we would be calling an algorithm efficient when doubling the
+\emph{length} of its input multiplies its running time by $2^{b}$.
+
+\smallskip
+So: \textbf{size $= b \approx \lg N$}, and an algorithm that loops $N$ times is
+$\bigO{2^{b}}$ --- exponential. An algorithm whose cost is polynomial in $N$ but
+exponential in $b$ is called \term{pseudo-polynomial}; the 0/1 knapsack
+algorithm of \chref{dptwo} is the standard example, and \chref{complexity}
+explains why that distinction decides whether a problem counts as solved.
+\end{alertbox}
+
+\begin{worked}[The Claim, Measured]
+\texttt{code/ch02\_cases.cpp} tests a prime by trial division --- a loop running
+about $\sqrt{N}/2$ times. Since $\sqrt{N} = \sqrt{2^{b}} = 2^{b/2}$, adding
+\emph{two} bits should exactly double the work. Each row below is a prime two
+bits longer than the row above; median of three runs.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+bits & $N$ & time (ms) & ratio \\
+\midrule
+32 & 4{,}294{,}967{,}291     &  0.22 & ---  \\
+34 & 17{,}179{,}869{,}143    &  0.44 & 2.01 \\
+36 & 68{,}719{,}476{,}731    &  0.86 & 1.94 \\
+38 & 274{,}877{,}906{,}899   &  1.76 & 2.06 \\
+40 & 1{,}099{,}511{,}627{,}689 & 3.63 & 2.07 \\
+42 & 4{,}398{,}046{,}511{,}093 & 6.93 & 1.91 \\
+44 & 17{,}592{,}186{,}044{,}399 & 15.75 & 2.27 \\
+46 & 70{,}368{,}744{,}177{,}643 & 29.83 & 1.89 \\
+48 & 281{,}474{,}976{,}710{,}597 & 58.81 & 1.97 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Eight ratios, mean 2.02.} The prediction is exact and the measurement
+meets it.
+
+\smallskip
+\textbf{Now extrapolate, which is the point.} From 32 bits to 48 the time went
+from 0.22 ms to 58.81 ms --- a factor of 267, against a predicted $2^{8} =
+256$. Carry that on:
+\begin{itemize}[leftmargin=1.6em, itemsep=1pt, topsep=2pt]
+  \item \textbf{64 bits:} $2^{8} \times 58.81\,\text{ms} \approx 15$ seconds.
+  \item \textbf{128 bits:} $2^{40} \times 58.81\,\text{ms} \approx 6.5 \times
+        10^{10}$ s $\approx$ \textbf{2{,}000 years}.
+  \item \textbf{2048 bits}, which is what an RSA key is: there is no useful way
+        to write the number.
+\end{itemize}
+
+\smallskip
+\textbf{And notice what did \emph{not} happen.} Going from 32 bits to 128 bits
+is going from a four-byte input to a sixteen-byte input --- twelve extra bytes.
+The input grew by a factor of four and the running time by a factor of $4
+\times 10^{11}$. That is what ``exponential in the input size'' means, and it
+is why measuring the size by the value would have hidden it completely.
+\end{worked}
+
+\section{The Nature of the Input: Three Cases}
+
+Fix the size. Two inputs of the same size can still cost an algorithm wildly
+different amounts, because an algorithm's control flow depends on what the data
+\emph{says}, not only on how much of it there is.
+
+\begin{definitionbox}[Best, Worst and Average Case]
+Let $T(x)$ be the number of primitive operations the algorithm performs on
+input $x$, and let $X_{n}$ be the set of all inputs of size $n$.
+
+\medskip
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.6cm}L{9.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Case} & \textbf{What it promises} \\
+\midrule
+\endhead
+\textbf{best:}\quad $\displaystyle\min_{x \in X_{n}} T(x)$
+  & Nothing useful --- a lower bound on an optimist's hopes. \\
+\textbf{worst:}\quad $\displaystyle\max_{x \in X_{n}} T(x)$
+  & A \emph{guarantee}: no input of size $n$ costs more than this. \\
+\textbf{average:}\quad $\displaystyle\mathop{\mathbb{E}}_{x \sim D}
+  \bigl[T(x)\bigr]$
+  & What to expect \emph{if} inputs really are drawn from $D$ --- and $D$ must
+    be stated. \\
+\bottomrule
+\end{longtable}
+\end{definitionbox}
+
+\begin{alertbox}[``Average case'' is meaningless until you name a distribution]
+There is no such thing as a random input. There is only an input drawn from a
+distribution you have chosen, and the choice is a modelling assumption that can
+be wrong.
+
+\smallskip
+The conventional assumption for sorting is a \term{uniform random
+permutation}: every ordering of the $n$ elements equally likely. It is a
+reasonable default and it is often false --- real data arrives partly sorted,
+or sorted by the wrong key, or in a few long runs. When you quote an average
+case, say what distribution it averages over. When you read one, check.
+\end{alertbox}
+
+\subsection*{Insertion sort, in all three cases}
+
+Insertion sort's inner loop shifts elements right until it finds the place for
+\texttt{key}. The number of shifts for element $j$ is how many of the $j$
+elements before it are larger --- the number of \emph{inversions} involving
+$j$.
+
+\begin{worked}[The Three Cases, Derived]
+\textbf{Best case --- already sorted.} For every $j$, $a[j-1] \le \texttt{key}$,
+so the \texttt{while} test fails at once and does zero shifts. The outer loop
+still runs $n-1$ times:
+\[ T(n) = c(n-1) = \bigTh{n}. \]
+
+\smallskip
+\textbf{Worst case --- strictly decreasing.} Every element must travel to the
+front, so element $j$ does $j$ shifts:
+\[ \sum_{j=1}^{n-1} j = \frac{(n-1)n}{2} \approx \frac{n^{2}}{2}
+   = \bigTh{n^{2}}. \]
+
+\smallskip
+\textbf{Average case --- uniform random permutation.} For any pair $(i,j)$ with
+$i<j$, the two orderings are equally likely, so the pair is inverted with
+probability $\tfrac12$. There are $\binom{n}{2}$ pairs, so by linearity of
+expectation the expected number of inversions is
+\[ \mathbb{E}[\text{inversions}] = \frac12\binom{n}{2}
+   = \frac{n(n-1)}{4} \approx \frac{n^{2}}{4} = \bigTh{n^{2}}. \]
+
+\smallskip
+\textbf{The conclusion, and it is the one that matters.} The average case is
+\emph{exactly half} the worst case. A factor of two is a constant, and
+$\bigTh{\cdot}$ discards constants --- so insertion sort's average and worst
+cases have the \emph{same order of growth}, and the only case that differs is
+the best one.
+\end{worked}
+
+\begin{worked}[One Algorithm, Three Orders of Growth, Measured]
+\texttt{code/ch02\_cases.cpp} runs the same insertion sort on three shapes of
+input at each size; median of five runs, times in milliseconds.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & sorted & ratio & random & ratio & reversed & ratio \\
+\midrule
+ 2{,}000 & 0.002 & ---  &  0.340 & ---  &   0.634 & ---  \\
+ 4{,}000 & 0.004 & 1.90 &  1.430 & 4.21 &   2.551 & 4.03 \\
+ 8{,}000 & 0.008 & 2.05 &  5.288 & 3.70 &   9.736 & 3.82 \\
+16{,}000 & 0.021 & 2.73 & 21.357 & 4.04 &  42.714 & 4.39 \\
+32{,}000 & 0.028 & 1.33 & 89.790 & 4.20 & 185.054 & 4.33 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The sorted column doubles} --- 1.90, 2.05, 2.73, 1.33. The ratios are
+ragged because the absolute times are two to twenty-eight \emph{microseconds},
+where the clock's own resolution and one stray interrupt are a large fraction
+of the measurement. The honest reading is: these are five numbers consistent
+with linear growth and far too small to be consistent with quadratic, which is
+all the experiment is being asked to show.
+
+\smallskip
+\textbf{The random and reversed columns quadruple}, mean 4.04 and 4.14, as
+$\bigTh{n^{2}}$ requires.
+
+\smallskip
+\textbf{And now the prediction the derivation made.} Random should be half of
+reversed, because $n^{2}/4$ is half of $n^{2}/2$. Measured:
+\[ 0.54,\quad 0.56,\quad 0.54,\quad 0.50,\quad 0.49. \]
+Five independent confirmations of a factor the theory produced from counting
+inversions. This is what it looks like when an analysis is right about more
+than the exponent.
+
+\smallskip
+\textbf{Finally, the spread.} At $n = 32{,}000$: 0.028 ms on sorted input,
+185 ms on reversed. Same algorithm, same compiler, same machine, same input
+size --- a factor of \textbf{6{,}600}. ``How big is the input'' does not come
+close to determining how long a program takes.
+\end{worked}
+
+\section{Which Case Should You Report?}
+
+\begin{conceptbox}[The convention, and the reasons for it]
+\textbf{Report the worst case unless you say otherwise.} Three reasons:
+
+\begin{tightnum}
+  \item It is a \emph{guarantee}. An average tells you about a population of
+        runs; a worst case tells you about the run you are having now, which is
+        the one with the deadline.
+  \item It is often what happens. For searching an absent key, or any
+        algorithm that must examine everything to be sure, the worst case is
+        the typical case.
+  \item It is frequently the same order as the average anyway --- insertion
+        sort above, where the factor between them is two.
+\end{tightnum}
+
+\smallskip
+\textbf{Report the best case almost never.} ``This sort is $\bigO{n}$'' with the
+best case quietly intended is the most common dishonest sentence in the
+subject.
+
+\smallskip
+\textbf{Report the average case when the worst case is both rare and
+pessimistic}, as with quicksort (\chref{quicksort}) and hashing
+(\chref{hashing}) --- and then state the distribution, because in both of those
+chapters there is an input that makes the worst case happen on purpose.
+\end{conceptbox}
+
+\begin{definitionbox}[Expected Running Time]
+A \term{randomised algorithm} makes random choices of its own. Its
+\term{expected running time} on an input $x$ is the average over
+\emph{those choices}, with $x$ held fixed:
+\[ \mathbb{E}\bigl[T(x)\bigr], \qquad
+   \text{expectation over the algorithm's coin flips.} \]
+\end{definitionbox}
+
+\begin{alertbox}[Two different averages, and the difference is the whole trick]
+\textbf{Average-case analysis} averages over inputs. You must assume a
+distribution on the input, and an adversary who knows your algorithm can choose
+an input outside it.
+
+\smallskip
+\textbf{Expected-time analysis} of a randomised algorithm averages over the
+algorithm's own coins, \emph{for every input}. There is no assumption about the
+data at all. An adversary who knows your code still cannot pick a bad input,
+because he does not know your coins.
+
+\smallskip
+That is why \chref{quicksort} randomises: it converts an assumption about the
+world, which can be violated, into an assumption about a random number
+generator, which cannot. The bound goes from ``$\bigTh{n \lg n}$ \emph{if} your
+data is unsorted'' to ``$\bigTh{n \lg n}$ expected, on \emph{every} input''.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Quoting one case and meaning another.} Always name it: ``linear
+        search is $\bigTh{n}$ in the worst case and $\bigTh{n}$ on average'' is
+        a real statement; ``linear search is $\bigO{n}$'' is a weaker one that
+        people read as the worst case, correctly.
+  \item \textbf{Measuring the size of a number by its value.} Then trial
+        division looks linear, and the table in Section~2.1 looks impossible.
+  \item \textbf{Quoting a graph bound in one parameter.} $\bigO{|V|^{2}}$ hides
+        whether you have exploited sparsity; $\bigO{|V| + |E|}$ says you have.
+  \item \textbf{Assuming the average case without saying so.} Especially for
+        sorting, where real inputs are very often partly sorted and the uniform
+        permutation assumption is simply false.
+  \item \textbf{Thinking the best case tells you the algorithm is fast.}
+        Insertion sort's best case is $\bigTh{n}$ and it is still a quadratic
+        sort.
+  \item \textbf{Confusing ``average case'' with ``expected time''.} The first
+        assumes something about the data; the second assumes nothing. The
+        second is much stronger and is almost always what a randomised
+        algorithm's bound means.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Three Shapes, and the Cost of a Bit]
+Reproduces both tables in this chapter. Expect twenty-five minutes --- part B
+takes about two minutes of CPU on its own.
+
+\begin{lstlisting}[language=C++]
+// ch02_cases.cpp -- the nature of the input, and the size of the input.
+// Build: cl /O2 /EHsc /std:c++17 ch02_cases.cpp      (see Appendix A)
+
+// --- 1. Three shapes of input, all of the same size -----------------
+// Best case: already sorted, so the inner while never executes.
+// Worst case: reversed, so it runs to the front every time.
+// Average: a random permutation, which moves each element about half
+// way -- and half of a quadratic is still a quadratic.
+static std::vector<int> sorted_input(size_t n) {
+    std::vector<int> a(n);
+    std::iota(a.begin(), a.end(), 0);
+    return a;
+}
+static std::vector<int> reversed_input(size_t n) {
+    std::vector<int> a = sorted_input(n);
+    std::reverse(a.begin(), a.end());
+    return a;
+}
+
+// --- 2. Trial division, whose cost is governed by sqrt(N) -----------
+// The loop runs about sqrt(N)/2 times when n is prime, which is the
+// worst case for this algorithm -- so a prime is what we time.
+static bool is_prime_trial(uint64_t n) {
+    if (n < 2) return false;
+    if (n % 2 == 0) return n == 2;
+    for (uint64_t d = 3; d * d <= n; d += 2)
+        if (n % d == 0) return false;
+    return true;
+}
+
+// --- 3. The same algorithm, three orders of growth ------------------
+for (size_t n = 2000; n <= 32000; n *= 2) {
+    auto s = sorted_input(n);
+    auto r = random_input(n, 12345);
+    auto v = reversed_input(n);
+    double ts = time_ms([&]{ auto a = s; insertion_sort(a); }, 5);
+    double tr = time_ms([&]{ auto a = r; insertion_sort(a); }, 5);
+    double tv = time_ms([&]{ auto a = v; insertion_sort(a); }, 5);
+    /* print the three times and the three ratios */
+}
+
+// --- 4. Why the size of a number is its number of bits --------------
+// Each row adds TWO bits -- four more characters of input, if you
+// measure input by its value. Watch the time double anyway.
+const uint64_t primes[] = {
+    4294967291ULL,      17179869143ULL,     68719476731ULL,
+    274877906899ULL,    1099511627689ULL,   4398046511093ULL,
+    17592186044399ULL,  70368744177643ULL,  281474976710597ULL};
+int bits = 32;
+for (uint64_t p : primes) {
+    bool r = false;
+    double t = time_ms([&]{ r = is_prime_trial(p); }, 3);
+    if (!r) { printf("  BUG: %llu is not prime\n", p); return 1; }
+    printf("%4d %22llu %12.2f %7.2f\n", bits, p, t, t / prev);
+    prev = t; bits += 2;
+}
+\end{lstlisting}
+
+\textbf{What to notice.} In part A, look at the \emph{ratio} of the random
+column to the reversed column rather than at either alone. It should be close to
+$0.5$, and it is the one number in the experiment that tests the inversion
+count rather than just the exponent.
+
+\smallskip
+\textbf{Then try to break it.} Replace the random permutation with an array
+that is sorted except for the last 100 elements, which are shuffled. Predict
+the running time before you measure it. This is the input shape real data
+actually has, and it is the one both the best-case and the average-case
+analyses describe badly.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item An algorithm takes as input an $n \times n$ matrix and runs in
+        $\bigTh{n^{3}}$. Is it polynomial in the size of its input? Answer in
+        terms of the number of numbers actually read.
+  \item Linear search for a key that is present at a uniformly random position
+        examines $(n+1)/2$ elements on average and $n$ in the worst case. Why
+        does the course nevertheless describe both cases with the same
+        $\bigTh{\cdot}$?
+  \item A colleague reports that their sorting routine is ``$\bigO{n \lg n}$
+        on average''. What single question would you ask before believing the
+        number means anything for your data?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Input size is a measure of how much input there is: elements for an
+        array, the side for a matrix, \emph{two} parameters for a graph, and
+        \textbf{bits} for a number.
+  \item A number's size is its bit length, so a loop running $N$ times is
+        $\bigO{2^{b}}$ --- exponential. Measured: trial division doubled for
+        every two bits added, eight times running, mean ratio 2.02.
+  \item Best case promises nothing, worst case promises a guarantee, average
+        case promises something only once you have named the distribution.
+  \item Insertion sort: $\bigTh{n}$ best, $\bigTh{n^{2}}$ worst, $\bigTh{n^{2}}$
+        average --- the average being exactly half the worst, which measurement
+        confirmed at 0.54, 0.56, 0.54, 0.50, 0.49.
+  \item At $n = 32{,}000$ the same sort took 0.028 ms or 185 ms depending only
+        on the \emph{shape} of its input: a factor of 6{,}600.
+  \item Report the worst case by default. Report an average only with its
+        distribution attached.
+  \item An average over inputs assumes something about the world; the expected
+        time of a randomised algorithm assumes nothing, which is why
+        \chref{quicksort} randomises.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The input size of the integer $N$ is taken to be:
+        (a)~$N$; (b)~$\sqrt{N}$; (c)~about $\lg N$; (d)~$N^{2}$.
+  \item \textbf{(MCQ)} Insertion sort's average-case running time on a uniform
+        random permutation is: (a)~$\bigTh{n}$; (b)~$\bigTh{n \lg n}$;
+        (c)~$\bigTh{n^{2}}$; (d)~$\bigTh{n^{2}\lg n}$.
+  \item \textbf{(Short)} Explain what is meant by the best, expected and worst
+        case behaviour of an algorithm, and give one algorithm whose three
+        cases have three different orders of growth \emph{(CLO-1)}.
+  \item \textbf{(Short)} Identify two characteristics of input data that change
+        which case an algorithm exhibits, and name an algorithm affected by
+        each \emph{(CLO-2)}.
+  \item \textbf{(Short)} Why is a bound of $\bigO{|V|+|E|}$ more informative
+        than one of $\bigO{|V|^{2}}$, even when the two are equal for the graph
+        in front of you?
+  \item \textbf{(Applied)} Trial division on a 48-bit prime took 58.81 ms on
+        the book's machine. Estimate the time for a 70-bit prime, state the
+        assumption your estimate rests on, and say why the estimate is more
+        trustworthy than the absolute time it is derived from.
+  \item \textbf{(Applied)} You are given a sort you cannot read the source of.
+        Design an experiment that decides whether its worst case is quadratic,
+        using only the ability to supply inputs and time it. Say what inputs
+        you would supply, what you would compute, and what result would leave
+        you unable to tell.
+\end{reviewq}

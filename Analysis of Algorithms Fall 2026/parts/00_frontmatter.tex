@@ -1,0 +1,578 @@
+%=====================================================================
+% FRONT MATTER
+%=====================================================================
+\pagenumbering{roman}
+\structuralfigures{F.}
+\thispagestyle{empty}
+
+\begin{center}
+\vspace*{1.0cm}
+
+{\color{secondary}\rule{0.85\textwidth}{2pt}}\\[6pt]
+{\large\textsc{\color{secondary}Bachelor of Science in Information Technology}}\\[18pt]
+
+{\Huge\bfseries\color{primary}ANALYSIS OF ALGORITHMS}\\[10pt]
+{\LARGE\bfseries\color{primary}Correctness, Cost, and the Limits of Efficiency}\\[16pt]
+
+{\color{secondary}\rule{0.85\textwidth}{2pt}}\\[16pt]
+
+{\Large\textsc{Unified Lecture Handout}}\\[6pt]
+{\large\color{gray!70!black}Complete Course in One Volume $\bullet$ Fall 2026}\\[24pt]
+
+% --- the claim the whole book rests on ---
+\begin{tikzpicture}
+  \node[rounded corners=4pt, draw=primary, line width=1.1pt, fill=primary!6,
+        text=primary, align=center, font=\small\bfseries,
+        minimum width=11.6cm, minimum height=1.5cm]
+       {\faIcon{stopwatch}\\[2pt]Two questions about every algorithm:
+        is it right, and what does it cost?};
+\end{tikzpicture}\\[10pt]
+{\small\itshape\color{gray!70!black}And a third the first two do not answer:
+is there a better one, and how would you know?}
+
+\vspace{1.0cm}
+
+\begin{tcolorbox}[enhanced, width=0.86\textwidth, colback=lightbg,
+  colframe=primary, boxrule=0pt, leftrule=4pt, arc=2pt, top=6pt, bottom=6pt]
+\small
+\textbf{\color{primary}What this volume covers.} Every clause of the HEC 2023
+outline for \emph{Analysis of Algorithms}, in the order the outline gives them,
+with the published learning outcomes traced chapter by chapter in the Course
+Specification overleaf.
+
+\smallskip
+Under HEC 2023 this is a \textbf{computing core} course --- compulsory in all
+ten BS computing degrees, this one included --- taken in Semester 7, worth
+3 (3--0) credit hours, with \emph{Data Structures} as its prerequisite. The
+2023 outline is word for word the 2017 outline, under which the course was
+BSCS-only and absent from BSIT.
+
+\smallskip
+About a third of that outline you have already met in Data Structures.
+Appendix~F draws the line: that course owns the structures, this one owns the
+\emph{analysis} and the design paradigms.
+\end{tcolorbox}
+
+\vspace{0.9cm}
+{\small\color{gray!60!black}Six Parts $\bullet$ Twenty-Three Chapters $\bullet$ Seven Appendices}
+\vspace{1cm}
+\end{center}
+
+\newpage
+
+%=====================================================================
+\chapter*{How to Use This Handout}
+\addcontentsline{toc}{chapter}{How to Use This Handout}
+\markboth{How to Use This Handout}{}
+
+Most of what this course teaches is not an algorithm. It is a way of arguing
+about one.
+
+By Semester 7 you can already write a program that sorts. What you cannot yet
+do reliably is say \emph{why} it is correct for every input rather than the
+ones you tried, \emph{what} it will cost when the input is a thousand times
+larger, and \emph{whether} anything could do better. Those three questions ---
+correctness, cost, and the limit --- are the whole subject, and each has a
+technique behind it: the loop invariant, the asymptotic bound, and the lower
+bound.
+
+\section*{The six parts}
+
+\textbf{Part~I --- Analysing an Algorithm} (Chapters 1--4) builds the
+vocabulary. What ``efficient'' means and against what model; best, expected and
+worst case; the five asymptotic notations defined properly, not just $O$; and
+the loop invariant, which is how a correctness claim is proved rather than
+asserted.
+
+\textbf{Part~II --- Recursion and Divide-and-Conquer} (Chapters 5--9) is the
+machinery. Recurrences solved three ways, the master theorem and where it does
+not apply, brute force taken seriously as a baseline, then merge sort and
+quicksort analysed in full.
+
+\textbf{Part~III --- Sorting, Selection and the Structures Beneath}
+(Chapters 10--13) establishes the first lower bound in the book --- no
+comparison sort can beat $n \lg n$ --- and then shows what buying extra
+assumptions gets you. Chapters 12 and 13 revisit heaps, search trees and
+hashing from Data Structures, for their \emph{analysis} rather than their
+implementation.
+
+\textbf{Part~IV --- The Design Paradigms} (Chapters 14--17) is the part you will
+use most after the examination: greedy, dynamic programming, and the amortised
+analysis without which several earlier claims cannot be stated honestly.
+
+\textbf{Part~V --- Graph Algorithms} (Chapters 18--20) applies all of it, and is
+where sparsity starts changing every bound you write.
+
+\textbf{Part~VI --- Strings, Limits and Practice} (Chapters 21--23) closes with
+string matching, the complexity classes, and your project.
+
+\begin{conceptbox}
+Why the lower bound in Chapter 10 matters more than the algorithms around it.
+Everything before it answers ``how fast is this?''. Chapter 10 answers ``how
+fast could \emph{anything} be?'', and that is a different kind of statement ---
+it is about the problem, not about any program. Once you have seen one proved,
+Chapter 22's claim that we do not know whether $\mathrm{P} = \mathrm{NP}$ stops
+being a slogan and becomes a recognisable open question of the same shape.
+\end{conceptbox}
+
+\section*{The furniture of every chapter}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.6cm}L{10.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Box} & \textbf{What it is for} \\
+\midrule
+\endhead
+\faIcon{bullseye}~\textbf{Outcomes} & What you will be able to \emph{do}. Bloom
+verbs, not topics. \\
+\faIcon{link}~\textbf{Before you start} & Which earlier chapters this one stands
+on. \\
+\faIcon{tags}~\textbf{Key terms} & The vocabulary introduced; all of it is in
+the glossary of Appendix~D. \\
+\faIcon{book}~\textbf{Definition} & The canonical statement. In this subject the
+definitions are load-bearing: most wrong answers in the examination are a
+misremembered definition, not a failed calculation. \\
+\faIcon{award}~\textbf{Theorem}, \faIcon{puzzle-piece}~\textbf{Lemma},
+\faIcon{angle-double-right}~\textbf{Corollary} & A result, numbered within the
+chapter so the text can say ``by Lemma 6.2''. \\
+\emph{Proof.} & Deliberately not in a box --- it is prose and should be read as
+prose. Every proof here is one you could reproduce; the ones that are not are
+cited instead. \\
+\faIcon{list-ol}~\textbf{Algorithm} & Pseudocode, numbered by line, so the
+analysis can point at line 4. \\
+\faIcon{lightbulb}~\textbf{Concept} & The judgement call --- what an experienced
+practitioner would decide, and why. \\
+\faIcon{exclamation-triangle}~\textbf{Warning} & Something that will bite you,
+usually in the examination. \\
+\faIcon{calculator}~\textbf{Worked example} & Real arithmetic, every step shown.
+Do them with a pen. \\
+\faIcon{exclamation-circle}~\textbf{Common pitfalls} & The mistakes that are
+actually made. \\
+\faIcon{flask}~\textbf{Try it yourself} & The laboratory: C++ you compile, run
+and \emph{time}. \\
+\faIcon{question-circle}~\textbf{Checkpoint} & Three questions. Attempt them
+before reading Appendix~C. \\
+\faIcon{clipboard-check}~\textbf{Chapter summary} & What to retain. \\
+\faIcon{pen-fancy}~\textbf{Review questions} & Examination practice: multiple
+choice, short answer, applied. \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The measured strand, and why it is here]
+Every chapter also carries at least one \emph{measurement}: the algorithm
+compiled, run, and timed, with the figures printed in the book.
+
+\smallskip
+This is not decoration. Asymptotic analysis deliberately discards constant
+factors, and a student who only ever sees the asymptotics draws two wrong
+conclusions --- that an $\bigO{n\lg n}$ algorithm always beats an $\bigO{n^2}$
+one, and that the analysis is therefore unreliable. Both are cured by seeing
+where the crossover actually falls. Insertion sort really does beat merge sort
+on small inputs, and the asymptotics really do win by the time it matters.
+
+\smallskip
+Every figure in those boxes was produced by the file named beside it, in
+\texttt{code/}, with the compiler and flags recorded in Appendix~A. Rerun them.
+Your numbers will differ from the book's; the \emph{shape} should not.
+\end{alertbox}
+
+\newpage
+
+%=====================================================================
+\chapter*{Course Specification}
+\addcontentsline{toc}{chapter}{Course Specification}
+\markboth{Course Specification}{}
+
+This page is the course file. It states what HEC requires of a course called
+\emph{Analysis of Algorithms} and shows where each requirement is met. Three
+editions are in force in different programmes, so all three are traced.
+
+\section*{Course particulars}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.2cm}L{11.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Item} & \textbf{Value} \\
+\midrule
+\endhead
+Course title & Analysis of Algorithms (HEC 2023). HEC 2017 and HEC 2025 both
+call it \emph{Design and Analysis of Algorithms} \\
+Programme & BS Information Technology. Under HEC 2023 this is a
+\textbf{computing core} course --- compulsory in all ten BS computing degrees
+--- in Semester~7. Under HEC 2017 it was a BSCS core course and
+\emph{absent from BSIT entirely}; under HEC 2025 it is a BSCS major core in
+Semester~IV \\
+Credit hours & 3 (3--0): three credit hours of lectures, no separate laboratory
+credit. The laboratory work in this handout is therefore done in lecture time
+and as homework \\
+Prerequisite & \emph{Data Structures} (HEC 2023). HEC 2017 required
+\emph{Data Structures and Algorithms}; HEC 2025 publishes no prerequisites at
+all \\
+Duration & Sixteen teaching weeks, midterm in Week~8, project due Week~16
+(Appendix~G) \\
+Course introduction & The HEC 2023 statement, verbatim: ``Detailed study of the
+basic notions of the design of algorithms and the underlying data structures.
+Several measures of complexity are introduced. Emphasis on the structure,
+complexity, and efficiency of algorithms.'' \\
+Set texts & As published: Cormen, Leiserson, Rivest and Stein,
+\emph{Introduction to Algorithms}; Kleinberg and Tardos, \emph{Algorithm
+Design}; Sedgewick and Wayne, \emph{Algorithms}. See the note below on the
+edition, and Appendix~E \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Four defects in the published documents]
+Recorded here so that a reader comparing this handout with the HEC booklet is
+not confused, and so that the department's own course file does not inherit
+them.
+
+\smallskip
+\textbf{1. The 2023 CLO labels are mis-aligned with their own text.} In the
+2023 booklet \texttt{CLO-1} sits against the first half of outcome~1 and
+\texttt{CLO-2} against its continuation, leaving 3, 5 and 7 dangling. The 2017
+listing of the same eight outcomes is correctly numbered, and \emph{that} is
+the numbering used below.
+
+\smallskip
+\textbf{2. The Bloom's Taxonomy column is empty in both editions}, for all
+eight outcomes --- although the neighbouring Data Structures table fills it in.
+The levels in the table below are therefore \emph{assigned by this department},
+and are marked as such.
+
+\smallskip
+\textbf{3. ``Corman''} is the booklets' misspelling of \textbf{Cormen}, in both
+2017 and 2023.
+
+\smallskip
+\textbf{4. The 3rd edition (2009) is cited; the 4th edition (2022) is
+current.} Appendix~E cites the 4th and keeps the 3rd beside it, because
+chapter numbers moved between them.
+\end{alertbox}
+
+\section*{Coverage of the HEC 2023 course outline}
+
+The published outline is a single run-on paragraph. Each of its clauses is
+traced below, in the order HEC writes them. Nothing is omitted.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{6.4cm}L{2.0cm}L{6.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{HEC 2023 clause} & \textbf{Chapter} & \textbf{Where exactly} \\
+\midrule
+\endhead
+``Introduction; role of algorithms in computing'' & 1 & What an algorithm is,
+why the question is asymptotic, and the model of computation the whole book
+assumes \\
+``Analysis on nature of input and size of input'' & 2 & What ``size'' means for
+an array, a graph, a matrix and a number; best, expected and worst case \\
+``Asymptotic notations; Big-O, Big $\Omega$, Big $\Theta$, little-o,
+little-$\omega$'' & 3 & All five defined formally and proved from the
+definitions \\
+``Sorting Algorithm analysis'' & 8, 9, 10 & Merge sort, quicksort, and the
+lower bound that bounds them both \\
+``loop invariants'' & 4 & Initialisation, maintenance, termination; insertion
+sort proved correct \\
+``Recursion and recurrence relations'' & 5, 6 & Substitution, recursion trees,
+and the master theorem \\
+``Algorithm Design Techniques'' & 7--9, 14--16 & The four the outline names,
+each with the property that makes it applicable \\
+``Brute Force Approach'' & 7 & Taken seriously: the baseline every other
+technique must beat, and the cases where it wins \\
+``Divide-and-conquer approach; Merge, Quick Sort'' & 8, 9 & Both, in full, with
+the average-case analysis of quicksort \\
+``Greedy approach'' & 14 & Greedy-choice and optimal substructure, proved by
+exchange argument \\
+``Dynamic programming; Elements of Dynamic Programming'' & 15, 16 & The two
+elements as their own chapter, then the classic problems \\
+``Search trees'' & 12 & Revisited for analysis: why the height is what it is,
+and what that costs \\
+``Heaps'' & 12 & Likewise, with the priority-queue bounds Chapters 19 and 20
+depend on \\
+``Hashing'' & 13 & Expected versus worst case, load factor, and what
+``constant time'' actually promises \\
+``Graph algorithms, shortest paths, sparse graphs'' & 18, 20 & Representation
+and sparsity first, because sparsity changes every bound in the part; then
+single-source and all-pairs \\
+``String matching'' & 21 & Naive, Rabin--Karp and Knuth--Morris--Pratt \\
+``Introduction to complexity classes'' & 22 & P, NP, NP-hard and NP-complete,
+with one reduction worked in full \\
+\bottomrule
+\end{longtable}
+
+\section*{Course learning outcomes}
+
+The eight outcomes HEC publishes, in the 2017 numbering (see defect 1 above).
+Bloom levels are assigned by this department, because the published tables
+leave the column blank.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{1.3cm}L{7.6cm}L{2.1cm}L{3.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{CLO} & \textbf{By the end of the course the student will be able to} &
+\textbf{Bloom} & \textbf{Chapters} \\
+\midrule
+\endhead
+CLO-1 & Explain what is meant by ``best'', ``expected'' and ``worst'' case
+behaviour of an algorithm & C2 Understand & 2, 9 \\
+CLO-2 & Identify the characteristics of data, or other conditions or
+assumptions, that lead to different behaviours & C4 Analyse & 2, 9, 13, 18 \\
+CLO-3 & Determine informally the time and space complexity of simple
+algorithms & C3 Apply & 1, 3, 17, and every chapter's worked example \\
+CLO-4 & List and contrast standard complexity classes & C2 Understand & 22 \\
+CLO-5 & Use big~$O$, $\Omega$ and $\Theta$ notation formally to give asymptotic
+bounds on time and space complexity & C3 Apply & 3, 5, 6 \\
+CLO-6 & Use the strategies --- brute force, greedy, divide-and-conquer and
+dynamic programming --- to solve an appropriate problem & C3 Apply &
+7, 8, 9, 14, 15, 16 \\
+CLO-7 & Solve problems using graph algorithms, including single-source and
+all-pairs shortest paths and at least one minimum spanning tree algorithm &
+C3 Apply & 18, 19, 20 \\
+CLO-8 & Trace and/or implement a string-matching algorithm & C3 Apply & 21 \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[One chapter the outline does not name, and why it is here]
+\textbf{Chapter 19, Minimum Spanning Trees}, appears nowhere in the outline
+paragraph --- and \textbf{CLO-7 requires it by name}: ``at least one minimum
+spanning tree algorithm''. The outline and the outcomes disagree, and this
+handout follows the outcome, because that is what a student is assessed
+against.
+
+\smallskip
+Two further chapters go beyond the letter of the outline and are justified
+rather than smuggled in. \textbf{Chapter 11 (Selection)} is the natural
+companion to Chapter 10's lower bound and costs one lecture. \textbf{Chapter 17
+(Amortised Analysis)} is needed before Chapter 13's hash-table claim or
+Chapter 19's union-find can be stated honestly; without it, ``constant time''
+in those chapters would have to be asserted rather than proved, and CLO-3 asks
+for complexity to be \emph{determined}.
+\end{conceptbox}
+
+\section*{Coverage of the HEC 2025 outcomes}
+
+HEC 2025 publishes no course contents for any course --- only outcomes. Its
+five bullets for this course map onto the same chapters, so that a course file
+written against either edition has something to check.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{7.6cm}L{2.6cm}L{4.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{HEC 2025 outcome} & \textbf{Chapters} & \textbf{Met by} \\
+\midrule
+\endhead
+Design efficient algorithms for common computational problems & 7--9, 14--16,
+18--21 & CLO-6 and CLO-7 \\
+Analyze algorithm complexity using Big~O notation & 3, 5, 6 & CLO-5 \\
+Solve problems involving recursion, divide-and-conquer and dynamic
+programming & 5--9, 15, 16 & CLO-6 \\
+Compare different algorithmic approaches to problem-solving & 7, 14--16, 22 &
+CLO-6; the comparison tables that close Parts II and IV \\
+Demonstrate correctness and optimality of algorithms & 4, 10, 14, 20 & Loop
+invariants in 4; the lower bound in 10; exchange arguments in 14; Dijkstra's
+correctness proof in 20 \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Where this course sits in the degree, and the one awkwardness]
+HEC 2023 places this course in \textbf{Semester 7} and \emph{Artificial
+Intelligence} in Semester~3 --- so a student meets heuristic search four
+semesters before meeting the analysis that would let them reason about its
+cost. HEC 2025 restores the sensible order, putting algorithms in Semester~IV
+and AI in Semester~V.
+
+\smallskip
+If your department follows the 2023 scheme, this handout assumes nothing from
+the later courses and can be taught as published. If it follows 2025, this
+course comes earlier and Chapters 12 and 13 may need more time, because Data
+Structures will be fresher but less practised.
+\end{alertbox}
+
+\newpage
+
+%=====================================================================
+\chapter*{The Course at a Glance}
+\addcontentsline{toc}{chapter}{The Course at a Glance}
+\markboth{The Course at a Glance}{}
+
+\dsfigh{%
+\begin{tikzpicture}[
+  part/.style={rounded corners=3pt, fill=#1, text=white, font=\bfseries\footnotesize,
+               minimum width=2.5cm, text width=2.2cm, minimum height=0.95cm,
+               align=center},
+  ch/.style={rounded corners=2pt, draw=#1, line width=0.7pt, fill=#1!7, text=#1!60!black,
+             font=\scriptsize, minimum width=2.5cm, minimum height=0.52cm, align=center},
+  arr/.style={-{Stealth[length=2mm]}, primary!45, line width=0.8pt}
+]
+\node[part=primary]   (p1) at (0,0)    {Part I\\Analysing};
+\node[part=secondary] (p2) at (3.0,0)  {Part II\\Recursion and D\&C};
+\node[part=greenhl]   (p3) at (6.0,0)  {Part III\\Sorting and Structures};
+\node[part=purplehl]  (p4) at (9.0,0)  {Part IV\\Design Paradigms};
+\node[part=tealhl]    (p5) at (12.0,0) {Part V\\Graphs};
+\node[part=goldhl]    (p6) at (15.0,0) {Part VI\\Limits and Practice};
+
+\foreach \a/\b in {p1/p2,p2/p3,p3/p4,p4/p5,p5/p6}{\draw[arr] (\a) -- (\b);}
+
+\foreach \i/\t in {1/{1. Role and cost}, 2/{2. The three cases},
+                   3/{3. Asymptotics}, 4/{4. Loop invariants}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=primary] at (0,\yy) {\t};}
+
+\foreach \i/\t in {1/{5. Recurrences I}, 2/{6. Master theorem},
+                   3/{7. Brute force}, 4/{8. Merge sort}, 5/{9. Quicksort}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=secondary] at (3.0,\yy) {\t};}
+
+\foreach \i/\t in {1/{10. Lower bound}, 2/{11. Selection},
+                   3/{12. Heaps, trees}, 4/{13. Hashing}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=greenhl] at (6.0,\yy) {\t};}
+
+\foreach \i/\t in {1/{14. Greedy}, 2/{15. DP: elements},
+                   3/{16. DP: problems}, 4/{17. Amortised}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=purplehl] at (9.0,\yy) {\t};}
+
+\foreach \i/\t in {1/{18. Graphs}, 2/{19. MST},
+                   3/{20. Shortest paths}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=tealhl] at (12.0,\yy) {\t};}
+
+\foreach \i/\t in {1/{21. Strings}, 2/{22. P and NP},
+                   3/{23. Project}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=goldhl] at (15.0,\yy) {\t};}
+
+\node[rounded corners=3pt, fill=primary!7, draw=primary!30,
+      minimum width=17.3cm, minimum height=0.66cm,
+      font=\scriptsize\bfseries, text=primary] at (7.5,-4.35)
+      {\faIcon{stopwatch}~~Every chapter: is it correct, what does it cost, and
+       could anything do better?};
+\end{tikzpicture}}%
+{The six parts and the chapters in each. Chapter 10 is the hinge: it is the
+first result in the book about a \emph{problem} rather than about an
+algorithm.}{coursemap}
+
+\vspace{4pt}
+{\small\itshape\color{gray!70!black}
+This course is the published continuation of \emph{Data Structures} and sits
+beside \emph{Theory of Automata}. Appendix~F states what belongs to each.}
+
+\newpage
+
+%=====================================================================
+\chapter*{Notation}
+\addcontentsline{toc}{chapter}{Notation}
+\markboth{Notation}{}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.0cm}L{12.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+\endhead
+$n$ & The size of the input. Chapter 2 is about what that sentence hides \\
+$T(n)$ & The running time on an input of size $n$, in the model of Chapter 1 \\
+$\lg n$ & $\log_2 n$. Used throughout; $\ln$ is natural and $\log$ without a
+base means the base does not matter \\
+$\bigO{f(n)}$ & An asymptotic \emph{upper} bound: $T$ grows no faster than $f$ \\
+$\bigOm{f(n)}$ & An asymptotic \emph{lower} bound \\
+$\bigTh{f(n)}$ & Both: $T$ grows exactly as fast as $f$ \\
+$o(f(n))$, $\omega(f(n))$ & Strict versions of $O$ and $\Omega$ --- strictly
+slower, strictly faster \\
+$A[1 \mathinner{\ldotp\ldotp} n]$ & An array of $n$ elements, indexed
+\textbf{from 1}, as the pseudocode does. The C++ in \texttt{code/} indexes from
+0, and says so where it matters \\
+$|V|$, $|E|$ & The number of vertices and edges of a graph. Chapter 18 explains
+why bounds are written in both \\
+$\hat{c}_i$ & The amortised cost of the $i$th operation (Chapter 17) \\
+$\Phi$ & A potential function (Chapter 17) \\
+$\mathrm{P}$, $\mathrm{NP}$ & The complexity classes of Chapter 22 \\
+$\le_p$ & Polynomial-time reducibility (Chapter 22) \\
+$\lceil x \rceil$, $\lfloor x \rfloor$ & Ceiling and floor \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Three notational habits worth breaking now]
+\textbf{$O$ is not $\Theta$.} ``Merge sort is $\bigO{n^2}$'' is \emph{true} and
+nearly useless. If you mean the bound is tight, write $\Theta$. Chapter 3 is
+blunt about this because the examination is.
+
+\smallskip
+\textbf{$=$ in ``$T(n) = \bigO{n^2}$'' is not equality.} It is set membership
+by long-standing abuse: $O(n^2)$ is a \emph{set of functions} and $T$ belongs
+to it. You may never write $\bigO{n^2} = T(n)$, and $\bigO{n} = \bigO{n^2}$ is
+meaningless.
+
+\smallskip
+\textbf{Constants are discarded, not absent.} $\bigTh{n}$ with a constant of
+$10^6$ loses to $\bigTh{n^2}$ with a constant of $1$ until $n$ exceeds a
+million. The measured strand in every chapter exists to keep this in view.
+\end{alertbox}
+
+\newpage
+
+%=====================================================================
+\chapter*{Prerequisite Self-Check}
+\addcontentsline{toc}{chapter}{Prerequisite Self-Check}
+\markboth{Prerequisite Self-Check}{}
+
+Twelve questions. If you can answer ten, begin at Chapter~1. If you cannot,
+Appendix~B covers the mathematics and your Data Structures notes cover the
+rest --- and the gap is worth closing in Week~1 rather than Week~9.
+
+\begin{enumerate}[leftmargin=2.4em, itemsep=4pt, topsep=4pt]
+  \item Write the sum $1 + 2 + \cdots + n$ in closed form, and say why.
+        \hfill{\scriptsize\color{neutral}(Appendix~B)}
+  \item Evaluate $\sum_{i=0}^{k} 2^{i}$. What is it approximately, for large
+        $k$? \hfill{\scriptsize\color{neutral}(Appendix~B)}
+  \item Simplify $\log_2(n^3)$ and $2^{\log_2 n}$.
+        \hfill{\scriptsize\color{neutral}(Appendix~B)}
+  \item State the principle of mathematical induction, and use it to show
+        $\sum_{i=1}^{n} i = n(n+1)/2$.
+        \hfill{\scriptsize\color{neutral}(Appendix~B)}
+  \item A binary tree of height $h$ has at most how many leaves? Why?
+        \hfill{\scriptsize\color{neutral}(Data Structures)}
+  \item What is the height of a binary heap containing $n$ elements?
+        \hfill{\scriptsize\color{neutral}(\chref{structures})}
+  \item Give the worst-case height of an unbalanced binary search tree on $n$
+        keys, and the input that produces it.
+        \hfill{\scriptsize\color{neutral}(\chref{structures})}
+  \item Describe how a hash table resolves collisions by chaining, and what
+        happens as the load factor rises.
+        \hfill{\scriptsize\color{neutral}(\chref{hashing})}
+  \item What is the difference between an adjacency matrix and an adjacency
+        list, in space? \hfill{\scriptsize\color{neutral}(\chref{graphs})}
+  \item If a fair coin is tossed $n$ times, what is the expected number of
+        heads? \hfill{\scriptsize\color{neutral}(Appendix~B)}
+  \item In C++, what is the difference between \texttt{std::vector} and a raw
+        array, and which one has $\bigO{1}$ indexing?
+        \hfill{\scriptsize\color{neutral}(Appendix~A)}
+  \item Write a function that reverses an array in place. What does it cost?
+        \hfill{\scriptsize\color{neutral}(Programming Fundamentals)}
+\end{enumerate}
+
+\begin{conceptbox}
+Notice what is \emph{not} on that list: calculus, linear algebra, and any
+particular cleverness. This course needs fluency with sums, logarithms and
+induction, comfort with the data structures you already built, and a
+willingness to finish a proof rather than stop when the idea is clear.
+
+\smallskip
+It also needs you to be able to compile and run a C++ program. Appendix~A sets
+that up in one sitting; do it before Week~2, because from Chapter~1 onward
+every chapter asks you to measure something.
+\end{conceptbox}
+
+\newpage
+\tableofcontents
+\newpage
+\listoffigures
+\newpage
+
+\pagenumbering{arabic}

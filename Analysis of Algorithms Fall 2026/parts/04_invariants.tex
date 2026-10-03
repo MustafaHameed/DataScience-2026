@@ -1,0 +1,629 @@
+%=====================================================================
+\chapter{Correctness: Loop Invariants}\label{ch:invariants}
+%=====================================================================
+\locator{1}{Part I --- Analysing an Algorithm}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why testing cannot establish that an algorithm is
+        correct, and \textbf{quantify} the input space it would have to cover.
+  \item \textbf{State} a loop invariant for a given loop, and \textbf{name} the
+        three obligations a proof must discharge.
+  \item \textbf{Prove} insertion sort and binary search correct from their
+        invariants, including the permutation clause.
+  \item \textbf{Distinguish} partial correctness from total correctness, and
+        \textbf{prove} termination by exhibiting a decreasing measure.
+  \item \textbf{Diagnose} a loop whose invariant holds but which fails to
+        terminate.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{role} for the vocabulary. Section~4.2 leans on mathematical induction;
+Appendix~B has it if you want a refresher first.
+\end{prereq}
+
+\begin{keyterms}
+correctness $\bullet$ partial correctness $\bullet$ total correctness $\bullet$
+loop invariant $\bullet$ initialisation $\bullet$ maintenance $\bullet$
+termination $\bullet$ precondition $\bullet$ postcondition $\bullet$
+permutation $\bullet$ loop variant $\bullet$ decreasing measure $\bullet$
+well-founded
+\end{keyterms}
+
+\section{Why Testing Is Not Enough}
+
+A sorting routine takes any array of any length holding any values. That is an
+infinite set of inputs, and a test suite is a finite list. The gap between them
+is not a matter of diligence; it is a matter of cardinality.
+
+\begin{worked}[Counting What Exhaustive Testing Would Cost]
+Restrict the problem absurdly: arrays of exactly $n$ elements, each value drawn
+from $0$ to $99$. How many distinct sorted inputs must a binary search be
+tested against?
+
+\smallskip
+\textbf{Step 1.} Only the multiset of values matters, so the count is the number
+of multisets of size $n$ from an alphabet of $m = 100$:
+\[ \binom{m + n - 1}{n}. \]
+
+\smallskip
+\textbf{Step 2.} Evaluated by \texttt{code/ch04\_invariant.cpp}, and each array
+must then be tried against all 100 possible keys:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & sorted arrays & $\times$ keys \\
+\midrule
+ 4 & $4.42 \times 10^{6}$  & $4.4 \times 10^{8}$ \\
+ 8 & $3.26 \times 10^{11}$ & $3.3 \times 10^{13}$ \\
+16 & $1.50 \times 10^{19}$ & $1.5 \times 10^{21}$ \\
+20 & $2.46 \times 10^{22}$ & $2.5 \times 10^{24}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Step 3.} At a billion tests a second, the $n = 20$ row takes
+$2.5 \times 10^{15}$ seconds --- about \textbf{80 million years}. And that is
+for arrays of twenty elements holding two-digit numbers.
+
+\smallskip
+\textbf{Step 4 --- the conclusion.} Testing samples the input space; it cannot
+cover it. A proof covers it, in half a page, for every $n$ and every alphabet
+at once. The two activities answer different questions, and this chapter is
+about the one testing cannot answer.
+\end{worked}
+
+\begin{conceptbox}[What testing is still for]
+None of this says do not test. A proof establishes that the \emph{algorithm} is
+correct; it says nothing about whether your \emph{program} implements that
+algorithm, which is where most real defects live --- an off-by-one in a loop
+bound, a wrong variable name, an integer overflow the model ignored.
+
+\smallskip
+Proof and testing catch disjoint classes of bug. The lab in this chapter
+contains a defect that \emph{testing found in a third of its trials and a
+careless proof would have missed}, and \chref{dptwo}'s lab contains the reverse.
+Use both.
+\end{conceptbox}
+
+\section{The Loop Invariant}
+
+\begin{definitionbox}[Loop Invariant]
+A \term{loop invariant} is an assertion about the program's state that is true
+immediately before the loop's first iteration and immediately before every
+subsequent one.
+
+\smallskip
+A proof by loop invariant has \textbf{three obligations}:
+
+\begin{tightnum}
+  \item \textbf{Initialisation.} The invariant is true before the first
+        iteration.
+  \item \textbf{Maintenance.} If it is true before an iteration, it is true
+        before the next one.
+  \item \textbf{Termination.} The loop ends, and when it does the invariant ---
+        together with the reason the loop stopped --- gives the result you
+        wanted.
+\end{tightnum}
+\end{definitionbox}
+
+\begin{conceptbox}[It is induction, wearing different clothes]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.0cm}L{4.0cm}L{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Invariant proof} & \textbf{Induction} & \textbf{On what} \\
+\midrule
+\endhead
+initialisation & base case & the loop has run 0 times \\
+maintenance & inductive step & assume after $k$, show after $k+1$ \\
+termination & --- & no counterpart: induction proves a property for all $k$,
+  and says nothing about the loop stopping \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{The missing row is the whole point of Section~4.5.} Induction on the
+iteration count gives you ``the invariant holds after every iteration that
+happens''. Whether any particular iteration happens is a different question,
+and nothing in the first two obligations answers it.
+\end{conceptbox}
+
+\begin{definitionbox}[Partial and Total Correctness]
+An algorithm is \term{partially correct} if, \emph{whenever it halts}, its
+output satisfies the postcondition.
+
+\smallskip
+It is \term{totally correct} if it is partially correct \emph{and} halts on
+every input satisfying the precondition.
+
+\smallskip
+Initialisation and maintenance establish partial correctness. Termination is
+what upgrades it, and Section~4.6 measures a program that has the first and not
+the second.
+\end{definitionbox}
+
+\section{Insertion Sort, Proved}
+
+\dsfig{\aoaalg{\algname{Insertion-Sort}$(A, n)$}{
+\For{$j \gets 2$ \textbf{to} $n$}
+  \State $\mathit{key} \gets A[j]$
+    \Comment{the element to place}
+  \State $i \gets j - 1$
+  \While{$i > 0$ \textbf{and} $A[i] > \mathit{key}$}
+    \State $A[i+1] \gets A[i]$
+      \Comment{shift right}
+    \State $i \gets i - 1$
+  \EndWhile
+  \State $A[i+1] \gets \mathit{key}$
+\EndFor
+}}{\algname{Insertion-Sort}. The outer loop's invariant concerns the prefix
+$A[1\mathinner{\ldotp\ldotp}j-1]$; the inner loop's concerns where
+$\mathit{key}$ has got to. Lines are numbered so the proof can cite them.}{insort}
+
+The algorithm is indexed from 1, as the pseudocode throughout this book is, and
+the C++ in the labs is indexed from 0. Appendix~A explains the translation; the
+mathematics is cleaner from 1 and the code is cleaner from 0, and pretending
+otherwise helps nobody.
+
+\begin{theorem}[Insertion sort is correct]\label{thm:insort}
+Given an array $A[1 \mathinner{\ldotp\ldotp} n]$ of $n \ge 1$ numbers,
+\algname{Insertion-Sort} terminates with $A$ holding a permutation of its
+original contents, in non-decreasing order.
+\end{theorem}
+
+\begin{proof}
+Take as the invariant for the \textbf{for} loop:
+
+\smallskip
+\noindent\textit{At the start of each iteration with index $j$, the subarray
+$A[1 \mathinner{\ldotp\ldotp} j-1]$ consists of the elements originally in
+$A[1 \mathinner{\ldotp\ldotp} j-1]$, in non-decreasing order.}
+
+\smallskip
+\textbf{Initialisation.} Before the first iteration $j = 2$, so the subarray is
+$A[1 \mathinner{\ldotp\ldotp} 1]$: one element, trivially sorted, and trivially
+the element originally there.
+
+\smallskip
+\textbf{Maintenance.} Assume the invariant before the iteration with index $j$.
+The inner \textbf{while} loop shifts $A[i]$ to $A[i+1]$ for decreasing $i$ while
+$A[i] > \mathit{key}$, maintaining its own invariant: \emph{the entries
+$A[i+2 \mathinner{\ldotp\ldotp} j]$ are those originally in
+$A[i+1 \mathinner{\ldotp\ldotp} j-1]$, all of them $> \mathit{key}$, and
+position $A[i+1]$ is free.} The loop exits when $i = 0$ or
+$A[i] \le \mathit{key}$; in either case every entry left of $i+1$ is
+$\le \mathit{key}$ and every entry right of it is $> \mathit{key}$, so writing
+$\mathit{key}$ into the free slot $A[i+1]$ leaves
+$A[1 \mathinner{\ldotp\ldotp} j]$ sorted. No element was overwritten without
+first being copied, and $\mathit{key}$ was saved before the shifting began, so
+the subarray still holds exactly the original elements. Incrementing $j$ makes
+this the invariant for the next iteration.
+
+\smallskip
+\textbf{Termination.} The loop variable $j$ increases by one each iteration and
+the loop ends when $j = n+1$. Substituting into the invariant: $A[1
+\mathinner{\ldotp\ldotp} n]$ consists of the elements originally in $A[1
+\mathinner{\ldotp\ldotp} n]$, in non-decreasing order --- which is the
+postcondition. Termination itself is immediate because $j$ strictly increases
+towards the fixed bound $n+1$, and the inner loop terminates because $i$
+strictly decreases towards the guard $i > 0$.
+\end{proof}
+
+\begin{alertbox}[Do not drop the permutation clause]
+It is tempting to state the invariant as ``$A[1\mathinner{\ldotp\ldotp}j-1]$ is
+sorted'' and save eleven words. Then consider this implementation:
+\begin{center}
+\emph{overwrite every element of $A$ with zero.}
+\end{center}
+Its output is sorted. It satisfies the shortened invariant at every iteration
+and terminates. It is not a sorting algorithm.
+
+\smallskip
+``Sorted'' is only half the postcondition; ``a permutation of the input'' is the
+other half, and a proof that omits it proves the wrong theorem. This is the
+single most common error in student invariant proofs.
+\end{alertbox}
+
+\section{Binary Search, Where the Invariant Is About Exclusion}
+
+Insertion sort's invariant describes what has been \emph{built}. The other
+common shape describes what has been \emph{ruled out}.
+
+\dsfig{\aoaalg{\algname{Binary-Search}$(A, n, x)$}{
+\State $\mathit{lo} \gets 1$;\quad $\mathit{hi} \gets n$
+\While{$\mathit{lo} \le \mathit{hi}$}
+  \State $\mathit{mid} \gets \lfloor (\mathit{lo} + \mathit{hi})/2 \rfloor$
+  \If{$A[\mathit{mid}] = x$}
+    \State \Return $\mathit{mid}$
+  \ElsIf{$A[\mathit{mid}] < x$}
+    \State $\mathit{lo} \gets \mathit{mid} + 1$
+      \Comment{left half cannot hold $x$}
+  \Else
+    \State $\mathit{hi} \gets \mathit{mid} - 1$
+      \Comment{right half cannot hold $x$}
+  \EndIf
+\EndWhile
+\State \Return \algname{not-found}
+}}{\algname{Binary-Search} on a sorted array. The $+1$ on line~7 and the $-1$ on
+line~9 are what make the search range strictly smaller every iteration ---
+Section~4.5 is about what happens when one of them is missing.}{binsearch}
+
+\begin{theorem}[Binary search is correct]\label{thm:binsearch}
+Let $A[1 \mathinner{\ldotp\ldotp} n]$ be sorted in non-decreasing order.
+\algname{Binary-Search} returns an index $\mathit{mid}$ with
+$A[\mathit{mid}] = x$ if $x$ occurs in $A$, and \algname{not-found} otherwise.
+\end{theorem}
+
+\begin{proof}
+Invariant: \emph{if $x$ occurs anywhere in $A$, then it occurs in
+$A[\mathit{lo} \mathinner{\ldotp\ldotp} \mathit{hi}]$.}
+
+\smallskip
+\textbf{Initialisation.} $\mathit{lo} = 1$ and $\mathit{hi} = n$, so the range
+is all of $A$ and the implication is trivial.
+
+\smallskip
+\textbf{Maintenance.} Suppose the invariant holds and the loop body runs. If
+$A[\mathit{mid}] = x$ the procedure returns a correct index and there is nothing
+to maintain. If $A[\mathit{mid}] < x$ then, because $A$ is sorted, every index
+$k \le \mathit{mid}$ has $A[k] \le A[\mathit{mid}] < x$, so no such position
+holds $x$; discarding them by setting $\mathit{lo} \gets \mathit{mid}+1$
+therefore cannot discard an occurrence of $x$, and the invariant survives. The
+case $A[\mathit{mid}] > x$ is symmetric.
+
+\smallskip
+\textbf{Termination.} Each iteration either returns, or replaces
+$\mathit{hi}-\mathit{lo}$ by a strictly smaller value: line~7 raises
+$\mathit{lo}$ past $\mathit{mid} \ge \mathit{lo}$, and line~9 lowers
+$\mathit{hi}$ below $\mathit{mid} \le \mathit{hi}$. Since
+$\mathit{hi}-\mathit{lo}$ is an integer that strictly decreases and the loop
+runs only while $\mathit{hi} - \mathit{lo} \ge 0$, the loop performs finitely
+many iterations. If it exits, then $\mathit{lo} > \mathit{hi}$, so the range
+$A[\mathit{lo} \mathinner{\ldotp\ldotp} \mathit{hi}]$ is empty; by the invariant
+$x$ occurs in $A$ only if it occurs in an empty range, so it does not occur at
+all, and \algname{not-found} is correct.
+\end{proof}
+
+\begin{corollary}[Binary search is logarithmic]
+Binary search performs at most $\lfloor \lg n \rfloor + 1$ iterations, since
+$\mathit{hi}-\mathit{lo}+1$ at least halves each time and the loop stops when
+it reaches $0$.
+\end{corollary}
+
+\section{Termination: The Obligation People Skip}
+
+The termination argument above did real work, and it is worth isolating what
+kind of work.
+
+\begin{definitionbox}[Loop Variant]
+A \term{loop variant}, or decreasing measure, is a quantity $\mu$ computed from
+the program state such that
+
+\begin{tight}
+  \item $\mu$ takes values in a \term{well-founded} set --- for our purposes,
+        the non-negative integers;
+  \item every iteration strictly decreases $\mu$.
+\end{tight}
+
+\smallskip
+Then the loop terminates, because a strictly decreasing sequence of
+non-negative integers must be finite.
+\end{definitionbox}
+
+The variants used so far: $n+1-j$ for insertion sort's outer loop, $i$ for its
+inner loop, and $\mathit{hi}-\mathit{lo}+1$ for binary search.
+
+\dsfig{\aoaalg{\algname{Euclid-GCD}$(a, b)$}{
+\Require $a \ge 0$, $b \ge 0$, not both zero
+\While{$b \ne 0$}
+  \State $r \gets a \bmod b$
+  \State $a \gets b$
+  \State $b \gets r$
+\EndWhile
+\State \Return $a$
+}}{\algname{Euclid-GCD}. Here the invariant is an equality --- $\gcd(a,b)$ never
+changes --- and the variant is simply $b$, whose decrease is what makes the
+loop finite.}{euclid}
+
+\begin{theorem}[Euclid's algorithm is totally correct]\label{thm:euclid}
+\algname{Euclid-GCD}$(a,b)$ terminates and returns $\gcd(a,b)$.
+\end{theorem}
+
+\begin{proof}
+\textbf{Invariant:} $\gcd(a, b)$ equals the greatest common divisor of the
+original arguments, and not both of $a,b$ are zero.
+
+\smallskip
+\textbf{Initialisation.} Immediate --- $a$ and $b$ are the original arguments.
+
+\smallskip
+\textbf{Maintenance.} The body replaces $(a,b)$ by $(b,\, a \bmod b)$. Write
+$a = qb + r$ with $r = a \bmod b$. Any $d$ dividing both $b$ and $r$ divides
+$qb + r = a$; any $d$ dividing both $a$ and $b$ divides $a - qb = r$. So the
+pairs $(a,b)$ and $(b,r)$ have the same set of common divisors, hence the same
+greatest one, and the invariant is preserved.
+
+\smallskip
+\textbf{Termination.} Take $\mu = b$. Since $b \neq 0$ in the body,
+$r = a \bmod b$ satisfies $0 \le r < b$, so the new value of $b$ is strictly
+less than the old one and never negative. A strictly decreasing sequence of
+non-negative integers is finite, so the loop ends --- with $b = 0$. Then
+$\gcd(a,0) = a$, and by the invariant $a$ is the gcd of the original arguments,
+which is what line~6 returns.
+\end{proof}
+
+\begin{alertbox}[Where the measure must live]
+``Strictly decreasing'' is not enough on its own; the measure must decrease
+within a \emph{well-founded} set. Over the non-negative reals it is not:
+\[ x \gets x/2 \qquad \text{from } x = 1 \]
+strictly decreases forever and never terminates. Over the non-negative integers
+no such sequence exists, which is the entire force of the argument.
+
+\smallskip
+Use integers, and if your measure is naturally a real number, find an integer
+that bounds it.
+\end{alertbox}
+
+\section{A Loop Whose Invariant Holds and Which Never Finishes}
+
+Here is the case the three obligations exist to catch. Change one character of
+\algname{Binary-Search}: on line~7 write $\mathit{lo} \gets \mathit{mid}$
+instead of $\mathit{lo} \gets \mathit{mid}+1$.
+
+\begin{conceptbox}[The invariant still holds --- and that is the problem]
+Re-read the maintenance argument of Theorem~\ref{thm:binsearch}. It establishes
+that positions $k \le \mathit{mid}$ cannot hold $x$, and therefore that
+discarding them is safe. Setting $\mathit{lo} \gets \mathit{mid}$ discards
+\emph{fewer} positions than that --- it keeps $\mathit{mid}$ itself. Keeping a
+position cannot lose an occurrence of $x$, so:
+
+\smallskip
+\textbf{Initialisation still holds. Maintenance still holds.} The modified
+program is \emph{partially correct}: if it answers, the answer is right.
+
+\smallskip
+\textbf{Termination fails.} When $\mathit{hi} = \mathit{lo}+1$ we get
+$\mathit{mid} = \lfloor (2\mathit{lo}+1)/2 \rfloor = \mathit{lo}$, so
+$\mathit{lo} \gets \mathit{mid}$ leaves $\mathit{lo}$ and $\mathit{hi}$
+unchanged and the next iteration is identical. The measure
+$\mathit{hi}-\mathit{lo}$ no longer strictly decreases, and the loop spins
+forever.
+\end{conceptbox}
+
+\begin{worked}[Measured: 132 Million Iterations, Zero Wrong Answers]
+\texttt{code/ch04\_invariant.cpp} runs the broken search on a 64-element sorted
+array, 10{,}000 trials with keys known to be present and 10{,}000 with keys
+known to be absent, and \emph{audits the invariant on every single iteration}.
+A run that exceeds 10{,}000 iterations is recorded as non-terminating.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\rowcolor{primary!15}
+10{,}000 trials each & non-termination & wrong answer \\
+\midrule
+keys always present & 3{,}228 & 0 \\
+keys always absent  & 10{,}000 & 0 \\
+\midrule
+\textbf{iterations audited} & \multicolumn{2}{r}{\textbf{132{,}311{,}650}} \\
+\textbf{invariant violations} & \multicolumn{2}{r}{\textbf{0}} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Read the second column first.} In 20{,}000 trials the broken search
+returned a wrong answer \textbf{not once}. That is not luck; it is precisely
+what the invariant guarantees, and the audit confirms the invariant never
+broke across 132 million iterations.
+
+\smallskip
+\textbf{Now read the first column.} 13{,}228 of the 20{,}000 runs never
+finished. The program is partially correct and totally useless.
+
+\smallskip
+\textbf{The distribution matters for how fast you find it.} Keys drawn from
+inside the array hang about a third of the time; keys known to be absent hang
+every time. A test suite built only from present keys would still have caught
+this --- in roughly three trials --- which is worth saying plainly, because the
+tidier story would be that testing misses it. Testing found this bug easily.
+
+\smallskip
+\textbf{What testing could not have told you is \emph{why}}, or that the
+defect is confined entirely to termination with partial correctness intact. And
+a proof that checked only initialisation and maintenance --- which is what most
+students write --- would have certified this program as correct.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Omitting the permutation clause} from a sorting invariant. The
+        all-zeros ``sort'' satisfies the weakened version.
+  \item \textbf{Stating an invariant that mentions no loop variable.} ``$A$ is
+        an array of numbers'' is true throughout and proves nothing. A useful
+        invariant relates the work done so far to the loop index.
+  \item \textbf{Checking the invariant at the wrong moment.} It is asserted
+        \emph{before} each iteration, not in the middle of the body, where it is
+        routinely false --- insertion sort's prefix is genuinely unsorted while
+        the shifting is in progress.
+  \item \textbf{Treating termination as a formality.} Section~4.6 is a program
+        that passes the other two obligations and runs forever.
+  \item \textbf{A measure that decreases but not in a well-founded set.}
+        $x \gets x/2$ over the reals.
+  \item \textbf{Proving the loop correct and forgetting the exit condition.}
+        The invariant alone is not the postcondition; you need the invariant
+        \emph{and} the reason the loop stopped, which is why every termination
+        paragraph above substitutes the final index back in.
+  \item \textbf{Assuming a proved algorithm gives a correct program.} The
+        proof is about the algorithm; overflow, off-by-one and typing errors
+        live below it.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[A Bug That Is Never Wrong]
+Reproduces the table in Section~4.6. Expect twenty-five minutes; part C audits
+132 million iterations and takes about a minute.
+
+\begin{lstlisting}[language=C++]
+// ch04_invariant.cpp -- why the THIRD obligation is not decoration.
+// Build: cl /O2 /EHsc /std:c++17 ch04_invariant.cpp  (see Appendix A)
+
+// --- 1. The correct version, and the invariant it maintains --------
+// Invariant: if x occurs in a, then it occurs in a[lo..hi].
+//   Initialisation: lo = 0, hi = n-1, so the range is all of a.
+//   Maintenance:    a is sorted, so discarding the half that cannot
+//                   contain x preserves the invariant.
+//   Termination:    hi - lo strictly decreases and is bounded below.
+static int bsearch_ok(const std::vector<int>& a, int x) {
+    int lo = 0, hi = (int)a.size() - 1;
+    while (lo <= hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (a[mid] == x) return mid;
+        if (a[mid] < x) lo = mid + 1;   // the correct step
+        else            hi = mid - 1;
+    }
+    return -1;
+}
+
+// --- 2. The same search with one character changed -----------------
+// "lo = mid" still discards nothing that could hold x, so the
+// invariant SURVIVES. But when hi == lo + 1 and a[mid] < x, mid
+// computes to lo, so lo = mid leaves lo and hi UNCHANGED and the loop
+// makes no progress. It is not wrong; it is non-terminating.
+static int bsearch_bug(const std::vector<int>& a, int x,
+                       bool* inv_ever_broken, long long* iters) {
+    int lo = 0, hi = (int)a.size() - 1;
+    for (int step = 0; step < CAP; ++step) {
+        if (lo > hi) return -1;
+        int mid = lo + (hi - lo) / 2;
+
+        // Audit the invariant itself, every single iteration: if x is
+        // present in the whole array, is it still inside [lo, hi]?
+        if (std::binary_search(a.begin(), a.end(), x)) {
+            bool in_window = false;
+            for (int i = lo; i <= hi; ++i)
+                if (a[i] == x) { in_window = true; break; }
+            if (!in_window) *inv_ever_broken = true;
+        }
+        ++*iters;
+
+        if (a[mid] == x) return mid;
+        if (a[mid] < x) lo = mid;       // <-- the one-character bug
+        else            hi = mid - 1;
+    }
+    return -2;                          // stands in for "forever"
+}
+
+// --- 3. Ten thousand tests with keys that are present --------------
+// --- 4. The same ten thousand tests, keys absent -------------------
+// The only change between parts 3 and 4 is the distribution the keys
+// are drawn from, and it changes the hang rate from 32% to 100%.
+
+// --- 5. And the invariant? It never broke once. --------------------
+// inv_ever_broken is set by the audit in part 2 and is never set.
+// Printing that zero beside the 13,228 hangs IS the experiment: the
+// two numbers together say "partially correct, and useless".
+printf("   iterations audited : %lld\n", iters);
+printf("   invariant violated : %s\n", broken ? "YES" : "NO");
+printf("   wrong answers, A+B : %d\n", wrong_present + wrong_absent);
+
+// --- 6. Why proving beats testing, counted -------------------------
+// Exhaustive testing means every sorted array and every key. The
+// number of sorted arrays of length n over an alphabet of size m is
+// the multiset coefficient C(m+n-1, n).
+for (int n : {4, 8, 16, 20}) {
+    const int m = 100;
+    double c = 1.0;
+    for (int i = 1; i <= n; ++i) c *= (double)(m + n - i) / i;
+    printf("   n=%2d, values 0..99 : %.3g sorted arrays x %d keys\n",
+           n, c, m);
+}
+\end{lstlisting}
+
+\textbf{What to notice.} The \texttt{invariant violated} line prints
+\texttt{NO}, and it is the most important line in the output: the audit is not
+failing to find a violation because it is badly written, it is failing because
+there is none to find.
+
+\smallskip
+\textbf{Then try to break it.} Change the bug from \texttt{lo = mid} to
+\texttt{lo = mid + 2}. Now predict, before running it, which of the three
+obligations fails --- and which column of the table changes. This mutation
+terminates and gives wrong answers, the exact mirror image of the one in the
+book, and it is the case an invariant proof catches immediately.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item State a loop invariant for a loop that computes $\sum_{i=1}^{n} A[i]$
+        into a variable \textit{total}, and give the measure that proves it
+        terminates.
+  \item A classmate's invariant for selection sort reads: ``after each
+        iteration, $A[1\mathinner{\ldotp\ldotp}k]$ is sorted''. Give an
+        incorrect program that satisfies it, and repair the invariant.
+  \item Explain, in terms of the three obligations, how a program can be
+        partially correct but not totally correct, and give the measure whose
+        absence causes it.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Testing samples an infinite input space. For sorted arrays of 20
+        two-digit numbers, exhaustive testing needs $2.5 \times 10^{24}$ cases
+        --- about 80 million years. A proof covers every $n$ at once.
+  \item A loop invariant proof has three obligations: initialisation,
+        maintenance, termination. The first two are induction; the third has no
+        counterpart in induction and is where the real content often lies.
+  \item Initialisation plus maintenance give \emph{partial} correctness --- if
+        it halts, it is right. Termination upgrades that to total correctness.
+  \item Insertion sort's invariant must say the prefix holds \emph{the elements
+        originally there}, in order. Drop the permutation clause and the
+        all-zeros ``sort'' satisfies it.
+  \item Binary search's invariant is about exclusion: if $x$ is in $A$ at all,
+        it is in $A[\mathit{lo}\mathinner{\ldotp\ldotp}\mathit{hi}]$.
+  \item Termination is proved by a loop variant: an integer-valued measure that
+        strictly decreases. Over the reals the argument fails --- $x \gets x/2$.
+  \item Measured: a binary search with $\mathit{lo} \gets \mathit{mid}$ gave
+        \textbf{zero} wrong answers in 20{,}000 trials and \textbf{zero}
+        invariant violations across 132{,}311{,}650 audited iterations --- and
+        failed to terminate in 13{,}228 of those trials. Two obligations out of
+        three is not correctness.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The three obligations of a loop invariant proof are:
+        (a)~initialisation, iteration, conclusion; (b)~initialisation,
+        maintenance, termination; (c)~precondition, invariant, postcondition;
+        (d)~base case, inductive step, generalisation.
+  \item \textbf{(MCQ)} Initialisation and maintenance alone establish:
+        (a)~total correctness; (b)~partial correctness; (c)~termination;
+        (d)~a running-time bound.
+  \item \textbf{(Short)} Explain why a loop invariant proof is a proof by
+        induction, and identify the one obligation that has no inductive
+        counterpart.
+  \item \textbf{(Short)} Why must a sorting algorithm's invariant mention that
+        the sorted prefix contains the original elements? Give the program that
+        makes the point.
+  \item \textbf{(Short)} State the two conditions a loop variant must satisfy,
+        and give an example of a measure satisfying the first but not the
+        second.
+  \item \textbf{(Applied)} Prove that the following loop computes $a^{n}$ for
+        integer $n \ge 0$, discharging all three obligations:
+        \textit{$r \gets 1$; $k \gets n$; while $k > 0$ do $r \gets r \cdot a$;
+        $k \gets k - 1$}.
+  \item \textbf{(Applied)} The measured experiment found a defect that is never
+        wrong and sometimes never finishes. Construct the mirror-image defect
+        --- one that always terminates and is sometimes wrong --- in binary
+        search, say which obligation it violates, and describe the test that
+        would find it.
+\end{reviewq}
