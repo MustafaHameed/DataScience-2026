@@ -3,7 +3,482 @@
 %=====================================================================
 \locator{2}{Part II --- Recursion and Divide-and-Conquer}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} the brute-force strategy and \textbf{apply} it to a
+        stated problem \emph{(CLO-6)}.
+  \item \textbf{Distinguish} removing redundant work within a search from
+        changing the search itself, and \textbf{say} which one changes the
+        order of growth.
+  \item \textbf{Derive} the running time of the three maximum-subarray
+        algorithms and \textbf{verify} the predicted ratios by measurement.
+  \item \textbf{State} the conditions under which brute force is the correct
+        engineering choice.
+  \item \textbf{Use} a brute-force implementation as a correctness oracle for a
+        cleverer one.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{asymptotics} for the notation, \chref{invariants} for the invariant in
+Section~7.3. No recursion is needed; this chapter is the baseline the rest of
+Part~II improves on.
+\end{prereq}
+
+\begin{keyterms}
+brute force $\bullet$ exhaustive search $\bullet$ candidate solution $\bullet$
+maximum subarray $\bullet$ redundant work $\bullet$ incremental computation
+$\bullet$ Kadane's algorithm $\bullet$ oracle $\bullet$ baseline
+\end{keyterms}
+
+\section{The Strategy With No Ideas In It}
+
+\begin{definitionbox}[Brute Force]
+\term{Brute force} --- also \term{exhaustive search} --- solves a problem by
+generating every candidate solution and testing each one. It needs no insight
+into the problem's structure beyond the ability to recognise an answer.
+
+\smallskip
+It is the first algorithm you should write and, often, the last one you should
+ship.
+\end{definitionbox}
+
+\begin{conceptbox}[Why a chapter on the obvious]
+The published HEC outline lists brute force among the design techniques, beside
+divide-and-conquer, greedy and dynamic programming. That is the right company
+for it, for three reasons.
+
+\begin{tightnum}
+  \item \textbf{It is the baseline.} ``Quicksort is fast'' is meaningless
+        without something to be fast relative to. Every later chapter is an
+        improvement on an exhaustive search, and you cannot measure an
+        improvement against nothing.
+  \item \textbf{It is the oracle.} A brute-force implementation is short enough
+        to be obviously correct, so it is what you test the clever algorithm
+        \emph{against}. Section~7.4 does exactly this.
+  \item \textbf{It is sometimes the answer.} For small or bounded $n$, for code
+        that runs once, or for a correctness-critical path, the four-line
+        version you can read in one sitting beats the forty-line version you
+        cannot.
+\end{tightnum}
+\end{conceptbox}
+
+\section{A Problem With Three Answers}
+
+\begin{definitionbox}[Maximum Subarray]
+Given an array $A[1 \mathinner{\ldotp\ldotp} n]$ of numbers, some negative,
+find the contiguous block $A[i \mathinner{\ldotp\ldotp} j]$ with the largest
+sum.
+
+\smallskip
+If all the numbers were positive the answer would be the whole array and there
+would be no problem. The negatives are what make it one.
+\end{definitionbox}
+
+\dsfig{\aoaalg{\algname{Max-Subarray-Brute}$(A, n)$}{
+\State $\mathit{best} \gets -\infty$
+\For{$i \gets 1$ \textbf{to} $n$}
+  \For{$j \gets i$ \textbf{to} $n$}
+    \State $s \gets 0$
+    \For{$k \gets i$ \textbf{to} $j$}
+      \State $s \gets s + A[k]$
+        \Comment{re-added from scratch}
+    \EndFor
+    \State $\mathit{best} \gets \max(\mathit{best}, s)$
+  \EndFor
+\EndFor
+\State \Return $\mathit{best}$
+}}{\algname{Max-Subarray-Brute}: every block, summed from scratch. Three nested
+loops, so $\bigTh{n^{3}}$ --- and lines 4 to 7 are doing work that lines 4 to 7
+of the previous iteration already did.}{brute3}
+
+\begin{theorem}[The brute force is cubic]\label{thm:brute3}
+\algname{Max-Subarray-Brute} runs in $\bigTh{n^{3}}$ time.
+\end{theorem}
+
+\begin{proof}
+For each pair $(i,j)$ with $i \le j$, the inner loop performs $j - i + 1$
+additions. Summing over all pairs,
+\[ \sum_{i=1}^{n}\sum_{j=i}^{n} (j-i+1)
+   = \sum_{i=1}^{n}\sum_{m=1}^{n-i+1} m
+   = \sum_{i=1}^{n} \frac{(n-i+1)(n-i+2)}{2}
+   = \sum_{p=1}^{n} \frac{p(p+1)}{2}. \]
+The last sum is $\tfrac12\bigl(\sum p^{2} + \sum p\bigr) =
+\tfrac12\bigl(\tfrac{n(n+1)(2n+1)}{6} + \tfrac{n(n+1)}{2}\bigr)$, whose leading
+term is $n^{3}/6$. By Lemma~\ref{lem:poly} this is $\bigTh{n^{3}}$. Every other
+operation is $\bigO{1}$ per pair, contributing $\bigO{n^{2}}$, which the sum
+rule absorbs.
+\end{proof}
+
+\subsection*{Removing the waste, which is not a new idea}
+
+The inner loop recomputes a sum the previous iteration almost had. Extending
+the block from $j$ to $j+1$ costs one addition.
+
+\dsfig{\aoaalg{\algname{Max-Subarray-Quadratic}$(A, n)$}{
+\State $\mathit{best} \gets -\infty$
+\For{$i \gets 1$ \textbf{to} $n$}
+  \State $s \gets 0$
+  \For{$j \gets i$ \textbf{to} $n$}
+    \State $s \gets s + A[j]$
+      \Comment{carried, not rebuilt}
+    \State $\mathit{best} \gets \max(\mathit{best}, s)$
+  \EndFor
+\EndFor
+\State \Return $\mathit{best}$
+}}{\algname{Max-Subarray-Quadratic}. The search is unchanged --- still every
+pair $(i,j)$ --- but each candidate now costs $\bigO{1}$ instead of
+$\bigO{n}$. A better accountant, not a better idea.}{brute2}
+
+\begin{alertbox}[This is the distinction the chapter exists for]
+Going from $n^{3}$ to $n^{2}$ removed \emph{redundant work inside} the search.
+The set of candidates examined did not change: still all $\binom{n}{2}$ pairs.
+
+\smallskip
+Going from $n^{2}$ to $n$, next, will change \emph{the search itself} --- it
+will stop examining pairs at all.
+
+\smallskip
+Both are worth doing and they are different activities. The first is careful
+programming and gets you a constant or a factor of $n$; the second requires an
+idea about the problem, and it is what the rest of this book is about.
 \end{alertbox}
+
+\section{An Idea About the Problem}
+
+\begin{conceptbox}[Kadane's observation]
+Ask a smaller question: \emph{what is the best block \textbf{ending exactly at
+position $j$}?}
+
+\smallskip
+Such a block either extends the best block ending at $j-1$, or it starts fresh
+at $j$. There is no third option --- a block ending at $j$ that does not
+contain $j-1$ must begin at $j$. So if $H_{j}$ is the best sum ending at $j$,
+\[ H_{j} = \max\bigl(A[j],\; H_{j-1} + A[j]\bigr), \]
+and the answer is $\max_{j} H_{j}$.
+
+\smallskip
+That one sentence removes an entire dimension from the search. It is also the
+first appearance in this book of \emph{optimal substructure} --- the best
+solution built from best solutions to smaller versions --- which \chref{dpone}
+makes into a general technique.
+\end{conceptbox}
+
+\dsfig{\aoaalg{\algname{Max-Subarray-Kadane}$(A, n)$}{
+\State $\mathit{here} \gets 0$;\quad $\mathit{best} \gets -\infty$
+\For{$j \gets 1$ \textbf{to} $n$}
+  \State $\mathit{here} \gets \max\bigl(A[j],\, \mathit{here} + A[j]\bigr)$
+    \Comment{extend, or start fresh}
+  \State $\mathit{best} \gets \max(\mathit{best}, \mathit{here})$
+\EndFor
+\State \Return $\mathit{best}$
+}}{\algname{Max-Subarray-Kadane}. One pass, two variables. The loop invariant
+is what makes it believable, and Theorem~\ref{thm:kadane} is what makes it
+true.}{kadane}
+
+\begin{theorem}[Kadane's algorithm is correct]\label{thm:kadane}
+\algname{Max-Subarray-Kadane} returns the maximum subarray sum, in
+$\bigTh{n}$ time.
+\end{theorem}
+
+\begin{proof}
+Invariant: \emph{at the start of the iteration for $j$, $\mathit{here}$ is the
+maximum sum of a block ending at $j-1$, and $\mathit{best}$ is the maximum sum
+of any block within $A[1 \mathinner{\ldotp\ldotp} j-1]$.}
+
+\smallskip
+\textbf{Initialisation.} Before $j = 1$ both ranges are empty;
+$\mathit{best} = -\infty$ correctly records that no block has been seen, and
+$\mathit{here} = 0$ is the empty sum.
+
+\smallskip
+\textbf{Maintenance.} Assume the invariant before iteration $j$. Any block
+ending at $j$ either contains $j-1$ --- in which case its sum is (the sum of a
+block ending at $j-1$) $+\, A[j]$, maximised by $\mathit{here} + A[j]$ using
+the invariant --- or it does not, in which case it is $A[j]$ alone. Line 3
+takes the larger of exactly these two, so afterwards $\mathit{here}$ is the
+best sum ending at $j$. Line 4 then extends the running maximum over one more
+position, re-establishing the invariant for $j+1$.
+
+\smallskip
+\textbf{Termination.} The loop runs $n$ times and stops. Substituting $j = n+1$
+into the invariant, $\mathit{best}$ is the maximum sum of any block within
+$A[1\mathinner{\ldotp\ldotp}n]$, which is the postcondition. The body is
+$\bigO{1}$ and runs $n$ times, so the time is $\bigTh{n}$.
+\end{proof}
+
+\section{The Three, Raced}
+
+\begin{worked}[First, Do They Agree?]
+A faster algorithm that returns a different answer is not faster. Before any
+timing, \texttt{code/ch07\_brute.cpp} runs all three on the same inputs:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrl@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & cubic & quadratic & linear & \\
+\midrule
+  1 &   35 &   35 &   35 & agree \\
+  2 &   80 &   80 &   80 & agree \\
+ 10 &  265 &  265 &  265 & agree \\
+100 &  563 &  563 &  563 & agree \\
+500 & 1362 & 1362 & 1362 & agree \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+This is the oracle use of brute force, and it is not a formality. The cubic
+version is three nested loops with no ideas in it and is almost impossible to
+get wrong; Kadane's is four lines that are easy to get subtly wrong --- initialise
+$\mathit{best}$ to $0$ instead of $-\infty$ and it silently returns $0$ for an
+all-negative array. The agreement above is evidence, cheaply bought.
+\end{worked}
+
+\begin{worked}[The Predicted Ratios: 8, 4, 2]
+Doubling $n$ should multiply a cubic time by 8, a quadratic by 4 and a linear
+by 2. Median of 3, 15 and 101 runs respectively; times in milliseconds.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & cubic & ratio & quadratic & ratio & linear & ratio \\
+\midrule
+   500 &    7.66 & ---  & 0.070 & ---  & 0.0005 & ---  \\
+1{,}000 &   60.25 & 7.86 & 0.304 & 4.32 & 0.0010 & 2.00 \\
+2{,}000 &  471.16 & 7.82 & 1.095 & 3.60 & 0.0018 & 1.80 \\
+4{,}000 & 3355.85 & 7.12 & 4.348 & 3.97 & 0.0035 & 1.94 \\
+8{,}000 & ---     & ---  & 17.299 & 3.98 & 0.0071 & 2.03 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Means: 7.60, 3.97, 1.94} against predicted 8, 4, 2.
+
+\smallskip
+\textbf{Now read the first and last columns together.} At $n = 4{,}000$ the
+cubic version takes 3.36 \emph{seconds} and the linear version takes 3.5
+\emph{microseconds} --- a factor of about a million. At $n = 500$ the factor was
+about fifteen thousand. The gap is not a constant; it grows as $n^{2}$, which
+is exactly what ``$\bigTh{n^{3}}$ against $\bigTh{n}$'' means in seconds.
+
+\smallskip
+\textbf{And the row that is missing} --- cubic at $n = 8{,}000$ --- is missing
+because it would take about 27 seconds for a result the linear version produces
+in 7 microseconds.
+\end{worked}
+
+\section{When Brute Force Is the Right Answer}
+
+The table above makes brute force look indefensible. In absolute terms it often
+is not.
+
+\begin{worked}[What It Costs, in Absolute Terms]
+The same cubic routine, read as a cost rather than as a ratio:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrl@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & cubic & verdict \\
+\midrule
+   10 &    0.1 $\mu$s & imperceptible \\
+   30 &    2.1 $\mu$s & imperceptible \\
+  100 &   78.8 $\mu$s & imperceptible \\
+  300 &    1.6 ms     & a visible pause \\
+1{,}000 &   52.3 ms   & a visible pause \\
+3{,}000 & 1470.1 ms   & too slow to ship \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{At $n = 100$ the cubic algorithm takes 79 microseconds.} If your arrays
+are bounded by a hundred elements and the routine runs once per user action,
+the asymptotically terrible algorithm is the correct engineering choice: it is
+four lines, it needs no proof, and nobody will ever notice.
+
+\smallskip
+\textbf{The decision turns on the range of $n$, not on the exponent.} Which is
+why the first question to ask about any algorithm is not ``what is its order of
+growth'' but ``how big does $n$ get''.
+\end{worked}
+
+\begin{conceptbox}[A checklist]
+Brute force is defensible when \emph{all} of these hold:
+
+\begin{tight}
+  \item $n$ is small and \textbf{bounded by something real} --- a board size, a
+        number of columns, a field count --- not merely small today;
+  \item the code runs rarely, or off the critical path;
+  \item correctness matters more than speed, and the short version is the one
+        you can convince yourself of;
+  \item you have measured, at the largest $n$ you will actually see.
+\end{tight}
+
+\smallskip
+It is indefensible when $n$ is unbounded or user-supplied, because then you
+have not chosen a slow algorithm, you have chosen an unbounded one --- and
+\chref{complexity} is about problems where that is the only choice anyone
+knows.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Confusing ``removed redundant work'' with ``found a better
+        algorithm''.} The cubic-to-quadratic step did not change which
+        candidates were examined. The quadratic-to-linear step did.
+  \item \textbf{Initialising $\mathit{best}$ to 0 in Kadane's algorithm.} It
+        then returns 0 on an all-negative array, which is wrong unless the
+        empty block is allowed --- and if it is, say so in the specification.
+  \item \textbf{Dismissing brute force without measuring.} 79 microseconds at
+        $n = 100$ is not a performance problem.
+  \item \textbf{Keeping brute force when $n$ is user-supplied.} ``Small in
+        practice'' is a prediction, and users falsify it.
+  \item \textbf{Not writing the brute force at all.} You then have nothing to
+        test the clever version against, which is how subtly wrong algorithms
+        reach production.
+  \item \textbf{Timing the brute force once and the clever one once.} At
+        microsecond scale one run measures the scheduler.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Three Algorithms, One Problem]
+Reproduces all three tables. Expect twenty-five minutes; the cubic column at
+$n = 4{,}000$ takes about ten seconds on its own.
+
+\begin{lstlisting}[language=C++]
+// ch07_brute.cpp -- brute force, and the two things that beat it.
+// Build: cl /O2 /EHsc /std:c++17 ch07_brute.cpp     (see Appendix A)
+
+// --- 1. Brute force, as literally as it can be written -------------
+// For every start i and end j, add up a[i..j] from scratch. The inner
+// re-addition is pure waste, and it is the n^3.
+static long long max_sub_cubic(const std::vector<int>& a) {
+    long long best = std::numeric_limits<long long>::min();
+    size_t n = a.size();
+    for (size_t i = 0; i < n; ++i)
+        for (size_t j = i; j < n; ++j) {
+            long long s = 0;
+            for (size_t k = i; k <= j; ++k) s += a[k];
+            best = std::max(best, s);
+        }
+    return best;
+}
+
+// --- 2. The same search, with the waste removed --------------------
+// Extending the block from j to j+1 costs one addition, not a fresh
+// traversal. The SEARCH is unchanged -- still every (i, j) pair -- so
+// this is not yet a better idea, only a better accountant.
+static long long max_sub_quadratic(const std::vector<int>& a) {
+    long long best = std::numeric_limits<long long>::min();
+    for (size_t i = 0; i < a.size(); ++i) {
+        long long s = 0;
+        for (size_t j = i; j < a.size(); ++j) {
+            s += a[j];
+            best = std::max(best, s);
+        }
+    }
+    return best;
+}
+
+// --- 3. Kadane: a different idea, not a faster loop ----------------
+// Invariant: after processing a[0..j], "here" is the largest sum of a
+// block ENDING at j, and "best" the largest sum anywhere in a[0..j].
+// A block ending at j+1 either extends the best block ending at j, or
+// starts fresh. That one observation removes a whole dimension.
+static long long max_sub_linear(const std::vector<int>& a) {
+    long long best = std::numeric_limits<long long>::min(), here = 0;
+    for (int x : a) {
+        here = std::max((long long)x, here + x);
+        best = std::max(best, here);
+    }
+    return best;
+}
+
+// --- 4. All three agree, which is what makes the race fair ---------
+// A faster algorithm that gets a different answer is not faster.
+
+// --- 5. The ratios each order of growth predicts -------------------
+// Doubling n should multiply the times by 8, 4 and 2.
+
+// --- 6. Where brute force is the right answer ----------------------
+// Report the ABSOLUTE cost, not a ratio against a linear time too
+// small to measure, and say where it crosses thresholds a person
+// would actually notice.
+\end{lstlisting}
+
+\textbf{What to notice.} Part A costs almost nothing to run and is the most
+valuable part of the program. Delete it and the other two parts are a race
+between three functions you have not checked.
+
+\smallskip
+\textbf{Then try to break it.} Change \texttt{best} in
+\texttt{max\_sub\_linear} from \texttt{numeric\_limits::min()} to \texttt{0},
+and run part A again. Every row still agrees --- because the random inputs all
+contain a positive block. Now generate an all-negative array and watch part A
+catch it. An oracle only tests the inputs you give it, which is
+\chref{cases}'s point about distributions arriving again in a new costume.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item The cubic algorithm performs $\sum_{i}\sum_{j\ge i}(j-i+1)$ additions.
+        Evaluate this sum for $n = 100$ and check it against $n^{3}/6$.
+  \item Explain why going from $n^{3}$ to $n^{2}$ did not require any insight
+        into the maximum-subarray problem, while going from $n^{2}$ to $n$ did.
+  \item Give a concrete situation in which you would ship the $\bigTh{n^{3}}$
+        version, and state the one fact that would change your mind.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Brute force generates every candidate and tests it. It needs no insight
+        into the problem, which is both its weakness and its value.
+  \item It earns its place as the \emph{baseline} to improve on and the
+        \emph{oracle} to test against --- and sometimes as the answer.
+  \item Maximum subarray has three solutions: $\bigTh{n^{3}}$ exhaustive,
+        $\bigTh{n^{2}}$ with the redundant re-summation removed, and
+        $\bigTh{n}$ by Kadane's observation.
+  \item Removing redundant work \emph{within} a search is different from
+        changing \emph{the search}. Only the second needs an idea about the
+        problem, and it is the one this book is mostly about.
+  \item Measured ratios on doubling: 7.60, 3.97, 1.94 against predicted 8, 4,
+        2. At $n = 4{,}000$ the cubic version took 3.4 seconds and the linear
+        one 3.5 microseconds.
+  \item Measured absolutely, the cubic version costs 79 $\mu$s at $n = 100$ and
+        1.5 s at $n = 3{,}000$. For a bounded small $n$ it is the right choice.
+  \item The first question about an algorithm is how big $n$ gets, not what its
+        exponent is.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The brute-force maximum-subarray algorithm runs in:
+        (a)~$\bigTh{n}$; (b)~$\bigTh{n\lg n}$; (c)~$\bigTh{n^{2}}$;
+        (d)~$\bigTh{n^{3}}$.
+  \item \textbf{(MCQ)} Kadane's algorithm improves on the quadratic version by:
+        (a)~using a faster inner loop; (b)~examining fewer candidate blocks;
+        (c)~using recursion; (d)~sorting the input first.
+  \item \textbf{(Short)} Define the brute-force strategy and give two reasons a
+        course on algorithm design includes it \emph{(CLO-6)}.
+  \item \textbf{(Short)} State Kadane's loop invariant and explain why only two
+        cases need be considered in its maintenance step.
+  \item \textbf{(Short)} Explain the oracle use of a brute-force
+        implementation, and its one limitation.
+  \item \textbf{(Applied)} Give a brute-force algorithm for finding the closest
+        pair among $n$ points in the plane, state its running time with
+        justification, and say what you would need to beat it.
+  \item \textbf{(Applied)} Your team has a $\bigTh{n^{3}}$ routine running on
+        $n \le 80$, taking about 40 $\mu$s. A colleague proposes replacing it
+        with a $\bigTh{n}$ version, 60 lines long. Argue both sides, and state
+        the single piece of information that should decide it.
+\end{reviewq}

@@ -3,7 +3,518 @@
 %=====================================================================
 \locator{2}{Part II --- Recursion and Divide-and-Conquer}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Trace} Lomuto partitioning and \textbf{state} its invariant.
+  \item \textbf{Derive} quicksort's $\bigTh{n^{2}}$ worst case and
+        $\bigTh{n\lg n}$ expected case, and \textbf{identify} the input that
+        causes each \emph{(CLO-1, CLO-2)}.
+  \item \textbf{Explain} why randomising the pivot converts an assumption about
+        the data into an assumption about a random number generator.
+  \item \textbf{Account} for quicksort's dominance in practice despite a worse
+        worst case than merge sort.
+  \item \textbf{Predict} the recursion depth of a sort and \textbf{relate} it
+        to the stack a program is given.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{cases} for the distinction between an average over inputs and an
+expectation over an algorithm's own coins --- this chapter is that distinction
+made concrete. \chref{mergesort} for the pattern and the baseline.
+\end{prereq}
+
+\begin{keyterms}
+quicksort $\bullet$ partition $\bullet$ Lomuto $\bullet$ pivot $\bullet$
+in-place $\bullet$ unbalanced partition $\bullet$ expected running time
+$\bullet$ randomised algorithm $\bullet$ adversary $\bullet$ median-of-three
+$\bullet$ introsort $\bullet$ tail recursion $\bullet$ recursion depth
+\end{keyterms}
+
+\section{Hard Split, Easy Join}
+
+Quicksort is merge sort's mirror image. It does all its work in the divide
+step and nothing in the combine step.
+
+\dsfig{\aoaalg{\algname{Quicksort}$(A, \mathit{lo}, \mathit{hi})$}{
+\If{$\mathit{hi} - \mathit{lo} < 2$}
+  \State \Return
+\EndIf
+\State $p \gets$ \algname{Partition}$(A, \mathit{lo}, \mathit{hi})$
+  \Comment{all the work is here}
+\State \algname{Quicksort}$(A, \mathit{lo}, p)$
+\State \algname{Quicksort}$(A, p+1, \mathit{hi})$
+  \Comment{no combine step at all}
+}}{\algname{Quicksort}. There is no line after the two recursive calls: once
+the pieces are sorted, the array is sorted, because \algname{Partition} already
+put them in the right places.}{quicksort}
+
+\dsfig{\aoaalg{\algname{Partition}$(A, \mathit{lo}, \mathit{hi})$}{
+\State $x \gets A[\mathit{hi}-1]$
+  \Comment{the pivot: the last element}
+\State $i \gets \mathit{lo}$
+\For{$j \gets \mathit{lo}$ \textbf{to} $\mathit{hi}-2$}
+  \If{$A[j] \le x$}
+    \State exchange $A[i] \leftrightarrow A[j]$
+    \State $i \gets i + 1$
+  \EndIf
+\EndFor
+\State exchange $A[i] \leftrightarrow A[\mathit{hi}-1]$
+\State \Return $i$
+}}{\algname{Partition} (Lomuto). Everything $\le$ the pivot is swept to the
+left; the pivot is then dropped into the gap. Linear, in place, and the only
+place quicksort compares anything.}{partition}
+
+\begin{theorem}[Partition is correct]\label{thm:partition}
+After \algname{Partition} returns $i$, every element of
+$A[\mathit{lo}\mathinner{\ldotp\ldotp}i]$ is $\le A[i]$, every element of
+$A[i+1\mathinner{\ldotp\ldotp}\mathit{hi}]$ is $> A[i]$, and $A[i]$ is the
+original pivot.
+\end{theorem}
+
+\begin{proof}
+Invariant for the \textbf{for} loop: \emph{every element of
+$A[\mathit{lo}\mathinner{\ldotp\ldotp}i]$ is $\le x$; every element of
+$A[i\mathinner{\ldotp\ldotp}j]$ is $> x$; and $A[\mathit{hi}-1] = x$.}
+
+\smallskip
+\textbf{Initialisation.} $i = j = \mathit{lo}$, so both ranges are empty and
+both clauses hold vacuously; the pivot has not been moved.
+
+\smallskip
+\textbf{Maintenance.} If $A[j] > x$, the loop body does nothing and $j$
+advances, extending the second range by an element that is indeed $> x$. If
+$A[j] \le x$, the body exchanges $A[i]$ with $A[j]$: position $i$ --- which
+held an element $> x$, or nothing if the range was empty --- receives an
+element $\le x$, extending the first range, and the displaced element lands at
+$j$, which is now inside the second range and is $> x$. Incrementing $i$ and
+$j$ restores the invariant.
+
+\smallskip
+\textbf{Termination.} $j$ increases by one each iteration towards the fixed
+bound $\mathit{hi}-2$, so the loop ends. At that point $A[\mathit{lo}
+\mathinner{\ldotp\ldotp}i]$ holds elements $\le x$ and $A[i\mathinner{\ldotp
+\ldotp}\mathit{hi}-1]$ elements $> x$. Line 8 exchanges the pivot into position
+$i$; everything left of $i$ is still $\le x$ and everything right of it is
+$> x$, which is the claim.
+\end{proof}
+
+\section{Two Running Times, Both True}
+
+\begin{theorem}[Quicksort's worst case]\label{thm:qsworst}
+\algname{Quicksort} performs $\bigTh{n^{2}}$ comparisons in the worst case, and
+that worst case occurs on already-sorted input.
+\end{theorem}
+
+\begin{proof}
+If at every level the pivot is the largest (or smallest) remaining element, the
+partition splits $n$ elements into $n-1$ and $0$, giving
+\[ T(n) = T(n-1) + T(0) + \bigTh{n} = T(n-1) + \bigTh{n}. \]
+Expanding, $T(n) = \sum_{k=1}^{n} \bigTh{k} = \bigTh{n^{2}}$ --- the recursion
+tree is a path of length $n$, not a balanced tree of depth $\lg n$.
+
+\smallskip
+That this is attained by sorted input is immediate: the pivot is $A[\mathit{hi}
+-1]$, the last element, which in a sorted array is the largest. Every element
+satisfies $A[j] \le x$, so $i$ advances every iteration and the final exchange
+returns $i = \mathit{hi}-1$. The split is $(n-1, 0)$ at every level.
+\end{proof}
+
+\begin{alertbox}[The worst case is the commonest input shape in practice]
+This is the part that matters. Quicksort's worst case is not an exotic
+adversarial construction --- it is \emph{data that is already in order}, which
+is what you get from a database query with an \texttt{ORDER BY}, a log file, a
+sorted import, or any list a user has already sorted once.
+
+\smallskip
+An algorithm whose worst case is a rare accident is tolerable. An algorithm
+whose worst case is Tuesday is not.
 \end{alertbox}
+
+\begin{theorem}[Randomised quicksort's expected time]\label{thm:qsexpected}
+If the pivot is chosen uniformly at random from the subarray, \algname{Quicksort}
+performs $\bigO{n \lg n}$ comparisons in expectation, on \emph{every} input.
+\end{theorem}
+
+\begin{proof}
+Let $z_{1} < z_{2} < \cdots < z_{n}$ be the elements in sorted order and let
+$X_{ij}$ indicate that $z_{i}$ and $z_{j}$ are ever compared. Two elements are
+compared at most once, since a comparison happens only against a pivot and the
+pivot is then excluded from both subproblems. So the total is $\sum_{i<j}
+X_{ij}$ and, by linearity of expectation,
+$\mathbb{E}[\text{comparisons}] = \sum_{i<j}\Pr[z_{i} \text{ and } z_{j}
+\text{ compared}]$.
+
+\smallskip
+Consider the set $Z_{ij} = \{z_{i}, \ldots, z_{j}\}$, of size $j-i+1$. While
+all of $Z_{ij}$ sits in one subproblem, no element of it has been a pivot. The
+first pivot chosen from $Z_{ij}$ decides matters: if it is $z_{i}$ or $z_{j}$,
+those two are compared; if it is any of the $j-i-1$ elements strictly between,
+then $z_{i}$ and $z_{j}$ are separated into different subproblems and are never
+compared. Each element of $Z_{ij}$ is equally likely to be the first pivot
+chosen from it, so
+\[ \Pr[z_{i} \text{ and } z_{j} \text{ compared}] = \frac{2}{j-i+1}. \]
+Therefore
+\[ \mathbb{E}[\text{comparisons}]
+   = \sum_{i=1}^{n-1}\sum_{j=i+1}^{n} \frac{2}{j-i+1}
+   < \sum_{i=1}^{n-1} \sum_{k=1}^{n} \frac{2}{k}
+   = 2(n-1)H_{n} = \bigO{n \lg n}, \]
+using $H_{n} = \bigTh{\lg n}$ for the harmonic number. The expectation is over
+the pivot choices only, with the input fixed, so the bound holds for every
+input.
+\end{proof}
+
+\begin{conceptbox}[What randomising actually bought]
+Compare the two statements carefully.
+
+\smallskip
+\textbf{Without randomisation:} ``$\bigTh{n\lg n}$ \emph{on average, assuming
+the input is a uniform random permutation}.'' That assumption is about the
+world, and the world violates it constantly --- sorted data is common, not
+rare.
+
+\smallskip
+\textbf{With randomisation:} ``$\bigO{n\lg n}$ \emph{expected, on every
+input}.'' No assumption about the data at all. An adversary who has read your
+source code, knows your algorithm and chooses the worst possible input still
+cannot make it slow, because he does not know your coin flips.
+
+\smallskip
+This is \chref{cases}'s distinction, and it is the single most valuable idea in
+the chapter: \textbf{randomisation converts an assumption you cannot enforce
+into one you can}.
+\end{conceptbox}
+
+\section{Measured: the Gap, and Closing It}
+
+\begin{worked}[Comparisons on Already-Sorted Input]
+\texttt{code/ch09\_quick.cpp} counts comparisons exactly --- no timing, no
+noise.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & last-pivot & $/(n^{2}/2)$ & random pivot & $/(n\lg n)$ & speed-up \\
+\midrule
+ 1{,}000 &        499{,}500 & 0.9990 &      12{,}001 & 1.2042 &  41.6 \\
+ 2{,}000 &      1{,}999{,}000 & 0.9995 &      25{,}000 & 1.1399 &  80.0 \\
+ 4{,}000 &      7{,}998{,}000 & 0.9998 &      52{,}511 & 1.0971 & 152.3 \\
+ 8{,}000 &     31{,}996{,}000 & 0.9999 &    121{,}896 & 1.1752 & 262.5 \\
+16{,}000 &    127{,}992{,}000 & 0.9999 &    271{,}253 & 1.2139 & 471.9 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The last-pivot column is $n(n-1)/2$ exactly} --- $0.9990 \to 0.9999$,
+converging to 1. Theorem~\ref{thm:qsworst} predicted the split $(n-1,0)$ at
+every level, giving $\sum_{k=1}^{n-1}k = n(n-1)/2$ comparisons, and that is
+precisely what was counted. This is not an asymptotic estimate; it is the exact
+number.
+
+\smallskip
+\textbf{The random-pivot column is about $1.15\,n\lg n$}, as
+Theorem~\ref{thm:qsexpected}'s $2n\ln n = 1.39\,n\lg n$ bound permits.
+
+\smallskip
+\textbf{And the speed-up grows without limit}: 41.6 at $n=1{,}000$ and 471.9 at
+$n=16{,}000$. It is multiplying by about 1.8 per doubling, which is what
+$n^{2}/(n\lg n) = n/\lg n$ does. Extrapolated to a million elements the factor
+is about 30{,}000.
+\end{worked}
+
+\begin{worked}[The Worst Case Does Not Merely Run Slowly]
+Recursion depth on the same sorted input:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & last-pivot & random pivot & $\lg n$ \\
+\midrule
+ 1{,}000 &    999 & 21 & 10.0 \\
+ 2{,}000 &  1{,}999 & 26 & 11.0 \\
+ 4{,}000 &  3{,}999 & 27 & 12.0 \\
+ 8{,}000 &  7{,}999 & 30 & 13.0 \\
+16{,}000 & 15{,}999 & 30 & 14.0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The naive version's depth is exactly $n-1$.} Each of those is a live
+stack frame. The program measured its own frame size by comparing the address
+of a local at depth 0 with one at the deepest depth:
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+depth reached       & 15{,}999 \\
+stack span          & 1{,}023{,}912 bytes \\
+bytes per frame     & 64.0 \\
+default stack       & 1{,}048{,}576 bytes (1 MB) \\
+frames that fit     & 16{,}384 \\
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{At $n = 16{,}000$ this program used 99.9\% of its stack.} It was 385
+frames --- six elements of input --- from dying.
+
+\smallskip
+\textbf{And at $n = 32{,}000$ it did die}, with \texttt{0xC00000FD},
+\texttt{STATUS\_STACK\_OVERFLOW}, which is why the timing table in the lab
+stops at 16{,}000. The prediction ``$n > 16{,}384$ crashes'' and the
+observation agree.
+
+\smallskip
+\textbf{This is the practical form of the worst case.} A quadratic sort is a
+performance bug you can file. A stack overflow is a crash, with no stack trace
+worth reading, on the day a customer's data happened to arrive in order.
+\end{worked}
+
+\begin{worked}[And the Trap: On Random Input the Naive Version Wins]
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & last-pivot (ms) & random pivot (ms) & ratio \\
+\midrule
+100{,}000 &  7.39 &  8.86 & 0.83 \\
+200{,}000 & 16.33 & 17.77 & 0.92 \\
+400{,}000 & 33.82 & 37.04 & 0.91 \\
+800{,}000 & 73.40 & 77.72 & 0.94 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{On random input the unsafe version is 6--17\% faster}, because it skips
+a random number generation and a swap per partition.
+
+\smallskip
+\textbf{That is the trap in its purest form.} A developer benchmarking on
+shuffled test data will find randomisation costs 10\% and remove it, and the
+benchmark will support the decision every single time --- until the day real,
+ordered data arrives and the program crashes.
+
+\smallskip
+\textbf{Ten per cent is the insurance premium.} The thing insured against is a
+factor of 472 and a stack overflow.
+\end{worked}
+
+\section{What Is Actually Shipped}
+
+\begin{conceptbox}[Introsort, and the three defences]
+\texttt{std::sort} beat every merge sort in \chref{mergesort} by 39\%. It is
+\term{introsort}, and it stacks three ideas:
+
+\begin{tightnum}
+  \item \textbf{Quicksort} as the main engine, for its small constant and its
+        in-place operation --- it touches half the memory merge sort does,
+        which is where most of the 39\% comes from.
+  \item \textbf{An insertion-sort cutoff} at around 16--32 elements, for
+        exactly the reason \chref{role} measured and \chref{mergesort} tuned.
+  \item \textbf{A heapsort fallback.} The recursion depth is tracked, and if it
+        exceeds about $2\lg n$ the implementation abandons quicksort and
+        finishes with heapsort, which is $\bigO{n\lg n}$ in the worst case.
+\end{tightnum}
+
+\smallskip
+The third is the interesting one: rather than make the bad case unlikely, it
+makes it \emph{survivable}. The guarantee becomes $\bigO{n\lg n}$ worst case,
+with quicksort's constants almost all of the time.
+
+\smallskip
+\textbf{Median-of-three} --- taking the median of the first, middle and last
+elements as pivot --- is a cheaper partial defence, and it fixes the
+sorted-input case specifically. It does not give a worst-case guarantee: an
+adversary who knows you use it can still construct a quadratic input. Use it
+with randomisation, not instead of it.
+\end{conceptbox}
+
+\begin{conceptbox}[Merge sort or quicksort?]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.4cm}L{5.0cm}L{5.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{Merge sort} & \textbf{Quicksort (randomised)} \\
+\midrule
+\endhead
+worst case & $\bigTh{n\lg n}$ guaranteed & $\bigTh{n^{2}}$, probability
+  vanishingly small \\
+expected & $\bigTh{n\lg n}$ & $\bigTh{n\lg n}$, smaller constant \\
+space & $\bigTh{n}$ auxiliary & $\bigTh{\lg n}$ stack, in place \\
+stable & yes & no \\
+depth & $\bigTh{\lg n}$ always & $\bigTh{\lg n}$ expected \\
+choose it when & stability matters; worst case must be bounded; data is on
+  disk or a linked list & memory is tight; average speed matters; data is an
+  array in memory \\
+\bottomrule
+\end{longtable}
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Benchmarking only on shuffled data.} It is the one
+        distribution on which the dangerous version looks good --- measured,
+        10\% better.
+  \item \textbf{Believing median-of-three is a guarantee.} It defeats sorted
+        input, not an adversary.
+  \item \textbf{Forgetting recursion depth.} Depth $n-1$ is a crash, not a slow
+        program, and it arrives at 16{,}384 elements on a 1 MB stack.
+  \item \textbf{Not recursing on the smaller side first.} Recursing into the
+        smaller part and looping on the larger bounds the stack at
+        $\bigO{\lg n}$ even in the worst case --- a two-line change that
+        removes the crash, though not the quadratic time.
+  \item \textbf{Using quicksort when stability is required.} It is not stable,
+        and no amount of pivot selection makes it so.
+  \item \textbf{Seeding the generator with a constant.} An adversary who can
+        read your binary can then reproduce your pivots, and the guarantee of
+        Theorem~\ref{thm:qsexpected} is gone.
+  \item \textbf{Confusing ``expected $\bigTh{n\lg n}$'' with ``average-case
+        $\bigTh{n\lg n}$''.} The first holds on every input; the second assumes
+        a distribution.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[The Price of Insurance]
+Reproduces all five tables. Expect thirty minutes.
+
+\begin{lstlisting}[language=C++]
+// ch09_quick.cpp -- quicksort, and why randomising is not superstition.
+// Build: cl /O2 /EHsc /std:c++17 ch09_quick.cpp     (see Appendix A)
+
+// --- 1. Lomuto partition, the textbook one -------------------------
+// Everything <= the pivot is swept to the left. Returns where the
+// pivot ended up. Linear, and where every comparison happens.
+static size_t partition_last(std::vector<int>& a, size_t lo, size_t hi) {
+    int pivot = a[hi - 1];
+    size_t i = lo;
+    for (size_t j = lo; j + 1 < hi; ++j) {
+        ++comps;
+        if (a[j] <= pivot) std::swap(a[i++], a[j]);
+    }
+    std::swap(a[i], a[hi - 1]);
+    return i;
+}
+
+// --- 2. The same partition, after moving a random element to the end
+// One extra swap. That is the entire cost of the change, and it buys
+// an expected-time bound that holds for EVERY input -- no assumption
+// about the data at all (Chapter 2's distinction between an average
+// over inputs and an expectation over the algorithm's own coins).
+static size_t partition_random(std::vector<int>& a, size_t lo, size_t hi) {
+    std::uniform_int_distribution<size_t> d(lo, hi - 1);
+    std::swap(a[d(rng)], a[hi - 1]);
+    return partition_last(a, lo, hi);
+}
+
+// --- 3. Comparisons counted: the two bounds, seen directly ---------
+// On sorted input the last-element pivot splits n into 0 and n-1
+// every single time, so the count is 1+2+...+(n-1) = n(n-1)/2
+// exactly. Compare that with the random pivot on the same input.
+
+// --- 4. Recursion depth, which is what actually crashes ------------
+// The worst case is not only slow. Depth n means n stack frames.
+
+// --- 5. And the same thing in seconds ------------------------------
+// Capped at 16,000 deliberately: see part 6 for why 32,000 is not an
+// option on a default stack.
+
+// --- 6. The worst case does not just run slowly; it crashes --------
+// Measure how big one frame actually is by looking at where a local
+// variable sits at depth 0 and at the deepest depth, then work out
+// how many fit in the default 1 MB stack. This is a prediction that
+// can be checked, and it was: at n = 32,000 this program died with
+// 0xC00000FD, STATUS_STACK_OVERFLOW.
+double span = (double)(stack_top - stack_deep);
+double per  = span / maxdepth;
+printf("   bytes per frame      : %.1f\n", per);
+printf("   frames that fit      : %.0f\n", 1048576.0 / per);
+
+// --- 7. On RANDOM input the naive pivot is fine --------------------
+// Which is the trap: the defect is invisible until the day someone
+// feeds your sort data that is already in order, and that day comes.
+\end{lstlisting}
+
+\textbf{What to notice.} Part 6 measures the stack rather than assuming it. The
+frame came out at exactly 64.0 bytes, which is not a number you could have
+looked up --- it depends on this compiler, these optimisation flags and the
+number of live locals.
+
+\smallskip
+\textbf{Then try to break it.} Make the recursion sort the \emph{smaller} side
+recursively and loop on the larger one. Predict first what happens to (a) the
+comparison count on sorted input and (b) the recursion depth. The answer is
+that (a) does not change at all and (b) drops to $\bigO{\lg n}$ --- so the
+crash disappears and the quadratic time does not. Fixing a symptom is not
+fixing a bug, and knowing which you have done is the point.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item On sorted input the measured comparison count was exactly $n(n-1)/2$.
+        Derive that from the split Theorem~\ref{thm:qsworst} describes.
+  \item Explain why ``expected $\bigO{n\lg n}$ on every input'' is a stronger
+        claim than ``average-case $\bigO{n\lg n}$'', and why an adversary makes
+        the difference \emph{(CLO-2)}.
+  \item The measured frame was 64 bytes and the stack 1 MB. At what $n$ does
+        the naive sort on sorted input crash, and what would doubling the stack
+        buy you?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Quicksort is merge sort inverted: a hard split (partition, $\bigTh{n}$,
+        in place) and no join at all.
+  \item Worst case $\bigTh{n^{2}}$, attained on \emph{already-sorted} input ---
+        which is a common input shape, not an exotic one. Expected
+        $\bigO{n\lg n}$ with a random pivot, on every input.
+  \item Randomisation converts an assumption about the data, which the world
+        violates, into an assumption about a random number generator, which it
+        does not.
+  \item Measured: on sorted input the naive pivot made exactly $n(n-1)/2$
+        comparisons ($0.9999 \times n^{2}/2$) against the random pivot's
+        $1.15\,n\lg n$ --- a speed-up of 41.6 at $n{=}1{,}000$ rising to 471.9
+        at $n{=}16{,}000$.
+  \item Measured: the naive version's recursion depth is exactly $n-1$. At
+        $n = 16{,}000$ it used 99.9\% of a 1 MB stack, at 64.0 bytes per frame;
+        at $n = 32{,}000$ it crashed with \texttt{STATUS\_STACK\_OVERFLOW}.
+  \item Measured: on \emph{random} input the unsafe version is 6--17\% faster.
+        That 10\% is the insurance premium, and the thing insured against is a
+        factor of 472 and a crash.
+  \item \texttt{std::sort} is introsort: quicksort, plus an insertion-sort
+        cutoff, plus a heapsort fallback once the depth exceeds $2\lg n$ ---
+        making the bad case survivable rather than merely unlikely.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Quicksort with a last-element pivot achieves its worst
+        case on: (a)~random input; (b)~already-sorted input; (c)~input with
+        many duplicates only; (d)~no realistic input.
+  \item \textbf{(MCQ)} Randomised quicksort's expected $\bigO{n\lg n}$ bound
+        assumes: (a)~the input is a random permutation; (b)~the input has no
+        duplicates; (c)~nothing about the input; (d)~the input is partly
+        sorted.
+  \item \textbf{(Short)} State Lomuto partition's loop invariant and explain
+        what the final exchange accomplishes.
+  \item \textbf{(Short)} Explain why quicksort is preferred in practice despite
+        a worse worst case than merge sort \emph{(CLO-1)}.
+  \item \textbf{(Short)} Why is median-of-three a defence against sorted input
+        but not against an adversary?
+  \item \textbf{(Applied)} In the proof of Theorem~\ref{thm:qsexpected}, explain
+        why $z_{i}$ and $z_{j}$ are compared exactly when the first pivot
+        chosen from $Z_{ij}$ is one of them, and evaluate the resulting
+        probability for $i=3$, $j=10$.
+  \item \textbf{(Applied)} Your team benchmarks a sort on shuffled data and
+        finds randomisation costs 10\%, so proposes removing it. Write the
+        reply, citing the measured numbers in this chapter, and name the one
+        experiment that would settle the question.
+\end{reviewq}

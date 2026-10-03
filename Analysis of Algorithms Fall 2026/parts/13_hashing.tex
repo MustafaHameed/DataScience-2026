@@ -3,7 +3,487 @@
 %=====================================================================
 \locator{3}{Part III --- Sorting, Selection and the Structures Beneath}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} the simple uniform hashing assumption and
+        \textbf{explain} what the $\bigTh{1}$ claim depends on \emph{(CLO-2)}.
+  \item \textbf{Derive} the expected probe length $1 + \alpha/2$ for a
+        successful search under chaining, and \textbf{verify} it by
+        measurement.
+  \item \textbf{Identify} the key patterns that defeat a division-method hash,
+        and \textbf{explain} why they are common rather than exotic.
+  \item \textbf{Describe} how an adversary degrades a hash table to a linked
+        list, and \textbf{name} the defence.
+  \item \textbf{Distinguish} expected, worst-case and amortised cost for hash
+        table operations.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{cases} for the distinction between an average over inputs and an
+expectation over an algorithm's coins --- this chapter is that distinction
+again, and the resolution is the same one. \chref{structures} for the
+comparison with trees.
+\end{prereq}
+
+\begin{keyterms}
+hash function $\bullet$ hash table $\bullet$ collision $\bullet$ chaining
+$\bullet$ open addressing $\bullet$ load factor $\bullet$ simple uniform
+hashing $\bullet$ division method $\bullet$ multiplicative hashing $\bullet$
+universal hashing $\bullet$ adversarial input $\bullet$ hash flooding
+\end{keyterms}
+
+\section{The Claim, and Its Fine Print}
+
+Every programmer knows a hash table is $\bigO{1}$. That sentence has three
+things wrong with it, and this chapter is about all three.
+
+\begin{definitionbox}[Chaining, Load Factor]
+A \term{hash table} with \term{chaining} stores $n$ keys in $m$ slots; each
+slot holds a list of the keys hashing to it. The \term{load factor} is
+$\alpha = n/m$, the average chain length.
+
+\smallskip
+\term{Simple uniform hashing} is the assumption that each key is equally likely
+to hash to any of the $m$ slots, independently of the others.
+\end{definitionbox}
+
+\begin{theorem}[Expected search cost under chaining]\label{thm:chaining}
+Under simple uniform hashing, an unsuccessful search examines
+$\bigTh{1+\alpha}$ elements in expectation, and a successful search
+$\bigTh{1+\alpha}$ --- more precisely $1 + \alpha/2 - \alpha/2n$.
+\end{theorem}
+
+\begin{proof}
+\textbf{Unsuccessful.} The key hashes to a slot whose expected chain length is
+$\alpha = n/m$, and the whole chain is scanned. With the $\bigTh{1}$ to compute
+the hash and index, the cost is $\bigTh{1+\alpha}$.
+
+\smallskip
+\textbf{Successful.} Suppose the keys were inserted in order
+$x_{1},\ldots,x_{n}$ and we search for $x_{i}$, chosen uniformly. Appending at
+the head, the elements examined before reaching $x_{i}$ are exactly those
+inserted \emph{after} it that landed in the same slot. For $j > i$, the
+probability that $x_{j}$ shares $x_{i}$'s slot is $1/m$. So the expected number
+examined is
+\[ 1 + \frac{1}{n}\sum_{i=1}^{n}\sum_{j=i+1}^{n}\frac{1}{m}
+   = 1 + \frac{1}{nm}\sum_{i=1}^{n}(n-i)
+   = 1 + \frac{n(n-1)}{2nm}
+   = 1 + \frac{\alpha}{2} - \frac{\alpha}{2n}. \qedhere \]
+\end{proof}
+
+\begin{alertbox}[Three things wrong with ``a hash table is $\bigO{1}$'']
+\begin{tightnum}
+  \item \textbf{It is $\bigTh{1+\alpha}$, not $\bigTh{1}$.} Constant only if
+        $\alpha$ is held constant --- which requires resizing, which is
+        \chref{amortised}'s subject.
+  \item \textbf{It is an \emph{expectation}, not a bound.} The worst case is
+        $\bigTh{n}$: all keys in one slot. Section~13.4 produces exactly that
+        on purpose.
+  \item \textbf{The expectation is over an assumption about your data.} Simple
+        uniform hashing is not a property of the hash function alone; it is a
+        property of the hash function \emph{together with the keys}. Section
+        13.3 shows a perfectly reasonable hash failing on perfectly reasonable
+        keys.
+\end{tightnum}
 \end{alertbox}
+
+\section{Measured: the Assumption, and the Prediction}
+
+\begin{worked}[Does the Distribution Look Like the Analysis Assumes?]
+With $n$ keys scattered uniformly into $m$ slots, a slot's load is
+$\mathrm{Binomial}(n, 1/m)$, which for large $m$ is Poisson$(\alpha)$. At
+$\alpha = 1$ the predicted number of slots with chain length $L$ is
+$m\,e^{-1}/L!$. \texttt{code/ch13\_hashing.cpp} with
+$n = m = 1{,}000{,}000$ and a multiplicative hash:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+chain length & slots observed & Poisson(1) predicts & ratio \\
+\midrule
+0 & 368{,}092 & 367{,}879 & 1.001 \\
+1 & 367{,}372 & 367{,}879 & 0.999 \\
+2 & 184{,}047 & 183{,}940 & 1.001 \\
+3 &  61{,}795 &  61{,}313 & 1.008 \\
+4 &  15{,}035 &  15{,}328 & 0.981 \\
+5 &   3{,}054 &   3{,}066 & 0.996 \\
+6 &     510 &     511 & 0.998 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The whole distribution matches, not just its mean.} Seven ratios, all
+within 2\% of 1. This is the strongest form of evidence for a modelling
+assumption: not that the average came out right, but that the shape did.
+
+\smallskip
+\textbf{The longest chain was 9}, against $\lg n / \lg\lg n = 4.6$ --- the
+classical order of the maximum load. So even with a million keys and a good
+hash, \emph{some} lookup costs nine probes while the average costs 1.5. An
+expectation is not a guarantee, and tail latency lives in that gap.
+\end{worked}
+
+\begin{worked[The Load Factor]}
+\end{worked}
+
+\begin{worked}[The One Knob: Load Factor]
+Theorem~\ref{thm:chaining} predicts $1 + \alpha/2$ probes for a successful
+search, with no fitted constants. $m = 2^{20}$, keys sampled uniformly at
+random from the table:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$\alpha$ & mean probes measured & $1 + \alpha/2$ predicted & lookup (ms) \\
+\midrule
+0.25 & 1.125 & 1.125 &  8.13 \\
+0.50 & 1.252 & 1.250 & 10.45 \\
+1.00 & 1.500 & 1.500 &  9.18 \\
+2.00 & 1.996 & 2.000 & 10.72 \\
+4.00 & 2.998 & 3.000 & 12.97 \\
+8.00 & 5.001 & 5.000 & 16.24 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Six predictions, six matches, to three decimal places.} This is as
+close as an analysis and a measurement get.
+
+\smallskip
+\textbf{And note what the time column does \emph{not} do.} Probes rise by
+$4.4\times$ from $\alpha = 0.25$ to $\alpha = 8$; time rises by only
+$2.0\times$. Longer chains are contiguous-ish in memory and cheap to walk,
+while the initial slot access is a cache miss paid once however short the chain
+is. The step count and the clock disagree again, in the opposite direction
+from \chref{structures}.
+
+\smallskip
+\textbf{A caution about how this was measured.} The first version of this
+experiment probed the \emph{first} 200{,}000 keys inserted. Those sit at the
+front of their chains, so it reported 1.096 probes at every load factor --- a
+perfectly flat column that looked like a result. The fix was to sample keys
+uniformly at random. A benchmark that samples its inputs in insertion order is
+measuring insertion order.
+\end{worked}
+
+\section{When the Assumption Quietly Fails}
+
+Simple uniform hashing is an assumption about the \emph{relationship} between
+the hash and the keys. Real keys are not random: they are IDs, timestamps,
+pointers, offsets into arrays of structs --- and they very often share a
+stride.
+
+\begin{worked[The Stride]}
+\end{worked}
+
+\begin{worked}[A Reasonable Hash Meeting Reasonable Keys]
+Keys $0, 64, 128, 192, \ldots$ --- which is what the addresses of an array of
+64-byte records look like --- into a table of $m = 2^{20}$ slots, which is what
+``round the capacity up to a power of two'' gives you. One million keys.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\rowcolor{primary!15}
+hash & mean probes & longest chain & slots used \\
+\midrule
+$k \bmod m$          & \textbf{31.0} & \textbf{62} & 16{,}384 \\
+mix, then $\bmod\ m$ &           1.5 &           8 & 644{,}230 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The division hash used 16{,}384 of its 1{,}048{,}576 slots} --- 1.6\%
+--- and left the other 98.4\% empty. Mean probes 31 instead of 1.5: a
+20$\times$ slowdown, and the longest chain is 62.
+
+\smallskip
+\textbf{The arithmetic is not subtle.} $\gcd(64, 2^{20}) = 64$, so
+$k \bmod 2^{20}$ for $k$ a multiple of 64 can only ever produce multiples of
+64. Taking the modulus by a power of two keeps only the low bits, and the low
+six bits of these keys are always zero. The hash discarded the only part of the
+key that varied.
+
+\smallskip
+\textbf{Neither choice was foolish.} ``Table size a power of two'' makes the
+modulus a bitmask, which is fast and universal practice. ``Hash is the key
+modulo the table size'' is the textbook division method. Each is defensible;
+the combination, meeting keys with a stride of 64, is a 20$\times$ slowdown
+nobody wrote down.
+
+\smallskip
+\textbf{The defence} is in the second row: destroy the key's structure before
+taking the modulus. The mix used here is MurmurHash3's finaliser --- three
+shift-xor steps and two multiplications --- and it moves high bits down into
+low ones, so no bit of the key is ignored.
+\end{worked}
+
+\begin{conceptbox}[Rules that follow]
+\begin{tight}
+  \item \textbf{Never use $k \bmod m$ with $m$ a power of two.} It is a
+        bitmask: it reads the low bits and throws the rest away.
+  \item \textbf{If you use the division method, make $m$ prime} and not close
+        to a power of 2 --- then a stride $s$ collides only if $s$ is a
+        multiple of $m$.
+  \item \textbf{Better: mix, then mask.} A multiplicative finaliser then
+        $\&(m-1)$ gives you the fast mask \emph{and} uses every bit.
+  \item \textbf{Hash the whole key.} A hash that reads only a prefix of a
+        string collides on every key sharing that prefix --- and URLs, file
+        paths and identifiers share prefixes constantly.
+\end{tight}
+\end{conceptbox}
+
+\section{An Adversary}
+
+Section~13.3's collisions were an accident. They can also be arranged.
+
+\begin{worked}[Hash Flooding]
+If the hash function is fixed and public --- as it is in every language's
+standard library --- then the keys landing in any given slot can simply be
+computed. For $h(k) = k \bmod m$, the multiples of $m$ all hash to slot 0. No
+cryptography, no timing attack: arithmetic.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & random keys (ms) & chosen keys (ms) & ratio \\
+\midrule
+ 2{,}000 & 0.01 &   0.62 &  64.0 \\
+ 8{,}000 & 0.06 &  10.19 & 162.3 \\
+16{,}000 & 0.13 &  41.95 & 313.5 \\
+32{,}000 & 0.45 & 147{.}27 & 324.2 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The ratio grows with $n$} --- 64 to 324 --- because the chosen-key case
+is $\bigTh{n^{2}}$ for $n$ lookups while the random case is $\bigTh{n}$. The
+table has become a linked list, and every operation on it is a linear scan.
+
+\smallskip
+\textbf{This is a real attack, not a thought experiment.} It is called
+\term{hash flooding}: send a web server a few thousand form fields chosen to
+collide, and its parameter dictionary --- every request --- turns quadratic.
+Published against PHP, Python, Ruby, Java and Node in 2011--12, and the reason
+those languages now randomise their hash seeds at process start.
+\end{worked}
+
+\begin{conceptbox}[Universal hashing, and why it is \chref{quicksort} again]
+\textbf{The defence is to stop having a fixed hash function.} Choose $h$ at
+random, at run time, from a carefully designed family $\mathcal{H}$.
+
+\smallskip
+$\mathcal{H}$ is \term{universal} if for any two distinct keys $x \ne y$,
+\[ \Pr_{h \in \mathcal{H}}\bigl[\,h(x) = h(y)\,\bigr] \;\le\; \frac{1}{m}. \]
+That is, a randomly chosen member collides on any particular pair no more often
+than a uniformly random function would.
+
+\smallskip
+With a universal family, Theorem~\ref{thm:chaining}'s expected bounds hold
+\emph{for every input}, with the expectation taken over the \emph{choice of
+hash function} rather than over an assumption about the keys. An adversary who
+knows your source code still cannot choose colliding keys, because he does not
+know which $h$ you drew.
+
+\smallskip
+\textbf{This is precisely \chref{quicksort}'s move.} There, randomising the
+pivot converted ``$\bigTh{n\lg n}$ if your data is unsorted'' into
+``$\bigTh{n\lg n}$ expected, on every input''. Here, randomising the hash
+converts ``$\bigTh{1}$ if your keys suit my hash'' into ``$\bigTh{1}$ expected,
+on every key set''. Same technique, same payoff: \textbf{an assumption about
+the world, which can be violated, becomes an assumption about a random number
+generator, which cannot.}
+\end{conceptbox}
+
+\begin{conceptbox}[Hash table or balanced tree?]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.6cm}L{5.0cm}L{5.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{Hash table} & \textbf{Balanced BST} \\
+\midrule
+\endhead
+search, expected & $\bigTh{1}$ & $\bigTh{\lg n}$ \\
+search, worst case & $\bigTh{n}$ (or $\bigTh{\lg n}$ with tree bins) &
+  $\bigTh{\lg n}$ \emph{guaranteed} \\
+ordered traversal & impossible without sorting & $\bigTh{n}$, free \\
+predecessor, range query & not supported & $\bigTh{\lg n}$ \\
+needs & a good hash for \emph{your} keys & only a comparison \\
+degrades on & adversarial or structured keys & nothing \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+Hash tables win on raw lookup and lose everything about order. Where a
+worst case must be bounded --- latency budgets, untrusted input --- the
+tree's guarantee may be worth the logarithm. Java's \texttt{HashMap} hedges:
+chains longer than 8 become red--black trees, so the worst case is
+$\bigO{\lg n}$ rather than $\bigO{n}$.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Saying ``$\bigO{1}$'' without saying ``expected''.} The worst
+        case is $\bigTh{n}$ and it is reachable on purpose.
+  \item \textbf{$k \bmod m$ with $m$ a power of two.} Measured: 1.6\% of slots
+        used and a 20$\times$ slowdown on keys with a stride of 64.
+  \item \textbf{Testing only with random keys.} Random keys make every hash
+        look good. Real keys have structure; test with yours.
+  \item \textbf{Treating the assumption as a property of the hash alone.}
+        Simple uniform hashing is a claim about the hash \emph{and} the key
+        distribution together.
+  \item \textbf{A fixed, public hash on untrusted input.} That is the hash
+        flooding vulnerability, measured here at 324$\times$.
+  \item \textbf{Ignoring the maximum chain.} Measured 9 with a million keys and
+        a good hash, against a mean of 1.5. Tail latency is not the average.
+  \item \textbf{Benchmarking lookups in insertion order.} The first draft of
+        this chapter's experiment did, and reported a flat 1.096 probes at
+        every load factor.
+  \item \textbf{Forgetting that keeping $\alpha$ bounded requires resizing},
+        whose cost is amortised --- \chref{amortised}.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[What Voids the Guarantee]
+Reproduces all four tables. Expect thirty minutes; part C builds tables holding
+up to eight million keys.
+
+\begin{lstlisting}[language=C++]
+// ch13_hashing.cpp -- what O(1) actually promises, and what voids it.
+// Build: cl /O2 /EHsc /std:c++17 ch13_hashing.cpp    (see Appendix A)
+
+// --- 1. A chaining hash table, as plainly as possible --------------
+// Buckets of vectors. No resizing, no tricks: the table size is fixed
+// so the load factor is exactly what the experiment says it is.
+
+// --- 2. Two hash functions, both entirely reasonable ---------------
+// "Modulo the table size" is the textbook division method and what
+// most people write first. It is fine when the table size is prime
+// and the keys unstructured, and catastrophic when the keys share a
+// factor with the table size.
+static unsigned h_mod(unsigned k, unsigned m) { return k % m; }
+
+// A multiplicative mix (MurmurHash3's finaliser). It destroys
+// structure in the key before taking the modulus, which is the whole
+// job of a hash function.
+static unsigned h_mix(unsigned k, unsigned m) {
+    k ^= k >> 16; k *= 0x85ebca6bu;
+    k ^= k >> 13; k *= 0xc2b2ae35u;
+    k ^= k >> 16;
+    return k % m;
+}
+
+// --- 3. The distribution the analysis assumes ----------------------
+// With n keys in m slots and perfect scattering, a slot's load is
+// Binomial(n, 1/m), which for large m is Poisson(alpha). The analysis
+// of "expected O(1)" rests on that shape, so check the shape.
+
+// --- 4. The same keys, a hash that meets the data's structure ------
+// Real keys are not random: IDs, timestamps, pointers, struct
+// offsets -- and they very often share a stride. Here every key is a
+// multiple of 64, which is what an array of 64-byte records gives
+// you, and the table size is a power of two, which is what every
+// "round up to the next power of 2" gives you.
+
+// --- 5. Load factor is the one knob you actually turn --------------
+// Sample the keys at RANDOM, not the first 200,000. The
+// first-inserted keys sit at the front of their chains, so probing
+// them reports 1.096 probes whatever the load factor is -- which is
+// what the first draft of this program did, and the flat column was
+// the clue.
+
+// --- 6. An adversary, who does not need to be clever ---------------
+// If the hash is fixed and public, the keys that land in one slot can
+// be enumerated. Here they are simply the multiples of m. No
+// cryptography, no timing attack: arithmetic.
+for (size_t i = 0; i < n; ++i)
+    ak[i] = (unsigned)((i + 1) * m);   // all hash to slot 0
+\end{lstlisting}
+
+\textbf{What to notice.} Part 3 compares a whole distribution against Poisson,
+not just a mean. Any broken hash can still produce the right average chain
+length --- the average is $n/m$ whatever the hash does, since every key lands
+somewhere. Only the \emph{shape} distinguishes a good hash from a bad one, and
+part 4's table makes that concrete: both rows have the same mean chain length
+by definition, and one of them is 20$\times$ slower.
+
+\smallskip
+\textbf{Then try to break it.} Change the table size in part 4 from $2^{20}$ to
+the prime 1{,}048{,}573 and re-run with the plain \texttt{k \% m} hash. Predict
+first. The stride-64 keys should now scatter well, because 64 and 1{,}048{,}573
+are coprime --- which tells you that the division method is not the problem,
+the \emph{power of two} is.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item State the simple uniform hashing assumption, and explain why it is a
+        claim about the hash function \emph{and} the keys rather than about the
+        hash alone \emph{(CLO-2)}.
+  \item Derive the expected probe count $1 + \alpha/2$ for a successful search,
+        and check it against the measured 2.998 at $\alpha = 4$.
+  \item The measured mean chain length was identical for both hash functions in
+        Section~13.3 by definition. What quantity did distinguish them, and
+        why is it the right one to look at?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A chaining hash table's search cost is $\bigTh{1+\alpha}$
+        \emph{expected}, under the simple uniform hashing assumption. Each of
+        those three qualifications can fail.
+  \item Measured: with a good hash, the chain-length distribution matched
+        Poisson(1) to within 2\% across seven lengths --- the shape, not just
+        the mean. Longest chain 9 against a mean of 1.5.
+  \item Measured: probes per successful search were 1.125, 1.252, 1.500,
+        1.996, 2.998, 5.001 against a predicted $1+\alpha/2$ of 1.125, 1.250,
+        1.500, 2.000, 3.000, 5.000.
+  \item Measured: $k \bmod 2^{20}$ on keys with a stride of 64 used 1.6\% of the
+        slots and cost 31 probes instead of 1.5 --- because a power-of-two
+        modulus keeps only the low bits, and those keys' low bits are constant.
+  \item Measured: deliberately chosen colliding keys made lookups 324$\times$
+        slower at $n = 32{,}000$, and growing. This is hash flooding, a
+        published attack against every major language.
+  \item Universal hashing --- choosing $h$ at random at run time --- restores
+        the expected bounds for \emph{every} input, exactly as randomising the
+        pivot did in \chref{quicksort}.
+  \item Use a tree where the worst case must be bounded or where order
+        matters; a hash table buys lookup speed by giving up order entirely.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The expected number of probes for a successful search in
+        a chaining table with load factor $\alpha$ is about:
+        (a)~$1$; (b)~$\alpha$; (c)~$1 + \alpha/2$; (d)~$\lg \alpha$.
+  \item \textbf{(MCQ)} Hashing with $h(k) = k \bmod m$ where $m = 2^{20}$ is a
+        poor choice because: (a)~the modulus is slow; (b)~it uses only the low
+        20 bits of the key; (c)~it cannot hash negative keys; (d)~it is not
+        deterministic.
+  \item \textbf{(Short)} Give the three qualifications hidden in the claim
+        ``hash table lookup is $\bigO{1}$''.
+  \item \textbf{(Short)} Explain hash flooding and the defence, and relate it
+        to randomised quicksort.
+  \item \textbf{(Short)} Why does comparing the chain-length distribution with
+        Poisson test a hash function better than comparing mean chain lengths?
+  \item \textbf{(Applied)} Your keys are file paths that nearly all begin
+        \texttt{/var/log/app/}. Explain what will happen with a hash that reads
+        the first 16 characters, and give two fixes.
+  \item \textbf{(Applied)} A service parses untrusted JSON into a hash map and
+        shows 300$\times$ latency spikes under some requests. Diagnose it, state
+        the measurement that would confirm your diagnosis, and give the fix.
+\end{reviewq}

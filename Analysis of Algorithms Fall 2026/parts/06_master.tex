@@ -3,7 +3,458 @@
 %=====================================================================
 \locator{2}{Part II --- Recursion and Divide-and-Conquer}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} the master theorem and \textbf{identify} $a$, $b$ and
+        $f(n)$ for a given recurrence.
+  \item \textbf{Decide} which of the three cases applies by comparing $f(n)$
+        with $n^{\log_{b} a}$, and \textbf{apply} it to obtain a $\Theta$
+        bound.
+  \item \textbf{Check} the regularity condition that case~3 requires.
+  \item \textbf{Recognise} a recurrence that falls into none of the three cases,
+        and \textbf{say} what to do instead.
+  \item \textbf{Explain} why case~2 produces a logarithmic factor that neither
+        of the others does.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{recurrences} --- recursion trees especially, since the three cases are
+three shapes of tree. From Appendix~B you need $a^{\log_{b} n} =
+n^{\log_{b} a}$ and the geometric series.
+\end{prereq}
+
+\begin{keyterms}
+master theorem $\bullet$ $a$, $b$, $f(n)$ $\bullet$ watershed function
+$\bullet$ $n^{\log_{b} a}$ $\bullet$ polynomially larger $\bullet$ polynomially
+smaller $\bullet$ regularity condition $\bullet$ the gap $\bullet$
+leaf-dominated $\bullet$ root-dominated
+\end{keyterms}
+
+\section{One Theorem for a Whole Family}
+
+Most divide-and-conquer algorithms split a problem of size $n$ into $a$
+subproblems of size $n/b$ and spend $f(n)$ dividing and combining. That is a
+family of recurrences, and the master theorem solves the family at once.
+
+\begin{theorem}[Master theorem]\label{thm:master}
+Let $a \ge 1$ and $b > 1$ be constants, $f(n)$ a non-negative function, and
+\[ T(n) = a\,T(n/b) + f(n). \]
+Then, writing $w(n) = n^{\log_{b} a}$ for the \term{watershed function}:
+
+\smallskip
+\textbf{Case 1.} If $f(n) = \bigO{n^{\log_{b} a - \varepsilon}}$ for some
+constant $\varepsilon > 0$, then $T(n) = \bigTh{n^{\log_{b} a}}$.
+
+\smallskip
+\textbf{Case 2.} If $f(n) = \bigTh{n^{\log_{b} a}}$, then
+$T(n) = \bigTh{n^{\log_{b} a} \lg n}$.
+
+\smallskip
+\textbf{Case 3.} If $f(n) = \bigOm{n^{\log_{b} a + \varepsilon}}$ for some
+constant $\varepsilon > 0$, \emph{and} $a f(n/b) \le c f(n)$ for some constant
+$c < 1$ and all sufficiently large $n$ (the \term{regularity condition}), then
+$T(n) = \bigTh{f(n)}$.
+\end{theorem}
+
+\begin{conceptbox}[What the theorem is actually comparing, and why]
+Think of the recursion tree.
+
+\begin{tight}
+  \item The \textbf{root} does $f(n)$ work.
+  \item The \textbf{leaves} number $a^{\log_{b} n} = n^{\log_{b} a}$ --- that
+        identity is the whole reason $n^{\log_{b} a}$ appears --- and each does
+        $\bigTh{1}$, so the leaves do $\bigTh{n^{\log_{b} a}}$ in total.
+\end{tight}
+
+\smallskip
+So the theorem compares \textbf{the work at the top against the work at the
+bottom}, and the three cases are the three possible answers:
+
+\begin{tightnum}
+  \item the leaves win, and the total is the leaves: $\bigTh{n^{\log_{b} a}}$;
+  \item it is a tie, every level does the same work, and the total is one
+        level's work times the $\lg n$ levels;
+  \item the root wins, the sum is dominated by its first term, and the total is
+        $\bigTh{f(n)}$.
+\end{tightnum}
+
+\smallskip
+Read that way the theorem is not three rules to memorise but one question ---
+\emph{which end of the tree is heavier?} --- with three answers.
+\end{conceptbox}
+
+\begin{worked}[Applying It Three Times]
+\textbf{(a) Merge sort: $T(n) = 2T(n/2) + n$.}
+$a = 2$, $b = 2$, $f(n) = n$. Watershed: $n^{\log_{2} 2} = n^{1} = n$. Since
+$f(n) = n = \bigTh{n}$, this is \textbf{case 2}:
+\[ T(n) = \bigTh{n \lg n}. \]
+
+\smallskip
+\textbf{(b) Binary search: $T(n) = T(n/2) + 1$.}
+$a = 1$, $b = 2$, $f(n) = 1$. Watershed: $n^{\log_{2} 1} = n^{0} = 1$. Since
+$f(n) = 1 = \bigTh{1}$, this is \textbf{case 2} again:
+\[ T(n) = \bigTh{n^{0} \lg n} = \bigTh{\lg n}. \]
+Note that case 2 with $a = 1$ is where the familiar $\lg n$ of binary search
+comes from --- the same case as merge sort, not a different rule.
+
+\smallskip
+\textbf{(c) A bad matrix multiply: $T(n) = 8T(n/2) + n^{2}$.}
+$a = 8$, $b = 2$, $f(n) = n^{2}$. Watershed: $n^{\log_{2} 8} = n^{3}$. Now
+$f(n) = n^{2} = \bigO{n^{3 - \varepsilon}}$ with $\varepsilon = 1$, so this is
+\textbf{case 1}:
+\[ T(n) = \bigTh{n^{3}}. \]
+The combining work is irrelevant: there are so many leaves that nothing at the
+top matters. Strassen's algorithm improves this to $T(n) = 7T(n/2) + n^{2}$,
+giving $\bigTh{n^{\log_{2} 7}} = \bigTh{n^{2.81}}$ --- the whole gain comes
+from turning an 8 into a 7.
+\end{worked}
+
+\begin{worked}[Case 3, With Its Condition Checked]
+\textbf{$T(n) = 2T(n/2) + n^{2}$.}
+
+\smallskip
+\textbf{Step 1 --- identify.} $a = 2$, $b = 2$, $f(n) = n^{2}$. Watershed
+$n^{\log_{2} 2} = n$.
+
+\smallskip
+\textbf{Step 2 --- compare.} $f(n) = n^{2} = \bigOm{n^{1 + \varepsilon}}$ with
+$\varepsilon = 1$. So case 3 is a candidate.
+
+\smallskip
+\textbf{Step 3 --- check regularity}, which case 3 requires and the other two
+do not:
+\[ a f(n/b) = 2\Bigl(\frac{n}{2}\Bigr)^{2} = \frac{n^{2}}{2}
+   = \tfrac12 f(n) \;\le\; c f(n) \quad\text{with } c = \tfrac12 < 1. \]
+It holds, for every $n$, with room to spare.
+
+\smallskip
+\textbf{Step 4 --- conclude.} $T(n) = \bigTh{f(n)} = \bigTh{n^{2}}$.
+
+\smallskip
+\textbf{Step 5 --- read what that says.} The recursion is essentially free. The
+top call alone does $n^{2}$ work, the two half-sized calls do $n^{2}/2$
+between them, their children $n^{2}/4$, and the whole sum is at most $2n^{2}$.
+A geometric series with ratio $1/2$ --- which is precisely what the regularity
+condition guarantees exists.
+\end{worked}
+
+\section{The Theorem, Verified Exactly}
+
+The master theorem's claim is about a sum, so it can be checked by computing
+the sum. \texttt{code/ch06\_master.cpp} evaluates each recurrence directly and
+divides by the predicted bound; if the theorem is right, the quotient settles
+on a constant.
+
+\begin{conceptbox}[Why this is counted and not timed]
+Timing these three recurrences gave ratios wandering by 50\% from one doubling
+to the next --- cases 1 and 3 run for seconds, and over seconds a laptop's
+clock speed is not constant.
+
+\smallskip
+Counting the work the recurrence defines has none of that. It is \emph{exact},
+deterministic, and identical on every machine, so you can check these tables
+against your own run line by line. Where the thing being tested is a piece of
+mathematics rather than a piece of hardware, count it.
+\end{conceptbox}
+
+\begin{worked}[Case 1: the Leaves Win]
+$T(n) = 8T(n/2) + n^{2}$, predicted $\bigTh{n^{3}}$.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & work & $n^{3}$ & work$/n^{3}$ \\
+\midrule
+   16 &           7{,}936 &           4{,}096 & 1.9375 \\
+   64 &         520{,}192 &         262{,}144 & 1.9844 \\
+  256 &    33{,}488{,}896 &    16{,}777{,}216 & 1.9961 \\
+1{,}024 & 2{,}146{,}435{,}072 & 1{,}073{,}741{,}824 & 1.9990 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+The quotient climbs to $2.0000$ and stops. $T(n) \to 2n^{3}$ exactly, so
+$T(n) = \bigTh{n^{3}}$ with the constant visible: it is 2.
+\end{worked}
+
+\begin{worked}[Case 2: the Tie, and Where the Logarithm Comes From]
+$T(n) = 2T(n/2) + n$, predicted $\bigTh{n \lg n}$.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & work & $n \lg n$ & quotient & $1 + 1/\lg n$ \\
+\midrule
+      1{,}024 &       11{,}264 &       10{,}240 & 1.1000 & 1.1000 \\
+     32{,}768 &      524{,}288 &      491{,}520 & 1.0667 & 1.0667 \\
+    262{,}144 &    4{,}980{,}736 &    4{,}718{,}592 & 1.0556 & 1.0556 \\
+1{,}048{,}576 &   22{,}020{,}096 &   20{,}971{,}520 & 1.0500 & 1.0500 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The quotient is not constant --- and that is correct.} It falls
+steadily from $1.1000$ to $1.0500$, and the last column says why: it is exactly
+$1 + 1/\lg n$, to four decimal places, at every size.
+
+\smallskip
+\textbf{This is worth dwelling on,} because it is the commonest
+misunderstanding of $\Theta$. $T(n) = \bigTh{g(n)}$ does \emph{not} say
+$T/g$ is constant; it says $T/g$ is eventually trapped between two positive
+constants. Here it is trapped in $[1, 1.1]$ and converging to 1, which
+satisfies the definition completely. \chref{asymptotics}'s measured $T/n^{2.0}$
+column wandered by 8\% for the same reason, and that was noise; this is not
+noise at all, it is the exact solution $T(n) = n\lg n + n$.
+\end{worked}
+
+\begin{worked}[Case 3: the Root Wins]
+$T(n) = 2T(n/2) + n^{2}$, predicted $\bigTh{n^{2}}$.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & work & work$/n^{2}$ \\
+\midrule
+     1{,}024 &           2{,}096{,}128 & 1.9990 \\
+    32{,}768 &       2{,}147{,}450{,}880 & 2.0000 \\
+   262{,}144 &     137{,}438{,}691{,}328 & 2.0000 \\
+1{,}048{,}576 & 2{,}199{,}022{,}206{,}976 & 2.0000 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+$2.0000$ to four places, exactly as the geometric series in Step 5 of the
+previous worked example predicted: $n^{2}(1 + \tfrac12 + \tfrac14 + \cdots)
+\to 2n^{2}$.
+
+\smallskip
+And the recurrence executed rather than counted --- case 2, timed, median of
+seven runs --- gives ratios $2.14, 2.14, 2.20, 2.17, 2.06, 2.12$ against the
+predicted $2 + 2/\lg n \approx 2.1$. The counting and the clock agree.
+\end{worked}
+
+\section{The Gap: When the Theorem Does Not Apply}
+
+\begin{alertbox}[Cases 1 and 3 need a \emph{polynomial} difference]
+Case 1 requires $f(n) = \bigO{n^{\log_{b}a - \varepsilon}}$ and case 3 requires
+$f(n) = \bigOm{n^{\log_{b}a + \varepsilon}}$, with $\varepsilon > 0$
+\emph{constant}. A function can be smaller than the watershed without being
+\emph{polynomially} smaller, and then no case applies.
 \end{alertbox}
+
+\begin{worked}[A Recurrence in the Gap]
+\textbf{$T(n) = 2T(n/2) + n \lg n$.}
+
+\smallskip
+\textbf{Step 1.} $a = 2$, $b = 2$, watershed $n^{\log_{2}2} = n$.
+
+\smallskip
+\textbf{Step 2 --- which case?} $f(n) = n\lg n$ is larger than $n$, so case 1
+is out. Is it case 3? That needs $n\lg n = \bigOm{n^{1+\varepsilon}}$ for some
+constant $\varepsilon > 0$ --- that is, $\lg n = \bigOm{n^{\varepsilon}}$. But
+\chref{asymptotics} proved the reverse: $\lg n = o(n^{\varepsilon})$ for
+\emph{every} $\varepsilon > 0$. So case 3 fails. And $f(n) \ne \bigTh{n}$, so
+case 2 fails too.
+
+\smallskip
+\textbf{Step 3 --- the verdict.} $f$ is larger than the watershed, but only by
+a logarithmic factor, and a logarithm is not a polynomial. \textbf{The master
+theorem does not apply.}
+
+\smallskip
+\textbf{Step 4 --- what to do instead.} Go back to \chref{recurrences}. The
+recursion tree has $\lg n$ levels; level $i$ holds $2^{i}$ nodes of size
+$n/2^{i}$, each doing $(n/2^{i})\lg(n/2^{i})$ work, so the level totals
+$n \lg(n/2^{i}) = n(\lg n - i)$. Summing:
+\[ T(n) = \sum_{i=0}^{\lg n - 1} n(\lg n - i)
+        = n \sum_{j=1}^{\lg n} j
+        = n \cdot \frac{\lg n (\lg n + 1)}{2}
+        = \bigTh{n \lg^{2} n}. \]
+
+\smallskip
+\textbf{Step 5 --- the moral.} The master theorem is a shortcut, not a
+foundation. When it declines to answer, the recursion tree still works, and it
+is the tree that told us where the extra $\lg n$ came from.
+\end{worked}
+
+\begin{conceptbox}[A decision procedure]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{1.0cm}L{6.2cm}L{7.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{\#} & \textbf{Do this} & \textbf{Then} \\
+\midrule
+\endhead
+1 & Read off $a$, $b$, $f(n)$ & $a$ = number of subproblems, $b$ = factor the
+  size shrinks by. Not the same number in general. \\
+2 & Compute $w(n) = n^{\log_{b} a}$ & This is the leaf count. \\
+3 & Compare $f$ with $w$ & Smaller by a polynomial factor $\Rightarrow$ case 1.
+  Equal up to constants $\Rightarrow$ case 2. Larger by a polynomial factor
+  $\Rightarrow$ case 3. \\
+4 & If case 3, check regularity & $a f(n/b) \le c f(n)$, $c<1$. It holds for
+  every polynomial $f$; it can fail for strange ones. \\
+5 & If nothing fits & You are in the gap. Use a recursion tree, then
+  substitution. \\
+\bottomrule
+\end{longtable}
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Comparing $f(n)$ with $n$ instead of with $n^{\log_{b}a}$.}
+        The watershed is almost never $n$; it is $n$ only when $a = b$.
+  \item \textbf{Treating a logarithmic difference as polynomial.}
+        $n\lg n$ versus $n$ is \emph{not} a case-3 situation, and
+        \chref{asymptotics}'s $\lg n = o(n^{\varepsilon})$ is the reason.
+  \item \textbf{Skipping the regularity condition.} It is part of case 3, not
+        a footnote. It holds for every polynomial $f$, which is why it is easy
+        to forget and occasionally fatal.
+  \item \textbf{Using it on a non-divide-and-conquer recurrence.}
+        $T(n) = T(n-1) + n$ has no $b$. The theorem says nothing.
+  \item \textbf{Using it when the subproblems have different sizes.}
+        $T(n) = T(n/3) + T(2n/3) + n$ is not of the form $aT(n/b) + f(n)$;
+        \chref{recurrences} handled it by tree.
+  \item \textbf{Reading case 2's $\Theta$ as ``the quotient is constant''.}
+        The measured quotient fell from 1.1000 to 1.0500 and the bound is still
+        exactly right.
+  \item \textbf{Forgetting $a$ and $b$ must be constants.} A recurrence whose
+        branching factor depends on $n$ is outside the theorem entirely.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[The Three Cases, Counted and Timed]
+Reproduces all four tables. Expect twenty-five minutes.
+
+\begin{lstlisting}[language=C++]
+// ch06_master.cpp -- the master theorem's three cases, verified.
+// Build: cl /O2 /EHsc /std:c++17 ch06_master.cpp    (see Appendix A)
+
+// --- 1. Count the work each recurrence prescribes ------------------
+// No timing, no hardware, no noise: just the sum the recurrence
+// defines. Exact, deterministic, and the same on every machine.
+static long long c1(long long n) {              // 8T(n/2) + n^2
+    if (n <= 1) return 1;
+    return n * n + 8 * c1(n / 2);
+}
+static long long c2(long long n) {              // 2T(n/2) + n
+    if (n <= 1) return 1;
+    return n + c2(n / 2) + c2(n - n / 2);
+}
+static long long c3(long long n) {              // 2T(n/2) + n^2
+    if (n <= 1) return 1;
+    return n * n + c3(n / 2) + c3(n - n / 2);
+}
+
+// --- 2. Work that cannot be optimised away -------------------------
+// For the timing part only. Each unit is a cheap arithmetic step
+// folded into an accumulator that escapes to a volatile, so the loop
+// must actually be performed.
+static inline unsigned long long burn(long long units) {
+    unsigned long long h = 1469598103934665603ULL;
+    for (long long i = 0; i < units; ++i)
+        h = (h ^ (unsigned long long)i) * 1099511628211ULL;
+    return h;
+}
+
+// --- 3. Case 1: the leaves dominate --------------------------------
+// n^(log_2 8) = n^3 beats n^2, so T = Theta(n^3), work/n^3 flat.
+counted("A. Case 1", c1, "n^3",
+        [](double n) { return n * n * n; }, 16, 1024);
+
+// --- 4. Case 2: the tie, where the logarithm comes from ------------
+// n^(log_2 2) = n equals f(n) = n: neither dominates, every level
+// does the same work, and the number of levels is lg n.
+counted("B. Case 2", c2, "n lg n",
+        [](double n) { return n * std::log2(n); }, 1024, 1048576);
+
+// --- 5. Case 3: the root dominates ---------------------------------
+// n^(log_2 2) = n loses to n^2, so T = Theta(n^2). The recursion is
+// nearly free and the top call is the cost.
+counted("C. Case 3", c3, "n^2",
+        [](double n) { return n * n; }, 1024, 1048576);
+
+// --- 6. The regularity condition case 3 needs ----------------------
+// a*f(n/b) <= c*f(n) for some c < 1. For f(n)=n^2, a=2, b=2:
+// 2(n/2)^2 = n^2/2, so c = 1/2. Print the check, do not assert it.
+
+// --- 7. And the same recurrence, timed -----------------------------
+// Case 2 only, where timing behaves. Predicted ratio 2 + 2/lg n.
+\end{lstlisting}
+
+\textbf{What to notice.} In part B, compare the quotient column against
+$1 + 1/\lg n$ computed by hand. They agree to four decimal places, which means
+you are not looking at an approximation --- you are looking at the exact
+solution of the recurrence, and the master theorem's $\bigTh{n \lg n}$ is a
+true but deliberately lossy summary of it.
+
+\smallskip
+\textbf{Then try to break it.} Add a fourth recurrence,
+$T(n) = 2T(n/2) + n\lg n$, and divide its work by $n\lg^{2}n$. The master
+theorem cannot touch it, and the quotient should still settle --- which is the
+point of Section~6.3.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Apply the master theorem to $T(n) = 4T(n/2) + n$. State $a$, $b$,
+        $f(n)$, the watershed, the case and the bound.
+  \item $T(n) = 2T(n/2) + n/\lg n$. Which case applies? Justify your answer.
+  \item Explain, in terms of the recursion tree, why case 2 is the only one of
+        the three that produces a $\lg n$ factor.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item For $T(n) = aT(n/b) + f(n)$, the master theorem compares $f(n)$ with
+        the watershed $n^{\log_{b} a}$ --- the work at the root against the
+        work at the leaves.
+  \item Case 1 (leaves win): $\bigTh{n^{\log_{b}a}}$. Case 2 (tie):
+        $\bigTh{n^{\log_{b}a}\lg n}$. Case 3 (root wins, plus regularity):
+        $\bigTh{f(n)}$.
+  \item $n^{\log_{b}a}$ appears because the tree has $a^{\log_{b} n} =
+        n^{\log_{b}a}$ leaves.
+  \item Cases 1 and 3 need a \emph{polynomial} gap. $n\lg n$ against $n$ is not
+        one, so $T(n)=2T(n/2)+n\lg n$ falls in the gap --- its true answer,
+        $\bigTh{n\lg^{2}n}$, comes from a recursion tree.
+  \item Measured exactly: case 1's work$/n^{3}$ and case 3's work$/n^{2}$ both
+        converge to $2.0000$; case 2's work$/(n\lg n)$ falls from 1.1000 to
+        1.0500, matching $1 + 1/\lg n$ to four decimal places.
+  \item That falling quotient is not a failure of the bound. $\Theta$ requires
+        the ratio to be trapped between constants, not to be constant.
+  \item The theorem is a shortcut. When it declines, recursion trees and
+        substitution still work.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} For $T(n) = 9T(n/3) + n$, the watershed function is:
+        (a)~$n$; (b)~$n^{2}$; (c)~$n^{3}$; (d)~$n\lg n$.
+  \item \textbf{(MCQ)} The regularity condition is required by:
+        (a)~case 1 only; (b)~case 2 only; (c)~case 3 only; (d)~all three.
+  \item \textbf{(Short)} Explain why $n^{\log_{b}a}$ is the right thing to
+        compare $f(n)$ against, in terms of the recursion tree.
+  \item \textbf{(Short)} Give a recurrence the master theorem cannot solve, and
+        say which condition fails.
+  \item \textbf{(Short)} Binary search and merge sort fall into the same case
+        of the theorem. State the case and explain how one gives $\bigTh{\lg n}$
+        and the other $\bigTh{n\lg n}$.
+  \item \textbf{(Applied)} Strassen's algorithm satisfies $T(n) = 7T(n/2) +
+        \bigTh{n^{2}}$. Solve it, compare with the naive $8T(n/2) +
+        \bigTh{n^{2}}$, and say at what $n$ a factor-of-two constant penalty on
+        Strassen would be repaid.
+  \item \textbf{(Applied)} The measured case-2 quotient was $1 + 1/\lg n$
+        exactly. Derive that from the exact solution $T(n) = n\lg n + n$, and
+        say what the quotient would be for $T(n) = n\lg n + 3n$.
+\end{reviewq}

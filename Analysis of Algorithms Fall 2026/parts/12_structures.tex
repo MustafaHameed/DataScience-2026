@@ -3,7 +3,478 @@
 %=====================================================================
 \locator{3}{Part III --- Sorting, Selection and the Structures Beneath}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why a binary heap's height is exactly
+        $\lfloor \lg n \rfloor$ and why that cannot fail.
+  \item \textbf{Prove} that \algname{Build-Heap} runs in $\bigTh{n}$, not
+        $\bigTh{n \lg n}$, and \textbf{identify} the step where the naive
+        analysis is loose.
+  \item \textbf{Contrast} a heap's structural guarantee with a binary search
+        tree's dependence on insertion order \emph{(CLO-2)}.
+  \item \textbf{State} the expected height of a randomly built BST and
+        \textbf{assess} measured data against it.
+  \item \textbf{Decide} between a heap, a balanced tree and a sorted array for
+        a stated workload.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\emph{Data Structures} built all of these; this chapter assumes you can recall
+what a heap and a BST \emph{are}. \chref{recurrences} for the summation in
+Section~12.2, and \chref{cases} for the best/worst-case vocabulary.
+\end{prereq}
+
+\begin{keyterms}
+binary heap $\bullet$ complete binary tree $\bullet$ heap property $\bullet$
+sift down $\bullet$ build-heap $\bullet$ height $\bullet$ binary search tree
+$\bullet$ degenerate tree $\bullet$ internal path length $\bullet$ randomly
+built BST $\bullet$ balanced tree $\bullet$ rotation
+\end{keyterms}
+
+\begin{alertbox}[What this chapter is, and is not]
+It is \textbf{not} a reimplementation of heaps and search trees. Appendix~F
+records the boundary: \emph{Data Structures} owns the structures and their
+operations; this course owns their analysis.
+
+\smallskip
+So the question here is never ``how do you insert into a heap''. It is
+\emph{why is the height what it is, what guarantees it, and what does a broken
+guarantee cost?} --- and the answers divide these two structures sharply.
 \end{alertbox}
+
+\section{A Heap's Height Is a Guarantee}
+
+\begin{definitionbox}[Binary Heap]
+A \term{binary heap} is a \term{complete binary tree} --- every level full
+except possibly the last, which is filled from the left --- satisfying the
+\term{heap property}: every node's key is $\ge$ (max-heap) or $\le$ (min-heap)
+its children's.
+
+\smallskip
+It is stored in an array, with the children of index $i$ at $2i+1$ and $2i+2$.
+\end{definitionbox}
+
+\begin{theorem}[Heap height]\label{thm:heapheight}
+A binary heap on $n$ elements has height exactly $\lfloor \lg n \rfloor$.
+\end{theorem}
+
+\begin{proof}
+A complete binary tree of height $h$ has at least $2^{h}$ nodes --- levels $0$
+to $h-1$ are full, contributing $2^{h}-1$, plus at least one node on level $h$
+--- and at most $2^{h+1}-1$, when every level is full. So
+\[ 2^{h} \le n \le 2^{h+1}-1 \quad\Longrightarrow\quad
+   h \le \lg n < h+1 \quad\Longrightarrow\quad h = \lfloor \lg n \rfloor. \qedhere \]
+\end{proof}
+
+\begin{conceptbox}[Why this cannot go wrong]
+Theorem~\ref{thm:heapheight} has no hypothesis about the data. Compare that
+with everything else in this book.
+
+\smallskip
+The height is $\lfloor \lg n \rfloor$ because the tree is \emph{complete}, and
+it is complete because of the \emph{array layout}: node $i$'s children are at
+$2i+1$ and $2i+2$, and a new element goes at index $n$. There is no insertion
+order that produces an unbalanced heap, because there is no representation in
+which an unbalanced heap could be stored.
+
+\smallskip
+\textbf{The structure is enforced by the addressing scheme, not maintained by
+an algorithm.} That is why heaps need no rebalancing, no rotations, no
+colouring and no amortised argument --- and it is the sharpest contrast in this
+chapter with Section~12.3.
+\end{conceptbox}
+
+\begin{worked}[Measured, Because It Costs Nothing To Check]
+\texttt{code/ch12\_structures.cpp} walks from the last node to the root:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrl@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & height & $\lfloor \lg n \rfloor$ & \\
+\midrule
+      1{,}000 &  9 &  9 & equal \\
+    100{,}000 & 16 & 16 & equal \\
+ 10{,}000{,}000 & 23 & 23 & equal \\
+100{,}000{,}000 & 26 & 26 & equal \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+Exact at every size, as a theorem with no hypotheses should be. A hundred
+million elements are 26 levels deep.
+\end{worked}
+
+\section{Build-Heap Is Linear, and the Obvious Analysis Says Otherwise}
+
+\dsfig{\aoaalg{\algname{Build-Heap}$(A, n)$}{
+\For{$i \gets \lfloor n/2 \rfloor - 1$ \textbf{downto} $0$}
+  \State \algname{Sift-Down}$(A, i, n)$
+    \Comment{nodes below $\lfloor n/2 \rfloor$ are leaves}
+\EndFor
+}}{\algname{Build-Heap}. The loop runs $n/2$ times and \algname{Sift-Down}
+costs $\bigO{\lg n}$, so the obvious bound is $\bigO{n \lg n}$. The obvious
+bound is loose, and Theorem~\ref{thm:buildheap} says by how much.}{buildheap}
+
+\begin{theorem}[Build-Heap]\label{thm:buildheap}
+\algname{Build-Heap} runs in $\bigTh{n}$ time.
+\end{theorem}
+
+\begin{proof}
+\algname{Sift-Down} on a node at height $j$ --- counting height upward from the
+leaves --- costs $\bigO{j}$, since it travels at most $j$ levels down.
+
+\smallskip
+The key observation is that \emph{most nodes are near the bottom}. In a heap of
+$n$ elements there are at most $\lceil n/2^{j+1} \rceil$ nodes of height $j$.
+So the total cost is
+\[ \sum_{j=0}^{\lfloor \lg n \rfloor} \Bigl\lceil \frac{n}{2^{j+1}} \Bigr\rceil
+   \bigO{j}
+   \;=\; \bigO{\,n \sum_{j=0}^{\lfloor \lg n \rfloor} \frac{j}{2^{j}}\,}. \]
+The series $\sum_{j\ge0} j/2^{j}$ converges --- its value is exactly 2, from
+$\sum_{j\ge0} jx^{j} = x/(1-x)^{2}$ at $x = 1/2$. Hence the total is
+$\bigO{2n} = \bigO{n}$, and it is $\bigOm{n}$ because every element is
+examined, giving $\bigTh{n}$.
+\end{proof}
+
+\begin{conceptbox}[Where the naive analysis was loose]
+``$n/2$ calls, each $\bigO{\lg n}$, therefore $\bigO{n \lg n}$'' is valid ---
+it is a correct upper bound. It is simply not tight, and the reason is worth
+internalising.
+
+\smallskip
+It charges \emph{every} node the cost of the \emph{worst} node. But half the
+nodes are leaves and cost nothing, a quarter are one level up and cost 1, an
+eighth cost 2. The expensive nodes are the rare ones, and the sum
+$\sum j/2^{j}$ converges precisely because the cost grows linearly while the
+population falls geometrically.
+
+\smallskip
+\textbf{This pattern --- a bound that is loose because it multiplies a worst
+case by a count --- recurs throughout the book}, and \chref{amortised} is
+entirely devoted to it. Heapsort, by contrast, really is $\bigTh{n\lg n}$: it
+calls \algname{Sift-Down} $n$ times from the \emph{root}, where the height
+really is $\lg n$ every time.
+\end{conceptbox}
+
+\section{A Search Tree's Height Is a Hope}
+
+\begin{alertbox}[The same keys, the same code, two different structures]
+A BST has no array layout to enforce its shape. Its height is decided entirely
+by the \emph{order the keys arrive in} --- which is \chref{cases}'s lesson,
+applied to a data structure rather than to a sort.
+
+\smallskip
+Insert $1, 2, 3, \ldots, n$ in that order and every key is larger than
+everything before it, so every key goes down the right spine. The result has
+height $n$: it is a linked list that costs more to traverse than a linked list,
+because the pointers are scattered.
+\end{alertbox}
+
+\begin{worked}[Measured: Random Keys Against Sorted Keys]
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & $\lg n$ & random $h$ & $h/\lg n$ & sorted $h$ & sorted $h/n$ \\
+\midrule
+  1{,}000 & 10.0 & 21 & 2.11 &   1{,}000 & 1.000 \\
+  8{,}000 & 13.0 & 27 & 2.08 &   8{,}000 & 1.000 \\
+ 64{,}000 & 16.0 & 37 & 2.32 &  64{,}000 & 1.000 \\
+256{,}000 & 18.0 & 44 & 2.45 & 256{,}000 & 1.000 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The sorted column is $n$ exactly} --- $h/n = 1.000$ at every size. Not
+``about $n$''; exactly $n$.
+
+\smallskip
+\textbf{The random column is about $2.3 \lg n$}, which is a tree. At
+$n = 256{,}000$: height 44 against height 256{,}000. A factor of 5{,}800, from
+nothing but the order the same keys were handed over in.
+\end{worked}
+
+\begin{conceptbox}[The constants for a randomly built BST]
+Two classical results, both asymptotic:
+
+\begin{tight}
+  \item \textbf{Expected height} $\sim 4.311 \ln n - 1.953 \ln\ln n + \bigO{1}$
+        (Reed, 2003). The leading term is $2.988 \lg n$.
+  \item \textbf{Expected node depth} $\sim 2\ln n - 3 + \bigO{1}$. The leading
+        term is $1.386 \lg n$, and this is the average cost of a successful
+        search.
+\end{tight}
+
+\smallskip
+Note that ``randomly built'' means the keys were \emph{inserted} in random
+order. It does not mean the keys are random --- sorted keys inserted in sorted
+order is the disaster above, and the keys there were as random as you like.
+\end{conceptbox}
+
+\begin{worked}[The Constants, Measured Honestly]
+Mean of 25 independently shuffled trees. Both measured columns are divided by
+$\lg n$.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & height & corrected & asympt. & mean depth & corrected & asympt. \\
+\midrule
+  2{,}000 & 2.324 & 2.627 & 2.988 & 1.231 & 1.113 & 1.386 \\
+  8{,}000 & 2.311 & 2.657 & 2.988 & 1.242 & 1.155 & 1.386 \\
+ 32{,}000 & 2.459 & 2.683 & 2.988 & 1.276 & 1.186 & 1.386 \\
+128{,}000 & 2.461 & 2.704 & 2.988 & 1.278 & 1.209 & 1.386 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Quoting only the asymptotic constants would have made the measurement
+look wrong.} Measured height$/\lg n$ is $2.46$ against an asymptote of $2.99$
+--- an 18\% shortfall, which looks like a failed prediction until you include
+the $-1.953\ln\ln n$ term. At $n = 128{,}000$, $\ln\ln n = 2.46$, and that term
+alone subtracts $0.28$ from the ratio.
+
+\smallskip
+\textbf{The mean-depth column is the cleaner story.} Measured $1.231 \to 1.278$,
+rising steadily towards the asymptote $1.386$, and bracketed above the
+corrected form $(2\ln n - 3)/\lg n$. It is converging, slowly, from below ---
+and ``slowly'' here means like $1/\lg n$, so reaching within 1\% of the
+asymptote would need $n$ around $10^{30}$.
+
+\smallskip
+\textbf{The general lesson is about reading asymptotic constants.} An
+asymptotic constant is a limit, and the lower-order terms it discards can
+dominate at every size you will ever run. When a measurement misses a
+theoretical constant by 20\%, the first question is not ``is the theory wrong''
+but ``what did the $\bigO{1}$ swallow''.
+\end{worked}
+
+\begin{worked}[What the Height Costs, in Seconds]
+100{,}000 successful searches against each tree:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & random BST (ms) & sorted BST (ms) & ratio \\
+\midrule
+ 2{,}000 &  6.65 &   532.05 &  80.0 \\
+ 8{,}000 & 10.02 & 1{,}886.29 & 188.3 \\
+16{,}000 &  9.40 & 3{,}790.47 & 403.3 \\
+32{,}000 & 11.72 & 7{,}618.81 & 650.1 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The random tree's time barely moves} --- 6.6 ms to 11.7 ms while $n$
+grows 16-fold --- which is what $\lg n$ looks like on a clock.
+
+\smallskip
+\textbf{The degenerate tree's time doubles with $n$}, and the ratio reaches
+650$\times$ at only 32{,}000 elements.
+
+\smallskip
+\textbf{And it is worse than the $n/\lg n$ ratio predicts.} At $n = 32{,}000$,
+$n/(2.4\lg n) \approx 890$ steps against 44, a ratio of about 20 in
+\emph{steps} --- yet the measured time ratio is 650. The extra factor is memory:
+each step in the degenerate tree is a dependent pointer dereference to an
+unpredictable address, so the processor can neither prefetch it nor overlap it
+with the next. \chref{role}'s second lie --- that all memory costs the same ---
+charging interest again.
+\end{worked}
+
+\section{Choosing}
+
+\begin{conceptbox}[Three structures, one table]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.8cm}L{2.4cm}L{2.4cm}L{2.4cm}L{3.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Operation} & \textbf{Sorted array} & \textbf{Binary heap} &
+\textbf{Unbalanced BST} & \textbf{Balanced BST} \\
+\midrule
+\endhead
+find min/max & $\bigTh{1}$ & $\bigTh{1}$ & $\bigTh{h}$ & $\bigTh{\lg n}$ \\
+search & $\bigTh{\lg n}$ & $\bigTh{n}$ & $\bigTh{h}$ & $\bigTh{\lg n}$ \\
+insert & $\bigTh{n}$ & $\bigTh{\lg n}$ & $\bigTh{h}$ & $\bigTh{\lg n}$ \\
+delete min & $\bigTh{n}$ & $\bigTh{\lg n}$ & $\bigTh{h}$ & $\bigTh{\lg n}$ \\
+in-order walk & $\bigTh{n}$ & $\bigTh{n\lg n}$ & $\bigTh{n}$ & $\bigTh{n}$ \\
+\textbf{worst-case $h$} & --- & $\lfloor\lg n\rfloor$ \emph{guaranteed} &
+  $n$ & $\bigO{\lg n}$ \emph{guaranteed} \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{A heap is not a search structure.} It gives $\bigTh{1}$ access to the
+extremum and $\bigTh{n}$ search for anything else --- the heap property orders
+each node against its children only, never its siblings. Use it for priority
+queues (\chref{mst}, \chref{shortestpaths}) and nothing else.
+
+\smallskip
+\textbf{An unbalanced BST is a gamble on insertion order}, and the measured
+penalty for losing is 650$\times$. Balanced variants --- AVL, red--black,
+treaps --- restore the guarantee by rotating on insertion, at a constant-factor
+cost. \emph{Data Structures} covers the rotations; what this course adds is
+that the guarantee is worth paying for, and by how much.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Assuming \algname{Build-Heap} is $\bigO{n\lg n}$.} It is
+        $\bigTh{n}$; the loose analysis charges every node the root's cost.
+  \item \textbf{Searching a heap.} It is $\bigTh{n}$. Heaps order parents
+        against children, not siblings.
+  \item \textbf{Expecting a BST to be balanced.} Its height is decided by the
+        insertion order, and sorted input gives height exactly $n$.
+  \item \textbf{Testing a BST only with shuffled keys.} The disaster case is
+        \emph{ordered} input, which is what real data often is.
+  \item \textbf{Comparing a measured constant with a bare asymptote.} The
+        height ratio was 2.46 against an asymptote of 2.99 and the theory was
+        right; the $\ln\ln n$ term accounted for the difference.
+  \item \textbf{Predicting slowdown from step counts alone.} The measured 650×
+        came from about 20× in steps and the rest from unpredictable memory
+        access.
+  \item \textbf{Reaching for a balanced tree when a sorted array would do.} If
+        the data is static, binary search on an array is $\bigTh{\lg n}$ with a
+        far better constant and no pointers at all.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Height, Measured]
+Reproduces all four tables. Expect twenty-five minutes; part D is slow by
+design --- it is timing a deliberately degenerate structure.
+
+\begin{lstlisting}[language=C++]
+// ch12_structures.cpp -- heaps and search trees, analysed not rebuilt.
+// Build: cl /O2 /EHsc /std:c++17 ch12_structures.cpp (see Appendix A)
+
+// --- 1. A BST as three parallel arrays -----------------------------
+// No pointers and no allocation: left[i], right[i] and key[i]. The
+// shape is identical to a pointer tree, and the measurement is about
+// shape, not about allocators.
+    void insert(int k) {
+        if (root < 0) { root = make(k); return; }
+        int cur = root;
+        for (;;) {
+            if (k < key[cur]) {
+                if (left[cur] < 0) { left[cur] = make(k); return; }
+                cur = left[cur];
+            } else {
+                if (right[cur] < 0) { right[cur] = make(k); return; }
+                cur = right[cur];
+            }
+        }
+    }
+// Iterative height, so a degenerate tree does not overflow the stack
+// the way Chapter 9's quicksort did.
+
+// --- 2. A heap's height is not a hope, it is a guarantee -----------
+// A binary heap is a COMPLETE tree stored in an array: node i has
+// children 2i+1 and 2i+2. Completeness is not maintained by clever
+// rebalancing -- it is maintained by the array layout, and cannot
+// fail. Hence height = floor(lg n), exactly, always.
+
+// --- 3. A BST's height depends entirely on the insertion order ----
+// Same keys, same code, two orders. This is Chapter 2's lesson --
+// the nature of the input, not its size -- applied to a structure
+// rather than to a sort.
+
+// --- 4. The constant, averaged -------------------------------------
+// Quoting only the leading constants (2.988 and 1.386) would make the
+// measurement look wrong. Both have lower-order corrections that are
+// still large at these sizes:
+//   height     ~ 4.311 ln n - 1.953 ln ln n + O(1)   (Reed, 2003)
+//   mean depth ~ 2 ln n - 3 + O(1)
+// So the honest comparison is against the corrected forms, with the
+// bare asymptote shown beside them to make the gap visible.
+
+// --- 5. And what the height costs, in seconds ----------------------
+// Searching a degenerate BST is a linear scan with pointer chasing,
+// which is worse than a linear scan of an array: same number of
+// steps, none of them predictable to the prefetcher.
+\end{lstlisting}
+
+\textbf{What to notice.} Part 4 prints three columns for each quantity:
+measured, corrected prediction, and bare asymptote. That is deliberate. A
+table with only the first and last would have read as a 20\% failure of a
+well-established theorem.
+
+\smallskip
+\textbf{Then try to break it.} Insert the keys in \emph{bit-reversal} order ---
+$0, 8, 4, 12, 2, 10, \ldots$ for $n = 16$ --- and measure the height. Predict
+first. This order is neither sorted nor random, and it produces a
+\emph{perfectly balanced} tree, height exactly $\lg n$: better than random. The
+lesson is that ``not sorted'' and ``random'' are not the same assumption, and
+only one of them is what the theorem requires.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Explain why a heap cannot become unbalanced, in terms of its
+        representation rather than its operations.
+  \item The naive bound for \algname{Build-Heap} is $\bigO{n\lg n}$ and the
+        true answer $\bigTh{n}$. Identify precisely which step of the naive
+        argument is loose, and evaluate $\sum_{j\ge0} j/2^{j}$.
+  \item A colleague's BST benchmark shows excellent performance. What single
+        question would you ask about the test data \emph{(CLO-2)}?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A binary heap's height is exactly $\lfloor \lg n \rfloor$, guaranteed
+        by the array layout rather than maintained by an algorithm. Measured
+        exact at every size up to $10^{8}$.
+  \item \algname{Build-Heap} is $\bigTh{n}$, not $\bigTh{n\lg n}$: most nodes
+        are near the leaves, and $\sum_{j\ge0} j/2^{j} = 2$ converges. The
+        naive bound is correct but loose --- the pattern \chref{amortised}
+        generalises.
+  \item A BST has no such guarantee. Its height is decided by the insertion
+        order: measured $2.3\lg n$ for shuffled keys and exactly $n$ for sorted
+        ones.
+  \item Measured: 100{,}000 searches took 11.7 ms in a random tree and 7.6
+        seconds in a degenerate one at $n = 32{,}000$ --- a factor of 650,
+        of which only about 20 is step count and the rest unpredictable memory
+        access.
+  \item Measured height$/\lg n$ was 2.46 against an asymptote of 2.99; the
+        $-1.953\ln\ln n$ correction accounts for the gap. Asymptotic constants
+        are limits, and the discarded terms can dominate at every realistic
+        size.
+  \item A heap is a priority queue, not a search structure: $\bigTh{1}$ to the
+        extremum and $\bigTh{n}$ to anything else.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} \algname{Build-Heap} on $n$ elements runs in:
+        (a)~$\bigTh{\lg n}$; (b)~$\bigTh{n}$; (c)~$\bigTh{n\lg n}$;
+        (d)~$\bigTh{n^{2}}$.
+  \item \textbf{(MCQ)} Inserting $1,2,3,\ldots,n$ into an unbalanced BST gives
+        height: (a)~$\lfloor\lg n\rfloor$; (b)~$\bigTh{\lg n}$;
+        (c)~$\bigTh{\sqrt n}$; (d)~$n$.
+  \item \textbf{(Short)} Explain why a heap needs no rebalancing while a BST
+        does, in terms of what enforces the shape.
+  \item \textbf{(Short)} Why is searching a heap $\bigTh{n}$ despite its height
+        being $\lg n$?
+  \item \textbf{(Short)} State what ``randomly built BST'' means, and give a key
+        set that is random but produces a degenerate tree.
+  \item \textbf{(Applied)} Prove that a heap on $n$ elements has at most
+        $\lceil n/2^{j+1}\rceil$ nodes of height $j$, and use it to complete the
+        $\bigTh{n}$ bound for \algname{Build-Heap}.
+  \item \textbf{(Applied)} You must support insert, delete-min and lookup-by-key
+        on up to $10^{7}$ records arriving in timestamp order. Choose a
+        structure, justify it against the table in Section~12.4, and say which
+        measurement from this chapter most influenced you.
+\end{reviewq}

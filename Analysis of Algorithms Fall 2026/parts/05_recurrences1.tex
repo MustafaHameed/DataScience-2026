@@ -3,7 +3,513 @@
 %=====================================================================
 \locator{2}{Part II --- Recursion and Divide-and-Conquer}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Write} the recurrence that describes a recursive algorithm's
+        running time, and \textbf{state} what its base case contributes.
+  \item \textbf{Solve} a recurrence by substitution: guess a bound and
+        \textbf{prove} it by induction, including the case where the guess must
+        be strengthened.
+  \item \textbf{Draw} a recursion tree, \textbf{sum} it level by level, and
+        \textbf{use} the result as a guess for substitution.
+  \item \textbf{Analyse} an unbalanced split, and \textbf{explain} why the
+        deepest branch sets the depth while the total work stays
+        $\bigO{n \lg n}$.
+  \item \textbf{Justify} ignoring floors, ceilings and boundary conditions.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{asymptotics} for $O$, $\Omega$ and $\Theta$, and \chref{invariants} for
+induction --- a substitution proof is an induction proof, and the three
+obligations are the same ones. Appendix~B has the summation identities.
+\end{prereq}
+
+\begin{keyterms}
+recurrence $\bullet$ base case $\bullet$ substitution method $\bullet$
+inductive hypothesis $\bullet$ strengthening the hypothesis $\bullet$
+recursion tree $\bullet$ level $\bullet$ internal node $\bullet$ leaf
+$\bullet$ balanced split $\bullet$ unbalanced split $\bullet$ boundary
+condition
+\end{keyterms}
+
+\section{What a Recurrence Is}
+
+A recursive algorithm's cost is defined in terms of itself, so its running time
+is too.
+
+\begin{definitionbox}[Recurrence]
+A \term{recurrence} is an equation that defines a function in terms of its own
+value at smaller arguments, together with one or more \term{base cases}.
+
+\smallskip
+Merge sort divides its input in half, sorts each half recursively, and merges
+the results in linear time. So
+\[ T(n) = \begin{cases}
+   \Theta(1) & n = 1, \\
+   T(\lceil n/2 \rceil) + T(\lfloor n/2 \rfloor) + \Theta(n) & n > 1.
+   \end{cases} \]
+Written as algorithm designers actually write it, with the floors dropped and
+the constants absorbed: $T(n) = 2T(n/2) + n$.
+\end{definitionbox}
+
+\begin{alertbox}[Three things that are quietly being ignored]
+\begin{tightnum}
+  \item \textbf{Floors and ceilings.} $n/2$ is not an integer when $n$ is odd.
+        Section~5.5 says why dropping them is safe.
+  \item \textbf{The base case.} $T(1) = \Theta(1)$ is assumed. For every
+        recurrence in this book the base case contributes a constant, which the
+        asymptotics absorb.
+  \item \textbf{The constant on $n$.} ``$+\,n$'' means $+\,\Theta(n)$. We are
+        solving for an order of growth, so a constant factor on the combining
+        step cannot change the answer --- though \chref{mergesort} measures
+        what it does to the clock.
+\end{tightnum}
 \end{alertbox}
+
+\section{The Substitution Method}
+
+The substitution method has two steps and no magic in the second one:
+
+\begin{tightnum}
+  \item \textbf{Guess} the form of the answer.
+  \item \textbf{Prove} it by induction, finding the constants that make the
+        induction go through.
+\end{tightnum}
+
+The guess is where the work is; Section~5.3 is a machine for producing guesses.
+
+\begin{theorem}[Merge sort's recurrence]\label{thm:mergerec}
+If $T(n) = 2T(n/2) + n$ with $T(1) = 1$, then $T(n) = \bigO{n \lg n}$.
+\end{theorem}
+
+\begin{proof}
+Guess $T(n) \le cn\lg n$ for a constant $c > 0$ to be chosen, and all
+$n \ge n_{0}$.
+
+\smallskip
+\textbf{Inductive step.} Assume the bound holds for $n/2$, that is
+$T(n/2) \le c\,(n/2)\lg(n/2)$. Then
+\begin{align*}
+T(n) &= 2T(n/2) + n \\
+     &\le 2 \Bigl( c\,\frac{n}{2}\lg\frac{n}{2} \Bigr) + n
+      = cn\lg\frac{n}{2} + n \\
+     &= cn\lg n - cn\lg 2 + n
+      = cn\lg n - cn + n.
+\end{align*}
+This is at most $cn \lg n$ provided $-cn + n \le 0$, that is $c \ge 1$.
+
+\smallskip
+\textbf{Base case.} The induction needs some $n$ at which the bound holds
+outright. At $n = 1$ it does not: $T(1) = 1$ but $c \cdot 1 \cdot \lg 1 = 0$.
+This is not a flaw in the result --- asymptotic bounds need hold only for
+$n \ge n_{0}$, so take $n_{0} = 2$. Then $T(2) = 2T(1) + 2 = 4$, and
+$c \cdot 2 \lg 2 = 2c \ge 4$ whenever $c \ge 2$.
+
+\smallskip
+Taking $c = 2$ and $n_{0} = 2$ satisfies both conditions, so
+$T(n) \le 2n\lg n$ for all $n \ge 2$, and $T(n) = \bigO{n\lg n}$.
+\end{proof}
+
+\begin{alertbox}[The base case is where students lose marks, not the algebra]
+Notice that the inductive step needed only $c \ge 1$, and the base case forced
+$c \ge 2$. Both constraints are real and the proof must satisfy both.
+
+\smallskip
+Notice also that $n = 1$ \emph{could not} be made to work and did not have to
+be. Moving the base case up to $n = 2$ is legitimate precisely because
+$\bigO{\cdot}$ quantifies over $n \ge n_{0}$ --- the definition in
+\chref{asymptotics} was built for exactly this.
+\end{alertbox}
+
+\begin{worked}[A Guess That Fails, and the Repair]
+\textbf{Claim to test:} $T(n) = T(\lfloor n/2 \rfloor) +
+T(\lceil n/2 \rceil) + 1$ is $\bigO{n}$.
+
+\smallskip
+\textbf{Step 1 --- the obvious attempt.} Guess $T(n) \le cn$. Then
+\[ T(n) \le c\Bigl\lfloor \frac{n}{2} \Bigr\rfloor
+          + c\Bigl\lceil \frac{n}{2} \Bigr\rceil + 1 = cn + 1. \]
+
+\smallskip
+\textbf{Step 2 --- why that is a failure.} $cn + 1$ is \emph{not} $\le cn$, for
+any $c$. The algebra came out ``nearly'' right, and nearly is no good: the
+induction does not close, so nothing has been proved. No choice of $c$ repairs
+it, because the leftover $+1$ does not involve $c$ at all.
+
+\smallskip
+\textbf{Step 3 --- strengthen the hypothesis.} The trick is to prove something
+\emph{stronger}, which gives the induction more to work with. Guess
+$T(n) \le cn - d$ for constants $c, d > 0$:
+\begin{align*}
+T(n) &\le \Bigl(c\Bigl\lfloor \tfrac{n}{2} \Bigr\rfloor - d\Bigr)
+        + \Bigl(c\Bigl\lceil \tfrac{n}{2} \Bigr\rceil - d\Bigr) + 1 \\
+     &= cn - 2d + 1 \;\le\; cn - d \quad\text{whenever } d \ge 1.
+\end{align*}
+
+\smallskip
+\textbf{Step 4 --- the lesson.} Subtracting a lower-order term made the proof
+work. It looks backwards --- proving more should be harder --- but the
+inductive hypothesis is \emph{used} as well as proved, and a stronger
+hypothesis is a stronger tool. This is the single most useful trick in the
+method, and the one worth remembering.
+\end{worked}
+
+\section{Recursion Trees: a Way to Guess}
+
+A recursion tree makes the sum visible. Each node is one call, labelled with
+the work that call does \emph{excluding} its recursive calls; the total is the
+sum over all nodes, which is easiest taken level by level.
+
+\dsfig{%
+\begin{tikzpicture}[
+  nd/.style={draw=primary, fill=primary!8, rounded corners=2pt,
+             font=\small, minimum width=1.5cm, minimum height=0.55cm,
+             align=center},
+  lbl/.style={font=\scriptsize\itshape, text=neutral, align=left},
+  tot/.style={font=\small\bfseries, text=primary!80!black, align=left},
+  ed/.style={primary!55, line width=0.7pt}
+]
+\node[nd] (r) at (0,0) {$n$};
+\node[nd] (a) at (-2.6,-1.3) {$n/2$};
+\node[nd] (b) at (2.6,-1.3) {$n/2$};
+\node[nd] (aa) at (-4.0,-2.6) {$n/4$};
+\node[nd] (ab) at (-1.3,-2.6) {$n/4$};
+\node[nd] (ba) at (1.3,-2.6) {$n/4$};
+\node[nd] (bb) at (4.0,-2.6) {$n/4$};
+\draw[ed] (r) -- (a); \draw[ed] (r) -- (b);
+\draw[ed] (a) -- (aa); \draw[ed] (a) -- (ab);
+\draw[ed] (b) -- (ba); \draw[ed] (b) -- (bb);
+\foreach \x in {-4.0,-1.3,1.3,4.0}
+  \draw[ed, dashed] (\x,-3.0) -- (\x,-3.7);
+\node[font=\small, text=neutral] at (0,-4.1) {$\cdots$ down to $n$ leaves};
+\node[tot] at (6.6,0)    {$= n$};
+\node[tot] at (6.6,-1.3) {$= n$};
+\node[tot] at (6.6,-2.6) {$= n$};
+\node[lbl] at (-6.9,0)    {level 0};
+\node[lbl] at (-6.9,-1.3) {level 1};
+\node[lbl] at (-6.9,-2.6) {level 2};
+\node[lbl, text=accent] at (0,-5.0)
+  {$\lg n + 1$ levels $\times$ $n$ per level $=$ $\Theta(n \lg n)$};
+\end{tikzpicture}}%
+{The recursion tree for $T(n) = 2T(n/2) + n$. Each level holds twice as many
+nodes, each doing half as much work, so every level totals $n$. The depth is
+$\lg n$ because the argument halves, and the product is the bound.}{rectree}
+
+\begin{conceptbox}[A tree is a guess, not a proof]
+The tree gives $\bigTh{n\lg n}$ in two lines. It is not a proof: the levels
+were assumed uniform, the leaves were counted loosely, and floors were ignored
+throughout.
+
+\smallskip
+That is the correct division of labour. \textbf{Draw the tree to get the
+guess; run substitution to prove it.} Theorem~\ref{thm:mergerec} is the proof
+for exactly the guess this tree produced.
+\end{conceptbox}
+
+\begin{worked}[The Tree, Counted]
+\texttt{code/ch05\_rectree.cpp} walks the recursion and records how many calls
+each level holds and how much work they do. At $n = 1024$:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+depth & calls & work & work$/n$ \\
+\midrule
+0 &    1 & 1024 & 1.000 \\
+1 &    2 & 1024 & 1.000 \\
+2 &    4 & 1024 & 1.000 \\
+\multicolumn{4}{c}{$\cdots$ levels 3 to 9, all 1.000 $\cdots$} \\
+10 & 1024 & 1024 & 1.000 \\
+\midrule
+\textbf{total} & & \textbf{11{,}264} & \textbf{11.000} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Every level does exactly $n$ work} --- the column is $1.000$ all the
+way down, not approximately. There are $11 = \lg 1024 + 1$ levels, and the
+total is exactly $11n$.
+
+\smallskip
+\textbf{And the quotient against the bound:} $11{,}264 / (1024 \lg 1024) =
+\mathbf{1.100}$. The tree's reasoning is not an approximation here; it is
+arithmetic, and the program is checking the arithmetic.
+\end{worked}
+
+\section{An Unbalanced Split}
+
+Real algorithms do not always divide evenly. Quicksort (\chref{quicksort})
+splits wherever the pivot lands. What does a lopsided split cost?
+
+\begin{worked}[$T(n) = T(n/3) + T(2n/3) + n$]
+\textbf{Step 1 --- the shallowest leaf.} Following the $n/3$ branch, the
+argument is divided by 3 each time, reaching 1 after $\log_{3} n$ steps.
+
+\smallskip
+\textbf{Step 2 --- the deepest leaf.} Following the $2n/3$ branch, the argument
+is multiplied by $2/3$ each time, reaching 1 after $\log_{3/2} n$ steps.
+
+\smallskip
+\textbf{Step 3 --- what that means for the sum.} While \emph{every} branch is
+still alive --- down to depth $\log_{3} n$ --- each level totals exactly $n$,
+because the two children's arguments sum to the parent's. Below that, branches
+start bottoming out and the levels total less than $n$. So
+\[ \underbrace{n \log_{3} n}_{\text{full levels}}
+   \;\le\; T(n) \;\le\; \underbrace{n \log_{3/2} n}_{\text{if every level were full}}, \]
+and since $\log_{3} n$ and $\log_{3/2} n$ are both $\bigTh{\lg n}$ --- they
+differ from $\lg n$ only by the constants $1/\lg 3$ and $1/\lg(3/2)$ --- we get
+$T(n) = \bigTh{n \lg n}$.
+
+\smallskip
+\textbf{Step 4 --- the moral.} \emph{Any} split into constant fractions gives
+$\bigTh{n\lg n}$. A 1-to-99 split is still $\bigTh{n\lg n}$; only the constant
+changes. What breaks the bound is a split that is not a constant fraction ---
+such as $1$ and $n-1$, which is \chref{quicksort}'s worst case.
+\end{worked}
+
+\begin{worked}[The Lopsided Tree, Counted]
+The same program, same $n = 1024$, lopsided split:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+depth & calls & work & work$/n$ \\
+\midrule
+0--6 & 1 to 64 & 1024 each & \textbf{1.000} \\
+7  & 126 & 1023 & 0.999 \\
+8  & 210 & 1002 & 0.979 \\
+9  & 326 &  955 & 0.933 \\
+10 & 342 &  800 & 0.781 \\
+11 & 352 &  634 & 0.619 \\
+12 & 264 &  414 & 0.404 \\
+13--17 & 300 & 407 total & decaying to 0.002 \\
+\midrule
+\textbf{total} & & \textbf{12{,}403} & \textbf{12.112} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Levels 0 to 6 are exactly full}, at $1.000$ each. And
+$\log_{3} 1024 = 6.29$ --- so the prediction in Step 3 above, that the levels
+are full down to depth $\log_{3} n$, is confirmed to the level.
+
+\smallskip
+\textbf{Below that the levels decay}, exactly as the argument said they would,
+and the tree runs on to depth 17 rather than 10.
+
+\smallskip
+\textbf{The totals:} 12{,}403 against the balanced tree's 11{,}264 --- only
+10\% more work, for a split twice as lopsided. Against $n \lg n$ the quotient
+is $1.211$ versus $1.100$. This is what ``the constant changes and the order
+does not'' looks like when you measure it.
+\end{worked}
+
+\begin{worked}[Depth, Against the Prediction]
+Predicted depth ratio: $\log_{3/2} n \,/\, \lg n = 1/\lg(3/2) = 1.71$.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & balanced & $\lg n$ & lopsided & $\log_{3/2} n$ & ratio \\
+\midrule
+  1{,}024 & 11 & 10.0 & 18 & 17.1 & 1.64 \\
+  4{,}096 & 13 & 12.0 & 22 & 20.5 & 1.69 \\
+ 16{,}384 & 15 & 14.0 & 25 & 23.9 & 1.67 \\
+ 65{,}536 & 17 & 16.0 & 29 & 27.4 & 1.71 \\
+262{,}144 & 19 & 18.0 & 32 & 30.8 & 1.68 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+Measured mean $1.68$ against a predicted $1.71$. The lopsided recursion is
+about 70\% deeper and still $\bigTh{n \lg n}$ --- which is the single most
+useful fact about divide-and-conquer, because it means the split does not have
+to be perfect.
+\end{worked}
+
+\section{Floors, Ceilings and Boundaries}
+
+\begin{conceptbox}[Why dropping them is safe]
+Every recurrence above was written $T(n/2)$ when the honest version is
+$T(\lfloor n/2\rfloor) + T(\lceil n/2 \rceil)$.
+
+\smallskip
+\textbf{The justification is a sandwich.} For the recurrences in this book,
+\[ T\bigl(\lfloor n/2 \rfloor\bigr) \;\le\; T(n/2) \;\le\;
+   T\bigl(\lceil n/2 \rceil\bigr), \]
+since $T$ is non-decreasing, and the outer two differ by at most one step of
+the recursion --- a $\bigO{n}$ term already present. Carrying the floors
+through a substitution proof changes the constants and never the order of
+growth, which is why textbooks state the clean form and prove the messy one
+once.
+
+\smallskip
+\textbf{The same goes for the base case.} $T(1) = 1$ against $T(1) = 1000$
+changes $c$, not the bound: the base-case work is $\bigO{1}$ per leaf and
+there are $\bigO{n}$ leaves, contributing $\bigO{n}$, which $n\lg n$ absorbs.
+
+\smallskip
+\textbf{Where this stops being true} is a recurrence whose subproblem sizes do
+not shrink by a constant fraction --- $T(n) = T(n-1) + n$, say, whose tree is a
+path of length $n$ and whose solution is $\bigTh{n^{2}}$. There the ``$-1$''
+is the whole content and may not be tidied away.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Guessing from the tree and calling it proved.} The tree
+        produces a guess. Substitution proves it. Both steps are required.
+  \item \textbf{An inductive step that comes out ``nearly'' right.}
+        $cn + 1 \le cn$ is false, and a proof that ends there has proved
+        nothing. Strengthen the hypothesis.
+  \item \textbf{Forgetting the base case.} The inductive step above needed
+        $c \ge 1$ and the base case needed $c \ge 2$; a proof that checks only
+        the step is half a proof.
+  \item \textbf{Insisting the base case be $n = 1$.} It need not be. $\bigO{}$
+        quantifies over $n \ge n_{0}$ and you may choose $n_{0}$.
+  \item \textbf{Assuming every level of a tree is full.} It is true for a
+        balanced split and false for a lopsided one from depth
+        $\log_{b_{\min}} n$ onward --- as the measured table shows, to the
+        level.
+  \item \textbf{Dropping a $-1$ as though it were a $/2$.}
+        $T(n) = T(n-1)+n$ is quadratic, not logarithmic-depth anything.
+  \item \textbf{Proving $\bigO{}$ and claiming $\bigTh{}$.} Substitution as
+        used here gives an upper bound. The lower bound is a separate proof,
+        by Theorem~3.5.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Counting a Recursion Tree]
+Reproduces all three tables above. Expect twenty minutes.
+
+\begin{lstlisting}[language=C++]
+// ch05_rectree.cpp -- a recursion tree, counted rather than drawn.
+// Build: cl /O2 /EHsc /std:c++17 ch05_rectree.cpp   (see Appendix A)
+
+// --- 1. The balanced recursion, T(n) = 2T(n/2) + n -----------------
+// The body does n units of work and then halves. Nothing is sorted
+// here: the point is the SHAPE, so work is counted, not performed.
+static void balanced(long long n, int d) {
+    if (n <= 1) { note(d, 1); return; }
+    note(d, n);
+    balanced(n / 2, d + 1);
+    balanced(n - n / 2, d + 1);
+}
+
+// --- 2. The lopsided recursion, T(n) = T(n/3) + T(2n/3) + n --------
+// The max(1, ...) is not decoration. Written as lopsided(n/3) and
+// lopsided(n - n/3), the case n = 2 gives 2/3 = 0 and 2 - 0 = 2, so
+// the larger branch recurses on 2 for ever: the measure n never
+// decreases and the recursion does not terminate. That is Chapter 4's
+// third obligation, failing in a program four lines long.
+static void lopsided(long long n, int d) {
+    if (n <= 1) { note(d, 1); return; }
+    note(d, n);
+    long long small = std::max(1LL, n / 3);
+    lopsided(small, d + 1);
+    lopsided(n - small, d + 1);
+}
+
+// --- 3. Each level of a balanced tree does the same work -----------
+// The "work/n" column is the one to read: if the recursion-tree
+// argument is sound, it is 1.000 all the way down to the leaves.
+
+// --- 4. A lopsided tree, where the levels stop being full ----------
+// Now "work/n" holds at 1.000 only while every branch is still alive
+// -- down to depth log_3(n) -- and then decays.
+
+// --- 5. Does the depth grow the way the algebra says? --------------
+// Balanced depth should be lg(n); lopsided depth log_{3/2}(n), about
+// 1.71 times as deep.
+for (long long n = 1024; n <= 262144; n *= 4) {
+    work.assign(1, 0); calls.assign(1, 0);
+    balanced(n, 0);
+    size_t db = work.size();
+    work.assign(1, 0); calls.assign(1, 0);
+    lopsided(n, 0);
+    printf("%10lld %8zu %8.1f %8zu %8.1f %8.2f\n",
+           n, db, std::log2((double)n), work.size(),
+           std::log2((double)n) / std::log2(1.5),
+           (double)work.size() / db);
+}
+\end{lstlisting}
+
+\textbf{What to notice.} The first version of the \texttt{lopsided} function
+written for this book had no \texttt{max(1, ...)} and did not terminate. It is
+worth pausing on that: the recurrence $T(n) = T(n/3) + T(2n/3) + n$ is
+perfectly well defined, and the obvious transcription of it into code is not.
+Integer division did it.
+
+\smallskip
+\textbf{Then try to break it.} Change the split to $n/10$ and $9n/10$ and
+predict, before running, (a) how many levels are full, (b) the total depth, and
+(c) whether the total work goes up or down. The answers are $\log_{10} n$,
+$\log_{10/9} n$, and up --- but only by a constant.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Solve $T(n) = T(n-1) + n$, $T(1)=1$, by drawing its recursion tree.
+        Why is the answer not $\bigTh{n \lg n}$?
+  \item Prove by substitution that $T(n) = 2T(n/2) + n^{2}$ is $\bigO{n^{2}}$,
+        stating the constraint on $c$ that the inductive step produces.
+  \item Why does a 1-to-99 split still give $\bigTh{n\lg n}$, while a
+        1-to-$(n-1)$ split does not?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A recurrence defines a running time in terms of itself, plus a base
+        case. Floors, ceilings and base constants are dropped because they
+        change constants, not orders of growth.
+  \item Substitution = guess + induction. The inductive step and the base case
+        each constrain the constant, and both constraints must be met.
+  \item When an inductive step comes out ``nearly'' right --- $cn+1 \le cn$ ---
+        strengthen the hypothesis by subtracting a lower-order term.
+  \item A recursion tree is a device for \emph{guessing}: sum level by level,
+        multiply work-per-level by number of levels.
+  \item Measured: for $T(n)=2T(n/2)+n$ at $n=1024$, every level does exactly
+        1024 units, there are exactly 11 levels, and the total is exactly
+        $11n$.
+  \item Any split into constant fractions is $\bigTh{n\lg n}$. Measured, a
+        one-third/two-thirds split was 70\% deeper (ratio 1.68 against a
+        predicted 1.71) and did only 10\% more work.
+  \item Measured, the lopsided tree's levels were exactly full down to depth 6,
+        and $\log_{3} 1024 = 6.29$.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The recursion tree for $T(n) = 2T(n/2)+n$ has:
+        (a)~$n$ levels each doing $\lg n$ work; (b)~$\lg n$ levels each doing
+        $n$ work; (c)~$\lg n$ levels each doing $\lg n$ work; (d)~$n$ levels
+        each doing $n$ work.
+  \item \textbf{(MCQ)} In a substitution proof, strengthening the hypothesis
+        means: (a)~choosing a larger $c$; (b)~proving a stronger statement,
+        such as $cn - d$ instead of $cn$; (c)~raising $n_{0}$; (d)~using strong
+        induction.
+  \item \textbf{(Short)} Why is a recursion tree not a proof, and what is it
+        for?
+  \item \textbf{(Short)} Explain why the base case of a substitution proof need
+        not be $n = 1$.
+  \item \textbf{(Short)} State the two depths of the tree for
+        $T(n)=T(n/3)+T(2n/3)+n$ and say which one determines the total work.
+  \item \textbf{(Applied)} Solve $T(n) = 3T(n/4) + n$ by recursion tree, then
+        prove your guess by substitution.
+  \item \textbf{(Applied)} The measured table shows the lopsided tree's levels
+        full to depth 6 at $n = 1024$. Predict the corresponding depth for
+        $n = 10^{6}$ with the same split, and say what you would expect the
+        work$/n$ column to be at depth 10.
+\end{reviewq}

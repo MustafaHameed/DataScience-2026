@@ -3,7 +3,512 @@
 %=====================================================================
 \locator{3}{Part III --- Sorting, Selection and the Structures Beneath}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what a decision tree models and \textbf{state} why a
+        comparison sort's execution corresponds to a root-to-leaf path.
+  \item \textbf{Prove} the $\bigOm{n \lg n}$ lower bound for comparison
+        sorting, and \textbf{state} precisely which algorithms it binds.
+  \item \textbf{Distinguish} a lower bound on a \emph{problem} from an upper
+        bound on an \emph{algorithm}.
+  \item \textbf{Describe} counting sort and radix sort, and \textbf{name} the
+        assumption each buys in exchange for linearity.
+  \item \textbf{Assess} how close a real comparison sort comes to the
+        information-theoretic floor.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{asymptotics} for $\Omega$, and \chref{mergesort} for a sort that attains
+the bound. Appendix~B has Stirling's approximation, which Section~10.2 uses.
+\end{prereq}
+
+\begin{keyterms}
+decision tree $\bullet$ comparison sort $\bullet$ lower bound $\bullet$
+information-theoretic bound $\bullet$ leaf $\bullet$ height $\bullet$
+Stirling's approximation $\bullet$ counting sort $\bullet$ radix sort
+$\bullet$ bucket sort $\bullet$ stability $\bullet$ key universe
+\end{keyterms}
+
+\section{A Different Kind of Question}
+
+Every result so far has been about an algorithm: \emph{this} sort takes
+$\bigTh{n\lg n}$, \emph{that} one $\bigTh{n^{2}}$. This chapter asks something
+else.
+
+\begin{conceptbox}[Algorithms and problems]
+\textbf{An upper bound is a statement about an algorithm.} ``Merge sort is
+$\bigO{n\lg n}$'' is proved by exhibiting merge sort and analysing it. It says
+sorting can be done at least this fast.
+
+\smallskip
+\textbf{A lower bound is a statement about a problem.} ``Comparison sorting is
+$\bigOm{n\lg n}$'' must hold for \emph{every} comparison sort --- including the
+ones nobody has invented yet. It cannot be proved by examining algorithms one
+at a time, because there are infinitely many.
+
+\smallskip
+That difference is why this chapter is the hinge of the book. Up to here the
+subject has been ingenuity; from here it also has limits, and \chref{complexity}
+is about the largest open question concerning them.
+\end{conceptbox}
+
+\section{The Decision Tree}
+
+\begin{definitionbox}[Comparison Sort]
+A \term{comparison sort} determines the order of its input using only
+comparisons between pairs of elements. It may ask ``is $a_{i} \le a_{j}$?'' and
+move elements about, and it may do nothing else with their values --- no
+arithmetic on them, no indexing by them, no inspection of their bits.
+
+\smallskip
+Insertion sort, merge sort, quicksort, heapsort and every sort in Part~II are
+comparison sorts.
+\end{definitionbox}
+
+\begin{definitionbox}[Decision Tree]
+Fix a comparison sort and an input size $n$. Its \term{decision tree} is a
+binary tree in which each internal node is a comparison $a_{i} : a_{j}$, the
+two edges are the two outcomes, and each leaf is a permutation --- the answer
+the algorithm outputs when it reaches that leaf.
+
+\smallskip
+Running the algorithm on an input traces one root-to-leaf path. The number of
+comparisons made is the length of that path, and the worst-case number of
+comparisons is the \term{height} of the tree.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  cmp/.style={draw=primary, fill=primary!8, rounded corners=2pt,
+              font=\scriptsize, inner sep=3pt, align=center},
+  lf/.style={draw=greenhl, fill=greenhl!10, rounded corners=2pt,
+             font=\scriptsize, inner sep=3pt, align=center},
+  ed/.style={primary!55, line width=0.7pt, font=\tiny}
+]
+\node[cmp] (r)  at (0,0)      {$a_1 : a_2$};
+\node[cmp] (l)  at (-3.4,-1.3) {$a_2 : a_3$};
+\node[cmp] (rr) at (3.4,-1.3)  {$a_2 : a_3$};
+\node[lf]  (l1) at (-5.1,-2.7) {$\langle 1,2,3 \rangle$};
+\node[cmp] (l2) at (-2.1,-2.7) {$a_1 : a_3$};
+\node[cmp] (r1) at (1.9,-2.7)  {$a_1 : a_3$};
+\node[lf]  (r2) at (5.1,-2.7)  {$\langle 3,2,1 \rangle$};
+\node[lf]  (a)  at (-3.2,-4.0) {$\langle 1,3,2 \rangle$};
+\node[lf]  (b)  at (-1.0,-4.0) {$\langle 3,1,2 \rangle$};
+\node[lf]  (c)  at (0.9,-4.0)  {$\langle 2,1,3 \rangle$};
+\node[lf]  (d)  at (3.1,-4.0)  {$\langle 2,3,1 \rangle$};
+\draw[ed] (r) -- node[above left] {$\le$} (l);
+\draw[ed] (r) -- node[above right] {$>$} (rr);
+\draw[ed] (l) -- node[above left] {$\le$} (l1);
+\draw[ed] (l) -- node[above right] {$>$} (l2);
+\draw[ed] (rr) -- node[above left] {$\le$} (r1);
+\draw[ed] (rr) -- node[above right] {$>$} (r2);
+\draw[ed] (l2) -- node[above left] {$\le$} (a);
+\draw[ed] (l2) -- node[above right] {$>$} (b);
+\draw[ed] (r1) -- node[above left] {$\le$} (c);
+\draw[ed] (r1) -- node[above right] {$>$} (d);
+\node[font=\scriptsize\itshape, text=accent, align=center] at (0,-5.0)
+  {$3! = 6$ leaves, so height $\ge \lceil \lg 6 \rceil = 3$};
+\end{tikzpicture}}%
+{The decision tree of a comparison sort on three elements. Every one of the
+$3! = 6$ orderings must appear as a leaf, or some input would be sorted wrongly
+--- and a binary tree with 6 leaves must have height at least
+$\lceil \lg 6 \rceil = 3$.}{dectree}
+
+\begin{theorem}[The comparison sorting lower bound]\label{thm:lowerbound}
+Any comparison sort requires $\bigOm{n \lg n}$ comparisons in the worst case.
+\end{theorem}
+
+\begin{proof}
+Consider the decision tree of any comparison sort on $n$ elements, and let $h$
+be its height and $\ell$ its number of leaves.
+
+\smallskip
+\textbf{Every permutation must appear as a leaf.} There are $n!$ distinct
+orderings of $n$ distinct elements. If some ordering labelled no leaf, then on
+the input requiring that ordering the algorithm would reach a leaf labelled
+with a different permutation and output it --- producing an unsorted array. So
+$\ell \ge n!$.
+
+\smallskip
+\textbf{A binary tree of height $h$ has at most $2^{h}$ leaves}, by induction
+on $h$: a tree of height 0 is a single leaf, and a tree of height $h$ has two
+subtrees of height at most $h-1$, hence at most $2 \cdot 2^{h-1} = 2^{h}$
+leaves between them.
+
+\smallskip
+\textbf{Combining,} $2^{h} \ge \ell \ge n!$, so
+\[ h \;\ge\; \lg(n!). \]
+
+\smallskip
+\textbf{And $\lg(n!) = \bigOm{n\lg n}$}, by Stirling's approximation
+$n! > (n/e)^{n}$:
+\[ \lg(n!) \;>\; \lg\Bigl(\frac{n}{e}\Bigr)^{n}
+   \;=\; n \lg n - n \lg e
+   \;=\; n\lg n - 1.4427\,n \;=\; \bigOm{n \lg n}. \]
+Since $h$ is the worst-case number of comparisons, the bound follows.
+\end{proof}
+
+\begin{corollary}
+Merge sort and heapsort are asymptotically optimal comparison sorts, and
+randomised quicksort is optimal in expectation.
+\end{corollary}
+
+\begin{alertbox}[What the theorem does \emph{not} say]
+It does not say sorting is $\bigOm{n\lg n}$. It says \emph{comparison} sorting
+is.
+
+\smallskip
+The proof's entire force comes from the branching factor being 2: each
+comparison yields one bit, and distinguishing $n!$ possibilities needs
+$\lg(n!)$ bits. An algorithm that extracts more than one bit per operation ---
+by using a key's value as an array index, say --- is not modelled by this tree
+at all, and Section~10.4 presents two such algorithms. They are not
+counter-examples; they are outside the hypothesis.
 \end{alertbox}
+
+\section{How Close Does a Real Sort Get?}
+
+The bound says at least $\lg(n!)$ comparisons. Merge sort achieves
+$\bigO{n\lg n}$. Those agree asymptotically --- but by what constant does a
+real sort miss the floor?
+
+\begin{worked}[The Floor Itself]
+\texttt{code/ch10\_lowerbound.cpp} computes $\lg(n!)$ by summing logarithms
+(forming $n!$ would overflow at $n = 21$).
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & $\lg(n!)$ & $n\lg n$ & $n\lg n - 1.443n$ & $\lg(n!)/n\lg n$ \\
+\midrule
+1{,}000     &       8{,}529 &       9{,}966 &       8{,}523 & 0.8559 \\
+10{,}000    &     118{,}458 &     132{,}877 &     118{,}450 & 0.8915 \\
+100{,}000   &   1{,}516{,}704 &   1{,}660{,}964 &   1{,}516{,}695 & 0.9131 \\
+1{,}000{,}000 & 18{,}488{,}885 & 19{,}931{,}569 & 18{,}488{,}874 & 0.9276 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Stirling's form is essentially exact.} $n\lg n - 1.443n$ differs from
+$\lg(n!)$ by 11 out of 18 million at $n = 10^{6}$ --- a relative error of
+$6 \times 10^{-7}$.
+
+\smallskip
+\textbf{The crude form is not.} $\lg(n!)/(n\lg n)$ is only $0.86$ at
+$n = 1{,}000$, creeping to $0.93$ at a million. The $-1.443n$ term matters at
+every size you will ever sort, which is why the sharper form is the one to
+quote.
+\end{worked}
+
+\begin{worked}[Merge Sort Against the Floor]
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & merge sort comparisons & $\lg(n!)$ & excess \\
+\midrule
+1{,}000     &       8{,}702 &       8{,}529 & 2.0\% \\
+10{,}000    &     120{,}505 &     118{,}458 & 1.7\% \\
+100{,}000   &   1{,}536{,}346 &   1{,}516{,}704 & 1.3\% \\
+1{,}000{,}000 & 18{,}672{,}689 & 18{,}488{,}885 & \textbf{1.0\%} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Merge sort is within 1\% of the information-theoretic minimum at
+$n = 10^{6}$, and the gap is shrinking.}
+
+\smallskip
+That is a stronger statement than ``asymptotically optimal''. Asymptotic
+optimality permits a constant factor of 10; this is a constant factor of 1.01.
+No comparison sort --- none that exists, none that will ever be invented ---
+can beat merge sort's comparison count by more than one per cent at this size.
+
+\smallskip
+\textbf{Which puts the remaining engineering in its place.} \chref{mergesort}
+found \texttt{std::sort} beating merge sort by 39\% in \emph{time}. Since the
+comparison count cannot improve by more than 1\%, essentially all of that 39\%
+is memory traffic and branch behaviour --- not comparisons. The lower bound
+tells you where the remaining performance is \emph{not}.
+\end{worked}
+
+\section{Sorting Without Comparing}
+
+To beat $\bigOm{n\lg n}$ you must leave the comparison model. Both ways of
+doing so buy linearity with an assumption about what the keys \emph{are}.
+
+\dsfig{\aoaalg{\algname{Counting-Sort}$(A, n, K)$}{
+\State let $C[0 \mathinner{\ldotp\ldotp} K-1]$ be a new array of zeros
+\For{$i \gets 1$ \textbf{to} $n$}
+  \State $C[A[i]] \gets C[A[i]] + 1$
+    \Comment{how many of each value}
+\EndFor
+\For{$v \gets 1$ \textbf{to} $K-1$}
+  \State $C[v] \gets C[v] + C[v-1]$
+    \Comment{running totals: where each value ends}
+\EndFor
+\For{$i \gets n$ \textbf{downto} $1$}
+  \State $C[A[i]] \gets C[A[i]] - 1$
+  \State $B[\,C[A[i]]\,] \gets A[i]$
+    \Comment{downwards keeps it stable}
+\EndFor
+\State \Return $B$
+}}{\algname{Counting-Sort}. No element is ever compared with another: line~3
+uses a key as an \emph{index}, which the decision-tree model does not permit
+and which is why the bound does not apply. Running time $\bigTh{n + K}$.}{counting}
+
+\begin{theorem}[Counting sort]\label{thm:counting}
+If every key is an integer in $[0, K)$, \algname{Counting-Sort} sorts $n$ keys
+in $\bigTh{n + K}$ time and $\bigTh{n + K}$ space, and is stable.
+\end{theorem}
+
+\begin{proof}
+The three loops run $n$, $K-1$ and $n$ times respectively with $\bigO{1}$
+bodies, giving $\bigTh{n+K}$; the arrays $B$ and $C$ give the space.
+
+\smallskip
+For correctness, observe after the second loop that $C[v]$ holds the number of
+keys $\le v$. Hence the keys equal to $v$ belong in positions
+$C[v-1], \ldots, C[v]-1$ of the output. The third loop places each key $A[i]$
+at $C[A[i]] - 1$ and then decrements $C[A[i]]$, so successive keys of the same
+value fill that block from its top downwards. Scanning $i$ from $n$ down to 1
+therefore places the \emph{last} occurrence highest, preserving input order
+among equal keys --- which is stability.
+\end{proof}
+
+\begin{alertbox}[Read the hypothesis, which is where the cost went]
+$\bigTh{n+K}$ is linear only when $K = \bigO{n}$.
+
+\smallskip
+Sorting a million 32-bit integers with counting sort means $K = 2^{32}$ and an
+array of four billion counters --- 16 GB, to sort 4 MB of data. The algorithm
+is not fast there; it is unusable.
+
+\smallskip
+Counting sort is the right choice for ages, exam marks, pixel values, bytes,
+days of the year --- small known universes. Radix sort is what lifts the
+restriction.
+\end{alertbox}
+
+\begin{conceptbox}[Radix sort: counting sort, one digit at a time]
+Treat a 32-bit key as four 8-bit digits. Counting-sort the keys by the least
+significant digit, then by the next, and so on. Each pass has $K = 256$, so
+each is $\bigTh{n + 256} = \bigTh{n}$, and there are 4 passes, giving
+$\bigTh{n}$ overall --- more precisely $\bigTh{d(n+R)}$ for $d$ digits of
+radix $R$.
+
+\smallskip
+\textbf{Stability is not a nicety here; it is the mechanism.} The pass on digit
+$i$ must not disturb the relative order established by the passes on digits
+$0 \ldots i-1$, or the earlier work is destroyed. This is why
+Theorem~\ref{thm:counting} bothered to prove stability, and why the third loop
+of \algname{Counting-Sort} counts downwards.
+
+\smallskip
+\textbf{And the assumption has not vanished, only changed shape:} from ``keys
+come from a small universe'' to ``keys have a fixed width''. Sorting
+variable-length strings by radix is a more delicate business.
+\end{conceptbox}
+
+\begin{worked}[Beating the Bound, Measured]
+One million to 6.4 million keys drawn uniformly from $[0, 1000)$, so counting
+sort's $K = 1000$ is genuinely small. Times in milliseconds, median of 5.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & \texttt{std::sort} & counting & radix & best speed-up \\
+\midrule
+  100{,}000 &   4.0 &  0.6 &  1.1 & 6.74 \\
+  400{,}000 &  17.1 &  1.8 &  4.7 & 9.64 \\
+1{,}600{,}000 &  68.6 &  7.3 & 23.2 & 9.45 \\
+6{,}400{,}000 & 259.7 & 29.0 & 81.0 & 8.94 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Counting sort is 7--10$\times$ faster than the best comparison sort in
+the standard library}, and all three produce identical output.
+
+\smallskip
+\textbf{No theorem was violated.} \texttt{std::sort} is bound by
+Theorem~\ref{thm:lowerbound}; counting sort is not, because it never compares
+two keys. The speed-up is the price the comparison model was charging, made
+visible.
+
+\smallskip
+\textbf{And the ratio is roughly constant} at about 9, not growing --- because
+both algorithms are within a logarithmic factor here and $\lg n$ moves slowly.
+The gain is a large constant, not a change of order; at $n = 6.4$ million,
+$\lg n = 22.6$, and counting sort recovers about 40\% of that.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Stating the bound as ``sorting is $\bigOm{n\lg n}$''.} It is
+        \emph{comparison} sorting. Dropping the qualifier makes
+        Section~10.4 look like a contradiction.
+  \item \textbf{Thinking counting sort breaks the theorem.} It is outside the
+        hypothesis, not a counter-example to the conclusion.
+  \item \textbf{Forgetting the $+K$.} Counting sort on 32-bit keys needs a
+        four-billion-entry array.
+  \item \textbf{An unstable counting sort inside a radix sort.} The radix
+        passes then destroy each other's work and the output is wrong, not
+        merely slow.
+  \item \textbf{Quoting $\lg(n!) \approx n \lg n$ at small $n$.} At
+        $n = 1{,}000$ the ratio is 0.86. Use $n\lg n - 1.443n$.
+  \item \textbf{Hunting for a faster comparison sort.} Merge sort is within 1\%
+        of the floor at $n = 10^{6}$; the remaining performance is in memory
+        behaviour, not comparisons.
+  \item \textbf{Assuming linear-time sorts are always faster.} They were 9×
+        faster here on a 1000-value universe. Widen the universe and counting
+        sort loses, then becomes impossible.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[The Floor, and Going Under It]
+Reproduces all three tables. Expect twenty-five minutes.
+
+\begin{lstlisting}[language=C++]
+// ch10_lowerbound.cpp -- the comparison lower bound, and sorting past it.
+// Build: cl /O2 /EHsc /std:c++17 ch10_lowerbound.cpp  (see Appendix A)
+
+// --- 1. lg(n!) exactly, by summing logs ----------------------------
+// n! overflows at n = 21, so the factorial is never formed: the log of
+// a product is the sum of the logs, and that stays in range for ever.
+static double lg_factorial(long long n) {
+    double s = 0;
+    for (long long k = 2; k <= n; ++k) s += std::log2((double)k);
+    return s;
+}
+
+// --- 2. A comparison sort, counting every comparison ---------------
+// Merge sort, because Chapter 8 proved it Theta(n lg n) in every case.
+// The question here is how close its CONSTANT is to the floor.
+
+// --- 3. Counting sort: no comparisons at all -----------------------
+// It never asks "is x < y". It asks "how many keys equal v", which is
+// a different question and not covered by the theorem. The price is
+// the assumption that keys are integers in a known, small range.
+static void counting_sort(const std::vector<int>& in,
+                          std::vector<int>& out, int K) {
+    std::vector<int> cnt(K, 0);
+    for (int x : in) ++cnt[x];
+    for (int v = 1; v < K; ++v) cnt[v] += cnt[v - 1];
+    for (size_t i = in.size(); i-- > 0;) out[--cnt[in[i]]] = in[i];
+}
+
+// --- 4. Radix sort: counting sort, one digit at a time -------------
+// Lifts counting sort's "small range" assumption to "fixed width":
+// 32-bit keys in four passes of an 8-bit counting sort. Still no
+// comparisons, so still outside the theorem.
+static void radix_sort(std::vector<int>& a, std::vector<int>& tmp) {
+    const int BITS = 8, R = 1 << BITS;
+    for (int shift = 0; shift < 32; shift += BITS) {
+        std::vector<size_t> cnt(R + 1, 0);
+        for (size_t i = 0; i < a.size(); ++i)
+            ++cnt[((unsigned)a[i] >> shift & (R - 1)) + 1];
+        for (int v = 0; v < R; ++v) cnt[v + 1] += cnt[v];
+        for (size_t i = 0; i < a.size(); ++i)
+            tmp[cnt[(unsigned)a[i] >> shift & (R - 1)]++] = a[i];
+        a.swap(tmp);
+    }
+}
+
+// --- 5. The bound itself, and Stirling's sharper form --------------
+// lg(n!) >= n lg n - n lg e = n lg n - 1.4427n.
+
+// --- 6. How close does a real sort get to the floor? ---------------
+// Merge sort is Theta(n lg n); so is the bound. The question is the
+// constant, and the answer is "within a few per cent".
+
+// --- 7. Beating the bound, by not comparing ------------------------
+// Counting and radix sort are not counter-examples to the theorem.
+// They are outside it: they never compare two keys. What they pay
+// instead is an assumption about what the keys ARE.
+
+// --- 8. And they really did sort -----------------------------------
+\end{lstlisting}
+
+\textbf{What to notice.} Part 6's excess column \emph{falls} --- 2.0\%, 1.7\%,
+1.3\%, 1.0\%. Merge sort is not merely within a constant factor of optimal; it
+is converging to optimal. There is nothing left to win in comparisons.
+
+\smallskip
+\textbf{Then try to break it.} Change \texttt{K} from 1000 to 10{,}000{,}000
+and re-run part 7. Counting sort's time should barely move for small $n$ and
+then be dominated entirely by the $+K$ term --- at $n = 100{,}000$ it will be
+\emph{slower} than \texttt{std::sort}, because it is allocating and sweeping an
+array a hundred times longer than its input. The $+K$ is not a footnote.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A comparison sort's decision tree on $n = 4$ elements must have at
+        least how many leaves, and hence what minimum height? Compare with
+        $\lg(4!)$.
+  \item Explain why counting sort does not contradict
+        Theorem~\ref{thm:lowerbound}, naming the step of the proof that fails
+        for it.
+  \item Merge sort was measured 1.0\% above $\lg(n!)$ at $n = 10^{6}$, yet
+        \texttt{std::sort} is 39\% faster in time. Reconcile these.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A lower bound is a statement about a \emph{problem} and must hold for
+        every algorithm, including undiscovered ones. This is the first such
+        result in the book.
+  \item A comparison sort's decision tree must have $n!$ leaves; a binary tree
+        of height $h$ has at most $2^{h}$; hence $h \ge \lg(n!) =
+        \bigOm{n\lg n}$.
+  \item Merge sort, heapsort and randomised quicksort are therefore
+        asymptotically optimal comparison sorts.
+  \item Measured: $\lg(n!)$ matches $n\lg n - 1.443n$ to a relative error of
+        $6\times10^{-7}$, while the crude $n \lg n$ is 14\% high at
+        $n = 1{,}000$.
+  \item Measured: merge sort uses 1.0\% more comparisons than the floor at
+        $n = 10^{6}$, and the excess is falling. No comparison sort can do
+        appreciably better.
+  \item Counting sort ($\bigTh{n+K}$) and radix sort ($\bigTh{d(n+R)}$) are
+        linear because they never compare keys --- they index by them. Each
+        buys that with an assumption: a small universe, or a fixed width.
+  \item Measured: counting sort beat \texttt{std::sort} by 7--10$\times$ on a
+        1000-value universe, with identical output and no theorem harmed.
+  \item Radix sort requires its per-digit pass to be stable, or earlier passes
+        are destroyed.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The decision tree of a comparison sort on $n$ elements
+        must have at least: (a)~$n$ leaves; (b)~$n^{2}$ leaves; (c)~$n!$
+        leaves; (d)~$2^{n}$ leaves.
+  \item \textbf{(MCQ)} Counting sort runs in: (a)~$\bigTh{n}$ always;
+        (b)~$\bigTh{n+K}$; (c)~$\bigTh{n\lg n}$; (d)~$\bigTh{K\lg n}$.
+  \item \textbf{(Short)} Explain the difference between a lower bound on a
+        problem and an upper bound on an algorithm, with an example of each.
+  \item \textbf{(Short)} Why must the counting sort inside a radix sort be
+        stable? Describe what goes wrong if it is not.
+  \item \textbf{(Short)} State the assumption counting sort buys in exchange
+        for linearity, and give a key type for which it is a bad bargain.
+  \item \textbf{(Applied)} Prove that any comparison-based algorithm for
+        finding the \emph{minimum} of $n$ elements requires at least $n-1$
+        comparisons. (The decision-tree argument is not the easiest route; think
+        about what an adversary can arrange.)
+  \item \textbf{(Applied)} You must sort 50 million 64-bit timestamps spanning
+        one year. Decide between \texttt{std::sort}, counting sort and radix
+        sort, giving the arithmetic for each, and state what you would measure
+        before committing.
+\end{reviewq}

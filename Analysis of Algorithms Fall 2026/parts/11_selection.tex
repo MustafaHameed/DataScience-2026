@@ -3,7 +3,483 @@
 %=====================================================================
 \locator{3}{Part III --- Sorting, Selection and the Structures Beneath}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} the $i$-th order statistic and \textbf{distinguish}
+        selection from sorting.
+  \item \textbf{Derive} quickselect's $\bigTh{n}$ expected and $\bigTh{n^{2}}$
+        worst-case running times from the recurrences, and \textbf{explain} why
+        recursing on one side changes the master-theorem case.
+  \item \textbf{Describe} the median-of-medians algorithm and \textbf{state}
+        why it gives a worst-case linear bound.
+  \item \textbf{Judge} when the deterministic algorithm is worth its constant.
+  \item \textbf{Predict} how selection's cost varies with $k$.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{quicksort} --- quickselect is quicksort with one recursive call deleted,
+and the randomisation argument is the same one. \chref{master} for the
+recurrence.
+\end{prereq}
+
+\begin{keyterms}
+order statistic $\bullet$ selection $\bullet$ median $\bullet$ quickselect
+$\bullet$ prune and search $\bullet$ median of medians $\bullet$ introselect
+$\bullet$ worst-case linear $\bullet$ tail call
+\end{keyterms}
+
+\section{Asking for Less}
+
+\begin{definitionbox}[Order Statistic, Selection]
+The \term{$i$-th order statistic} of a set of $n$ elements is the $i$-th
+smallest. The 1st is the minimum, the $n$-th the maximum, and the
+$\lfloor (n+1)/2 \rfloor$-th the \term{median}.
+
+\smallskip
+The \term{selection problem} is: given an array and an index $i$, return the
+$i$-th order statistic.
+\end{definitionbox}
+
+\begin{conceptbox}[Sorting answers more than was asked]
+Selection is obviously solvable in $\bigTh{n\lg n}$: sort, then index. The
+question is whether that is wasteful, and it plainly is --- sorting also
+determines the relative order of every \emph{other} pair, which nobody
+requested.
+
+\smallskip
+\chref{lowerbound} proved that \emph{sorting} cannot be done in less than
+$\lg(n!)$ comparisons. That theorem says nothing about selection, because
+selection has only $n$ possible answers rather than $n!$, so its decision tree
+needs only $\lg n$ leaves' worth of height from the counting argument --- a
+useless bound, but an honest sign that the problem is easier.
+
+\smallskip
+And it is: selection is $\bigTh{n}$, in the worst case, deterministically.
+Doing \emph{less} than sorting turns out to cost asymptotically less.
+\end{conceptbox}
+
+\section{Quickselect}
+
+\dsfig{\aoaalg{\algname{Quickselect}$(A, \mathit{lo}, \mathit{hi}, k)$}{
+\While{\textbf{true}}
+  \If{$\mathit{hi} - \mathit{lo} = 1$}
+    \State \Return $A[\mathit{lo}]$
+  \EndIf
+  \State $p \gets$ \algname{Random-Partition}$(A, \mathit{lo}, \mathit{hi})$
+  \If{$p = k$}
+    \State \Return $A[p]$
+      \Comment{the pivot \emph{is} the answer}
+  \ElsIf{$k < p$}
+    \State $\mathit{hi} \gets p$
+      \Comment{discard the right side entirely}
+  \Else
+    \State $\mathit{lo} \gets p + 1$
+      \Comment{discard the left side entirely}
+  \EndIf
+\EndWhile
+}}{\algname{Quickselect}. Identical to \algname{Quicksort} except that one of
+the two recursive calls is \emph{deleted} rather than made. Written as a loop
+because the remaining call is in tail position --- which also removes
+\chref{quicksort}'s stack-overflow failure.}{quickselect}
+
+\begin{theorem}[Quickselect's expected time]\label{thm:qsel}
+With a uniformly random pivot, \algname{Quickselect} runs in $\bigTh{n}$
+expected time on every input, and $\bigTh{n^{2}}$ in the worst case.
+\end{theorem}
+
+\begin{proof}
+\textbf{Worst case.} If every partition is maximally unbalanced, the range
+shrinks by one each iteration and the partitions cost
+$n, n-1, n-2, \ldots$, summing to $\bigTh{n^{2}}$.
+
+\smallskip
+\textbf{Expected case.} Call a pivot \emph{good} if it falls in the middle
+half of the range, that is between the 25th and 75th percentiles. A uniformly
+random pivot is good with probability $1/2$, and a good pivot leaves a
+subproblem of size at most $\tfrac34$ of the range. Hence the expected number
+of partitions needed to reduce the range by a factor of $\tfrac34$ is at most
+2, and if $T(n)$ denotes the expected cost,
+\[ T(n) \;\le\; T\bigl(\tfrac34 n\bigr) + \bigTh{n}, \]
+where the $\bigTh{n}$ absorbs the expected two partitions. By
+\chref{master} with $a = 1$, $b = 4/3$, $f(n) = n$: the watershed is
+$n^{\log_{4/3} 1} = n^{0} = 1$, and $f(n) = n = \bigOm{n^{0+\varepsilon}}$ with
+$\varepsilon = 1$, so case 3 applies provided regularity holds ---
+$1 \cdot f(3n/4) = \tfrac34 n \le c\,n$ with $c = \tfrac34 < 1$, which it does.
+Therefore $T(n) = \bigTh{f(n)} = \bigTh{n}$.
+\end{proof}
+
+\begin{conceptbox}[One deleted line, one changed case]
+This is worth stating plainly, because it is the whole idea.
+
+\smallskip
+\textbf{Quicksort} solves both subproblems: $T(n) = 2T(n/2) + n$. Watershed
+$n^{\log_{2}2} = n$, equal to $f(n)$, so \textbf{case 2} --- and case 2 is the
+one that produces a logarithm. Result $\bigTh{n\lg n}$.
+
+\smallskip
+\textbf{Quickselect} solves one: $T(n) = T(n/2) + n$. Watershed
+$n^{\log_{2}1} = 1$, far below $f(n) = n$, so \textbf{case 3} --- the root
+dominates and the sum is geometric. Result $\bigTh{n}$.
+
+\smallskip
+The $\lg n$ factor is not saved by cleverness. It is the number of levels in
+the tree, and discarding one branch collapses the tree to a path whose work
+halves each step: $n + n/2 + n/4 + \cdots < 2n$.
+\end{conceptbox}
+
+\section{Measured}
+
+\begin{worked}[Comparisons to Find the Median]
+\texttt{code/ch11\_select.cpp}, mean of 25 independent runs --- an
+\emph{expected} value is being measured, and a single run of a randomised
+algorithm is not an answer.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & comparisons & $/n$ & spread over runs & $/(n\lg n)$ \\
+\midrule
+   10{,}000 &      33{,}640 & 3.36 & 1.80--5.84 & 0.2532 \\
+  100{,}000 &     318{,}800 & 3.19 & 1.78--5.09 & 0.1919 \\
+1{,}000{,}000 &   3{,}344{,}844 & 3.34 & 2.01--5.67 & 0.1678 \\
+10{,}000{,}000 &  32{,}623{,}584 & 3.26 & 1.91--5.60 & 0.1403 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The cost per element is flat at about 3.3} across three orders of
+magnitude of $n$. That flatness \emph{is} linearity: $\bigTh{n}$ means
+comparisons$/n$ is bounded, and a column that neither rises nor falls over a
+thousandfold range of $n$ is the evidence. The classical expected value for
+median selection is $3.39n$.
+
+\smallskip
+\textbf{Meanwhile $/(n\lg n)$ falls steadily} --- 0.2532 to 0.1403 --- which is
+what a linear quantity does when divided by an $n\lg n$ one.
+
+\smallskip
+\textbf{Read the spread column too.} Individual runs ranged from $1.8n$ to
+$5.8n$ comparisons. The expectation is 3.3; the variance is real, and a single
+unlucky run costs three times a lucky one. Expected-time guarantees are about
+the average of many runs, not about the next one.
+\end{worked}
+
+\begin{worked}[Selecting Against Sorting, in Seconds]
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & quickselect & \texttt{nth\_element} & full sort & speed-up \\
+\midrule
+  100{,}000 &  0.99 &  0.95 &   6.79 & 6.84 \\
+  800{,}000 &  7.76 &  6.12 &  61.26 & 7.89 \\
+3{,}200{,}000 & 29.94 & 29.76 & 284.57 & 9.50 \\
+6{,}400{,}000 & 62.83 & 64.42 & 584.80 & 9.31 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Selection beats sorting by 7--9.5$\times$, and the factor grows} with
+$n$, because it is essentially $\lg n$ divided by a constant.
+
+\smallskip
+\textbf{And the hand-written quickselect matches \texttt{std::nth\_element}}
+--- within a few per cent either way. The library version is introselect, which
+adds a median-of-medians fallback for the worst case; on random data that
+fallback never fires, so the two are doing the same work.
+\end{worked}
+
+\begin{worked}[The Worst Case, and What It Costs]
+A last-element pivot on already-sorted input, selecting the median:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & naive comparisons & $/(n^{2}/2)$ & random pivot & $/n$ \\
+\midrule
+ 2{,}000 &      1{,}499{,}500 & 0.7498 &   9{,}402 & 4.70 \\
+ 8{,}000 &     23{,}998{,}000 & 0.7499 &  18{,}914 & 2.36 \\
+16{,}000 &     95{,}996{,}000 & 0.7500 &  67{,}744 & 4.23 \\
+32{,}000 &    383{,}992{,}000 & 0.7500 & 137{,}461 & 4.30 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The naive count is $0.7500 \times n^{2}/2 = 3n^{2}/8$ exactly}, and
+that number can be derived. On sorted input the last-element pivot is always
+the largest, so the range shrinks from the top by one each time. To reach the
+median the range must fall from $n$ to $n/2$, costing
+\[ n + (n-1) + \cdots + \frac{n}{2} \;=\; \frac{(n + n/2)}{2}\cdot\frac{n}{2}
+   \;=\; \frac{3n^{2}}{8}. \]
+Measured $0.7500$, predicted $0.75$. The analysis is not approximately right;
+it is right.
+
+\smallskip
+\textbf{One difference from \chref{quicksort} worth noting.} There the same
+input caused a \emph{crash}, because the recursion was $n$ deep. Here
+\algname{Quickselect} is written as a loop, so the worst case is merely slow.
+Writing a tail call as a loop did not fix the algorithm --- it is still
+quadratic --- but it converted a crash into a performance problem, which is a
+real improvement in its own right.
+\end{worked}
+
+\begin{worked}[Does $k$ Matter?]
+Mean of 25 runs, $n = 1{,}000{,}000$:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrr@{}}
+\toprule
+\rowcolor{primary!15}
+$k/n$ & comparisons & $/n$ \\
+\midrule
+0.00 & 2{,}124{,}066 & 2.12 \\
+0.10 & 2{,}615{,}691 & 2.62 \\
+0.25 & 3{,}622{,}715 & 3.62 \\
+0.50 & 2{,}992{,}344 & 2.99 \\
+0.99 & 1{,}911{,}099 & 1.91 \\
+1.00 & 1{,}945{,}088 & 1.95 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The ends are cheaper than the middle} --- about $2n$ for the minimum or
+maximum against about $3n$ for the median --- but not dramatically so, and the
+variation is less than a factor of two.
+
+\smallskip
+\textbf{The reason is a floor nothing can remove:} the \emph{first} partition
+examines all $n$ elements whatever $k$ is. Even finding the minimum by
+quickselect costs at least $n$ comparisons in that first pass, and the
+remaining passes add about another $n$. So the answer to ``is it cheaper to
+find the 10th smallest than the median?'' is yes, by about a third --- not by
+the factor people expect.
+
+\smallskip
+(For the minimum specifically, a single sweep costs exactly $n-1$ comparisons
+and is the obvious choice. Quickselect is for the cases a sweep cannot do.)
+\end{worked}
+
+\section{Linear in the Worst Case}
+
+Quickselect's expected bound is excellent and its worst case is quadratic. A
+deterministic algorithm achieves $\bigTh{n}$ in the \emph{worst} case.
+
+\begin{conceptbox}[Median of medians]
+To partition well you need a good pivot. To find a good pivot you could find
+the median --- but that is the problem you are trying to solve. The way out is
+to find a pivot that is merely \emph{guaranteed decent}, recursively.
+
+\begin{tightnum}
+  \item Divide the $n$ elements into $\lceil n/5 \rceil$ groups of 5.
+  \item Find each group's median by sorting 5 elements --- $\bigO{1}$ each,
+        $\bigO{n}$ in total.
+  \item \textbf{Recursively select} the median of those $\lceil n/5 \rceil$
+        medians. Call it $x$.
+  \item Partition around $x$ and recurse into the side containing the answer.
+\end{tightnum}
+
+\smallskip
+\textbf{Why $x$ is a decent pivot.} At least half the groups have their median
+$\le x$, and in each such group at least 3 of the 5 elements are $\le$ that
+median. So at least $3 \cdot \tfrac12 \cdot \tfrac{n}{5} = \tfrac{3n}{10}$
+elements are $\le x$, and symmetrically $\tfrac{3n}{10}$ are $\ge x$.
+Therefore the recursive call in step 4 is on at most $\tfrac{7n}{10}$
+elements --- always, with no probability involved.
+
+\smallskip
+\textbf{The recurrence} is then
+\[ T(n) \;\le\; \underbrace{T(n/5)}_{\text{step 3}}
+             + \underbrace{T(7n/10)}_{\text{step 4}}
+             + \bigTh{n}, \]
+which the master theorem cannot touch (two different subproblem sizes). But
+$\tfrac15 + \tfrac{7}{10} = \tfrac{9}{10} < 1$, and substitution with the guess
+$T(n) \le cn$ gives $T(n) \le \tfrac{c n}{5} + \tfrac{7cn}{10} + an =
+\tfrac{9cn}{10} + an \le cn$ whenever $c \ge 10a$. So $T(n) = \bigO{n}$.
+
+\smallskip
+\textbf{The groups of 5 are not arbitrary.} With groups of 3 the sum becomes
+$\tfrac13 + \tfrac23 = 1$, the substitution fails, and the bound is
+$\bigTh{n\lg n}$. The constant 5 is the smallest odd group size that makes the
+fractions sum to less than 1.
+\end{conceptbox}
+
+\begin{alertbox}[And yet almost nobody uses it]
+Median-of-medians is $\bigTh{n}$ worst case, which is strictly better than
+quickselect's guarantee. Its constant is roughly 5--10$\times$ larger: it sorts
+every group of five, makes a second recursive call, and touches memory in a
+scattered pattern.
+
+\smallskip
+So in practice:
+\begin{tight}
+  \item \textbf{randomised quickselect} for ordinary work, at about $3.3n$
+        comparisons measured;
+  \item \textbf{introselect} --- quickselect that counts its iterations and
+        switches to median-of-medians if progress is too slow --- for library
+        code. This is what \texttt{std::nth\_element} does, and it is the same
+        design as \texttt{std::sort}'s heapsort fallback in \chref{quicksort}.
+\end{tight}
+
+\smallskip
+The pattern is worth naming, because it recurs: \textbf{use the algorithm with
+the better constant, and keep the one with the better guarantee as a
+fallback.} You get the common case fast and the worst case bounded.
 \end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Sorting to find one element.} Measured, 7--9.5$\times$ more
+        expensive, growing with $n$.
+  \item \textbf{Recursing into both sides.} That is quicksort. The deleted call
+        is the entire algorithm.
+  \item \textbf{Judging an expected bound from one run.} Measured runs ranged
+        from $1.8n$ to $5.8n$ for a mean of $3.3n$.
+  \item \textbf{Using a fixed pivot.} Sorted input then gives $3n^{2}/8$
+        comparisons, measured exactly.
+  \item \textbf{Reaching for median-of-medians by default.} Its constant is
+        5--10$\times$ worse; it is a fallback, not a first choice.
+  \item \textbf{Using groups of 3.} The fractions sum to 1 and the bound
+        degrades to $\bigTh{n\lg n}$.
+  \item \textbf{Expecting selection to be much cheaper near the ends.}
+        Measured $2.1n$ at $k=0$ against $3.0n$ at the median --- the first
+        partition costs $n$ regardless.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Selection Against Sorting]
+Reproduces all four tables. Expect twenty-five minutes.
+
+\begin{lstlisting}[language=C++]
+// ch11_select.cpp -- finding the k-th smallest without sorting.
+// Build: cl /O2 /EHsc /std:c++17 ch11_select.cpp     (see Appendix A)
+
+// --- 1. Partition, exactly as in Chapter 9 -------------------------
+
+// --- 2. Quickselect: recurse into ONE side, not both ---------------
+// This single change is the whole algorithm. Quicksort solves both
+// subproblems and gets T(n) = 2T(n/2) + n = Theta(n lg n).
+// Quickselect discards one and gets T(n) = T(n/2) + n, which the
+// master theorem settles as Theta(n) -- case 3, the root dominating.
+//
+// Written as a loop rather than a recursion, because the recursive
+// call is in tail position and there is no reason to spend a stack
+// frame on it. That also removes Chapter 9's stack-overflow failure.
+static int quickselect(std::vector<int>& a, size_t k, bool randomised) {
+    size_t lo = 0, hi = a.size();
+    for (;;) {
+        if (hi - lo == 1) return a[lo];
+        size_t p = randomised ? partition_random(a, lo, hi)
+                              : partition_last(a, lo, hi);
+        if (p == k) return a[p];
+        if (k < p) hi = p;          // the k-th is on the left
+        else       lo = p + 1;      // ... or on the right
+    }
+}
+
+// --- 3. Comparisons: selection against sorting ---------------------
+// An EXPECTED value is being measured, so one run of a randomised
+// algorithm is not an answer: single runs of this gave 2.52, 3.92,
+// 3.73 and 2.73 comparisons per element, which says only that the
+// answer is somewhere near 3. Average over 25 independent runs.
+
+// --- 4. The same thing in seconds ----------------------------------
+// std::nth_element is the library's version: introselect, which is
+// quickselect with a median-of-medians fallback, exactly as
+// std::sort is quicksort with a heapsort fallback.
+
+// --- 5. The worst case, for Chapter 9's reason ---------------------
+// A last-element pivot on sorted input shrinks the range by one each
+// time: T(n) = T(n-1) + n = Theta(n^2). The loop form means it is
+// slow rather than a crash, which is an improvement but not a fix.
+
+// --- 6. Does k matter? ---------------------------------------------
+// The expected cost is smaller towards the ends -- but not
+// dramatically, because the first partition costs n whatever k is.
+// That first n is a floor nothing removes.
+\end{lstlisting}
+
+\textbf{What to notice.} The spread column in part 3. The mean is a stable 3.3
+across four orders of magnitude, and individual runs vary by a factor of three.
+Both facts are properties of the algorithm, and quoting only the first would be
+misleading.
+
+\smallskip
+\textbf{Then try to break it.} Implement median-of-medians and race it against
+randomised quickselect on random input. Predict first which wins and by how
+much. Then build the input that makes quickselect quadratic and race them
+again. The crossover between ``better constant'' and ``better guarantee'' is the
+entire argument for introselect, and you will have measured both ends of it.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Quicksort's recurrence is $T(n)=2T(n/2)+n$ and quickselect's is
+        $T(n)=T(n/2)+n$. Identify the master-theorem case for each and explain
+        where the $\lg n$ went.
+  \item Derive the $3n^{2}/8$ comparison count for a last-element pivot
+        selecting the median of sorted input.
+  \item Why does median-of-medians use groups of 5 rather than 3? Show the
+        arithmetic that fails.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item The $i$-th order statistic is the $i$-th smallest. Selection asks for
+        one of them; sorting computes all of them and is asymptotically more
+        expensive.
+  \item Quickselect is quicksort with one recursive call deleted. That moves
+        the recurrence from master-theorem case 2 ($\bigTh{n\lg n}$) to case 3
+        ($\bigTh{n}$): the tree collapses to a path and the work is geometric.
+  \item Expected $\bigTh{n}$ on every input with a random pivot;
+        $\bigTh{n^{2}}$ worst case.
+  \item Measured: $3.3$ comparisons per element for the median, flat across
+        $n = 10^{4}$ to $10^{7}$ --- and individual runs ranged from $1.8n$ to
+        $5.8n$.
+  \item Measured: 7--9.5$\times$ faster than a full sort, a factor that grows
+        with $n$; and indistinguishable from \texttt{std::nth\_element}.
+  \item Measured: the naive pivot on sorted input used exactly $3n^{2}/8$
+        comparisons, matching the derivation to four decimal places.
+  \item Median-of-medians is worst-case $\bigTh{n}$ via $T(n) \le T(n/5) +
+        T(7n/10) + \bigTh{n}$, where $\tfrac15+\tfrac{7}{10}<1$ is what makes
+        the substitution close. Its constant is 5--10$\times$ worse, so it is
+        used as a fallback, not a default.
+  \item Cost varies with $k$ by less than a factor of two, because the first
+        partition costs $n$ whatever $k$ is.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Randomised quickselect's expected running time is:
+        (a)~$\bigTh{\lg n}$; (b)~$\bigTh{n}$; (c)~$\bigTh{n\lg n}$;
+        (d)~$\bigTh{n^{2}}$.
+  \item \textbf{(MCQ)} Median-of-medians partitions around an element
+        guaranteed to exceed at least: (a)~$n/5$; (b)~$3n/10$; (c)~$n/2$;
+        (d)~$7n/10$ of the elements.
+  \item \textbf{(Short)} Explain why deleting one recursive call changes the
+        master-theorem case, and hence removes the logarithm.
+  \item \textbf{(Short)} State the trade-off between randomised quickselect and
+        median-of-medians, and say what introselect does about it.
+  \item \textbf{(Short)} The measured spread was $1.8n$ to $5.8n$ for a mean of
+        $3.3n$. What does that tell you about relying on an expected-time
+        bound for a single latency-critical request?
+  \item \textbf{(Applied)} Prove that at least $n-1$ comparisons are needed to
+        find the minimum of $n$ elements, and explain why you would use a
+        single sweep rather than quickselect for $k = 1$.
+  \item \textbf{(Applied)} You need the 99th percentile latency from 50 million
+        recorded request times, once per minute. Choose an algorithm, justify
+        it with the measurements in this chapter, and say what would change
+        your choice.
+\end{reviewq}

@@ -3,7 +3,523 @@
 %=====================================================================
 \locator{2}{Part II --- Recursion and Divide-and-Conquer}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} the three steps of the divide-and-conquer pattern and
+        \textbf{apply} it to a stated problem \emph{(CLO-6)}.
+  \item \textbf{Prove} merge sort correct from the merge step's invariant, and
+        \textbf{derive} its $\bigTh{n\lg n}$ bound in all three cases.
+  \item \textbf{Explain} why merge sort's bound is case-independent and
+        \textbf{contrast} it with insertion sort's.
+  \item \textbf{Measure} the effect of an insertion-sort cutoff and
+        \textbf{choose} one for a given machine.
+  \item \textbf{Account} for a measured gap between two runs of the same
+        algorithm in terms of work done and hardware behaviour.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{recurrences} and \chref{master} --- the bound here is case 2 of the
+master theorem. \chref{invariants} for the correctness argument.
+\end{prereq}
+
+\begin{keyterms}
+divide and conquer $\bullet$ divide $\bullet$ conquer $\bullet$ combine
+$\bullet$ merge $\bullet$ stability $\bullet$ in-place $\bullet$ auxiliary
+space $\bullet$ cutoff $\bullet$ hybrid sort $\bullet$ top-down $\bullet$
+bottom-up $\bullet$ branch misprediction
+\end{keyterms}
+
+\section{The Pattern}
+
+\begin{definitionbox}[Divide and Conquer]
+A \term{divide-and-conquer} algorithm has three steps:
+
+\begin{tightnum}
+  \item \textbf{Divide} the problem into subproblems that are smaller instances
+        of the \emph{same} problem.
+  \item \textbf{Conquer} the subproblems by solving them recursively; when they
+        are small enough, solve them directly.
+  \item \textbf{Combine} the subproblem solutions into a solution for the
+        original.
+\end{tightnum}
+
+\smallskip
+The running time is then $T(n) = a T(n/b) + D(n) + C(n)$, with $D$ and $C$ the
+cost of dividing and combining --- which is exactly the form \chref{master}
+solves.
+\end{definitionbox}
+
+\begin{conceptbox}[Where the work goes, and why it matters]
+The three steps are not equally expensive, and which one carries the weight
+distinguishes the two great sorting algorithms.
+
+\smallskip
+\textbf{Merge sort} divides trivially (compute the midpoint, $\bigO{1}$) and
+combines expensively (merge two runs, $\bigTh{n}$). \emph{Easy split, hard
+join.}
+
+\smallskip
+\textbf{Quicksort} (\chref{quicksort}) divides expensively (partition around a
+pivot, $\bigTh{n}$) and combines trivially (the pieces are already in place,
+$\bigO{1}$). \emph{Hard split, easy join.}
+
+\smallskip
+Both give $T(n) = 2T(n/2) + \bigTh{n}$ when the split is even. The difference
+is that merge sort \emph{guarantees} the even split and quicksort only hopes
+for it --- which is the whole of \chref{quicksort}.
+\end{conceptbox}
+
+\section{Merge Sort}
+
+\dsfig{\aoaalg{\algname{Merge-Sort}$(A, \mathit{lo}, \mathit{hi})$}{
+\If{$\mathit{hi} - \mathit{lo} < 2$}
+  \State \Return
+    \Comment{0 or 1 element: already sorted}
+\EndIf
+\State $\mathit{mid} \gets \lfloor (\mathit{lo}+\mathit{hi})/2 \rfloor$
+\State \algname{Merge-Sort}$(A, \mathit{lo}, \mathit{mid})$
+  \Comment{conquer the left}
+\State \algname{Merge-Sort}$(A, \mathit{mid}, \mathit{hi})$
+  \Comment{conquer the right}
+\State \algname{Merge}$(A, \mathit{lo}, \mathit{mid}, \mathit{hi})$
+  \Comment{combine}
+}}{\algname{Merge-Sort}. The divide is one line of arithmetic; all the work is
+in \algname{Merge}.}{mergesort}
+
+\dsfig{\aoaalg{\algname{Merge}$(A, \mathit{lo}, \mathit{mid}, \mathit{hi})$}{
+\State $i \gets \mathit{lo}$;\quad $j \gets \mathit{mid}$;\quad
+       $k \gets \mathit{lo}$
+\While{$i < \mathit{mid}$ \textbf{and} $j < \mathit{hi}$}
+  \If{$A[i] \le A[j]$}
+    \State $B[k] \gets A[i]$;\ \ $i \gets i+1$
+      \Comment{$\le$ keeps it stable}
+  \Else
+    \State $B[k] \gets A[j]$;\ \ $j \gets j+1$
+  \EndIf
+  \State $k \gets k+1$
+\EndWhile
+\While{$i < \mathit{mid}$}
+  \State $B[k] \gets A[i]$;\ \ $i \gets i+1$;\ \ $k \gets k+1$
+\EndWhile
+\While{$j < \mathit{hi}$}
+  \State $B[k] \gets A[j]$;\ \ $j \gets j+1$;\ \ $k \gets k+1$
+\EndWhile
+\State copy $B[\mathit{lo} \mathinner{\ldotp\ldotp} \mathit{hi}]$ back into $A$
+}}{\algname{Merge}: two sorted runs become one in a single pass. Line 3's
+$\le$ rather than $<$ is what makes merge sort stable, and it is the only
+difference.}{mergeproc}
+
+\begin{theorem}[Merge is correct]\label{thm:merge}
+If $A[\mathit{lo}\mathinner{\ldotp\ldotp}\mathit{mid}]$ and
+$A[\mathit{mid}\mathinner{\ldotp\ldotp}\mathit{hi}]$ are each sorted, then
+after \algname{Merge} the range
+$A[\mathit{lo}\mathinner{\ldotp\ldotp}\mathit{hi}]$ is sorted and holds the
+same multiset of values.
+\end{theorem}
+
+\begin{proof}
+Invariant for the first loop: \emph{$B[\mathit{lo}\mathinner{\ldotp\ldotp}k]$
+holds the $k - \mathit{lo}$ smallest elements of the two runs, in sorted order;
+and $A[i]$ and $A[j]$ are the smallest remaining elements of their respective
+runs.}
+
+\smallskip
+\textbf{Initialisation.} $k = \mathit{lo}$, so $B[\mathit{lo}
+\mathinner{\ldotp\ldotp}\mathit{lo}]$ is empty and holds the 0 smallest
+elements vacuously. $i$ and $j$ point at the fronts of two sorted runs, so they
+are the smallest remaining in each.
+
+\smallskip
+\textbf{Maintenance.} The smallest remaining element overall is $\min(A[i],
+A[j])$, since each run is sorted and $A[i], A[j]$ are their minima. The body
+copies exactly that element into $B[k]$ and advances the corresponding index,
+so $B$ gains the next-smallest element and the two pointers again indicate
+their runs' minima.
+
+\smallskip
+\textbf{Termination.} The loop ends when one run is exhausted. The measure
+$(\mathit{mid}-i) + (\mathit{hi}-j)$ strictly decreases each iteration and is
+bounded below, so the loop is finite. The two tail loops append the remainder
+of whichever run is left --- already sorted, and all of it $\ge$ everything in
+$B$ by the invariant. Every element is copied exactly once and none is
+overwritten before being copied, so the multiset is preserved.
+\end{proof}
+
+\begin{theorem}[Merge sort's running time]\label{thm:mergetime}
+\algname{Merge-Sort} runs in $\bigTh{n \lg n}$ in the best, worst and average
+cases, and uses $\bigTh{n}$ auxiliary space.
+\end{theorem}
+
+\begin{proof}
+\algname{Merge} performs between $\min(n_{1},n_{2})$ and $n_{1}+n_{2}-1$
+comparisons and exactly $n_{1}+n_{2}$ moves, so it is $\bigTh{n}$ regardless of
+the data. The divide is $\bigO{1}$ and the two subproblems have sizes
+$\lfloor n/2 \rfloor$ and $\lceil n/2 \rceil$. Hence
+\[ T(n) = 2T(n/2) + \bigTh{n} \]
+for \emph{every} input, with no case distinction. By \chref{master} with
+$a = b = 2$ and $f(n) = n$, the watershed is $n^{\log_{2}2} = n = \bigTh{f(n)}$,
+so case~2 applies and $T(n) = \bigTh{n \lg n}$. Since the recurrence holds for
+every input, the bound is simultaneously best-, worst- and average-case. The
+buffer $B$ holds at most $n$ elements, giving $\bigTh{n}$ auxiliary space.
+\end{proof}
+
+\begin{alertbox}[The bound is case-independent, the running time is not]
+Theorem~\ref{thm:mergetime} says the \emph{order of growth} does not depend on
+the input. It does not say the running time is the same for every input, and
+Section~8.4 measures a factor of 3.9 between two inputs of the same size.
+
+\smallskip
+Keeping those two statements apart is the main intellectual work of this
+chapter.
 \end{alertbox}
+
+\section{Measured: the Bound Holds, the Clock Does Not}
+
+\begin{worked}[Three Input Shapes, $n = 2{,}000{,}000$]
+\texttt{code/ch08\_merge.cpp} sorts the same two million elements arranged
+three ways, counting comparisons exactly and timing the sort.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}lrrrl@{}}
+\toprule
+\rowcolor{primary!15}
+shape & time (ms) & comparisons & $/\,n\lg n$ & vs sorted \\
+\midrule
+sorted   &  73.1 & 20{,}769{,}984 & 0.496 & --- \\
+reversed &  73.5 & 21{,}132{,}864 & 0.505 & $\times 1.006$ \\
+random   & 285.7 & 39{,}348{,}350 & 0.940 & $\times 3.910$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+($n \lg n = 41{,}863{,}137$.)
+
+\smallskip
+\textbf{First, the good news.} Compare this with \chref{cases}, where insertion
+sort on these same three shapes varied by a factor of \textbf{6{,}600}. Merge
+sort's comparison count varies by a factor of 1.9 and its time by 3.9. The
+guarantee is real.
+
+\smallskip
+\textbf{Second, the comparison counts are exactly what theory says.} On sorted
+input every merge exhausts its \emph{left} run first --- every element of the
+left run is smaller than every element of the right --- so the comparison loop
+performs exactly $n_{1}$ comparisons instead of about $n_{1}+n_{2}$. Half as
+many. Measured: $0.496\, n\lg n$ against random input's $0.940\,n\lg n$, a
+ratio of $1.89$.
+
+\smallskip
+\textbf{Third, the time ratio is 3.91 and the comparison ratio is 1.89.} Those
+do not match. Roughly half the slowdown is not accounted for by work done, and
+Section~8.5 is about finding out what it is.
+\end{worked}
+
+\begin{worked}[The Cutoff, Tuned]
+Merge sort's recursion bottoms out at $n = 1$, which means a great many calls
+doing almost nothing. \chref{role} measured insertion sort beating merge sort
+below $n \approx 65$; so stop recursing at some cutoff and insertion-sort the
+piece instead.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrr@{}}
+\toprule
+\rowcolor{primary!15}
+cutoff & time (ms) & vs none \\
+\midrule
+   0 & 275.5 & 1.000 \\
+   4 & 257.1 & 0.933 \\
+   8 & 243.1 & 0.882 \\
+  16 & 232.5 & 0.844 \\
+ \textbf{32} & \textbf{226.4} & \textbf{0.822} \\
+  64 & 231.0 & 0.838 \\
+ 128 & 257.0 & 0.933 \\
+ 256 & 247.7 & 0.899 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The best cutoff on this machine is 32, and it is worth 18\%.} The curve
+is shallow between 16 and 64 --- anything in that range gets most of the
+benefit --- and turns back upward beyond it, as insertion sort's quadratic term
+begins to bite.
+
+\smallskip
+\textbf{Note what this is and is not.} It is a constant-factor improvement: the
+algorithm is $\bigTh{n\lg n}$ before and after, and \chref{asymptotics}'s
+notation cannot see the difference. It is also the reason every production sort
+in the world does it.
+
+\smallskip
+\textbf{And note that 32 is a fact about this laptop}, not about merge sort.
+A different cache, a different element size or a different compiler moves it.
+That is why the lab measures it rather than quoting it.
+\end{worked}
+
+\begin{worked}[Four Implementations of One Bound]
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\rowcolor{primary!15}
+implementation & time (ms) & relative \\
+\midrule
+top-down, no cutoff & 279.2 & 1.00 \\
+top-down, cutoff 32 & 225.1 & 0.81 \\
+bottom-up           & 263.3 & 0.94 \\
+\texttt{std::sort}  & 169.1 & 0.61 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+All four are $\bigTh{n\lg n}$ and they span a factor of 1.65. Bottom-up merge
+sort --- same recurrence, no call stack --- is 6\% faster than top-down, which
+is less than most people expect; the recursion was never the expensive part.
+
+\smallskip
+\texttt{std::sort} wins by 39\% because it is not merge sort at all. It is
+introsort: quicksort (\chref{quicksort}) with an insertion-sort cutoff and a
+heapsort fallback, sorting in place and so touching half as much memory. The
+comparison is here to make a point that $\bigTh{\cdot}$ cannot: \textbf{within
+one order of growth there is still a factor of nearly two to be had, and it is
+won by caring about memory.}
+\end{worked}
+
+\section{Where the Missing Factor of Two Went}
+
+The gap in Section~8.4 was 3.91 in time and 1.89 in comparisons. Something
+costs time without being a comparison.
+
+\begin{conceptbox}[A hypothesis, and how to test it]
+\textbf{Hypothesis.} The culprit is the branch \texttt{if (A[i] <= A[j])} in
+the merge loop. On sorted input it goes the same way for an entire run and the
+processor's branch predictor gets it right every time. On random input it is a
+coin flip, mispredicted about half the time, at a cost of roughly fifteen
+cycles each.
+
+\smallskip
+\textbf{This is exactly the third lie of \chref{role}'s RAM model} --- the one
+that says instructions execute one at a time --- coming back to charge for
+itself.
+
+\smallskip
+\textbf{The test.} Rewrite the merge loop so that the choice is arithmetic
+rather than a branch:
+\begin{center}
+\texttt{bool left = A[i] <= A[j];} \\
+\texttt{B[k++] = left ? A[i] : A[j];\quad i += left;\quad j += !left;}
+\end{center}
+This compiles to a conditional move. \emph{Same comparisons, same output, no
+branch to mispredict.} If the hypothesis is right, the gap should close. If it
+is wrong, nothing will change and we will have learnt that too.
+\end{conceptbox}
+
+\begin{worked}[The Test, Run]
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\rowcolor{primary!15}
+merge variant & time (ms) & vs branchy random \\
+\midrule
+branchy, random input    & 272.9 & 1.000 \\
+branchless, random input & 152.0 & \textbf{0.557} \\
+branchy, sorted input    &  72.1 & 0.264 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Removing the branch cut the time on random input by 44\%.} The
+hypothesis is confirmed.
+
+\smallskip
+\textbf{And now the gap decomposes cleanly:}
+\[ \underbrace{3.78}_{\text{random/sorted, branchy}}
+   \;=\; \underbrace{1.89}_{\text{more comparisons}}
+   \;\times\; \underbrace{2.00}_{\text{branch misprediction}} \]
+Measured: random/sorted was $3.78\times$ with the branch and $2.11\times$
+without it. So $3.78 / 2.11 = 1.79$ is attributable to the branch, and the
+residual $2.11$ matches the comparison-count ratio of $1.89$ to within 12\%.
+
+\smallskip
+\textbf{Two lessons.} First, a factor of two was hiding in a line of code that
+$\bigTh{\cdot}$ cannot see and that no amount of algorithm analysis would have
+revealed --- only measurement found it, and only a designed experiment
+explained it. Second, the branchless version is not simply better: it does the
+\emph{same} comparisons, so on sorted input it is slower than the branchy one,
+which gets its branches free. Which version wins depends on the data, and that
+is a sentence this book has now written in four different chapters.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Reading ``case-independent bound'' as ``case-independent
+        time''.} Measured, the same sort on the same $n$ varied by 3.9.
+  \item \textbf{Allocating the buffer inside the recursion.} One buffer for the
+        whole sort, allocated once. \chref{asymptotics}'s lab nearly reported
+        nonsense for exactly this reason.
+  \item \textbf{Using $<$ instead of $\le$ in the merge.} It still sorts; it is
+        no longer stable, and stability is often why merge sort was chosen.
+  \item \textbf{Claiming merge sort is in-place.} It needs $\bigTh{n}$
+        auxiliary space. In-place merging exists and is slower and much harder.
+  \item \textbf{Quoting a cutoff from a book.} The best value here was 32, on
+        this machine, for 4-byte elements. Measure your own.
+  \item \textbf{Tuning the cutoff before fixing the algorithm.} 18\% from a
+        cutoff is worth having; it is not worth having instead of a better
+        order of growth.
+  \item \textbf{Assuming recursion is the overhead.} Bottom-up was only 6\%
+        faster. The memory traffic is the cost, not the call stack.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Merge Sort, Tuned and Explained]
+Reproduces all four tables. Expect thirty minutes; it sorts two million
+elements many times.
+
+\begin{lstlisting}[language=C++]
+// ch08_merge.cpp -- the divide-and-conquer pattern, and what tuning buys.
+// Build: cl /O2 /EHsc /std:c++17 ch08_merge.cpp     (see Appendix A)
+
+// --- 1. The merge, which is the whole idea -------------------------
+// Two sorted runs become one in a single pass: look at both fronts,
+// take the smaller. Linear in the total length, and the only place
+// the algorithm compares anything.
+static void merge(std::vector<int>& a, std::vector<int>& buf,
+                  size_t lo, size_t mid, size_t hi, bool count) {
+    size_t i = lo, j = mid, k = lo;
+    while (i < mid && j < hi) {
+        if (count) ++comparisons;
+        buf[k++] = (a[i] <= a[j]) ? a[i++] : a[j++];
+    }
+    while (i < mid) buf[k++] = a[i++];
+    while (j < hi)  buf[k++] = a[j++];
+    std::copy(buf.begin() + lo, buf.begin() + hi, a.begin() + lo);
+}
+
+// --- 2. Top-down: the recurrence written out as code ---------------
+// T(n) = 2T(n/2) + Theta(n), which Chapter 6 settles as Theta(n lg n).
+// The cutoff is the one tuning knob: below it, insertion sort's
+// smaller constant wins, exactly as Chapter 1 measured.
+static void msort(std::vector<int>& a, std::vector<int>& buf,
+                  size_t lo, size_t hi, size_t cutoff, bool count) {
+    if (hi - lo < 2) return;
+    if (hi - lo <= cutoff) { insertion(a, lo, hi); return; }
+    size_t mid = lo + (hi - lo) / 2;
+    msort(a, buf, lo, mid, cutoff, count);
+    msort(a, buf, mid, hi, cutoff, count);
+    merge(a, buf, lo, mid, hi, count);
+}
+
+// --- 3. The same merge with the branch removed ---------------------
+// Same comparisons and same output; the choice becomes arithmetic
+// that compiles to a conditional move, so there is no branch to
+// mispredict. Used only by part 7, to test what the gap is made of.
+static void merge_bl(std::vector<int>& a, std::vector<int>& buf,
+                     size_t lo, size_t mid, size_t hi) {
+    size_t i = lo, j = mid, k = lo;
+    while (i < mid && j < hi) {
+        bool take_left = a[i] <= a[j];
+        buf[k++] = take_left ? a[i] : a[j];
+        i += take_left ? 1 : 0;
+        j += take_left ? 0 : 1;
+    }
+    while (i < mid) buf[k++] = a[i++];
+    while (j < hi)  buf[k++] = a[j++];
+    std::copy(buf.begin() + lo, buf.begin() + hi, a.begin() + lo);
+}
+
+// --- 4. The bound does not care what the input looks like ----------
+// Chapter 2 found insertion sort varying by 6,600x across these same
+// three shapes. Merge sort should vary by almost nothing.
+
+// --- 5. What is the cutoff worth, and where is it? -----------------
+// The best value is a property of this machine, not of the algorithm,
+// which is exactly why it has to be measured rather than looked up.
+
+// --- 6. Top-down against bottom-up, and against the library --------
+// Same recurrence, same Theta. Everything that differs is constant
+// factors -- recursion overhead, memory order, and in std::sort's
+// case a different algorithm entirely (Chapter 9).
+
+// --- 7. Why is random input 4x slower than sorted input? -----------
+// Part 4 found 3.9x in time but only 1.9x in comparisons, so half the
+// slowdown is NOT work done. Hypothesis: the branch in the merge
+// loop, perfectly predicted on sorted input and a coin flip on
+// random. Replace it with arithmetic and see whether the gap closes.
+\end{lstlisting}
+
+\textbf{What to notice.} Part 7 is the shape of a real investigation: a
+measurement that does not fit, a hypothesis that names a mechanism, and an
+experiment whose two possible outcomes would tell you different things. The
+answer --- 0.557 --- was not knowable in advance.
+
+\smallskip
+\textbf{Then try to break it.} Run the branchless merge on \emph{sorted} input
+and predict the result first. It should be \emph{slower} than the branchy one,
+because a perfectly predicted branch costs almost nothing while a conditional
+move always costs something. If your prediction was ``faster'', the thing to
+revise is the belief that branchless code is simply better.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Why is merge sort's recurrence $T(n) = 2T(n/2) + \bigTh{n}$ valid for
+        every input, while insertion sort needs three separate analyses?
+  \item \algname{Merge} performs between $\min(n_{1},n_{2})$ and
+        $n_{1}+n_{2}-1$ comparisons. Describe an input achieving each bound,
+        and relate your answer to the measured 0.496 and 0.940.
+  \item The measured best cutoff was 32 and \chref{role}'s measured crossover
+        was 65. Give a reason the two numbers differ.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Divide and conquer: divide into smaller instances of the same problem,
+        conquer recursively, combine. The cost is $aT(n/b) + D(n) + C(n)$.
+  \item Merge sort has an easy split and a hard join; quicksort the reverse.
+        Merge sort \emph{guarantees} the even split, which is why its bound
+        holds in every case.
+  \item $T(n) = 2T(n/2) + \bigTh{n}$ for every input, so by case 2 of the
+        master theorem merge sort is $\bigTh{n\lg n}$ best, worst and average,
+        with $\bigTh{n}$ auxiliary space.
+  \item Measured at $n = 2{,}000{,}000$: comparisons were $0.496\,n\lg n$ on
+        sorted input and $0.940\,n\lg n$ on random, and times were 73 ms and
+        286 ms. The bound is case-independent; the clock is not.
+  \item An insertion-sort cutoff of 32 was worth 18\% on this machine. The best
+        value is a property of the machine and must be measured.
+  \item The $3.78\times$ sorted-to-random time gap decomposes as $1.89\times$
+        (more comparisons) $\times$ $2.0\times$ (branch misprediction).
+        Replacing the branch with a conditional move cut random-input time by
+        44\%, which confirmed the mechanism.
+  \item \texttt{std::sort} beat all four merge sorts by 39\% --- the same order
+        of growth, won back by sorting in place.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Merge sort's auxiliary space requirement is:
+        (a)~$\bigTh{1}$; (b)~$\bigTh{\lg n}$; (c)~$\bigTh{n}$;
+        (d)~$\bigTh{n\lg n}$.
+  \item \textbf{(MCQ)} Merge sort's worst-case running time is:
+        (a)~$\bigTh{n}$; (b)~$\bigTh{n\lg n}$; (c)~$\bigTh{n^{2}}$;
+        (d)~dependent on the input order.
+  \item \textbf{(Short)} State the three steps of divide and conquer and apply
+        them to merge sort, naming the cost of each \emph{(CLO-6)}.
+  \item \textbf{(Short)} Explain why merge sort is stable, and which single
+        character in \algname{Merge} is responsible.
+  \item \textbf{(Short)} A colleague reports that their merge sort is twice as
+        slow on one dataset as on another of the same size, and concludes the
+        implementation is buggy. Give two innocent explanations.
+  \item \textbf{(Applied)} Derive the number of comparisons \algname{Merge}
+        performs on already-sorted input, and use it to predict the
+        $0.496\,n\lg n$ measured above.
+  \item \textbf{(Applied)} Design an experiment to find the best insertion-sort
+        cutoff for sorting 64-byte records rather than 4-byte integers. Predict
+        whether the best cutoff will be larger or smaller than 32, and say why.
+\end{reviewq}
