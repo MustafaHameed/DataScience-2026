@@ -3,7 +3,460 @@
 %=====================================================================
 \locator{5}{Part V --- Graph Algorithms}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
-\end{alertbox}
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Compare} the adjacency matrix and adjacency list on space,
+        edge-test cost and neighbour-sweep cost.
+  \item \textbf{Derive} the running time of BFS and DFS from each
+        representation, and \textbf{explain} why the bound is quoted in two
+        parameters.
+  \item \textbf{Define} sparse and dense, and \textbf{predict} which
+        representation wins for a given density \emph{(CLO-2)}.
+  \item \textbf{Apply} BFS to find shortest paths in an unweighted graph and
+        DFS to produce a topological order \emph{(CLO-7)}.
+  \item \textbf{Account} for a measured result that contradicts the textbook
+        prediction.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{cases} for the two-parameter bound, \chref{structures} for the queue and
+stack. No Part~IV material is required.
+\end{prereq}
+
+\begin{keyterms}
+graph $\bullet$ vertex $\bullet$ edge $\bullet$ directed $\bullet$ undirected
+$\bullet$ adjacency matrix $\bullet$ adjacency list $\bullet$ sparse $\bullet$
+dense $\bullet$ density $\bullet$ degree $\bullet$ breadth-first search
+$\bullet$ depth-first search $\bullet$ topological order $\bullet$ bit-packing
+\end{keyterms}
+
+\section{Why Every Bound Here Has Two Parameters}
+
+\begin{definitionbox}[Density, Sparse and Dense]
+A graph $G = (V, E)$ has $|V|$ vertices and $|E|$ edges. For an undirected
+simple graph, $0 \le |E| \le \binom{|V|}{2}$, and the \term{density} is
+$|E| / \binom{|V|}{2}$.
+
+\smallskip
+$G$ is \term{sparse} when $|E| = \bigO{|V|}$ --- each vertex has a bounded
+average degree --- and \term{dense} when $|E| = \bigTh{|V|^{2}}$.
+\end{definitionbox}
+
+\begin{conceptbox}[The same bound, two different answers]
+\chref{cases} made this point with a road network and a social graph; it is
+worth restating now that the algorithms are at hand.
+
+\smallskip
+BFS is $\bigO{|V| + |E|}$ from an adjacency list. On a road network with
+2 million junctions and average degree 3, that is $5 \times 10^{6}$ steps. On a
+social graph with the same vertex count and average degree 500, it is
+$5 \times 10^{8}$ --- a hundred times more, for the same algorithm at the same
+$|V|$.
+
+\smallskip
+\textbf{This is why $\bigO{|V|^{2}}$ and $\bigO{|V| + |E|}$ must be
+distinguished} even though they are equal on dense graphs. The first says
+nothing about sparsity; the second says you have exploited it.
+\end{conceptbox}
+
+\section{Two Representations}
+
+\begin{definitionbox}[Adjacency Matrix and Adjacency List]
+The \term{adjacency matrix} is a $|V| \times |V|$ array $A$ with
+$A[u][v] = 1$ exactly when $(u,v)$ is an edge.
+
+\smallskip
+The \term{adjacency list} stores, for each vertex, a list of its neighbours.
+
+\medskip
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.2cm}L{4.6cm}L{5.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{Matrix} & \textbf{List} \\
+\midrule
+\endhead
+space & $\bigTh{|V|^{2}}$ & $\bigTh{|V| + |E|}$ \\
+``is $(u,v)$ an edge?'' & $\bigTh{1}$ & $\bigO{\deg(u)}$ \\
+list $u$'s neighbours & $\bigTh{|V|}$ & $\bigTh{\deg(u)}$ \\
+add an edge & $\bigTh{1}$ & $\bigTh{1}$ \\
+BFS or DFS & $\bigTh{|V|^{2}}$ & $\bigTh{|V|+|E|}$ \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+The third row is the one that decides traversals. A matrix must read all $|V|$
+entries of a row to find a vertex's neighbours, whether it has 2 or 2{,}000.
+\end{definitionbox}
+
+\begin{worked}[Space, Which Usually Decides First]
+Average degree 8 --- a sparse graph:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$|V|$ & matrix (MB) & list (MB) & ratio \\
+\midrule
+ 1{,}000 &     1.0 & 0.04 &     25 \\
+ 4{,}000 &    15.3 & 0.15 &    100 \\
+16{,}000 &   244.1 & 0.61 &    400 \\
+64{,}000 & 3{,}906.2 & 2.44 & 1{,}600 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{At 64{,}000 vertices the matrix needs 3.9 GB and the list needs 2.4
+MB.} The ratio grows as $|V|$, because the matrix is quadratic and the list
+linear.
+
+\smallskip
+For most real graphs this table ends the discussion before any timing is done.
+A social network with ten million users cannot be stored as a matrix on any
+machine --- $10^{14}$ bytes --- and can be stored as a list in a few gigabytes.
+\end{worked}
+
+\section{Breadth-First Search}
+
+\dsfig{\aoaalg{\algname{BFS}$(G, s)$}{
+\For{each vertex $u$}
+  \State $\mathit{seen}[u] \gets$ \textbf{false};\quad $d[u] \gets \infty$
+\EndFor
+\State $\mathit{seen}[s] \gets$ \textbf{true};\quad $d[s] \gets 0$
+\State $Q \gets$ queue containing $s$
+\While{$Q$ is not empty}
+  \State $u \gets \algname{Dequeue}(Q)$
+  \For{each $v$ adjacent to $u$}
+    \If{\textbf{not} $\mathit{seen}[v]$}
+      \State $\mathit{seen}[v] \gets$ \textbf{true}
+      \State $d[v] \gets d[u] + 1$
+      \State $\algname{Enqueue}(Q, v)$
+    \EndIf
+  \EndFor
+\EndWhile
+}}{\algname{BFS}. Line 7 --- ``for each $v$ adjacent to $u$'' --- is the only
+line whose cost depends on the representation, and it is the whole of the
+asymptotic difference.}{bfs}
+
+\begin{theorem}[BFS]\label{thm:bfs}
+\algname{BFS} runs in $\bigTh{|V| + |E|}$ from an adjacency list, and
+$d[v]$ is the number of edges on a shortest path from $s$ to $v$.
+\end{theorem}
+
+\begin{proof}
+\textbf{Time.} Each vertex is enqueued at most once, since $\mathit{seen}$ is
+set when it is, so the \textbf{while} loop iterates at most $|V|$ times. For
+each dequeued $u$ the inner loop runs $\deg(u)$ times, and
+$\sum_{u} \deg(u) = 2|E|$. With the $\bigTh{|V|}$ initialisation this gives
+$\bigTh{|V|+|E|}$.
+
+\smallskip
+\textbf{Correctness.} Invariant: \emph{the queue holds vertices of distance $k$
+followed by vertices of distance $k+1$, for some $k$, and $d$ is correct for
+every vertex already dequeued.} Initially the queue holds $s$ alone with
+$d[s]=0$. When $u$ at distance $k$ is dequeued, each unseen neighbour $v$ gets
+$d[v] = k+1$; this is correct because a shortest path to $v$ cannot be shorter
+than $k+1$ (its predecessor would then have distance $< k$ and $v$ would
+already have been seen, as all such vertices were dequeued earlier), and it is
+achievable via $u$. The vertices appended therefore all have distance $k+1$,
+preserving the invariant.
+\end{proof}
+
+\begin{conceptbox}[DFS, and what it is for]
+Depth-first search replaces the queue with a stack (or recursion) and is also
+$\bigTh{|V|+|E|}$. It is not an alternative way to visit vertices; it computes
+different things.
+
+\begin{tight}
+  \item \textbf{BFS} gives shortest paths in an \emph{unweighted} graph, and
+        the layer structure. \chref{shortestpaths} generalises it to weights.
+  \item \textbf{DFS} gives a \term{topological order} --- reverse order of
+        finishing times, for a directed acyclic graph --- and detects cycles,
+        finds strongly connected components, and identifies articulation
+        points. All of these depend on the \emph{timing} of the recursion,
+        which BFS does not have.
+\end{tight}
+
+\smallskip
+A practical warning carried from \chref{quicksort}: recursive DFS on a graph
+with a long path uses $\bigTh{|V|}$ stack frames. On a million-vertex graph
+that is a stack overflow, and the fix is an explicit stack.
+\end{conceptbox}
+
+\section{Measured: Where the Textbook Prediction Fails}
+
+\begin{worked}[BFS Across Densities]
+$|V| = 8{,}000$ fixed; only the edge count varies.
+\texttt{code/ch18\_graphs.cpp}:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+avg degree & $|E|$ & matrix (ms) & list (ms) & speed-up \\
+\midrule
+   2 &     8{,}000 &  61.46 &  0.17 & 353.4 \\
+   8 &    32{,}000 &  76.37 &  0.27 & 278.8 \\
+  64 &   256{,}000 &  79.60 &  0.88 &  90.5 \\
+ 256 & 1{,}024{,}000 &  94.06 &  3.02 &  31.2 \\
+1024 & 4{,}096{,}000 & 152.53 & 10.15 &  15.0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The matrix column is nearly flat} --- 61 to 153 ms while the edge count
+grows 512-fold. That is $\bigTh{|V|^{2}}$ made visible: the work does not
+depend on $|E|$ at all, because every row is read in full regardless.
+
+\smallskip
+\textbf{The list column grows with $|E|$}, from 0.17 to 10.15 ms, which is
+$\bigTh{|V|+|E|}$.
+
+\smallskip
+\textbf{On a sparse graph the list is 353$\times$ faster.} For a road network
+or a social graph that is the entire argument.
+\end{worked}
+
+\begin{worked}[A Result That Contradicted the Textbook, and Why]
+The standard claim is that the matrix wins on dense graphs, since
+$\bigTh{|V|^{2}}$ and $\bigTh{|V|+|E|}$ agree there. The first version of this
+experiment found otherwise --- the list won at \emph{every} density, up to 95\%
+of complete.
+
+\smallskip
+\textbf{The cause was the representation of the representation.} A matrix
+stored one byte per potential edge reads $|V|^{2}$ bytes and tests each with an
+unpredictable branch. Stored one \emph{bit} per potential edge it reads
+$|V|^{2}/8$ bytes and can test 64 candidates in a single word operation. That
+bit-packing is the real reason matrices are recommended for dense graphs, and
+leaving it out made the comparison unfair.
+
+\smallskip
+With the bit-packed matrix, $|V| = 4{,}000$:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrrl@{}}
+\toprule
+\rowcolor{primary!15}
+avg deg & density & byte matrix & bit matrix & list & winner \\
+\midrule
+  512 & 0.128 &  39.87 &  4.31 &  2.86 & list \\
+1{,}024 & 0.256 &  58.93 &  5.13 &  5.02 & \textit{tied} \\
+2{,}048 & 0.512 &  92.65 &  8.68 & 11.31 & bit matrix \\
+3{,}000 & 0.750 & 107.16 & 10.51 & 17.43 & bit matrix \\
+3{,}990 & 0.998 &  97.06 & 13.59 & 22.85 & bit matrix \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The crossover is at a density of about 0.26}, and the textbook claim is
+vindicated --- but only for the bit-packed matrix, which is 7$\times$ faster
+than the byte one at high density.
+
+\smallskip
+\textbf{There is a second lesson buried in the first attempt.} The bit-packed
+version was \emph{slower} than the byte version until its bit-scan was fixed:
+finding the index of the lowest set bit with a shift loop costs up to 64
+iterations per edge, and the processor has a single instruction that does it.
+One line of code moved the bit matrix from 115 ms to 8.7 ms at density 0.512.
+
+\smallskip
+\textbf{Both lessons are the same lesson.} ``Adjacency matrix'' and ``adjacency
+list'' name data structures; they do not name implementations, and the gap
+between a good and a poor implementation of the same structure was larger here
+than the gap between the two structures.
+\end{worked}
+
+\begin{worked}[The One Thing the Matrix Is Better At]
+``Is $(u,v)$ an edge?'' --- ten million random queries:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+avg degree & matrix (ms) & list (ms) & list/matrix \\
+\midrule
+  4 & 74.9 &   146.0 &  1.9 \\
+ 32 & 74.3 &   349.4 &  4.7 \\
+256 & 78.9 & 2{,}218.7 & 28.1 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The matrix is flat and the list grows with degree}, exactly as
+$\bigTh{1}$ against $\bigO{\deg(u)}$ predicts. At average degree 256 the matrix
+is 28$\times$ faster.
+
+\smallskip
+So the choice is not ``lists are better''. It is:
+\begin{tight}
+  \item \textbf{traversal-heavy, sparse} $\Rightarrow$ adjacency list;
+  \item \textbf{edge-query-heavy, or dense and small} $\Rightarrow$ matrix,
+        bit-packed;
+  \item \textbf{both} $\Rightarrow$ keep a list for traversal and a hash set of
+        edges for queries, which is what most real graph libraries do.
+\end{tight}
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Quoting $\bigO{|V|^{2}}$ when you mean $\bigO{|V|+|E|}$.} They
+        differ by a factor of $|V|$ on a sparse graph --- measured, 353.
+  \item \textbf{Using a matrix for a large sparse graph.} 3.9 GB against 2.4 MB
+        at $|V| = 64{,}000$.
+  \item \textbf{Using a byte-per-entry matrix on a dense graph.} Measured
+        7$\times$ slower than bit-packing, which is the only reason to choose a
+        matrix at all.
+  \item \textbf{Finding the lowest set bit with a loop.} It cost more than the
+        entire rest of the traversal.
+  \item \textbf{Recursive DFS on a large graph.} $\bigTh{|V|}$ stack frames; use
+        an explicit stack.
+  \item \textbf{Using BFS for weighted shortest paths.} It gives fewest
+        \emph{edges}, not least weight. \chref{shortestpaths} is the weighted
+        case.
+  \item \textbf{Forgetting $\sum_{u}\deg(u) = 2|E|$.} It is what turns a sum
+        over vertices into a bound in $|E|$, and it is the key step in
+        Theorem~\ref{thm:bfs}.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Representation, Measured]
+Reproduces all four tables. Expect thirty minutes.
+
+\begin{lstlisting}[language=C++]
+// ch18_graphs.cpp -- the representation decides the bound.
+// Build: cl /O2 /EHsc /std:c++17 ch18_graphs.cpp     (see Appendix A)
+
+// --- 1. The two representations ------------------------------------
+// The matrix is a vector<char> so one entry is one byte: V^2 bytes,
+// which at V = 64,000 is already 3.9 GB.
+
+// --- 2. The matrix, bit-packed -------------------------------------
+// One BIT per potential edge rather than one byte, so V^2/8 bytes, and
+// a whole 64-bit word of candidate neighbours tested at once. This is
+// the real reason adjacency matrices are recommended for dense graphs,
+// and without it the comparison is unfair to them.
+struct BitMatrix {
+    size_t V, W;                       // W = words per row
+    std::vector<unsigned long long> a;
+    void add(size_t u, size_t w) {
+        a[u * W + (w >> 6)] |= 1ULL << (w & 63);
+        a[w * W + (u >> 6)] |= 1ULL << (u & 63);
+    }
+};
+
+// The bit-packed scan: skip 64 non-neighbours at a time, and within a
+// word walk only the bits that are set.
+            while (bits) {
+                // The index of the lowest set bit, as ONE instruction.
+                // Finding it with a shift loop instead costs up to 64
+                // iterations per edge and makes the bit-packed matrix
+                // slower than the byte one -- which is what the first
+                // version of this program measured.
+                unsigned long idx;
+                _BitScanForward64(&idx, bits);
+                size_t w = wi * 64 + idx;
+                if (w < g.V && !seen[w]) {
+                    seen[w] = 1; ++reached; q.push_back((unsigned)w);
+                }
+                bits &= bits - 1;   // clear it
+            }
+
+// --- 3. BFS from each representation -------------------------------
+// The algorithms are identical. The only difference is how "for each
+// neighbour of u" is implemented, and that is the whole gap.
+        for (size_t w = 0; w < g.V; ++w)        // <-- Theta(V) per vertex
+        for (size_t i = g.start[u]; i < g.start[u+1]; ++i)  // Theta(deg)
+
+// --- 4. Space, which usually decides before speed does -------------
+// --- 5. BFS across a range of densities ----------------------------
+// V is FIXED. Only the number of edges changes, so the matrix version
+// should take the same time throughout while the list grows with E.
+
+// --- 6. Where is the crossover? ------------------------------------
+// --- 7. The trade, in two numbers ----------------------------------
+// The matrix answers "is there an edge u-w?" in one memory access.
+// The list must scan u's neighbours.
+\end{lstlisting}
+
+\textbf{What to notice.} Part 5's matrix column is flat while its list column
+grows 60-fold. Two columns of the same table, measuring the same algorithm on
+the same graphs, and one of them does not depend on $|E|$ at all.
+
+\smallskip
+\textbf{Then try to break it.} Replace the compressed adjacency list with a
+vector of vectors --- one separately allocated neighbour list per vertex ---
+and re-measure part 5 at average degree 2.
+Predict the direction first. It will be slower, perhaps 2--3$\times$,
+with identical asymptotics, because $|V|$ separate allocations scatter the
+neighbour lists across memory and the prefetcher cannot follow. Same bound,
+same algorithm, different memory layout.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Explain why $\sum_{u \in V} \deg(u) = 2|E|$, and where
+        Theorem~\ref{thm:bfs} uses it.
+  \item A graph has $|V| = 10^{6}$ and average degree 6. Give the space for
+        both representations, and say which BFS bound applies to each.
+  \item The measured crossover was at density 0.26 for a bit-packed matrix and
+        did not exist at all for a byte-packed one. What does that tell you
+        about quoting crossover densities from a textbook \emph{(CLO-2)}?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Graph bounds carry two parameters because $|E|$ ranges from $0$ to
+        $\bigTh{|V|^{2}}$, and $\bigO{|V|+|E|}$ says you have exploited
+        sparsity where $\bigO{|V|^{2}}$ does not.
+  \item Matrix: $\bigTh{|V|^{2}}$ space, $\bigTh{1}$ edge test,
+        $\bigTh{|V|}$ neighbour sweep. List: $\bigTh{|V|+|E|}$ space,
+        $\bigO{\deg}$ edge test, $\bigTh{\deg}$ sweep.
+  \item BFS and DFS are both $\bigTh{|V|+|E|}$ from a list and
+        $\bigTh{|V|^{2}}$ from a matrix. BFS gives unweighted shortest paths;
+        DFS gives topological order and cycle detection.
+  \item Measured: at $|V| = 64{,}000$, average degree 8, the matrix needs 3.9
+        GB and the list 2.4 MB.
+  \item Measured: with $|V|$ fixed at 8{,}000, the matrix BFS time was flat
+        (61--153 ms) while the list grew with $|E|$ (0.17--10.15 ms). On the
+        sparse graph the list was 353$\times$ faster.
+  \item Measured: the matrix wins on dense graphs \emph{only when bit-packed},
+        with the crossover at density $\approx 0.26$. A byte-per-entry matrix
+        never won, and a bit-packed matrix with a naive bit-scan was slower
+        still.
+  \item Measured: for single edge queries the matrix was flat and the list grew
+        with degree --- 28$\times$ slower at average degree 256.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} BFS from an adjacency list runs in:
+        (a)~$\bigTh{|V|}$; (b)~$\bigTh{|E|}$; (c)~$\bigTh{|V|+|E|}$;
+        (d)~$\bigTh{|V|^{2}}$.
+  \item \textbf{(MCQ)} An adjacency matrix for a graph with $|V| = 10^{5}$
+        requires about: (a)~100 KB; (b)~10 MB; (c)~10 GB; (d)~1 TB.
+  \item \textbf{(Short)} Define sparse and dense, and say which representation
+        suits each and why \emph{(CLO-2)}.
+  \item \textbf{(Short)} Give one task BFS does that DFS does not, and one that
+        DFS does that BFS does not \emph{(CLO-7)}.
+  \item \textbf{(Short)} The measured matrix BFS time barely changed as $|E|$
+        grew 512-fold. Explain.
+  \item \textbf{(Applied)} Prove that DFS on a directed acyclic graph, emitting
+        vertices in reverse order of finishing time, produces a topological
+        order.
+  \item \textbf{(Applied)} You are choosing a representation for a graph of
+        50 million web pages with average out-degree 40, for a workload that is
+        90\% traversal and 10\% edge queries. Decide, giving the arithmetic,
+        and say what you would measure to check.
+\end{reviewq}

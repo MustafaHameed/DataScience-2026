@@ -953,11 +953,21 @@ def plain_scripts(runs) -> str:
 
 
 def resolve_refs(tex: str) -> str:
-    """Replace \\chref/\\dsref with their text, for LaTeX re-rendering."""
+    """Replace \\chref/\\dsref/\\ref with their text, for LaTeX re-rendering.
+
+    The plain \\ref matters for this course and did not for the siblings,
+    which cited only chapters and figures. Here the prose cites theorems --
+    "Theorem~\\ref{thm:qsworst} predicted the split" -- and a heavy paragraph
+    is re-rendered by LuaLaTeX as a standalone document with no .aux, so an
+    unresolved \\ref prints "??" on the slide while the handout is perfectly
+    correct. Resolve it here, from the handout's own .aux.
+    """
     tex = re.sub(r"\\chref\{([^}]*)\}", lambda m: _chref_text(m.group(1)),
                  tex)
     tex = re.sub(r"\\dsref\{([^}]*)\}", lambda m: _dsref_text(m.group(1)),
                  tex)
+    tex = re.sub(r"\\ref\{([^}]*)\}",
+                 lambda m: ref_num(m.group(1)) or "?", tex)
     return tex
 
 
@@ -1637,6 +1647,20 @@ def audit() -> int:
                        for e in BOX_ENVS),
             "lens": len(re.findall(r"\\lens(LA|PM|IOT|SEC)\{", src)),
         }
+        # Proofs are folded into the notes of the theorem they prove
+        # (_fold_proofs), so they never appear as items and neither does
+        # the displayed maths inside them. Subtract both from the source
+        # counts, or every chapter with a proof reports dropped content --
+        # which was 19 of 23, and an audit that always warns is an audit
+        # nobody reads.
+        proofs = re.findall(r"\\begin\{proof\}(.*?)\\end\{proof\}", src, re.S)
+        want["box"] -= len(proofs)
+        for p in proofs:
+            bp = strip_comments(p)
+            want["math"] -= (len(re.findall(r"(?<!\\)\\\[", bp))
+                             + len(re.findall(
+                                 r"\\begin\{(equation|align)\*?\}", bp)))
+
         ch = parse_chapter(n)
         got = {k: 0 for k in want}
         for e in walk([i.el for i in ch.items]):

@@ -3,7 +3,534 @@
 %=====================================================================
 \locator{6}{Part VI --- Strings, Limits and Practice}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Trace} the naive, Rabin--Karp and Knuth--Morris--Pratt
+        algorithms on a given text and pattern \emph{(CLO-8)}.
+  \item \textbf{Derive} the prefix function and \textbf{explain} why it gives
+        the correct shift after a mismatch.
+  \item \textbf{Prove} that KMP runs in $\bigTh{n+m}$ by an amortised argument.
+  \item \textbf{Identify} the inputs on which the naive and Rabin--Karp
+        algorithms degrade, and \textbf{explain} why KMP has none.
+  \item \textbf{Choose} an algorithm for a stated matching workload.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{hashing} for Rabin--Karp --- it is a rolling hash and inherits every
+caveat of \chref{hashing}. \chref{amortised} for the KMP running-time proof,
+which is an amortised argument.
+\end{prereq}
+
+\begin{keyterms}
+pattern $\bullet$ text $\bullet$ occurrence $\bullet$ naive matching $\bullet$
+rolling hash $\bullet$ Rabin--Karp $\bullet$ spurious hit $\bullet$ prefix
+function $\bullet$ border $\bullet$ Knuth--Morris--Pratt $\bullet$ shift
+\end{keyterms}
+
+\section{The Problem, and the Obvious Algorithm}
+
+\begin{definitionbox}[String Matching]
+Given a text $T$ of length $n$ and a pattern $P$ of length $m \le n$, find
+every shift $s$ such that $T[s+1 \mathinner{\ldotp\ldotp} s+m] = P$.
+\end{definitionbox}
+
+\dsfig{\aoaalg{\algname{Naive-Match}$(T, P)$}{
+\For{$s \gets 0$ \textbf{to} $n-m$}
+  \State $i \gets 1$
+  \While{$i \le m$ \textbf{and} $T[s+i] = P[i]$}
+    \State $i \gets i + 1$
+  \EndWhile
+  \If{$i = m+1$}
+    \State report an occurrence at $s$
+      \Comment{then restart at $s+1$ anyway}
+  \EndIf
+\EndFor
+}}{\algname{Naive-Match}. After a mismatch at shift $s$ it begins again at
+$s+1$, re-reading characters it has already examined. That re-reading is the
+whole of the $\bigO{nm}$.}{naivematch}
+
+\begin{conceptbox}[What the naive algorithm forgets]
+Suppose $P = \texttt{abcabcd}$ and the first mismatch at shift $s$ occurs at
+position 7 --- so $T[s{+}1 \mathinner{\ldotp\ldotp} s{+}6] = \texttt{abcabc}$.
+
+\smallskip
+The naive algorithm now tries shift $s+1$, comparing $P[1] = \texttt{a}$ with
+$T[s{+}2] = \texttt{b}$. But we \emph{already know} $T[s+2] = \texttt{b}$,
+because we just read it. Shifts $s+1$ and $s+2$ are both hopeless and could
+have been skipped without looking at the text at all.
+
+\smallskip
+\textbf{The information to skip them is in the pattern, not the text.} Both
+better algorithms exploit this, in different ways: Rabin--Karp summarises the
+window with a hash, and KMP precomputes exactly how far it may safely jump.
+\end{conceptbox}
+
+\section{Rabin--Karp}
+
+\begin{conceptbox}[Compare numbers, not strings]
+Treat each window of $m$ characters as a number in base $d$ modulo $q$. Then
+comparing a window with the pattern is \emph{one} integer comparison rather
+than up to $m$ character comparisons.
+
+\smallskip
+The hash of the next window is computed from the current one in $\bigO{1}$:
+\[ h_{s+1} = \bigl(d\,(h_{s} - T[s{+}1]\,d^{\,m-1}) + T[s{+}m{+}1]\bigr)
+   \bmod q, \]
+--- drop the leading character, shift, add the new trailing one. That is why
+it is a \term{rolling} hash.
+
+\smallskip
+\textbf{Unequal hashes prove a mismatch. Equal hashes prove nothing}, so every
+hash match must be verified character by character. A verification that fails
+is a \term{spurious hit}, and the running time is
+\[ \bigO{n + m} \;+\; \bigO{m \times (\text{number of spurious hits})}. \]
+\end{conceptbox}
+
+\begin{alertbox}[Rabin--Karp inherits every caveat of \chref{hashing}]
+Its expected $\bigO{n+m}$ assumes spurious hits are rare, which assumes the
+hash scatters windows well. That is \chref{hashing}'s simple uniform hashing
+assumption, with the same two ways to fail: a weak modulus by accident, or a
+text chosen by an adversary who knows $q$.
+
+\smallskip
+The defence is also the same: a large modulus, and if the input is untrusted, a
+modulus chosen at random at run time.
 \end{alertbox}
+
+\section{Knuth--Morris--Pratt}
+
+\begin{definitionbox}[Prefix Function]
+For a pattern $P$ of length $m$, the \term{prefix function}
+$\pi[i]$ is the length of the longest proper prefix of
+$P[1 \mathinner{\ldotp\ldotp} i]$ that is also a suffix of it.
+
+\smallskip
+For $P = \texttt{ababaca}$:
+\begin{center}
+\begin{tabular}{@{}lccccccc@{}}
+$i$      & 1 & 2 & 3 & 4 & 5 & 6 & 7 \\
+$P[i]$   & a & b & a & b & a & c & a \\
+$\pi[i]$ & 0 & 0 & 1 & 2 & 3 & 0 & 1 \\
+\end{tabular}
+\end{center}
+$\pi[5] = 3$ because \texttt{aba} is both a prefix and a suffix of
+\texttt{ababa}.
+\end{definitionbox}
+
+\begin{conceptbox}[Why that is exactly the right shift]
+Suppose the pattern has matched $k$ characters and then fails. The matched text
+is $P[1 \mathinner{\ldotp\ldotp} k]$. Any shift that could still succeed must
+align a prefix of $P$ with a \emph{suffix} of what has already matched ---
+because that suffix is the only part of the text still under the pattern.
+
+\smallskip
+So the next viable shift aligns the longest proper prefix of
+$P[1\mathinner{\ldotp\ldotp}k]$ that is also a suffix of it. That is
+$\pi[k]$, by definition. Shifting to anything shorter would skip a possible
+occurrence; shifting to anything longer is impossible.
+
+\smallskip
+\textbf{The text pointer never moves backwards.} That single property gives
+the $\bigTh{n+m}$ bound, with no hypothesis about the input at all.
+\end{conceptbox}
+
+\dsfig{\aoaalg{\algname{Prefix-Function}$(P)$}{
+\State $\pi[1] \gets 0$;\quad $k \gets 0$
+\For{$i \gets 2$ \textbf{to} $m$}
+  \While{$k > 0$ \textbf{and} $P[i] \ne P[k+1]$}
+    \State $k \gets \pi[k]$
+      \Comment{fall back to a shorter border}
+  \EndWhile
+  \If{$P[i] = P[k+1]$}
+    \State $k \gets k+1$
+  \EndIf
+  \State $\pi[i] \gets k$
+\EndFor
+\State \Return $\pi$
+}}{\algname{Prefix-Function}. It is KMP run against the pattern itself, and it
+is $\bigTh{m}$ by the same amortised argument.}{prefixfn}
+
+\dsfig{\aoaalg{\algname{KMP-Match}$(T, P)$}{
+\State $\pi \gets \algname{Prefix-Function}(P)$;\quad $k \gets 0$
+\For{$i \gets 1$ \textbf{to} $n$}
+  \While{$k > 0$ \textbf{and} $T[i] \ne P[k+1]$}
+    \State $k \gets \pi[k]$
+      \Comment{$i$ never decreases}
+  \EndWhile
+  \If{$T[i] = P[k+1]$}
+    \State $k \gets k+1$
+  \EndIf
+  \If{$k = m$}
+    \State report an occurrence at $i - m$
+    \State $k \gets \pi[k]$
+  \EndIf
+\EndFor
+}}{\algname{KMP-Match}. The text index $i$ advances on every iteration and
+never retreats, which is what makes the whole thing linear.}{kmp}
+
+\begin{theorem}[KMP]\label{thm:kmp}
+\algname{KMP-Match} runs in $\bigTh{n+m}$ time in the worst case.
+\end{theorem}
+
+\begin{proof}
+An amortised argument, in the pattern of \chref{amortised}: take the potential
+$\Phi = k$, the number of characters currently matched.
+
+\smallskip
+$\Phi$ begins at 0, never goes negative, and each iteration of the
+\textbf{for} loop increases it by at most 1 (line 7). So over $n$ iterations
+the total increase is at most $n$.
+
+\smallskip
+Each iteration of the inner \textbf{while} loop \emph{decreases} $\Phi$ by at
+least 1, since $\pi[k] < k$ always. A quantity that rises by at most $n$ in
+total and never goes below 0 can fall at most $n$ times. So the inner loop
+executes at most $n$ times \emph{in total across the whole run} --- not $n$
+times per iteration.
+
+\smallskip
+Hence the matching phase is $\bigO{n}$, and the same argument applied to
+\algname{Prefix-Function} gives $\bigO{m}$. The $\bigOm{n+m}$ is immediate
+since every character is read.
+\end{proof}
+
+\begin{conceptbox}[The same looseness as \algname{Build-Heap}]
+The naive bound for KMP is ``$n$ iterations, each with a \textbf{while} loop
+that could run $m$ times, so $\bigO{nm}$''. That is correct and badly loose,
+for exactly the reason \chref{structures}'s \algname{Build-Heap} analysis was:
+it charges every iteration the worst case, and the expensive iterations are
+paid for by the cheap ones that preceded them.
+
+\smallskip
+Three appearances now --- \algname{Build-Heap}, the dynamic array, and KMP ---
+of one idea. If a bound looks like (count) $\times$ (worst case) and the
+expensive operations consume something the cheap ones built up, the bound is
+probably loose.
+\end{conceptbox}
+
+\section{Measured}
+
+\begin{worked}[First, Do They Agree?]
+\begin{center}
+\textbf{2{,}000 random texts and patterns over a 4-letter alphabet.
+Disagreements: 0.}
+\end{center}
+All three return identical lists of occurrences. The naive version is the
+oracle, as in \chref{bruteforce}.
+\end{worked}
+
+\begin{worked}[Ordinary Text, Where Nothing Happens]
+Random text over a 4-letter alphabet, $m = 8$. Comparisons divided by $n$:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & naive & Rabin--Karp & KMP & naive (ms) \\
+\midrule
+1{,}000{,}000 & 1.333 & 0.000 & 1.250 &  6.7 \\
+2{,}000{,}000 & 1.334 & 0.000 & 1.250 & 12.8 \\
+8{,}000{,}000 & 1.333 & 0.000 & 1.250 & 53.7 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{All three are linear, and the naive algorithm is barely worse than
+KMP} --- 1.333 comparisons per character against 1.250. On random text a
+mismatch arrives after about $1/(1-1/|\Sigma|)$ characters, so the naive
+algorithm almost never re-reads anything.
+
+\smallskip
+\textbf{Rabin--Karp's column is 0.000} because the hash rejects every window in
+one integer comparison and the character-comparison counter never moves.
+
+\smallskip
+\textbf{This is the table that makes people think the choice does not matter.}
+It is also the table that any benchmark on English text would produce.
+\end{worked}
+
+\begin{worked}[The Text That Destroys the Naive Algorithm]
+$T = \texttt{aaaa}\ldots\texttt{a}$ of length 200{,}000, and
+$P = \texttt{aa}\ldots\texttt{ab}$ of length $m$. Every shift matches $m-1$
+characters and then fails.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$m$ & naive comparisons & $/(nm)$ & KMP comparisons & naive (ms) & KMP (ms) \\
+\midrule
+   10 &     1{,}999{,}910 & 1.0000 & 399{,}991 &   3.55 & 0.85 \\
+  100 &    19{,}990{,}100 & 0.9995 & 399{,}901 &  28.98 & 1.10 \\
+1{,}000 &   199{,}001{,}000 & 0.9950 & 399{,}001 & 279.22 & 0.80 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The naive count is exactly $nm$} --- the ratio is 1.0000, 0.9995,
+0.9950. The worst case is not an upper bound being approached; it is being
+attained.
+
+\smallskip
+\textbf{KMP's count is flat at about $2n$}, independent of $m$. The pattern got
+a hundred times longer and KMP did the same work.
+
+\smallskip
+\textbf{At $m = 1{,}000$, KMP is 349$\times$ faster.} And the input is not
+contrived: runs of repeated characters occur in DNA, in log files, in padded
+records and in compressed streams.
+\end{worked}
+
+\begin{worked}[And the Input That Destroys Rabin--Karp]
+Rabin--Karp's expected bound assumes spurious hits are rare. Shrink the modulus
+and watch:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+modulus $q$ & spurious hits & comparisons & time (ms) \\
+\midrule
+             13 & 153{,}522 & 204{,}708 & 53.1 \\
+          1{,}009 &   2{,}007 &   2{,}917 & 47.6 \\
+      1{,}000{,}003 &       0 &       208 & 47.8 \\
+1{,}000{,}000{,}007 &       0 &       208 & 47.8 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The verification count explodes a thousandfold and the clock barely
+moves} --- 53.1 ms against 47.8. That is worth pausing on, because it is an
+honest negative result: on \emph{random} text a spurious candidate is rejected
+after about 1.3 characters, so a hundred thousand of them cost almost nothing.
+
+\smallskip
+\textbf{The $\bigO{nm}$ bound needs both many candidates \emph{and} expensive
+verification.} Here is an input with both --- $T = \texttt{a}^{n}$,
+$P = \texttt{a}^{m}$, so every window is a genuine match and every
+verification runs the full $m$:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$m$ & RK comparisons & $/(nm)$ & RK (ms) & KMP (ms) \\
+\midrule
+   10 &     1{,}999{,}910 & 1.0000 &   8.48 & 2.02 \\
+  100 &    19{,}990{,}100 & 0.9995 &  40.21 & 2.14 \\
+1{,}000 &   199{,}001{,}000 & 0.9950 & 368.07 & 2.28 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Exactly $nm$ again, and KMP is 161$\times$ faster at $m = 1{,}000$.}
+
+\smallskip
+\textbf{The first attempt at this experiment used $P = \texttt{a}^{m-1}
+\texttt{b}$} --- the naive algorithm's worst case --- and measured
+\emph{zero} comparisons, because that pattern's hash differs from every
+window's and Rabin--Karp rejected all of them instantly. The two algorithms
+have different worst cases, and assuming they share one was the mistake.
+\end{worked}
+
+\begin{conceptbox}[Choosing]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.8cm}L{3.0cm}L{3.0cm}L{5.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Algorithm} & \textbf{Typical} & \textbf{Worst case} &
+\textbf{Use when} \\
+\midrule
+\endhead
+naive & $\bigO{n}$ & $\bigO{nm}$ & $m$ is tiny, the alphabet is large, and the
+  text is not repetitive \\
+Rabin--Karp & $\bigO{n+m}$ & $\bigO{nm}$ & searching for \emph{many} patterns
+  at once --- one pass, one hash set \\
+KMP & $\bigTh{n+m}$ & $\bigTh{n+m}$ & a guarantee is needed, or the text is
+  repetitive, or it is streaming \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Rabin--Karp's real advantage is not speed} --- KMP beats it and has a
+guarantee. It is that a \emph{set} of patterns can be matched in one pass by
+putting all their hashes in a hash set, which neither of the others can do.
+That generalises to the Rabin--Karp fingerprint used in rsync and in
+plagiarism detection.
+
+\smallskip
+\textbf{KMP's real advantage} is that the text pointer never moves backwards,
+so it works on a stream that cannot be rewound --- a socket, a pipe, a file too
+large to hold.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Benchmarking only on English text.} Measured, the naive
+        algorithm was within 7\% of KMP there and 349$\times$ worse on
+        repetitive input.
+  \item \textbf{Assuming two algorithms share a worst case.} The pattern that
+        is worst for naive matching made Rabin--Karp do \emph{zero}
+        comparisons.
+  \item \textbf{Forgetting to verify a Rabin--Karp hash match.} Equal hashes do
+        not mean equal strings. Skipping the check makes it fast and wrong.
+  \item \textbf{A small or fixed modulus on untrusted input.} \chref{hashing}'s
+        flooding attack, in a new costume.
+  \item \textbf{Getting $\pi$ off by one.} It is the longest \emph{proper}
+        prefix that is also a suffix; $\pi[i] < i$ always, and
+        $\pi[i] = i$ would make the matching loop hang.
+  \item \textbf{Believing KMP is $\bigO{nm}$} because of the nested
+        \textbf{while}. The amortised argument is the whole point.
+  \item \textbf{Reaching for KMP when \texttt{std::search} will do.} For one
+        short pattern in a non-repetitive text, the library is fine and it is
+        already written.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Three Algorithms and Two Traps]
+Reproduces all five tables. Expect thirty minutes.
+
+\begin{lstlisting}[language=C++]
+// ch21_strings.cpp -- naive, Rabin-Karp and KMP, on text and on traps.
+// Build: cl /O2 /EHsc /std:c++17 ch21_strings.cpp    (see Appendix A)
+
+// --- 1. Naive matching: try every alignment ------------------------
+// After a mismatch at offset s it restarts at s+1, re-reading
+// characters it has already looked at. That re-reading is the O(nm).
+
+// --- 2. Rabin-Karp: compare numbers, not strings -------------------
+// A rolling hash of each window. Equal hashes mean a POSSIBLE match
+// that must be verified; unequal hashes mean a certain mismatch,
+// decided in one comparison. Expected O(n+m); the worst case is every
+// window colliding, which is Chapter 13's problem in a new costume.
+        if (hp == ht) {                       // candidate -- verify it
+            size_t i = 0;
+            while (i < m) { ++cmps; if (t[s+i] != p[i]) break; ++i; }
+            if (i == m) hits.push_back(s);
+            else if (spurious) ++*spurious;   // hash agreed, text did not
+        }
+        ht = (ht + mod - (high * (unsigned char)t[s]) % mod) % mod;
+        ht = (ht * base + (unsigned char)t[s + m]) % mod;
+
+// --- 3. KMP: never re-read a character of the text -----------------
+// pi[i] is the length of the longest proper prefix of p[0..i] that is
+// also a suffix of it. On a mismatch, that is exactly how far the
+// pattern can be shifted without missing an occurrence -- so the text
+// pointer only ever moves forward, giving O(n+m) with no hypothesis
+// about the input at all.
+static std::vector<size_t> prefix_function(const std::string& p) {
+    std::vector<size_t> pi(p.size(), 0);
+    for (size_t i = 1; i < p.size(); ++i) {
+        size_t k = pi[i - 1];
+        while (k > 0 && p[i] != p[k]) k = pi[k - 1];
+        if (p[i] == p[k]) ++k;
+        pi[i] = k;
+    }
+    return pi;
+}
+
+// --- 4. All three agree, on every input used below -----------------
+// --- 5. Ordinary text, where nothing much happens ------------------
+// This is the case that makes people think the choice does not matter.
+
+// --- 6. The text that destroys the naive algorithm -----------------
+// text = aaaa...a, pattern = aaa...ab. Every alignment matches m-1
+// characters and then fails, so the naive version does n*m
+// comparisons -- the worst case, reached exactly.
+
+// --- 7. The input that destroys Rabin-Karp -------------------------
+// Shrink the modulus and every window becomes a candidate that must
+// be verified. This is Chapter 13's adversarial hashing again.
+
+// --- 8. Rabin-Karp's actual worst case -----------------------------
+// The pattern a^(m-1)b does NOT do it: its hash differs from every
+// window of a^n, so Rabin-Karp rejects all of them in one comparison
+// each and never verifies anything. (The first version of this
+// program measured exactly zero comparisons, which was the clue.)
+//
+// The bound needs every window to be a CANDIDATE. Take p = a^m: now
+// every window hashes equal, every verification runs the full m
+// characters, and the total is n*m.
+\end{lstlisting}
+
+\textbf{What to notice.} Parts 7 and 8 together. Part 7 shows a thousandfold
+rise in verifications that costs 11\% of the running time; part 8 shows the
+input where the same bound actually bites. A measurement that moves a counter
+dramatically and the clock barely at all is telling you the counter is not what
+costs.
+
+\smallskip
+\textbf{Then try to break it.} Use KMP to search for \emph{all} occurrences of
+10{,}000 different patterns in one text, and compare with a Rabin--Karp that
+puts all 10{,}000 hashes in a \texttt{unordered\_set} and makes a single pass.
+Predict first. KMP must run 10{,}000 times; Rabin--Karp runs once. This is the
+workload where the algorithm with the worse guarantee is the right answer, and
+it is why Rabin--Karp is still in use.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Compute the prefix function for \texttt{aabaaab} and state the shift
+        KMP uses after a mismatch at position 6 \emph{(CLO-8)}.
+  \item Why does KMP's inner \textbf{while} loop not make it $\bigO{nm}$? Give
+        the potential function.
+  \item The pattern $\texttt{a}^{m-1}\texttt{b}$ is the naive algorithm's worst
+        case and makes Rabin--Karp do no work at all. Explain both facts from
+        the algorithms' structure.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Naive matching re-reads text after a mismatch, giving $\bigO{nm}$ worst
+        case and near-linear behaviour on random text.
+  \item Rabin--Karp compares rolling hashes: $\bigO{n+m}$ expected, with every
+        hash match verified. It inherits all of \chref{hashing}'s assumptions.
+  \item KMP's prefix function gives the exact safe shift, so the text pointer
+        never moves backwards and the bound is $\bigTh{n+m}$ with no
+        hypothesis about the input.
+  \item KMP's bound is proved by an amortised argument with $\Phi = k$ --- the
+        same looseness that \algname{Build-Heap} and the dynamic array had.
+  \item Measured on random text: 1.333 comparisons per character for naive and
+        1.250 for KMP. The choice looks irrelevant.
+  \item Measured on $T = \texttt{a}^{n}$: the naive count was exactly $nm$ and
+        KMP's was flat at $2n$. At $m = 1{,}000$ KMP was 349$\times$ faster.
+  \item Measured: a weak Rabin--Karp modulus produced 153{,}522 spurious hits
+        and cost only 11\% more time, because on random text each verification
+        fails immediately. The $\bigO{nm}$ bound needs an input with both many
+        candidates and expensive verification --- $P = \texttt{a}^{m}$ gives
+        exactly $nm$, and KMP is 161$\times$ faster.
+  \item Rabin--Karp's real advantage is matching many patterns in one pass;
+        KMP's is working on a stream that cannot be rewound.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} KMP's worst-case running time is: (a)~$\bigTh{nm}$;
+        (b)~$\bigTh{n\lg m}$; (c)~$\bigTh{n+m}$; (d)~$\bigTh{n^{2}}$.
+  \item \textbf{(MCQ)} In Rabin--Karp, equal hash values mean:
+        (a)~a confirmed occurrence; (b)~a candidate that must be verified;
+        (c)~a certain mismatch; (d)~the modulus is too small.
+  \item \textbf{(Short)} Define the prefix function and explain why it gives
+        the correct shift after a mismatch \emph{(CLO-8)}.
+  \item \textbf{(Short)} Give the amortised argument for KMP's linear bound.
+  \item \textbf{(Short)} Name the input that defeats the naive algorithm and
+        the input that defeats Rabin--Karp, and say why they are different.
+  \item \textbf{(Applied)} Trace KMP matching \texttt{ababaca} in
+        \texttt{abababacaba}, listing the value of $k$ after each text
+        character.
+  \item \textbf{(Applied)} You must scan a 50 GB log stream, which cannot be
+        rewound, for any of 200 known error signatures. Choose an algorithm (or
+        combination), justify it against this chapter's measurements, and say
+        what you would check about the signatures first.
+\end{reviewq}

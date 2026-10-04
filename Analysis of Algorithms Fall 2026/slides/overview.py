@@ -92,26 +92,28 @@ def build(chapters, deps, figman, verbose=True):
                           "application chapters the course is built towards "
                           "are 25 and 26.", "Handout front matter")
 
-    # -- what the course virtualizes ---------------------------------------
+    # -- the six questions the course asks ----------------------------------
     # This course has no four-lens device (see ../README.md). Its organising
-    # idea is the one Chapter 1 states: the same move, applied six times to
-    # six different resources.
+    # idea is the one the subtitle names: every algorithm is designed, then
+    # proved, then measured -- and the six questions below are the ones each
+    # chapter asks in turn.
     s = deck.new("cards")
-    deck.chrome(s, "One idea, six times over", "The spine of the course",
-                STYLES["conceptbox"], "Handout §1.5")
+    deck.chrome(s, "Six questions, asked of every algorithm",
+                "The spine of the course",
+                STYLES["conceptbox"], "Handout §1.1")
     layers = [
-        (D.PRIMARY,   "THE WHOLE MACHINE",
-         "An unmodified operating system boots on it.\nParts I and II."),
-        (D.SECONDARY, "THE OPERATING SYSTEM",
-         "Processes see a private system, sharing one kernel.\nPart III."),
-        (D.GREENHL,   "STORAGE",
-         "A file behaves as a disk; many disks behave as one.\nChapter 12."),
-        (D.PURPLEHL,  "THE NETWORK",
-         "A switch exists in software; a LAN spans sites.\nChapter 13."),
-        (D.TEALHL,    "THE DESKTOP",
-         "The screen is here and the computer is elsewhere.\nChapter 15."),
-        (D.GOLDHL,    "AN ACCELERATOR",
-         "One GPU serves several tenants at once.\nChapter 20."),
+        (D.PRIMARY,   "WHAT DOES IT COST?",
+         "Counted in primitive operations, not seconds.\nChapters 1--3."),
+        (D.SECONDARY, "ON WHICH INPUT?",
+         "Best, worst and expected are three answers.\nChapters 2, 9."),
+        (D.GREENHL,   "IS IT CORRECT?",
+         "A loop invariant, not a passing test.\nChapter 4."),
+        (D.PURPLEHL,  "COULD ANYTHING DO BETTER?",
+         "A bound on the problem, not the algorithm.\nChapter 10."),
+        (D.TEALHL,    "HOW WAS IT DESIGNED?",
+         "Brute force, divide, greedy, dynamic.\nChapters 7, 8, 14, 15."),
+        (D.GOLDHL,    "AND WHAT DOES IT MEASURE?",
+         "Every claim in this book was run.\nEvery chapter."),
     ]
     gx, gy = 0.24, 0.20
     cw2 = (CW - 2 * gx) / 3
@@ -127,8 +129,8 @@ def build(chapters, deps, figman, verbose=True):
         deck.text(s, x + 0.28, y + 0.52, cw2 - 0.5, ch2 - 0.7, blurb, 14,
                   D.INK, name=f"!!layv{i}")
     deck.text(s, ML, BODY_B - 0.5, CW, 0.42,
-              "In every case the question is the same: what is the lie, who "
-              "maintains it, and what does maintaining it cost?", 15,
+              "Three of these are asked of the algorithm, one of the problem, "
+              "and the last one of the machine.", 15,
               D.MUTED, name="!!laynote")
     D.FX.transition(s, "fade")
     deck.notes(s, "The organising idea of the whole course. Each row of "
@@ -205,9 +207,12 @@ def build(chapters, deps, figman, verbose=True):
     deck.rect(s, ML, 1.12, 0.9, 0.07, D.WHITE, name="!!tbar")
     deck.title(s, "We start with Chapter 1", color=D.WHITE, x=ML, y=1.36,
                w=9.0, h=0.9, size=40)
-    cards = [("FIRST SESSION", "Chapter 1 — What Virtualization Is"),
-             ("BRING", "A laptop with virtualization enabled"),
-             ("FIRST LAB", "Install a hypervisor; a first guest"),
+    cards = [("FIRST SESSION",
+              "Chapter 1 — The Role of Algorithms"),
+             ("BRING",
+              "A laptop with a C++ compiler (Appendix A)"),
+             ("FIRST LAB",
+              "Growth measured: the ratio test"),
              ("READ BEFORE WEEK 2", "Chapters 1 and 2")]
     cw_ = (CW - 0.3) / 2
     for i, (lab, val) in enumerate(cards):

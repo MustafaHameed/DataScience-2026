@@ -3,6 +3,264 @@
 %=====================================================================
 \normalfigures
 
-\begin{alertbox}[Not written yet]
-This appendix is a placeholder.
+Everything here was taught in \emph{Discrete Structures} or \emph{Calculus}.
+It is collected so that a chapter can point at it rather than re-derive it, and
+each section names the chapters that need it.
+
+\section{Logarithms}
+
+\begin{definitionbox}[Notation]
+Throughout this book:
+\[ \lg n = \log_{2} n, \qquad \ln n = \log_{e} n, \qquad
+   \log n = \log_{10} n. \]
+When a logarithm appears inside $\bigO{\cdot}$ the base does not matter, since
+$\log_{a} n = \log_{b} n / \log_{b} a$ and the divisor is a constant. That is
+why \chref{master} writes $\bigTh{n\lg n}$ and never specifies a base for the
+bound.
+\end{definitionbox}
+
+\begin{conceptbox}[Identities used in this book]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{6.2cm}L{8.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Identity} & \textbf{Used in} \\
+\midrule
+\endhead
+$\log(ab) = \log a + \log b$ & \chref{lowerbound}, summing $\lg(n!)$ \\
+$\log(a/b) = \log a - \log b$ & \chref{recurrences}, $\lg(n/2) = \lg n - 1$ \\
+$\log(a^{b}) = b \log a$ & \chref{cases}, $\lg(10^{7}) = 7\lg 10$ \\
+$a^{\log_{b} n} = n^{\log_{b} a}$ & \chref{master} --- this is where the
+  watershed function comes from \\
+$\log_{a} n = \dfrac{\log_{b} n}{\log_{b} a}$ & change of base; why the base
+  vanishes inside $\bigO{\cdot}$ \\
+$\lg n \approx 3.322 \log n$ & quick mental conversion \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Worth memorising:} $\lg 1000 \approx 10$, $\lg 10^{6} \approx 20$,
+$\lg 10^{9} \approx 30$. A thousand is ten doublings. Nearly every
+back-of-envelope estimate in this book uses one of these three.
+\end{conceptbox}
+
+\section{Summations}
+
+\begin{conceptbox}[The six that appear]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{5.6cm}L{3.2cm}L{5.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Sum} & \textbf{Closed form} & \textbf{Where} \\
+\midrule
+\endhead
+$\displaystyle\sum_{k=1}^{n} k$ & $\dfrac{n(n+1)}{2}$ &
+  insertion sort's worst case (\chref{cases}); quicksort's
+  (\chref{quicksort}) \\
+$\displaystyle\sum_{k=1}^{n} k^{2}$ & $\dfrac{n(n+1)(2n+1)}{6}$ &
+  the cubic max-subarray (\chref{bruteforce}) \\
+$\displaystyle\sum_{k=0}^{n} x^{k}$ & $\dfrac{x^{n+1}-1}{x-1}$ &
+  geometric; case 3 of the master theorem \\
+$\displaystyle\sum_{k=0}^{\infty} x^{k}$ ($|x|<1$) & $\dfrac{1}{1-x}$ &
+  why table doubling is linear (\chref{amortised}) \\
+$\displaystyle\sum_{k=0}^{\infty} \dfrac{k}{2^{k}}$ & $2$ &
+  why \algname{Build-Heap} is $\bigTh{n}$ (\chref{structures}) \\
+$H_{n} = \displaystyle\sum_{k=1}^{n} \dfrac{1}{k}$ & $\ln n + \gamma + \bigO{1/n}$ &
+  quicksort's expected comparisons (\chref{quicksort}) \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+$\gamma \approx 0.5772$ is the Euler--Mascheroni constant. The only fact needed
+about $H_{n}$ in this book is $H_{n} = \bigTh{\lg n}$.
+\end{conceptbox}
+
+\begin{worked}[The Geometric Series, Where It Earns Its Place]
+\chref{amortised} needs the total copying cost of $n$ appends with doubling:
+\[ 1 + 2 + 4 + \cdots + 2^{\lfloor \lg n \rfloor}
+   \;=\; \sum_{k=0}^{\lfloor \lg n \rfloor} 2^{k}
+   \;=\; 2^{\lfloor \lg n \rfloor + 1} - 1 \;<\; 2n. \]
+\textbf{The point is that the \emph{last} term dominates.} The sum of all
+earlier doublings is less than the final one, which is why amortised analysis
+works for any growth factor $> 1$: the series is geometric and converges.
+
+\smallskip
+\chref{master}'s case 3 is the same observation at the other end --- there the
+\emph{first} term dominates, because the ratio is less than 1.
+\end{worked}
+
+\section{Induction}
+
+\begin{conceptbox}[The template]
+To prove $P(n)$ for all $n \ge n_{0}$:
+\begin{tightnum}
+  \item \textbf{Base case.} Prove $P(n_{0})$.
+  \item \textbf{Inductive step.} Assume $P(k)$ for some $k \ge n_{0}$ (or for
+        all $n_{0} \le k < n$, for \emph{strong} induction), and prove
+        $P(k+1)$.
+\end{tightnum}
+
+\smallskip
+\textbf{Where it appears:} \chref{invariants}'s loop invariants are induction
+on the iteration count, with a third obligation added; \chref{recurrences}'s
+substitution method is induction on $n$; and \chref{structures}'s heap bounds
+are induction on the height.
+
+\smallskip
+\textbf{Strong induction} is needed whenever the recurrence refers to more than
+one smaller value --- $T(n) = 1 + \sum_{j<n} T(j)$ in \chref{dpone}, for
+instance.
+\end{conceptbox}
+
+\begin{alertbox}[The two mistakes]
+\textbf{1. Forgetting the base case.} The step alone proves nothing: ``if
+$P(k)$ then $P(k+1)$'' is satisfied by statements that are false for every $n$.
+
+\smallskip
+\textbf{2. Assuming what is to be proved.} The hypothesis is $P(k)$, for a
+\emph{specific} $k$; concluding $P(k+1)$ must use it rather than restate it.
+\chref{recurrences}'s strengthening trick is the legitimate version of
+``assume more'': you prove a \emph{stronger} statement, so the hypothesis gives
+you more to work with.
+\end{alertbox}
+
+\section{Probability}
+
+\begin{conceptbox}[What \chref{quicksort} and \chref{hashing} need]
+\textbf{Expectation.} For a random variable $X$ taking value $x$ with
+probability $p(x)$,
+\[ \mathbb{E}[X] = \sum_{x} x\,p(x). \]
+
+\smallskip
+\textbf{Linearity of expectation}, which is the single most useful fact:
+\[ \mathbb{E}[X + Y] = \mathbb{E}[X] + \mathbb{E}[Y], \]
+\textbf{whether or not $X$ and $Y$ are independent.} This is why
+\chref{quicksort}'s proof can sum over all $\binom{n}{2}$ pairs without
+worrying that the comparisons are correlated --- and they are heavily
+correlated.
+
+\smallskip
+\textbf{Indicator variables.} $X_{A} = 1$ if event $A$ occurs and 0 otherwise.
+Then $\mathbb{E}[X_{A}] = \Pr[A]$, so counting an expected number of
+occurrences becomes summing probabilities. \chref{cases}'s inversion count and
+\chref{quicksort}'s comparison count are both this technique.
+\end{conceptbox}
+
+\begin{worked}[Indicators and Linearity, in One Example]
+\chref{cases} needs the expected number of inversions in a uniform random
+permutation of $n$ elements.
+
+\smallskip
+\textbf{Step 1.} For each pair $(i,j)$ with $i<j$, let $X_{ij} = 1$ if the pair
+is inverted. The total is $X = \sum_{i<j} X_{ij}$.
+
+\smallskip
+\textbf{Step 2.} $\mathbb{E}[X_{ij}] = \Pr[\text{inverted}] = \tfrac12$, since
+the two orderings are equally likely.
+
+\smallskip
+\textbf{Step 3.} By linearity,
+\[ \mathbb{E}[X] = \sum_{i<j} \tfrac12 = \tfrac12\binom{n}{2}
+   = \frac{n(n-1)}{4}. \]
+
+\smallskip
+\textbf{Step 4.} Note what was \emph{not} needed: independence. The $X_{ij}$
+are strongly dependent --- if $a<b$ and $b<c$ then $a<c$ is forced --- and
+linearity does not care. Measured in \chref{cases}: 0.54, 0.56, 0.54, 0.50,
+0.49 of the worst case, against the predicted 0.5.
+\end{worked}
+
+\section{Stirling's Approximation}
+
+\begin{definitionbox}[Stirling]
+\[ n! = \sqrt{2\pi n}\,\Bigl(\frac{n}{e}\Bigr)^{n}
+        \Bigl(1 + \Theta\bigl(\tfrac1n\bigr)\Bigr), \]
+and the two consequences this book uses:
+\[ n! > \Bigl(\frac{n}{e}\Bigr)^{n}, \qquad
+   \lg(n!) = n\lg n - n\lg e + \bigTh{\lg n}
+           = n \lg n - 1.4427\,n + \bigTh{\lg n}. \]
+\end{definitionbox}
+
+\begin{alertbox}[Use the sharp form, not $n\lg n$]
+\chref{lowerbound} measured $\lg(n!)$ against both:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & $\lg(n!)$ & $n\lg n$ & $n\lg n - 1.443n$ \\
+\midrule
+1{,}000     &       8{,}529 &       9{,}966 &       8{,}523 \\
+1{,}000{,}000 & 18{,}488{,}885 & 19{,}931{,}569 & 18{,}488{,}874 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+The crude $n\lg n$ is 17\% high at $n = 1{,}000$ and still 8\% high at a
+million. The sharp form is correct to six decimal places. Both are
+$\bigTh{n\lg n}$, and only one is usable for arithmetic.
+\end{alertbox}
+
+\section{Floors, Ceilings and Useful Inequalities}
+
+\begin{conceptbox}[Facts used without comment in the text]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{6.0cm}L{8.5cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Fact} & \textbf{Where it is used} \\
+\midrule
+\endhead
+$x - 1 < \lfloor x \rfloor \le x \le \lceil x \rceil < x+1$ &
+  \chref{recurrences}, dropping floors \\
+$\lfloor n/2 \rfloor + \lceil n/2 \rceil = n$ &
+  merge sort's split (\chref{mergesort}) \\
+$1 + x \le e^{x}$ for all real $x$ &
+  probability bounds \\
+$\binom{n}{k} \le \left(\dfrac{en}{k}\right)^{k}$ &
+  counting arguments \\
+$\sum_{u \in V} \deg(u) = 2|E|$ &
+  every bound in Part~V (\chref{graphs}) \\
+a binary tree of height $h$ has $\le 2^{h}$ leaves &
+  the sorting lower bound (\chref{lowerbound}) \\
+a complete binary tree on $n$ nodes has height $\lfloor \lg n \rfloor$ &
+  heaps (\chref{structures}) \\
+\bottomrule
+\end{longtable}
+\end{conceptbox}
+
+\section{Where Each Topic Is Needed}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.6cm}L{9.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Topic} & \textbf{Chapters that need it} \\
+\midrule
+\endhead
+Logarithm identities & 1, 2, 3, 5, 6, 10 --- and $a^{\log_b n} = n^{\log_b a}$
+  is the key step in 6 \\
+Arithmetic series & 2, 7, 9, 17 \\
+Geometric series & 6, 11, 17 \\
+$\sum k/2^{k} = 2$ & 12 only, and it is the whole of
+  \algname{Build-Heap}'s bound \\
+Harmonic numbers & 9 \\
+Induction & 4, 5, 10, 12, 14, 15, 20 \\
+Strong induction & 15 \\
+Linearity of expectation & 2, 9, 13 \\
+Indicator variables & 2, 9 \\
+Stirling & 10 \\
+L'H\^opital's rule & 3, for $\lg n = o(n^{\varepsilon})$ \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[If any row is unfamiliar]
+Read that row's chapters' prerequisite boxes first --- each names what it
+assumes. The three most load-bearing items in the whole book are
+\textbf{linearity of expectation} (\chref{quicksort}'s proof collapses without
+it), \textbf{$a^{\log_{b} n} = n^{\log_{b} a}$} (\chref{master} has no
+watershed function without it), and \textbf{the geometric series}
+(\chref{amortised} has no result without it).
 \end{alertbox}

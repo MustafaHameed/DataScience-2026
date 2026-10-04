@@ -3,7 +3,510 @@
 %=====================================================================
 \locator{4}{Part IV --- The Design Paradigms}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} the two properties a problem must have for dynamic
+        programming to apply, and \textbf{test} a given problem for them.
+  \item \textbf{Distinguish} overlapping subproblems from the independent
+        subproblems of divide-and-conquer.
+  \item \textbf{Convert} a naive recursion into a memoised and then a bottom-up
+        solution, and \textbf{compare} the three \emph{(CLO-6)}.
+  \item \textbf{Derive} the running time of a dynamic program from the number
+        of subproblems and the work per subproblem.
+  \item \textbf{Decide} between greedy and dynamic programming for a stated
+        problem.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{recurrences} for recursion trees, \chref{greedy} for optimal
+substructure and the comparison that closes this chapter.
+\end{prereq}
+
+\begin{keyterms}
+dynamic programming $\bullet$ optimal substructure $\bullet$ overlapping
+subproblems $\bullet$ memoisation $\bullet$ top-down $\bullet$ bottom-up
+$\bullet$ subproblem graph $\bullet$ rod cutting $\bullet$ reconstruction
+$\bullet$ table
+\end{keyterms}
+
+\section{The Two Conditions}
+
+\begin{definitionbox}[When Dynamic Programming Applies]
+\textbf{1. Optimal substructure.} An optimal solution to the problem contains
+optimal solutions to subproblems.
+
+\smallskip
+\textbf{2. Overlapping subproblems.} A recursive solution revisits the
+\emph{same} subproblems repeatedly --- the total number of \emph{distinct}
+subproblems is small, while the number of recursive calls is large.
+
+\smallskip
+\term{Dynamic programming} solves each distinct subproblem once and stores the
+answer.
+\end{definitionbox}
+
+\begin{conceptbox}[Condition 2 is what makes it a technique]
+Merge sort has optimal substructure: sorting an array optimally requires
+sorting its halves. Memoising merge sort would buy exactly nothing, because
+the two halves are \emph{different} subproblems and no subproblem ever recurs.
+
+\smallskip
+That is the dividing line:
+
+\begin{tight}
+  \item \textbf{divide and conquer} --- subproblems are independent and
+        distinct, so recursion is the whole answer;
+  \item \textbf{dynamic programming} --- subproblems overlap, so recursion
+        alone does exponential redundant work.
+\end{tight}
+
+\smallskip
+And unlike the greedy-choice property, overlap is \emph{measurable}: instrument
+the recursion, count how many times each subproblem is solved, and look. That
+is what Section~15.3 does, and the numbers are startling.
+\end{conceptbox}
+
+\section{Rod Cutting}
+
+\begin{definitionbox}[Rod Cutting]
+A rod of length $n$ can be cut into integer pieces. A piece of length $i$ sells
+for $p_{i}$. Cut the rod to maximise total revenue (cutting is free).
+\end{definitionbox}
+
+Optimal substructure is easy to see: after the first cut of length $i$, the
+remaining rod of length $n-i$ must itself be cut optimally, or the whole
+solution could be improved. So, writing $r_{n}$ for the best revenue,
+\[ r_{n} = \max_{1 \le i \le n} \bigl(p_{i} + r_{n-i}\bigr), \qquad r_{0} = 0. \]
+
+\dsfig{\aoaalg{\algname{Cut-Rod-Naive}$(p, n)$}{
+\If{$n = 0$}
+  \State \Return $0$
+\EndIf
+\State $q \gets -\infty$
+\For{$i \gets 1$ \textbf{to} $n$}
+  \State $q \gets \max\bigl(q,\; p_{i} +
+         \algname{Cut-Rod-Naive}(p, n-i)\bigr)$
+    \Comment{re-solves $n-i$ every time}
+\EndFor
+\State \Return $q$
+}}{\algname{Cut-Rod-Naive}: a direct transcription of the recurrence. It is
+correct, and it takes $\bigTh{2^{n}}$ time, because line~5 re-solves
+subproblems that other branches have already solved.}{cutrodnaive}
+
+\begin{theorem}[The naive recursion is exponential]\label{thm:cutrodnaive}
+\algname{Cut-Rod-Naive} makes exactly $2^{n}$ calls on an input of length $n$.
+\end{theorem}
+
+\begin{proof}
+Let $T(n)$ be the number of calls, counting the top-level one. $T(0) = 1$, and
+for $n \ge 1$ the body makes one call on each of $n-1, n-2, \ldots, 0$:
+\[ T(n) = 1 + \sum_{j=0}^{n-1} T(j). \]
+We show $T(n) = 2^{n}$ by induction. The base case holds, $T(0) = 1 = 2^{0}$.
+Assuming it for all $j < n$,
+\[ T(n) = 1 + \sum_{j=0}^{n-1} 2^{j} = 1 + (2^{n} - 1) = 2^{n}. \qedhere \]
+\end{proof}
+
+\begin{worked}[Measured: How Often Is Each Subproblem Solved?]
+\texttt{code/ch15\_dp1.cpp} instruments the recursion and counts visits to each
+subproblem. At $n = 22$:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rr@{}}
+\toprule
+\rowcolor{primary!15}
+subproblem $k$ & times solved \\
+\midrule
+22 & 1 \\
+21 & 1 \\
+20 & 2 \\
+19 & 4 \\
+18 & 8 \\
+17 & 16 \\
+\multicolumn{2}{c}{$\cdots$ doubling all the way down $\cdots$} \\
+ 3 & 262{,}144 \\
+ 2 & 524{,}288 \\
+ 1 & 1{,}048{,}576 \\
+ 0 & \textbf{2{,}097{,}152} \\
+\midrule
+\textbf{total calls} & \textbf{4{,}194{,}304} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The subproblem ``a rod of length 0'' was solved 2{,}097{,}152 times.}
+There is only one of it, and its answer is 0.
+
+\smallskip
+\textbf{Total calls $4{,}194{,}304 = 2^{22}$ exactly}, confirming
+Theorem~\ref{thm:cutrodnaive} to the unit.
+
+\smallskip
+\textbf{And there are only 23 distinct subproblems} --- the rod lengths $0$ to
+$22$. Four million calls to solve twenty-three problems. That ratio is the
+saving dynamic programming is about to collect, and it is why ``overlapping
+subproblems'' is a measurable condition rather than an aesthetic judgement.
+\end{worked}
+
+\section{Two Ways to Collect the Saving}
+
+\begin{conceptbox}[Memoisation and bottom-up]
+\textbf{Top-down with memoisation.} Keep the recursion exactly as written, and
+add a table. Before computing, check whether the answer is known; after
+computing, record it. One line of difference.
+
+\smallskip
+\textbf{Bottom-up.} Sort the subproblems by size and solve them in that order,
+so every subproblem's dependencies are already in the table when it is reached.
+No recursion at all.
+
+\smallskip
+\textbf{They have the same asymptotic running time}, and in practice:
+
+\begin{tight}
+  \item memoisation is a smaller edit to working code and only solves the
+        subproblems actually needed --- which matters when the table is sparse;
+  \item bottom-up has a smaller constant (no call overhead, no cache checks),
+        touches memory in order, and \textbf{cannot overflow the stack} ---
+        which for large $n$ is the deciding argument, as \chref{quicksort}
+        showed.
+\end{tight}
+\end{conceptbox}
+
+\dsfig{\aoaalg{\algname{Cut-Rod-DP}$(p, n)$}{
+\State let $r[0 \mathinner{\ldotp\ldotp} n]$ be a new array
+\State $r[0] \gets 0$
+\For{$j \gets 1$ \textbf{to} $n$}
+  \State $q \gets -\infty$
+  \For{$i \gets 1$ \textbf{to} $j$}
+    \State $q \gets \max\bigl(q,\; p_{i} + r[j-i]\bigr)$
+      \Comment{$r[j-i]$ is already known}
+  \EndFor
+  \State $r[j] \gets q$
+\EndFor
+\State \Return $r[n]$
+}}{\algname{Cut-Rod-DP}, bottom-up. Two nested loops, so $\bigTh{n^{2}}$ ---
+and the only change from the recurrence is that subproblems are visited in
+increasing order of size, so each is solved once.}{cutroddp}
+
+\begin{theorem}[The dynamic program]\label{thm:cutroddp}
+\algname{Cut-Rod-DP} computes $r_{n}$ in $\bigTh{n^{2}}$ time and
+$\bigTh{n}$ space.
+\end{theorem}
+
+\begin{proof}
+The outer loop runs $n$ times and the inner loop at most $j \le n$ times, with
+an $\bigO{1}$ body, so the time is $\bigO{n^{2}}$; it is $\bigOm{n^{2}}$
+because the inner loop runs exactly $j$ times, giving
+$\sum_{j=1}^{n} j = n(n+1)/2$ iterations. The array $r$ gives $\bigTh{n}$
+space.
+
+\smallskip
+Correctness is an induction on $j$: assuming $r[0], \ldots, r[j-1]$ hold the
+optimal revenues for those lengths, line~6 evaluates $\max_{i}(p_{i} +
+r_{j-i})$, which by the recurrence is $r_{j}$.
+\end{proof}
+
+\begin{conceptbox}[The running time formula worth memorising]
+\[ \text{time} \;=\; (\text{number of distinct subproblems})
+   \;\times\; (\text{work per subproblem}). \]
+Rod cutting: $n$ subproblems $\times$ $\bigO{n}$ choices each $= \bigTh{n^{2}}$.
+This formula handles nearly every dynamic program in \chref{dptwo}, and it is
+usually quicker than writing down a recurrence.
+\end{conceptbox}
+
+\section{Measured}
+
+\begin{worked}[The Explosion and the Collapse]
+Calls made by each version:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & naive calls & memoised calls & ratio \\
+\midrule
+10 &        1{,}024 &  56 &       18.3 \\
+14 &       16{,}384 & 106 &      154.6 \\
+18 &      262{,}144 & 172 &    1{,}524.1 \\
+22 &    4{,}194{,}304 & 254 &   16{,}513.0 \\
+26 &   67{,}108{,}864 & 352 & \textbf{190{,}650.2} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+The naive column is $2^{n}$; the memoised column grows like $n^{2}$. Their
+ratio therefore grows like $2^{n}/n^{2}$ --- and does, from 18 to 190{,}000
+over sixteen units of $n$.
+\end{worked}
+
+\begin{worked}[In Seconds]
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & naive (ms) & memoised (ms) & bottom-up (ms) & naive/bottom-up \\
+\midrule
+20 &      4.113 & 0.0009 & 0.0004 &     10{,}281 \\
+24 &     72.090 & 0.0012 & 0.0005 &    144{,}180 \\
+28 &  1{,}130.981 & 0.0015 & 0.0006 &  1{,}884{,}968 \\
+32 & 16{,}640.171 & 0.0017 & 0.0006 & \textbf{27{,}733{,}618} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{At $n = 32$: 16.6 seconds against 0.6 microseconds.} A factor of 27.7
+million, for a change that adds one array and one \texttt{if}.
+
+\smallskip
+\textbf{Bottom-up beats memoised by about 2.5$\times$} at every size --- the
+constant-factor advantage of no recursion and no cache checks, exactly as
+Section~15.3 claimed.
+
+\smallskip
+\textbf{And the naive column's ratios are 17.5, 15.7, 14.7} per four units of
+$n$, against the predicted $2^{4} = 16$. The exponential is not a figure of
+speech.
+\end{worked}
+
+\begin{worked}[Where the Naive Version Cannot Go]
+Bottom-up alone, at sizes the recursion could not reach in the lifetime of the
+universe:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & bottom-up (ms) \\
+\midrule
+ 10{,}000 & 0.263 \\
+ 40{,}000 & 1.054 \\
+160{,}000 & 4.802 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+The times are \emph{linear} in $n$, not quadratic, because the price table here
+is capped at 30 entries --- so the inner loop runs at most 30 times rather than
+$j$ times, and $\bigTh{n^{2}}$ becomes $\bigTh{30n}$. A reminder to check what
+the parameters actually are before quoting a bound: the algorithm is
+$\bigTh{n \cdot \min(n, |p|)}$, and which factor dominates depends on the
+instance.
+
+\smallskip
+At $n = 160{,}000$ the naive version would need about $2^{160000}$ calls.
+\end{worked}
+
+\section{Greedy or Dynamic Programming?}
+
+\begin{conceptbox}[The comparison, finally]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.4cm}L{5.0cm}L{5.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+& \textbf{Greedy} & \textbf{Dynamic programming} \\
+\midrule
+\endhead
+needs & greedy-choice property \emph{and} optimal substructure & optimal
+  substructure \emph{and} overlapping subproblems \\
+decides & commits to one choice, never reconsiders & considers all choices,
+  keeps the best \\
+cost & usually $\bigTh{n}$ or $\bigTh{n\lg n}$ & usually
+  $\bigTh{n^{2}}$ or worse \\
+when it fails & silently returns a suboptimal answer & does not \\
+proof obligation & an exchange argument & the recurrence is correct \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Both require optimal substructure}; that is the shared half. They
+differ in the second condition, and the second conditions are not opposites ---
+a problem can have both, or neither.
+
+\smallskip
+\textbf{The practical rule:} try greedy first, because it is faster and
+simpler. Attempt the exchange argument. If it goes through, you are done; if it
+does not, the place it stuck usually hands you the counter-example, and dynamic
+programming is the fallback that always works. Coin change in \chref{greedy} is
+exactly this story: greedy for $\{1,5,10,25\}$, dynamic programming for
+$\{1,3,4\}$.
+\end{conceptbox}
+
+\begin{alertbox}[Reconstructing the solution, not just its value]
+Every algorithm in this chapter returns a \emph{number} --- the best revenue
+--- not the cuts that achieve it. That is almost never what is wanted.
+
+\smallskip
+The fix is to store, alongside each $r[j]$, the choice $i$ that achieved the
+maximum. Walking back from $j = n$ then produces the cuts. The cost is
+$\bigTh{n}$ extra space and no extra time.
+
+\smallskip
+This matters more than it sounds, and \chref{dptwo} returns to it: the
+space-saving tricks that reduce a DP table from $\bigTh{mn}$ to
+$\bigTh{\min(m,n)}$ work only if you do \emph{not} need to reconstruct the
+solution, because reconstruction needs the whole table.
 \end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Memoising a problem with no overlap.} Merge sort gains nothing;
+        the table is pure overhead.
+  \item \textbf{Assuming optimal substructure.} It must be argued. Longest
+        \emph{simple} path in a graph does not have it, and the usual DP
+        recurrence for it is simply wrong.
+  \item \textbf{Forgetting the base case in the table.} $r[0] = 0$ is load
+        bearing.
+  \item \textbf{Recursing memoised at large $n$.} The first call descends $n$
+        frames deep before any memo is written --- \chref{quicksort}'s stack
+        overflow, in a new costume. Bottom-up has no stack.
+  \item \textbf{Returning only the value.} Store the choices too, or the
+        answer is unusable.
+  \item \textbf{Quoting $\bigTh{n^{2}}$ without checking the parameters.}
+        Measured, rod cutting with a 30-entry price table is linear.
+  \item \textbf{Reaching for DP before trying greedy.} Greedy is faster when it
+        works, and the attempt to prove it tells you whether it does.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Counting the Overlap]
+Reproduces all five tables. Expect twenty-five minutes; the naive version at
+$n = 32$ takes about seventeen seconds on its own.
+
+\begin{lstlisting}[language=C++]
+// ch15_dp1.cpp -- overlapping subproblems, counted.
+// Build: cl /O2 /EHsc /std:c++17 ch15_dp1.cpp        (see Appendix A)
+
+// --- 1. The naive recursion, instrumented --------------------------
+// Rod cutting: a rod of length n, a price p[i] for a piece of length
+// i. Cut it to maximise revenue. The obvious recursion tries every
+// first cut and recurses on the remainder.
+static long long rod_naive(const std::vector<long long>& p, int n) {
+    ++calls;
+    if (n < (int)visits.size()) ++visits[n];
+    if (n == 0) return 0;
+    long long best = 0;
+    for (int i = 1; i <= n && i < (int)p.size(); ++i)
+        best = std::max(best, p[i] + rod_naive(p, n - i));
+    return best;
+}
+
+// --- 2. The same recursion, with an answer cache -------------------
+// One line of difference. Each subproblem is now solved once and
+// looked up thereafter, which is why the running time collapses from
+// exponential to quadratic.
+static long long rod_memo(const std::vector<long long>& p, int n,
+                          std::vector<long long>& memo) {
+    ++calls;
+    if (memo[n] >= 0) return memo[n];
+    long long best = 0;
+    if (n > 0)
+        for (int i = 1; i <= n && i < (int)p.size(); ++i)
+            best = std::max(best, p[i] + rod_memo(p, n - i, memo));
+    return memo[n] = best;
+}
+
+// --- 3. Bottom-up: the same table, filled in dependency order ------
+// No recursion and no cache lookups, just two loops. Identical
+// answers, identical asymptotics, smaller constant -- and it cannot
+// overflow the stack, which for large n matters (Chapter 9).
+static long long rod_bottom_up(const std::vector<long long>& p, int n) {
+    std::vector<long long> best(n + 1, 0);
+    for (int j = 1; j <= n; ++j) {
+        long long b = 0;
+        for (int i = 1; i <= j && i < (int)p.size(); ++i)
+            b = std::max(b, p[i] + best[j - i]);
+        best[j] = b;
+    }
+    return best[n];
+}
+
+// --- 4. How often is each subproblem solved? -----------------------
+// This is the measurement that DEFINES "overlapping". If every
+// subproblem were solved once, DP would buy nothing.
+
+// --- 5. The explosion, and the collapse ----------------------------
+// --- 6. And in seconds ---------------------------------------------
+// --- 7. All three agree, which is the point ------------------------
+// --- 8. Bottom-up scales where the others cannot -------------------
+\end{lstlisting}
+
+\textbf{What to notice.} Part 4's last line: subproblem 0 solved 2{,}097{,}152
+times. Every one of those calls returns 0 after doing nothing. The whole of
+dynamic programming is the observation that this is avoidable.
+
+\smallskip
+\textbf{Then try to break it.} Remove the memo check from
+\texttt{rod\_memo} but keep the memo \emph{write}. Predict what happens to the
+call count before running it. The answer is that nothing improves at all ---
+writing to a cache you never read is not memoisation, and the program will
+still be exponential. The lookup is the technique; the table is just where it
+keeps things.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item State the two conditions for dynamic programming and give a problem
+        satisfying the first but not the second.
+  \item \algname{Cut-Rod-Naive} made $2^{22} = 4{,}194{,}304$ calls to solve 23
+        distinct subproblems. Derive the $2^{n}$ from the recurrence
+        $T(n) = 1 + \sum_{j<n} T(j)$.
+  \item Give the running time of a dynamic program with $mn$ subproblems each
+        requiring a maximum over $k$ choices, and apply the formula to rod
+        cutting.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Dynamic programming needs optimal substructure \emph{and} overlapping
+        subproblems. The second distinguishes it from divide-and-conquer, where
+        subproblems are distinct and memoising buys nothing.
+  \item Overlap is measurable. Measured for rod cutting at $n = 22$: subproblem
+        0 was solved 2{,}097{,}152 times, total calls were exactly $2^{22}$,
+        and there were 23 distinct subproblems.
+  \item Memoisation keeps the recursion and adds a table; bottom-up sorts the
+        subproblems by size and uses loops. Same asymptotics; bottom-up has the
+        smaller constant and no stack.
+  \item Time $=$ (number of distinct subproblems) $\times$ (work per
+        subproblem). Rod cutting: $n \times \bigO{n} = \bigTh{n^{2}}$.
+  \item Measured: at $n = 32$ the naive version took 16.6 s and bottom-up
+        0.0006 ms --- a factor of 27.7 million. Bottom-up beat memoised by
+        about 2.5$\times$ throughout.
+  \item Greedy and dynamic programming both need optimal substructure. Try
+        greedy first and attempt the exchange argument; dynamic programming is
+        the fallback that always works.
+  \item Store the choices, not only the values, or the answer cannot be
+        reconstructed.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Dynamic programming requires: (a)~optimal substructure
+        only; (b)~overlapping subproblems only; (c)~both; (d)~the
+        greedy-choice property.
+  \item \textbf{(MCQ)} Memoising merge sort would:
+        (a)~make it $\bigTh{n}$; (b)~make it $\bigTh{\lg n}$; (c)~buy nothing,
+        because its subproblems do not overlap; (d)~make it exponential.
+  \item \textbf{(Short)} Explain the difference between overlapping and
+        independent subproblems, with an algorithm of each kind.
+  \item \textbf{(Short)} Compare memoised top-down with bottom-up on three
+        axes, and say when each is preferable \emph{(CLO-6)}.
+  \item \textbf{(Short)} Why does the space-saving trick of keeping only two
+        rows of a DP table prevent reconstructing the solution?
+  \item \textbf{(Applied)} Write the recurrence for coin change with
+        denominations $c_{1},\ldots,c_{k}$ and amount $W$, state the number of
+        subproblems and the work per subproblem, and give the running time.
+  \item \textbf{(Applied)} A colleague memoises a recursive function and reports
+        no speed-up at all. Give three distinct explanations, and the
+        measurement that would distinguish them.
+\end{reviewq}

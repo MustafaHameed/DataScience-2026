@@ -3,7 +3,495 @@
 %=====================================================================
 \locator{4}{Part IV --- The Design Paradigms}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} the greedy strategy and \textbf{apply} it to a stated
+        problem \emph{(CLO-6)}.
+  \item \textbf{State} the greedy-choice property and optimal substructure, and
+        \textbf{explain} why both are needed.
+  \item \textbf{Prove} a greedy algorithm optimal by an exchange argument.
+  \item \textbf{Construct} a counter-example showing a plausible greedy rule is
+        not optimal.
+  \item \textbf{Describe} Huffman coding and \textbf{relate} its output to the
+        entropy bound.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{bruteforce} for the baseline and the oracle technique. Nothing else in
+Part~II is required, though \chref{structures}'s heap is the data structure
+Huffman's algorithm runs on.
+\end{prereq}
+
+\begin{keyterms}
+greedy algorithm $\bullet$ greedy-choice property $\bullet$ optimal
+substructure $\bullet$ exchange argument $\bullet$ activity selection
+$\bullet$ counter-example $\bullet$ Huffman code $\bullet$ prefix code
+$\bullet$ entropy $\bullet$ matroid
+\end{keyterms}
+
+\section{Commit and Never Reconsider}
+
+\begin{definitionbox}[Greedy Algorithm]
+A \term{greedy algorithm} builds a solution one step at a time, at each step
+taking the option that looks best \emph{right now}, by some local rule, and
+never revisiting that decision.
+
+\smallskip
+It is the simplest strategy in the book and the one most often wrong. What
+makes it interesting is that when it works, it is usually both the fastest
+algorithm available and the easiest to implement --- and whether it works is
+decidable by a proof, not by testing.
+\end{definitionbox}
+
+\begin{conceptbox}[The two properties]
+A greedy algorithm is optimal when the problem has both of these.
+
+\smallskip
+\textbf{1. The greedy-choice property.} A globally optimal solution can be
+reached by making a locally optimal choice. More precisely: there exists an
+optimal solution that \emph{contains} the greedy first choice. Note the
+``there exists'' --- greedy need not find \emph{the} optimal solution, only
+\emph{an} optimal one.
+
+\smallskip
+\textbf{2. Optimal substructure.} An optimal solution to the problem contains
+within it optimal solutions to the subproblems that remain after the choice.
+
+\smallskip
+\textbf{Both are required and they are different.} Optimal substructure alone
+gives you dynamic programming (\chref{dpone}); it is the greedy-choice property
+that lets you commit without exploring alternatives, and it is the one that
+usually fails. \chref{dpone} returns to this comparison in full.
+\end{conceptbox}
+
+\section{Activity Selection}
+
+\begin{definitionbox}[Activity Selection]
+Given $n$ activities, activity $i$ occupying the half-open interval
+$[s_{i}, f_{i})$, choose a largest set of mutually compatible activities --- no
+two overlapping.
+\end{definitionbox}
+
+Three local rules suggest themselves, and they sound equally sensible:
+
+\begin{tight}
+  \item take the activity that \textbf{finishes earliest};
+  \item take the \textbf{shortest} activity;
+  \item take the activity that \textbf{starts earliest}.
+\end{tight}
+
+\dsfig{\aoaalg{\algname{Activity-Select}$(s, f, n)$}{
+\State sort the activities so that $f_{1} \le f_{2} \le \cdots \le f_{n}$
+\State $A \gets \{1\}$;\quad $k \gets 1$
+  \Comment{the first to finish is always taken}
+\For{$m \gets 2$ \textbf{to} $n$}
+  \If{$s_{m} \ge f_{k}$}
+    \State $A \gets A \cup \{m\}$
+      \Comment{compatible: commit, never reconsider}
+    \State $k \gets m$
+  \EndIf
+\EndFor
+\State \Return $A$
+}}{\algname{Activity-Select}, greedy by earliest finishing time. After the
+sort it is a single pass, so the whole algorithm is
+$\bigTh{n\lg n}$.}{activityselect}
+
+\begin{theorem}[Earliest finish is optimal]\label{thm:activity}
+Let $S$ be a set of activities and let $a_{1}$ be one with the earliest
+finishing time. Then some maximum-size set of mutually compatible activities
+contains $a_{1}$.
+\end{theorem}
+
+\begin{proof}
+This is an \term{exchange argument}: take any optimal solution and show it can
+be modified to contain the greedy choice without getting worse.
+
+\smallskip
+Let $A$ be a maximum-size compatible set, and let $a_{j}$ be the activity in
+$A$ with the earliest finishing time. If $a_{j} = a_{1}$ there is nothing to
+prove. Otherwise consider
+\[ A' = \bigl(A \setminus \{a_{j}\}\bigr) \cup \{a_{1}\}. \]
+
+\smallskip
+\textbf{$A'$ is compatible.} The activities of $A$ other than $a_{j}$ all start
+at or after $f_{j}$, because $a_{j}$ finishes earliest in $A$ and $A$ is
+compatible. Since $a_{1}$ has the earliest finishing time in all of $S$, we
+have $f_{1} \le f_{j}$, so every other activity in $A$ also starts at or after
+$f_{1}$ and does not overlap $a_{1}$.
+
+\smallskip
+\textbf{$A'$ has the same size as $A$}, since one element was exchanged for
+one. So $A'$ is also a maximum-size compatible set, and it contains $a_{1}$.
+
+\smallskip
+Optimal substructure then completes the induction: after committing to
+$a_{1}$, the remaining problem is activity selection on
+$\{a_{i} : s_{i} \ge f_{1}\}$, an instance of the same problem, and the same
+argument applies to it.
+\end{proof}
+
+\begin{worked}[Measured: the Three Rules, Against an Oracle]
+Rules 2 and 3 have no such proof. Rather than assert they are wrong,
+\texttt{code/ch14\_greedy.cpp} checks all three against exhaustive search
+(\chref{bruteforce}'s oracle) on 20{,}000 random instances of 10 activities:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+\rowcolor{primary!15}
+greedy rule & instances solved optimally \\
+\midrule
+earliest \textbf{finish} time & \textbf{100.0\%} \\
+\textbf{shortest} activity    & 94.5\% \\
+earliest \textbf{start} time  & 62.1\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Read the middle row carefully.} ``Take the shortest'' is right 94.5\%
+of the time. Any amount of testing on random inputs would leave you confident
+in it, and it is wrong. A 94.5\% algorithm is not a 94.5\%-correct algorithm;
+it is an incorrect algorithm that is usually lucky.
+
+\smallskip
+\textbf{Read the last row too.} ``Take whatever starts first'' --- the most
+natural rule of all, and the one a scheduler written in a hurry implements ---
+is optimal barely three-fifths of the time.
+
+\smallskip
+\textbf{And the top row is 100.0\%, not 100\%-ish}, because it is a theorem.
+That is the difference between a proof and a benchmark, and it is the reason
+Theorem~\ref{thm:activity} is in this chapter.
+\end{worked}
+
+\section{When Greedy Fails: Coin Change}
+
+\begin{worked}[The Same Algorithm, Two Coin Systems]
+Make an amount from coins of given denominations, using as few coins as
+possible. Greedy: take the largest coin that fits, repeatedly.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}lrl@{}}
+\toprule
+\rowcolor{primary!15}
+coin system & greedy wrong on & first failure \\
+\midrule
+$\{1, 5, 10, 25\}$ & 0 of 200 amounts & --- \\
+$\{1, 3, 4\}$ & \textbf{49 of 200 amounts} & amount 6 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The counter-example is six.} Greedy takes 4, then 1, then 1 --- three
+coins. The optimum is $3 + 3$ --- two coins. Taking the largest coin was the
+mistake, and no amount of care in the implementation can fix a wrong strategy.
+
+\smallskip
+\textbf{The lesson is not that greedy is unreliable.} It is that greediness is
+a property of the \emph{problem instance}, not of the approach. The identical
+algorithm is provably optimal for $\{1,5,10,25\}$ --- which is why it works for
+every currency you have handled --- and provably wrong for $\{1,3,4\}$. You
+cannot tell which case you are in by looking at the code.
+
+\smallskip
+\textbf{And when greedy fails, dynamic programming does not.} \chref{dpone}'s
+method solves coin change optimally for any denomination set, in
+$\bigTh{nW}$ --- slower, and always right.
+\end{worked}
+
+\begin{alertbox}[How to approach a greedy algorithm]
+\begin{tightnum}
+  \item \textbf{Write the greedy rule down precisely.} ``Greedy'' names a
+        family; the three activity-selection rules are three different
+        algorithms with three different success rates.
+  \item \textbf{Try to prove the greedy-choice property} by exchange argument.
+        If the proof goes through, you are finished.
+  \item \textbf{If it does not, look for the counter-example} where the proof
+        stuck. Counter-examples for greedy algorithms are usually tiny ---
+        $\{1,3,4\}$ and the amount 6.
+  \item \textbf{Never conclude from testing.} 94.5\% looked like success.
+\end{tightnum}
 \end{alertbox}
+
+\section{Huffman Coding}
+
+\begin{definitionbox}[Prefix Code]
+A \term{prefix code} assigns each symbol a binary string such that no
+codeword is a prefix of another. That property is what makes a code
+unambiguously decodable without separators: reading left to right, the first
+codeword you complete is the right one.
+
+\smallskip
+A prefix code corresponds exactly to a binary tree whose leaves are the
+symbols; the codeword is the path, with 0 for left and 1 for right. The cost of
+a tree $T$ is
+\[ B(T) = \sum_{c} f(c)\, d_{T}(c), \]
+the total encoded length, where $f(c)$ is $c$'s frequency and $d_{T}(c)$ its
+depth.
+\end{definitionbox}
+
+\dsfig{\aoaalg{\algname{Huffman}$(C)$}{
+\State $Q \gets$ a min-priority queue of all symbols, keyed by frequency
+\For{$i \gets 1$ \textbf{to} $|C| - 1$}
+  \State allocate a new node $z$
+  \State $z.\mathit{left} \gets$ \algname{Extract-Min}$(Q)$
+  \State $z.\mathit{right} \gets$ \algname{Extract-Min}$(Q)$
+    \Comment{the two rarest}
+  \State $z.\mathit{freq} \gets z.\mathit{left}.\mathit{freq}
+         + z.\mathit{right}.\mathit{freq}$
+  \State \algname{Insert}$(Q, z)$
+\EndFor
+\State \Return \algname{Extract-Min}$(Q)$
+  \Comment{the root}
+}}{\algname{Huffman}. The greedy choice is on line 5: the two \emph{least}
+frequent symbols are merged first, which puts them deepest. With a binary heap
+the running time is $\bigTh{n \lg n}$.}{huffman}
+
+\begin{lemma}[The greedy choice is safe]\label{lem:huffman}
+Let $x$ and $y$ be two symbols of lowest frequency in $C$. Then there is an
+optimal prefix code for $C$ in which $x$ and $y$ have the same (maximal) depth
+and differ only in the last bit.
+\end{lemma}
+
+\begin{proof}
+Let $T$ be an optimal tree, and let $a$ and $b$ be two sibling leaves of
+maximum depth in $T$ (they exist: the deepest leaf has a sibling, or the tree
+could be improved by promoting it). Assume without loss of generality
+$f(a) \le f(b)$ and $f(x) \le f(y)$.
+
+\smallskip
+Exchange $x$ with $a$ to form $T'$. The change in cost is
+\[ B(T) - B(T') = \bigl(f(a) - f(x)\bigr)\bigl(d_{T}(a) - d_{T}(x)\bigr)
+   \;\ge\; 0, \]
+because $f(x) \le f(a)$ ($x$ is of lowest frequency) and
+$d_{T}(x) \le d_{T}(a)$ ($a$ is of maximal depth), making both factors
+non-negative. So $B(T') \le B(T)$. Exchanging $y$ with $b$ in $T'$ gives $T''$
+with $B(T'') \le B(T') \le B(T)$ by the same argument.
+
+\smallskip
+Since $T$ was optimal, $B(T'') = B(T)$, so $T''$ is also optimal --- and in it
+$x$ and $y$ are sibling leaves at maximum depth.
+\end{proof}
+
+\begin{theorem}[Huffman's algorithm is optimal]\label{thm:huffman}
+\algname{Huffman} produces a prefix code of minimum total length.
+\end{theorem}
+
+\begin{proof}
+By induction on $|C|$. The base case $|C| = 2$ is immediate: both codewords
+have length 1 and no code can do better.
+
+\smallskip
+For the inductive step, let $x, y$ be the two least frequent symbols and let
+$C'$ be $C$ with $x$ and $y$ replaced by a single symbol $z$ of frequency
+$f(x)+f(y)$. By the inductive hypothesis, \algname{Huffman} produces an optimal
+tree $T'$ for $C'$. Replacing $z$'s leaf by an internal node with children $x$
+and $y$ gives a tree $T$ for $C$ with
+\[ B(T) = B(T') + f(x) + f(y), \]
+since $x$ and $y$ sit one level below where $z$ was. The $+f(x)+f(y)$ is a
+constant independent of the tree, so minimising $B(T')$ minimises $B(T)$ over
+all trees in which $x$ and $y$ are siblings --- and Lemma~\ref{lem:huffman}
+says some optimal tree is of that form. Hence $T$ is optimal.
+\end{proof}
+
+\begin{worked}[Huffman Against the Entropy Bound]
+Shannon's source coding theorem says no prefix code can average fewer than
+$H = -\sum_{c} p(c)\lg p(c)$ bits per symbol, and Huffman is always within one
+bit of that. Both halves are checkable.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+text & symbols & entropy $H$ & Huffman & saving vs 8-bit \\
+\midrule
+English prose     &  22 & 3.9670 & 4.0130 & 49.8\% \\
+DNA (4 symbols)   &   4 & 1.9999 & 2.0000 & 75.0\% \\
+95\% one symbol   &   6 & 0.4065 & \textbf{1.1202} & 86.0\% \\
+uniform bytes     & 256 & 7.9953 & 8.0000 &  0.0\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Every row satisfies $H \le \text{Huffman} < H+1$}, as the theory
+requires. Three of the four are within 0.05 bits of the floor.
+
+\smallskip
+\textbf{The third row is the interesting one.} Entropy 0.4065, Huffman 1.1202
+--- a gap of 0.71 bits, nearly the whole slack the theorem allows. The reason
+is structural: Huffman assigns each symbol a \emph{whole number} of bits, and
+the minimum is 1. When one symbol has probability 0.95 its information content
+is $-\lg 0.95 = 0.074$ bits, and Huffman must spend 1. It cannot do better,
+and the loss is a factor of 2.8.
+
+\smallskip
+\textbf{That is the known limit of Huffman coding}, and the reason arithmetic
+coding exists --- it can spend fractional bits per symbol and approaches $H$
+arbitrarily closely. A greedy algorithm that is provably optimal \emph{within
+its class} can still be far from the information-theoretic bound, because the
+class itself is the constraint. Compare \chref{lowerbound}, where merge sort
+came within 1\% of its floor; here the restriction to whole bits costs 175\%.
+
+\smallskip
+\textbf{And the last row.} With 256 equally likely bytes, $H = 8$ and Huffman
+produces exactly 8 bits per symbol --- it saves nothing, correctly. Compression
+is possible only where there is structure to exploit, and a greedy algorithm
+cannot create any.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Saying ``use a greedy algorithm'' without naming the rule.}
+        Three rules for activity selection scored 100\%, 94.5\% and 62.1\%.
+  \item \textbf{Concluding optimality from testing.} ``Take the shortest'' was
+        right in 94.5\% of 20{,}000 random trials and is wrong.
+  \item \textbf{Assuming greedy works because it works for coins.} It does ---
+        for $\{1,5,10,25\}$. For $\{1,3,4\}$ it fails at the amount 6.
+  \item \textbf{Confusing the two properties.} Optimal substructure alone gives
+        dynamic programming. It is the greedy-choice property that permits
+        committing without exploring.
+  \item \textbf{Proving the wrong direction in an exchange argument.} You must
+        show the \emph{optimal} solution can be modified to contain the greedy
+        choice --- not that the greedy solution can be modified.
+  \item \textbf{Expecting Huffman to reach the entropy.} It cannot spend
+        fractional bits; measured, it was 175\% above $H$ on a highly skewed
+        source.
+  \item \textbf{Using Huffman on a uniform source.} Measured saving: 0.0\%.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Three Rules, Two Coin Systems, One Code]
+Reproduces all three tables. Expect twenty-five minutes; part A runs 20{,}000
+brute-force searches.
+
+\begin{lstlisting}[language=C++]
+// ch14_greedy.cpp -- when a local choice can be trusted, and when not.
+// Build: cl /O2 /EHsc /std:c++17 ch14_greedy.cpp     (see Appendix A)
+
+// --- 1. Activity selection, greedy by earliest finish --------------
+// Sort by finishing time and take anything compatible. The claim is
+// that the activity finishing first is in SOME optimal solution --
+// the greedy-choice property, and what the chapter proves.
+static int greedy_finish(std::vector<Act> a) {
+    std::sort(a.begin(), a.end(),
+              [](const Act& x, const Act& y) {
+                  return x.finish < y.finish; });
+    int count = 0, last = -1;
+    for (const Act& x : a)
+        if (x.start >= last) { ++count; last = x.finish; }
+    return count;
+}
+
+// --- 2. Two plausible rules that are simply wrong ------------------
+// Both "take the shortest" and "take the earliest starting" sound
+// just as reasonable as rule 1. Neither is optimal, and the program
+// finds the counter-examples by brute force rather than asserting it.
+
+// --- 3. The oracle: every subset, checked --------------------------
+// Chapter 7's lesson. n <= 18 so 2^n is affordable, and it is the
+// only way to be sure the greedy answers are right, not plausible.
+
+// --- 4. Coin change: greedy, and the optimum it sometimes misses ---
+// Greedy takes the largest coin that fits. For {1, 5, 10, 25} that is
+// optimal; for {1, 3, 4} it is not, and the smallest counter-example
+// is six. Dynamic programming (Chapter 15) gets it right for any
+// system.
+static int coins_greedy(std::vector<int> c, int amount) {
+    std::sort(c.rbegin(), c.rend());
+    int used = 0;
+    for (int v : c) while (amount >= v) { amount -= v; ++used; }
+    return amount == 0 ? used : -1;
+}
+
+// --- 5. Huffman coding ---------------------------------------------
+// Repeatedly merge the two least frequent symbols. The greedy choice
+// is that the two rarest symbols can be put deepest, as siblings.
+// Total encoded length = sum over leaves of freq * depth, which is
+// also the sum of every internal node's frequency -- a neater way to
+// compute it than walking the tree.
+
+// --- 6. Is the greedy rule actually optimal? -----------------------
+// --- 7. Coin change: the same algorithm, two coin systems ----------
+// --- 8. Huffman against the entropy bound --------------------------
+// Shannon: no prefix code can average fewer than H bits per symbol,
+// and Huffman is always within 1 bit of it. Both are checkable.
+\end{lstlisting}
+
+\textbf{What to notice.} Part 6's middle column. A rule that is right 94.5\% of
+the time is not 94.5\% of a correct algorithm --- it is wrong, and the 5.5\% is
+where it will meet your data.
+
+\smallskip
+\textbf{Then try to break it.} Find the smallest instance on which ``take the
+shortest'' fails, by searching exhaustively over instances rather than
+sampling. Three activities suffice: $[0,10)$, $[9,12)$ and $[11,20)$ --- the
+shortest is the middle one, taking it forbids both others, and the optimum
+takes the outer two. Having the counter-example in hand is worth more than the
+94.5\%.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item State the greedy-choice property and optimal substructure, and give a
+        problem that has the second but not the first.
+  \item Greedy coin change fails for $\{1,3,4\}$ at the amount 6. Find the next
+        amount at which it fails, and say why the counter-examples are small.
+  \item Huffman achieved 1.1202 bits per symbol against an entropy of 0.4065.
+        Explain the gap without blaming the algorithm.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A greedy algorithm commits to the locally best choice and never
+        reconsiders. It is optimal when the problem has both the greedy-choice
+        property and optimal substructure.
+  \item Optimality is proved by an \emph{exchange argument}: show that some
+        optimal solution can be modified to contain the greedy choice without
+        getting worse.
+  \item Measured: of three plausible activity-selection rules, earliest-finish
+        was optimal on 100.0\% of 20{,}000 random instances, shortest-first on
+        94.5\% and earliest-start on 62.1\%. Testing cannot distinguish a
+        theorem from luck.
+  \item Measured: greedy coin change is optimal for $\{1,5,10,25\}$ and wrong
+        on 49 of 200 amounts for $\{1,3,4\}$, first failing at 6. Greediness is
+        a property of the instance, not of the code.
+  \item Huffman's algorithm is greedy --- merge the two rarest symbols --- and
+        provably produces a minimum-length prefix code.
+  \item Measured: Huffman lay in $[H, H+1)$ on all four corpora. On a 95\%-skewed
+        source it used 1.1202 bits against an entropy of 0.4065, because it
+        cannot spend fractional bits; on a uniform source it saved nothing,
+        correctly.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The greedy-choice property states that:
+        (a)~the greedy solution is unique; (b)~some optimal solution contains
+        the greedy first choice; (c)~every optimal solution is greedy;
+        (d)~the problem has no optimal substructure.
+  \item \textbf{(MCQ)} Huffman coding produces a code whose average length is:
+        (a)~always equal to the entropy; (b)~at least the entropy and less than
+        entropy $+1$; (c)~always 8 bits; (d)~unrelated to the entropy.
+  \item \textbf{(Short)} Define the greedy strategy and apply it to activity
+        selection, stating the rule precisely \emph{(CLO-6)}.
+  \item \textbf{(Short)} Explain an exchange argument, and say which direction
+        the modification goes.
+  \item \textbf{(Short)} Why is a greedy rule that succeeds on 94.5\% of random
+        instances not acceptable?
+  \item \textbf{(Applied)} Prove that greedy coin change is optimal for
+        $\{1,5,10,25\}$, or give the argument's outline and identify where it
+        would fail for $\{1,3,4\}$.
+  \item \textbf{(Applied)} You must schedule jobs with deadlines and profits,
+        one machine, each job taking unit time, to maximise profit. Propose a
+        greedy rule, attempt an exchange argument, and either prove it or give
+        a counter-example.
+\end{reviewq}

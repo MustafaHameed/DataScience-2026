@@ -105,7 +105,9 @@ def preamble() -> str:
         r"\newcommand{\bigOm}[1]{\Omega(#1)}",
         r"\newcommand{\bigTh}[1]{\Theta(#1)}",
         r"\providecommand{\lg}{\operatorname{lg}}",
-        r"\newcommand{\algname}[1]{{\mdseries\scshape #1}}",
+        # \textnormal, not {\mdseries\scshape ...}: algorithm names are
+        # cited from inside maths, and \mdseries is illegal there.
+        r"\newcommand{\algname}[1]{\textnormal{\scshape #1}}",
     ]
     # --- algorithms ---------------------------------------------------------
     # Pseudocode is authored as the body of a \dsfig (see ../README.md), so

@@ -3,7 +3,518 @@
 %=====================================================================
 \locator{4}{Part IV --- The Design Paradigms}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why multiplying a worst-case operation cost by the
+        number of operations can give a badly loose bound.
+  \item \textbf{Apply} the aggregate, accounting and potential methods to a
+        sequence of operations \emph{(CLO-3)}.
+  \item \textbf{Prove} that $n$ appends to a doubling array cost $\bigTh{n}$ in
+        total.
+  \item \textbf{Distinguish} amortised cost from average-case and worst-case
+        cost.
+  \item \textbf{Judge} when an amortised guarantee is adequate and when it is
+        not.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{cases} for the three cases --- amortised cost is a fourth thing and must
+be kept apart from all of them. \chref{structures} for the \algname{Build-Heap}
+analysis, which is the same looseness in miniature.
+\end{prereq}
+
+\begin{keyterms}
+amortised analysis $\bullet$ aggregate method $\bullet$ accounting method
+$\bullet$ credit $\bullet$ potential method $\bullet$ potential function
+$\bullet$ dynamic array $\bullet$ growth factor $\bullet$ table doubling
+$\bullet$ worst case versus amortised
+\end{keyterms}
+
+\begin{alertbox}[Why this chapter is here, when HEC does not name it]
+The published outline does not list amortised analysis. It is taught anyway,
+for three reasons, and the Course Specification in the front matter records
+them:
+
+\begin{tightnum}
+  \item \chref{hashing}'s claim that a hash table keeps $\alpha$ bounded
+        depends on resizing, whose cost is amortised. Without this chapter that
+        claim is an assertion.
+  \item \chref{mst}'s union--find is the standard example of a structure whose
+        cost is \emph{only} meaningful amortised.
+  \item CLO-3 asks for the time complexity of simple algorithms, and for a
+        sequence of operations on a growing structure that is an amortised
+        question. Answering it per-operation gives the wrong answer.
+\end{tightnum}
 \end{alertbox}
+
+\section{A Loose Bound}
+
+\begin{conceptbox}[The problem, stated]
+Appending to a dynamic array is almost always $\bigO{1}$: write at the end,
+increment the length. Occasionally the buffer is full, and then the append
+costs $\bigTh{n}$ --- allocate a bigger buffer and copy everything.
+
+\smallskip
+So the worst case of a single append is $\bigTh{n}$, and
+\[ n \text{ appends} \;\le\; n \times \bigTh{n} = \bigTh{n^{2}}. \]
+
+\smallskip
+That bound is \textbf{correct and useless}. It is correct because no append
+exceeds $\bigO{n}$; it is useless because the expensive appends cannot all
+happen --- after one, the buffer is twice as big and cannot fill again for
+another $n$ appends.
+
+\smallskip
+\term{Amortised analysis} bounds the \emph{total} cost of a sequence directly,
+without pretending every operation is the worst one.
+\end{conceptbox}
+
+\begin{definitionbox}[Amortised Cost]
+The \term{amortised cost} of an operation is the total cost of a worst-case
+sequence of $n$ operations, divided by $n$.
+
+\smallskip
+It is a \textbf{worst-case} quantity, not an average over a distribution. No
+probability is involved and no assumption about the input is made --- which is
+what distinguishes it sharply from the average case of \chref{cases} and from
+the expected time of \chref{quicksort}.
+\end{definitionbox}
+
+\begin{alertbox}[Four costs, kept apart]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.8cm}L{5.4cm}L{5.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Cost} & \textbf{Averaged over} & \textbf{Assumes} \\
+\midrule
+\endhead
+worst case & nothing --- it is a maximum & nothing \\
+average case & a distribution on inputs & that distribution \\
+expected & the algorithm's own coin flips & nothing about the input \\
+\textbf{amortised} & a \emph{sequence} of operations & nothing at all \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+An amortised bound is as strong as a worst-case one: it holds for every
+sequence, with no probability anywhere. What it does \emph{not} promise is that
+any individual operation is fast, and Section~17.4 measures exactly how slow
+one of them gets.
+\end{alertbox}
+
+\section{Three Methods, One Answer}
+
+\dsfig{\aoaalg{\algname{Append}$(A, x)$}{
+\If{$A.\mathit{len} = A.\mathit{cap}$}
+  \State $\mathit{cap}' \gets \max(1, 2 \cdot A.\mathit{cap})$
+  \State allocate $B$ of size $\mathit{cap}'$
+  \State copy $A[0 \mathinner{\ldotp\ldotp} A.\mathit{len}]$ into $B$
+    \Comment{the expensive step}
+  \State $A.\mathit{buf} \gets B$;\ \ $A.\mathit{cap} \gets \mathit{cap}'$
+\EndIf
+\State $A[A.\mathit{len}] \gets x$;\ \ $A.\mathit{len} \gets A.\mathit{len}+1$
+}}{\algname{Append} with table doubling. Line 4 runs rarely, and when it does
+it costs $\bigTh{n}$. The three methods below are three ways of saying that the
+rarity exactly pays for the cost.}{append}
+
+\subsection*{The aggregate method: add it all up}
+
+\begin{theorem}[Doubling array]\label{thm:doubling}
+Starting from an empty array, $n$ calls to \algname{Append} cost $\bigTh{n}$ in
+total, so the amortised cost per append is $\bigTh{1}$.
+\end{theorem}
+
+\begin{proof}
+Copying happens only when the length reaches the capacity, which with doubling
+occurs at lengths $1, 2, 4, 8, \ldots$ --- the powers of two up to $n$. The
+copy at length $2^{k}$ moves $2^{k}$ elements. So the total copying over $n$
+appends is
+\[ \sum_{k=0}^{\lfloor \lg n \rfloor} 2^{k} \;=\; 2^{\lfloor\lg n\rfloor+1}-1
+   \;<\; 2n. \]
+Adding the $n$ constant-time writes gives total cost under $3n = \bigTh{n}$,
+and dividing by $n$ gives $\bigTh{1}$ amortised.
+\end{proof}
+
+\begin{conceptbox}[The accounting method: pay in advance]
+Charge each append \textbf{3 units} of amortised cost, and spend them like
+this:
+
+\begin{tight}
+  \item 1 unit pays for writing the new element --- the actual work;
+  \item 1 unit is saved as \term{credit} on the new element;
+  \item 1 unit is saved as credit on an element in the older half of the array.
+\end{tight}
+
+\smallskip
+When the array of capacity $m$ fills, it last doubled at size $m/2$, so the
+$m/2$ most recent elements have each saved 2 units: $m$ units of credit in all,
+exactly enough to pay for copying $m$ elements.
+
+\smallskip
+The credit never goes negative, so the total charged ($3n$) is an upper bound
+on the total spent, giving $\bigO{1}$ amortised. This is the same accounting a
+business does when it sets aside money each month against an annual bill.
+\end{conceptbox}
+
+\begin{conceptbox}[The potential method: a bank balance]
+Define a \term{potential function} $\Phi$ on the data structure's state ---
+roughly, how much trouble it is currently storing up. For the dynamic array,
+\[ \Phi = 2\,\mathit{len} - \mathit{cap}. \]
+The amortised cost of an operation is
+\[ \hat{c}_{i} = c_{i} + \Phi_{i} - \Phi_{i-1}, \]
+its real cost plus the change in potential.
+
+\smallskip
+\textbf{Cheap append} (no resize): $c_{i} = 1$, $\mathit{len}$ rises by 1 so
+$\Phi$ rises by 2, giving $\hat{c}_{i} = 1 + 2 = 3$.
+
+\smallskip
+\textbf{Expensive append} (resize from $m$ to $2m$, with $\mathit{len} = m$
+before): $c_{i} = m + 1$. Before, $\Phi = 2m - m = m$; after,
+$\Phi = 2(m+1) - 2m = 2$. So
+\[ \hat{c}_{i} = (m+1) + 2 - m = 3. \]
+
+\smallskip
+\textbf{Both cases give exactly 3.} The potential was built up by the cheap
+operations and spent by the expensive one. Since $\Phi \ge 0$ always (the array
+is at least half full after any doubling) and $\Phi_{0} = 0$, the total real
+cost is at most the total amortised cost, $3n$.
+
+\smallskip
+\textbf{Why bother with a third method?} Because the potential method is the
+one that generalises. The aggregate method needs you to see the whole sequence;
+the accounting method needs a story about who pays. The potential method needs
+only a function, and it is how the union--find bound in \chref{mst} and the
+Fibonacci heap bound in \chref{shortestpaths} are proved.
+\end{conceptbox}
+
+\section{Measured}
+
+\begin{worked}[The Total, Counted Exactly]
+\texttt{code/ch17\_amortised.cpp} counts every element copy.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & doubling copies & $/n$ & grow-by-one copies & $/(n^{2}/2)$ \\
+\midrule
+ 1{,}000 &  1{,}023 & 1.023 &        499{,}500 & 0.9990 \\
+ 8{,}000 &  8{,}191 & 1.024 &     31{,}996{,}000 & 0.9999 \\
+32{,}000 & 32{,}767 & 1.024 &    511{,}984{,}000 & 1.0000 \\
+64{,}000 & 65{,}535 & 1.024 &  2{,}047{,}968{,}000 & 1.0000 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Doubling: copies$/n$ is 1.024, flat.} Theorem~\ref{thm:doubling}
+predicted under 2; the actual constant is just over 1, because
+$\sum_{k<\lg n} 2^{k} = n-1$ when $n$ is a power of two.
+
+\smallskip
+\textbf{Grow-by-one: exactly $n^{2}/2$.} The quotient is $0.9990 \to 1.0000$,
+confirming $\sum_{k=1}^{n-1} k = n(n-1)/2$ to four decimal places.
+
+\smallskip
+\textbf{So the $\bigTh{n^{2}}$ bound was not paranoia} --- it is exactly right
+for the wrong growth policy. What amortised analysis shows is that it is
+\emph{not} right for doubling, and the difference between the two policies is
+one line of code.
+\end{worked}
+
+\begin{worked}[Amortised $\bigO{1}$ Does Not Mean Every Operation Is Fast]
+One million appends, doubling:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+\rowcolor{primary!15}
+quantity & value \\
+\midrule
+appends & 1{,}000{,}000 \\
+reallocations & 21 \\
+appends that copied anything & 20 \quad(0.0020\%) \\
+total copies & 1{,}048{,}575 \quad(1.049 per append) \\
+\textbf{most expensive single append} & \textbf{524{,}288 copies} \\
+worst case $\times\, n$ (the useless bound) & 524{,}288{,}000{,}000 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Read the last two rows together.} The amortised cost is 1.049 copies
+per append. The worst single append copied 524{,}288 elements --- half a
+million times the amortised figure.
+
+\smallskip
+\textbf{Both numbers are true and they describe different things.} If you are
+computing throughput, 1.049 is the number you want. If you are meeting a
+latency budget --- a frame deadline, an interrupt handler, a trading system ---
+then 1.049 is irrelevant and 524{,}288 is the number that will end your
+career.
+
+\smallskip
+\textbf{This is the chapter's main caution.} Amortised $\bigO{1}$ is a
+guarantee about totals. When individual operations must be bounded, the answer
+is a different structure --- an incrementally resized array that copies a few
+elements on every append, trading a worse constant for a real worst-case
+bound.
+
+\smallskip
+\textbf{And note how rare the expensive ones are:} 20 of a million appends,
+0.002\%. A latency histogram with 1{,}000 samples would very likely contain
+none of them, and the system would look fine until it was not.
+\end{worked}
+
+\begin{worked}[The Growth Factor Is a Real Decision]
+$n = 1{,}000{,}000$ appends under different growth factors:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+factor & total copies & per append & wasted capacity \\
+\midrule
+1.10 & 10{,}170{,}704 & 10.171 &  1.7\% \\
+1.25 &  4{,}489{,}047 &  4.489 & 12.2\% \\
+1.50 &  2{,}099{,}753 &  2.100 &  5.0\% \\
+2.00 &  1{,}048{,}575 &  1.049 &  4.9\% \\
+3.00 &    797{,}161 &  0.797 & \textbf{59.4\%} \\
+4.00 &    349{,}525 &  0.350 &  4.9\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Every factor above 1 gives $\bigTh{1}$ amortised} --- the sum is
+geometric with ratio $1/f$ and converges for any $f > 1$. The asymptotics
+cannot distinguish these rows at all.
+
+\smallskip
+\textbf{What distinguishes them is the constant and the memory.} A factor of
+1.1 does ten times as much copying as doubling; a factor of 3 wastes 59\% of
+its memory at this particular $n$. (The waste figures are lumpy because they
+depend on where $n$ falls relative to the growth sequence --- 2.0 and 4.0 both
+land near a power of two here.)
+
+\smallskip
+\textbf{Several standard libraries use 1.5 rather than 2}, and the reason is
+not in this table: with a factor of 2, the new block is always larger than the
+sum of all previously freed blocks, so the allocator can never reuse them. With
+1.5 it eventually can. That is an argument about the allocator, not about the
+algorithm, and it is a good example of a decision that asymptotic analysis
+cannot reach.
+\end{worked}
+
+\begin{worked}[And in Seconds]
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrr|rr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & doubling (ms) & ratio & $n$ & grow-by-one (ms) \\
+\midrule
+ 1{,}000{,}000 &   3.5 & ---  &  20{,}000 &    84.1 \\
+ 4{,}000{,}000 &  14.7 & 2.02 &  40{,}000 &   350.5 \\
+16{,}000{,}000 &  58.2 & 1.93 &  80{,}000 & 1{,}432.8 \\
+32{,}000{,}000 & 119.3 & 2.05 & 160{,}000 & 5{,}759.3 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+Doubling's ratios average 2.03 --- linear. Grow-by-one's average 4.09 ---
+quadratic. At $n = 160{,}000$ the grow-by-one version takes 5.8 seconds; the
+doubling version handles 32 million elements in 119 milliseconds.
+
+\smallskip
+Note the two columns use different ranges of $n$. Doubling at $n = 160{,}000$
+takes under a millisecond, which is too small to measure --- the first version
+of this experiment reported ratios of 0.92, 1.19, 1.81 and 4.04 for a linear
+algorithm, all of it noise.
+\end{worked}
+
+\section{Where Else This Pattern Appears}
+
+\begin{conceptbox}[A list worth keeping]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.8cm}L{3.4cm}L{3.0cm}L{3.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Structure} & \textbf{Operation} & \textbf{Worst case} &
+\textbf{Amortised} \\
+\midrule
+\endhead
+dynamic array & append & $\bigTh{n}$ & $\bigTh{1}$ \\
+hash table with resizing & insert & $\bigTh{n}$ & $\bigTh{1}$ \\
+binary counter & increment & $\bigTh{\lg n}$ & $\bigTh{1}$ \\
+union--find & find & $\bigTh{\lg n}$ & $\bigO{\alpha(n)}$ \\
+splay tree & search & $\bigTh{n}$ & $\bigTh{\lg n}$ \\
+\algname{Build-Heap} & whole operation & --- & $\bigTh{n}$ not
+  $\bigTh{n\lg n}$ \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+The last row is \chref{structures}'s result, and it is the same phenomenon:
+multiplying a count by a worst case gave $\bigO{n\lg n}$, and the truth was
+$\bigTh{n}$ because the expensive cases are rare.
+
+\smallskip
+The union--find row is \chref{mst}'s, where $\alpha(n)$ is the inverse
+Ackermann function --- below 5 for any $n$ that can be written down. It is the
+most dramatic amortised bound in common use, and it is proved by the potential
+method.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Multiplying worst case by count.} Measured, that bound was
+        524{,}288{,}000{,}000 against a true cost of 1{,}048{,}575 --- a
+        factor of half a million.
+  \item \textbf{Calling amortised cost an average case.} There is no
+        distribution and no probability; it is a worst-case bound on a total.
+  \item \textbf{Promising low latency from an amortised bound.} The worst
+        single append copied 524{,}288 elements.
+  \item \textbf{Growing by a constant amount.} Measured exactly $n^{2}/2$
+        copies. The policy, not the structure, is what makes it quadratic.
+  \item \textbf{A potential function that can go negative.} The argument
+        requires $\Phi \ge \Phi_{0}$, or the total is not bounded.
+  \item \textbf{Assuming the growth factor does not matter because the
+        asymptotics agree.} Measured, 1.1 did ten times the copying of 2.0.
+  \item \textbf{Benchmarking with too few samples to see the rare case.} 0.002\%
+        of appends were expensive; most histograms will miss them entirely.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[The Rare Expensive Operation]
+Reproduces all five tables. Expect twenty-five minutes.
+
+\begin{lstlisting}[language=C++]
+// ch17_amortised.cpp -- a sequence of operations, costed as a sequence.
+// Build: cl /O2 /EHsc /std:c++17 ch17_amortised.cpp  (see Appendix A)
+
+// --- 1. A dynamic array with an adjustable growth policy -----------
+// Deliberately hand-rolled so every copy can be counted. "factor" is
+// the multiplier on resize; a factor of 0 means "grow by one", which
+// is the policy the quadratic analysis describes.
+    void push(int x) {
+        if (len == cap) {
+            size_t ncap = (factor <= 1.0) ? cap + 1
+                        : std::max<size_t>(1, (size_t)(cap * factor));
+            if (ncap == cap) ncap = cap + 1;
+            std::vector<int> nb(ncap);
+            for (size_t i = 0; i < len; ++i) { nb[i] = buf[i]; ++copies; }
+            buf.swap(nb);
+            cap = ncap;
+            ++reallocs;
+        }
+        buf[len++] = x;
+    }
+
+// --- 2. Total copies: the aggregate method, measured ---------------
+// Doubling: the copies are 1 + 2 + 4 + ... + n/2 < n, so the total
+// work for n appends is under 2n and the amortised cost per append is
+// under 2. Grow-by-one: 1 + 2 + ... + (n-1) = n(n-1)/2.
+
+// --- 3. Amortised O(1) does not mean every operation is cheap ------
+// Print the cost of the single most expensive append, and how many
+// appends are expensive at all. This is the distinction between
+// amortised and worst-case that the chapter exists for.
+        long long worst = *std::max_element(cost.begin(), cost.end());
+        size_t expensive = 0;
+        for (long long c : cost) if (c > 0) ++expensive;
+
+// --- 4. The growth factor is a real engineering choice -------------
+// Larger factor: fewer copies, more wasted space. Smaller factor: the
+// reverse. 1.5 is what several standard libraries use; 2.0 is what
+// most textbooks describe.
+
+// --- 5. And in seconds, against the real thing ---------------------
+// The two policies need different ranges. Doubling at n = 160,000
+// takes under a millisecond, too small to measure -- the first
+// version of this table reported ratios of 0.92, 1.19, 1.81 and 4.04
+// for a linear algorithm, all of it noise.
+\end{lstlisting}
+
+\textbf{What to notice.} Part 3 prints \texttt{worst case x n} beside the true
+total. Those two numbers --- 524 billion and 1.05 million --- are the bound
+amortised analysis replaces and the answer it gives. The whole chapter is the
+gap between them.
+
+\smallskip
+\textbf{Then try to break it.} Add a growth factor of exactly 1.0 and predict
+what happens before running. The guard \texttt{if (ncap == cap) ncap = cap + 1}
+catches it and the policy degenerates to grow-by-one --- but remove that guard
+and the capacity never increases, the \texttt{push} never terminates its
+resize, and you have written \chref{invariants}'s non-terminating loop again. A
+measure that fails to decrease is still the commonest way to hang a program.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Using the aggregate method, show that $n$ appends to a doubling array
+        perform fewer than $2n$ copies, and compare with the measured 1.024 per
+        append.
+  \item Compute the amortised cost of an append under the potential function
+        $\Phi = 2\,\mathit{len} - \mathit{cap}$, for both the cheap and the
+        expensive case, and say why they must come out equal.
+  \item Give a situation in which an amortised $\bigO{1}$ guarantee is
+        inadequate, and say what the measured data in Section~17.3 tells you
+        about it \emph{(CLO-3)}.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Multiplying a worst-case operation cost by the number of operations can
+        be enormously loose, because the expensive operations cannot all
+        happen.
+  \item Amortised cost is the total cost of a worst-case \emph{sequence},
+        divided by its length. It assumes nothing about inputs and involves no
+        probability --- unlike average-case or expected cost.
+  \item Three methods: aggregate (sum it), accounting (charge extra and save
+        credit), potential (define $\Phi$ and let $\hat c = c + \Delta\Phi$).
+        The potential method is the one that generalises.
+  \item $n$ appends to a doubling array cost $\bigTh{n}$: the copies are
+        $1+2+4+\cdots < 2n$. Measured exactly 1.024 copies per append.
+  \item Measured: grow-by-one costs exactly $n^{2}/2$ copies. The policy makes
+        the difference, not the structure.
+  \item Measured: of one million appends, 20 copied anything, the amortised
+        cost was 1.049, and the worst single append copied 524{,}288 elements.
+        Amortised $\bigO{1}$ says nothing about any individual operation.
+  \item Any growth factor $> 1$ gives $\bigTh{1}$ amortised; measured, a factor
+        of 1.1 did ten times the copying of 2.0, and 3.0 wasted 59\% of its
+        memory.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The amortised cost of an append to a doubling array is:
+        (a)~$\bigTh{1}$; (b)~$\bigTh{\lg n}$; (c)~$\bigTh{n}$;
+        (d)~$\bigTh{n^{2}}$.
+  \item \textbf{(MCQ)} Amortised analysis differs from average-case analysis in
+        that it: (a)~assumes a uniform input distribution; (b)~assumes nothing
+        about the input; (c)~applies only to randomised algorithms; (d)~gives a
+        lower bound.
+  \item \textbf{(Short)} State the three methods of amortised analysis and give
+        the one-line idea of each \emph{(CLO-3)}.
+  \item \textbf{(Short)} Explain why an amortised $\bigO{1}$ guarantee may be
+        unacceptable for a real-time system, citing the measured worst single
+        append.
+  \item \textbf{(Short)} Why does any growth factor greater than 1 give
+        $\bigTh{1}$ amortised appends, while growing by a constant does not?
+  \item \textbf{(Applied)} Analyse the amortised cost of incrementing a binary
+        counter $n$ times, using both the aggregate and the potential method
+        (take $\Phi$ = the number of 1 bits).
+  \item \textbf{(Applied)} A team reports their append-heavy service has a
+        99.99th-percentile latency 500$\times$ its median. Explain the likely
+        cause from this chapter, say what measurement would confirm it, and
+        give two fixes with their trade-offs.
+\end{reviewq}

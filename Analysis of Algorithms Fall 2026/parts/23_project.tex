@@ -3,7 +3,457 @@
 %=====================================================================
 \locator{6}{Part VI --- Strings, Limits and Practice}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Choose} a project whose claim can be settled by measurement.
+  \item \textbf{Design} an experiment that tests an order of growth rather than
+        a machine.
+  \item \textbf{Build} a measurement harness with a correctness oracle, median
+        timing and multiple input shapes.
+  \item \textbf{Report} results so that a reader can check them, including the
+        ones that did not come out as predicted.
+  \item \textbf{Defend} your analysis orally against questions about method.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+All of it. The project is where the three strands of this course --- analysis,
+proof and measurement --- are used together on a problem nobody has worked out
+for you.
+\end{prereq}
+
+\begin{keyterms}
+hypothesis $\bullet$ measurement harness $\bullet$ oracle $\bullet$ input
+shape $\bullet$ crossover $\bullet$ reproducibility $\bullet$ confound
+$\bullet$ negative result $\bullet$ defence
+\end{keyterms}
+
+\section{What the Project Is}
+
+\begin{definitionbox}[The Deliverable]
+Choose two or more algorithms for one problem. \textbf{Implement} them,
+\textbf{analyse} them, \textbf{measure} them, and \textbf{defend} the result.
+
+\smallskip
+Four artefacts are submitted:
+\begin{tight}
+  \item \textbf{Code} that compiles with the flags of Appendix~A and runs
+        unattended.
+  \item \textbf{A report} of 8--12 pages: the analysis, the experiment, the
+        tables, and the discussion.
+  \item \textbf{The raw output} of every run quoted in the report.
+  \item \textbf{A 15-minute defence}, in which the questions will be about
+        method.
+\end{tight}
+\end{definitionbox}
+
+\begin{conceptbox}[The one requirement that matters]
+\textbf{The project must make a claim that measurement can settle.}
+
+\smallskip
+``I implemented three sorting algorithms'' is not a claim. ``Introsort's
+insertion-sort cutoff should be larger for 64-byte records than for 4-byte
+integers, and I measured where'' is one: it predicts a direction, it can come
+out false, and a reader can check it.
+
+\smallskip
+Every chapter of this book has done the same thing --- predicted a ratio,
+measured it, and reported the result including the times it did not fit. That
+is the pattern to copy.
+\end{conceptbox}
+
+\section{Choosing}
+
+\begin{conceptbox}[Projects that work]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.6cm}L{4.4cm}L{5.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Project} & \textbf{The claim} & \textbf{Builds on} \\
+\midrule
+\endhead
+Sorting cutoffs by record size & the best cutoff grows with the record size
+  & \chref{role}, \chref{mergesort} \\
+Hash function against real keys & structured keys defeat a division hash;
+  mixing fixes it & \chref{hashing} \\
+BST shapes & the height of a BST built from \emph{your} data, against
+  $2.99\lg n$ & \chref{structures} \\
+Graph representation crossover & where the crossover is for \emph{your}
+  graphs & \chref{graphs} \\
+Dijkstra's priority queue & heap against bucket queue against array, by
+  density & \chref{shortestpaths} \\
+Knapsack's wall & where $\bigTh{nW}$ stops being usable & \chref{dptwo} \\
+String search for many patterns & Rabin--Karp's one-pass multi-pattern trick
+  against repeated KMP & \chref{strings} \\
+An NP-complete problem & how far exact search reaches, and what an
+  approximation costs & \chref{complexity} \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{A project of your own is encouraged}, provided it states a claim and a
+way of being wrong.
+\end{conceptbox}
+
+\begin{alertbox}[Projects that do not work]
+\begin{tight}
+  \item \textbf{``Compare all the sorting algorithms.''} No claim, no
+        hypothesis, and the answer is in every textbook.
+  \item \textbf{Reimplementing a chapter.} The labs are done; the project is
+        for a question the labs did not answer.
+  \item \textbf{A claim that cannot come out false.} ``Quicksort is fast'' is
+        not refutable.
+  \item \textbf{Anything needing hardware you do not have.} Measure what you can
+        measure.
+  \item \textbf{A claim settled by a single number.} One measurement is an
+        anecdote; a project needs a \emph{trend}.
+\end{tight}
 \end{alertbox}
+
+\section{The Method, Collected}
+
+\begin{conceptbox}[Every rule this book arrived at the hard way]
+\begin{tightnum}
+  \item \textbf{Build with optimisation on.} A debug build is slower by
+        \emph{different} factors for different code, so the comparison is
+        meaningless (\chref{role}).
+  \item \textbf{Take the median of several runs.} A mean is dragged by one
+        scheduler interruption; one run measures the weather (\chref{role}).
+  \item \textbf{Generate the input outside the timed region.} \chref{asymptotics}'s
+        first draft allocated inside it and reported pure noise.
+  \item \textbf{Measure the setup separately and subtract it}, and print the
+        setup cost so a reader can see the subtraction was small
+        (\chref{asymptotics}).
+  \item \textbf{Check correctness against a slow obvious reference, first.} A
+        faster algorithm that gets a different answer is not faster
+        (\chref{bruteforce}).
+  \item \textbf{Report ratios, not absolute times.} The ratio cancels the
+        machine-specific constant; it is the part that is about the algorithm
+        (\chref{asymptotics}).
+  \item \textbf{Use more than one input shape.} \chref{cases} measured a
+        6{,}600$\times$ spread across three; \chref{quicksort} found a crash on
+        one; \chref{shortestpaths} found a 789$\times$ slowdown on a shape
+        nobody would generate at random.
+  \item \textbf{State what your clock can resolve}, and claim nothing within an
+        order of magnitude of it (\chref{asymptotics}).
+  \item \textbf{Sample randomly, not in insertion order.} \chref{hashing}'s
+        first draft probed the first-inserted keys and reported a flat column
+        that looked like a result.
+  \item \textbf{Count as well as time, where you can.} \chref{master} abandoned
+        timing for counting and got four decimal places instead of 50\% noise.
+\end{tightnum}
+\end{conceptbox}
+
+\begin{worked}[The Harness, Run]
+\texttt{code/ch23\_harness.cpp} implements all ten rules. Run unmodified, with
+a bottom-up merge sort as the placeholder candidate:
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+clock resolution & 0.000100 ms \\
+smallest trustworthy measurement & 0.0100 ms \\
+correctness, 2{,}000 instances across 5 shapes & all agree \\
+\end{tabular}
+\end{center}
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & random & sorted & reversed & 99\% sorted & few distinct \\
+\midrule
+  125{,}000 &  12.40 &  2.89 &  2.77 &  3.89 &   6.43 \\
+  500{,}000 &  59.74 & 16.14 & 14.09 & 17.28 &  27.61 \\
+2{,}000{,}000 & 245.74 & 65.78 & 58.11 & 77.76 & 119.45 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+And the ratios on doubling, which are what the claim rests on:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & random & sorted & reversed & 99\% sorted & few distinct & predicted \\
+\midrule
+  250{,}000 & 2.04 & 2.05 & 2.23 & 2.22 & 2.15 & 2.11 \\
+1{,}000{,}000 & 2.19 & 2.29 & 2.39 & 2.33 & 2.12 & 2.10 \\
+2{,}000{,}000 & 2.12 & 2.37 & 2.44 & 2.33 & 2.17 & 2.10 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Read what this does and does not establish.} All five ratio columns sit
+near the predicted $2 + 2/\lg n$, so the implementation is $\bigTh{n\lg n}$ on
+all five shapes --- which is the guarantee \chref{mergesort} proved.
+
+\smallskip
+\textbf{But the absolute times differ by 4.2$\times$} between random and
+reversed input at $n = 2{,}000{,}000$. Same order of growth, same algorithm,
+four-fold spread --- and \chref{mergesort} identified the mechanism as branch
+misprediction. A report that gave only the first table would have missed it; a
+report that gave only the second would have claimed the shapes were equivalent.
+
+\smallskip
+\textbf{Both tables, always.} The ratios test the analysis; the absolute times
+show what a user will experience.
+\end{worked}
+
+\section{The Report}
+
+\begin{conceptbox}[Structure]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.2cm}L{1.6cm}L{9.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Section} & \textbf{Pages} & \textbf{Contains} \\
+\midrule
+\endhead
+Problem and claim & 1 & what you are comparing and what you predict, stated
+  so it could be false \\
+Analysis & 2--3 & the asymptotic argument for each algorithm, with the
+  recurrence or the counting argument worked \\
+Method & 1--2 & machine, compiler, flags, input generation, repetitions, what
+  is timed and what is subtracted \\
+Results & 2--3 & tables with ratio columns; one figure if it helps \\
+Discussion & 2 & where prediction and measurement agreed, where they did not,
+  and what you think happened \\
+Threats & 0.5 & what could have confounded the result \\
+\bottomrule
+\end{longtable}
+\end{conceptbox}
+
+\begin{alertbox}[Report what did not work]
+The strongest sections of this book are the ones where the first attempt
+failed:
+
+\begin{tight}
+  \item \chref{asymptotics}: a benchmark that allocated inside the timed region
+        and produced noise.
+  \item \chref{graphs}: a bit-packed matrix that was \emph{slower} than the
+        byte version until its bit-scan was fixed.
+  \item \chref{hashing}: a load-factor experiment that sampled keys in
+        insertion order and reported a flat 1.096 at every load factor.
+  \item \chref{strings}: a worst case for Rabin--Karp that produced zero
+        comparisons, because it was the \emph{naive} algorithm's worst case.
+  \item \chref{shortestpaths}: a counter-example for Dijkstra on which Dijkstra
+        got the right answer.
+\end{tight}
+
+\smallskip
+\textbf{Every one of those is in the handout, with the failure described.} They
+are more instructive than the successes, and a report that admits one is more
+credible than one that does not --- because the alternative hypothesis, that
+you had no failures, is not believable.
+
+\smallskip
+\textbf{A negative result is a result.} ``I predicted the crossover at
+$n \approx 1000$ and did not find one up to $n = 10^{6}$'' is a perfectly good
+project outcome, provided you say what you would conclude from it.
+\end{alertbox}
+
+\section{The Defence}
+
+\begin{conceptbox}[What you will be asked]
+Fifteen minutes. The questions are about method, not about whether you can
+recite a bound.
+
+\begin{tightnum}
+  \item \emph{What would have falsified your claim?} If nothing would, it was
+        not a claim.
+  \item \emph{Why those input shapes?} Name the case each one is probing.
+  \item \emph{How do you know your implementation is correct?} Point at the
+        oracle.
+  \item \emph{Your ratio column reads 3.8 and you predicted 4. Is that
+        agreement?} Know your noise level and your clock resolution.
+  \item \emph{What is the slowest part, and is it the part you analysed?} Many
+        projects measure their input generator.
+  \item \emph{What did you expect that did not happen?}
+  \item \emph{What would you measure next, with another week?}
+\end{tightnum}
+\end{conceptbox}
+
+\begin{conceptbox}[Marking]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{5.4cm}L{1.6cm}L{7.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Component} & \textbf{Weight} & \textbf{Looking for} \\
+\midrule
+\endhead
+Correctness of implementation & 20\% & an oracle, and it passes \\
+Quality of the analysis & 25\% & recurrences solved, bounds justified, not
+  quoted \\
+Experimental design & 25\% & repetitions, shapes, setup excluded, ratios
+  reported \\
+Honesty of reporting & 15\% & anomalies shown and discussed, not smoothed \\
+Defence & 15\% & answers about method \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Note that honesty carries more weight than the result.} A careful
+negative result marks higher than a confident claim unsupported by its own
+tables.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Timing a debug build.} The single commonest fatal error.
+  \item \textbf{Measuring your input generator.} Shuffling $10^{7}$ elements
+        costs more than sorting them in some designs.
+  \item \textbf{Reporting absolute times only.} They are a fact about your
+        laptop.
+  \item \textbf{One input shape.} Usually ``random'', which is the shape on
+        which the interesting failures do not occur.
+  \item \textbf{Claiming a crossover from two points.} Two points determine a
+        line and nothing else.
+  \item \textbf{Smoothing an anomaly out of the table.} It is the most
+        interesting thing you found.
+  \item \textbf{Quoting an asymptotic constant from a textbook as though it
+        applied at your $n$.} \chref{structures} measured 2.46 against an
+        asymptote of 2.99, and the theory was right.
+  \item \textbf{Leaving the defence until the report is finished.} The
+        questions above are better used as a checklist while you work.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[The Harness]
+A complete measurement harness. Copy it, replace the two algorithms in part 3,
+and it produces the tables your report needs.
+
+\begin{lstlisting}[language=C++]
+// ch23_harness.cpp -- the measurement harness for your semester project.
+// Build: cl /O2 /EHsc /std:c++17 ch23_harness.cpp    (see Appendix A)
+
+// --- 1. Timing: median, and honest about its own limits ------------
+// A mean is dragged by one scheduler interruption; a minimum flatters
+// the cache; one run measures the weather. The median of an odd
+// number of runs is the cheapest estimator that is not actively
+// misleading.
+//
+// And: what is the smallest interval this clock can resolve? Any
+// measurement within an order of magnitude of it is not evidence.
+static double clock_resolution_ms() {
+    using C = std::chrono::steady_clock;
+    double best = 1e9;
+    for (int i = 0; i < 1000; ++i) {
+        auto a = C::now(), b = C::now();
+        while (b == a) b = C::now();
+        best = std::min(best,
+            std::chrono::duration<double, std::milli>(b - a).count());
+    }
+    return best;
+}
+
+// --- 2. The input shapes that catch things -------------------------
+// Chapter 2 measured a 6,600x spread across these on one algorithm;
+// Chapter 9 found a crash on one of them; Chapter 20 found a 789x
+// slowdown on a shape nobody would have generated at random. Testing
+// only on "random" is how all of those get missed.
+enum Shape { RANDOM, SORTED, REVERSED, NEARLY_SORTED, FEW_DISTINCT };
+
+// --- 3. The thing under test, and the thing it is checked against --
+// REPLACE THESE TWO. The reference must be the version you can read
+// in one sitting and be sure of; the candidate is the one you are
+// claiming something about. Chapter 7 is why both exist.
+static void reference(std::vector<int>& a) {      // obviously correct
+    std::sort(a.begin(), a.end());
+}
+static void candidate(std::vector<int>& a) {      // under test
+    /* your algorithm here */
+}
+
+// --- 4. Correctness first, timing second ---------------------------
+// A faster algorithm that gets a different answer is not faster. This
+// runs before anything is timed, and a failure here stops the report.
+
+// --- 5. Gate: do not report timings for a wrong algorithm ----------
+
+// --- 6. The table: every shape, every size, with ratios ------------
+// Setup (the copy) is measured separately and subtracted, so what is
+// reported is the algorithm and not the memcpy.
+            double tc = time_ms([&] {
+                std::copy(base.begin(), base.end(), work.begin()); }, 7);
+            double tt = time_ms([&] {
+                std::copy(base.begin(), base.end(), work.begin());
+                candidate(work);
+            }, 7);
+            double t = tt - tc;
+
+// --- 7. The ratios, which is what the claim rests on ---------------
+// Report the ratio column, not the absolute times: the absolute times
+// are a fact about this laptop and the ratios are a fact about the
+// algorithm.
+\end{lstlisting}
+
+\textbf{What to notice.} The harness refuses to print timings if the
+correctness check fails. That is deliberate, and it is the single most useful
+line in the file.
+
+\smallskip
+\textbf{Then make it yours.} Replace \texttt{candidate} with an algorithm you
+expect to be $\bigTh{n^{2}}$ and check that the predicted-ratio column, which
+still prints $2 + 2/\lg n$, now visibly disagrees with every measured column.
+A harness that cannot show you are wrong is not measuring anything.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Take one of the project ideas in Section~23.2 and state it as a claim
+        that could come out false.
+  \item Your ratio column reads 3.6, 4.4, 3.9, 4.1 and you predicted 4. What
+        would you need to know before calling that agreement?
+  \item Name three input shapes you would test a hash table with, and say what
+        each one is probing.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item The project implements, analyses, measures and defends. It must make a
+        claim that measurement can settle and that could come out false.
+  \item Ten rules of method, each one arrived at by a failure recorded in this
+        book: optimise, take medians, generate input outside the timing,
+        subtract setup, check against an oracle, report ratios, use several
+        input shapes, state the clock resolution, sample randomly, and count
+        rather than time where you can.
+  \item \texttt{code/ch23\_harness.cpp} implements all ten and refuses to
+        report timings if the correctness check fails.
+  \item Measured with the harness: five input shapes all gave ratios near the
+        predicted $2+2/\lg n$, and absolute times differing by 4.2$\times$.
+        Report both tables --- the ratios test the analysis, the times show
+        what a user experiences.
+  \item Report what did not work. Five first-attempt failures are described in
+        this handout, and they are more instructive than the successes.
+  \item A negative result is a result, provided you say what follows from it.
+  \item The defence asks about method: what would have falsified the claim, why
+        those shapes, how you know the code is right.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The most important property of a project claim is that
+        it: (a)~is true; (b)~could be shown false by measurement;
+        (c)~is novel; (d)~involves several algorithms.
+  \item \textbf{(MCQ)} Absolute running times should be reported:
+        (a)~instead of ratios; (b)~alongside ratios; (c)~never;
+        (d)~only for the fastest algorithm.
+  \item \textbf{(Short)} Give four rules of experimental method from this
+        chapter and the failure each one prevents.
+  \item \textbf{(Short)} Why does the harness check correctness before timing?
+  \item \textbf{(Short)} Explain why a negative result can earn full marks.
+  \item \textbf{(Applied)} Design the experiment for one project in
+        Section~23.2: state the claim, the input shapes, the sizes, the
+        repetitions, what you would compute, and what result would refute you.
+  \item \textbf{(Applied)} A classmate reports that algorithm A is 1.3$\times$
+        faster than B, from one run at one size on random input. List
+        everything wrong with that, and write the two-sentence instruction that
+        would fix it.
+\end{reviewq}

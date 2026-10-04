@@ -3,7 +3,512 @@
 %=====================================================================
 \locator{6}{Part VI --- Strings, Limits and Practice}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} P, NP, NP-hard and NP-complete, and \textbf{contrast}
+        them \emph{(CLO-4)}.
+  \item \textbf{Distinguish} verifying a solution from finding one, and
+        \textbf{explain} why that distinction defines NP.
+  \item \textbf{Explain} what a polynomial-time reduction is and what it proves.
+  \item \textbf{Recognise} when a problem is likely NP-complete, and
+        \textbf{state} what to do about it.
+  \item \textbf{Explain} why a pseudo-polynomial algorithm does not settle
+        $\mathrm{P}$ versus $\mathrm{NP}$.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{cases} for input size as bit length, and \chref{dptwo} for the
+pseudo-polynomial knapsack --- Section~22.5 depends on both. \chref{lowerbound}
+for what a statement about a \emph{problem} looks like.
+\end{prereq}
+
+\begin{keyterms}
+decision problem $\bullet$ P $\bullet$ NP $\bullet$ certificate $\bullet$
+verifier $\bullet$ polynomial-time reduction $\bullet$ NP-hard $\bullet$
+NP-complete $\bullet$ SAT $\bullet$ Cook--Levin $\bullet$
+pseudo-polynomial $\bullet$ approximation
+\end{keyterms}
+
+\begin{alertbox}[Where this chapter stops, and why]
+Appendix~F records the boundary. \textbf{Theory of Automata} owns
+computability --- Turing machines, decidability, the halting problem. This
+course owns \emph{complexity}: among the problems that \emph{can} be solved,
+which can be solved \emph{efficiently}.
+
+\smallskip
+The distinction matters. The halting problem has no algorithm at all.
+NP-complete problems all have algorithms; the algorithms are just too slow, and
+nobody knows whether that is necessary.
 \end{alertbox}
+
+\section{Decision Problems, and Two Classes}
+
+\begin{definitionbox}[Decision Problem]
+A \term{decision problem} has a yes/no answer. ``Is there a subset of these
+numbers summing to $t$?'' is one; ``what is the largest such subset?'' is not.
+
+\smallskip
+The theory is built on decision problems because they are the simplest form
+with the same essential difficulty: an efficient algorithm for the decision
+version almost always yields one for the optimisation version, by binary
+search on the answer.
+\end{definitionbox}
+
+\begin{definitionbox}[P and NP]
+\term{P} is the class of decision problems solvable by an algorithm running in
+time polynomial in the input size.
+
+\smallskip
+\term{NP} is the class of decision problems for which a \emph{yes} answer has a
+\term{certificate} that can be \emph{verified} in polynomial time.
+
+\smallskip
+Formally, $L \in \mathrm{NP}$ if there is a polynomial-time verifier $V$ and a
+polynomial $p$ such that
+\[ x \in L \iff \exists\, c,\ |c| \le p(|x|),\ V(x, c) = \textsc{yes}. \]
+\end{definitionbox}
+
+\begin{alertbox}[NP does not stand for ``not polynomial'']
+It stands for \term{nondeterministic polynomial}. Every problem in P is also in
+NP --- if you can solve it quickly you can verify a certificate quickly by
+ignoring the certificate and solving it. So $\mathrm{P} \subseteq \mathrm{NP}$,
+and the open question is whether the inclusion is strict.
+\end{alertbox}
+
+\begin{conceptbox}[Checking against finding]
+This is the whole of NP in one sentence: \textbf{it is the class of problems
+where recognising a good answer is easy, even if producing one is not}.
+
+\smallskip
+\begin{tight}
+  \item A jigsaw: checking that a completed puzzle is correct takes a glance;
+        completing it does not.
+  \item A sudoku: verifying a filled grid is a few hundred comparisons;
+        solving one is a search.
+  \item A factorisation: checking $p \times q = n$ is one multiplication;
+        finding $p$ and $q$ is what RSA's security rests on.
+\end{tight}
+
+\smallskip
+$\mathrm{P} = \mathrm{NP}$ would say that whenever a solution can be recognised
+quickly it can also be \emph{found} quickly --- that there is never any real
+difficulty in searching, only in knowing what you are looking for. Almost
+nobody believes it, and nobody can prove it either way.
+\end{conceptbox}
+
+\section{Measured: the Gap Between Checking and Finding}
+
+\begin{definitionbox}[Subset Sum]
+Given a set of integers $S$ and a target $t$, is there a subset of $S$ summing
+to exactly $t$?
+
+\smallskip
+The certificate is the subset itself. Verifying it is one pass --- $\bigO{n}$
+additions.
+\end{definitionbox}
+
+\begin{worked}[The Two Activities, Timed]
+\texttt{code/ch22\_complexity.cpp}, on instances with a planted solution so the
+answer is always \emph{yes} and the search cannot exit early by luck:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & verify (ns) & find by search (ms) & ratio \\
+\midrule
+16 & 12.1 &    0.78 & $6.4 \times 10^{4}$ \\
+20 & 13.4 &   16.82 & $1.3 \times 10^{6}$ \\
+24 & 20.7 &  877.58 & $4.2 \times 10^{7}$ \\
+28 & 18.9 & 5221.69 & $\mathbf{2.8 \times 10^{8}}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The verify column is flat} --- 12 to 21 nanoseconds --- because
+verification is linear in $n$ and $n$ is under 30.
+
+\smallskip
+\textbf{The find column doubles with every element added}, from 0.78 ms to 5.2
+seconds.
+
+\smallskip
+\textbf{And the ratio grows without limit}: 64 thousand at $n = 16$ and 280
+million at $n = 28$. That ratio \emph{is} the P versus NP question, measured on
+one problem. Nobody knows whether it can be made to stop growing.
+
+\smallskip
+\textit{(A note on method: verification takes tens of nanoseconds, below the
+clock's resolution. Timing it one call at a time reported 0.0000 and a ratio of
+infinity, which is what the first version of this program printed. The table
+above times a million verifications and divides.)}
+\end{worked}
+
+\begin{worked}[Where the Wall Is]
+Extrapolating the brute-force column:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & estimated time \\
+\midrule
+ 30 & 65.7 seconds \\
+ 40 & 18.7 hours \\
+ 50 & 2.18 years \\
+ 60 & 2{,}240 years \\
+ 80 & $2.4 \times 10^{9}$ years \\
+100 & $2.5 \times 10^{15}$ years \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{At $n = 50$ --- fifty numbers --- exhaustive search takes two years.}
+At $n = 80$ it takes longer than the age of the universe.
+
+\smallskip
+\textbf{And a faster computer barely helps.} A machine a thousand times faster
+moves the two-year mark from $n = 50$ to $n = 60$. This is \chref{role}'s
+exponential alertbox, now attached to a problem thousands of people would like
+to solve.
+\end{worked}
+
+\begin{worked}[Exponential Is Not One Speed]
+Meet-in-the-middle splits the set in half, enumerates all subset sums of each,
+and looks for a complementary pair --- $\bigO{2^{n/2}}$ time and space.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & brute force (ms) & meet-in-the-middle (ms) & speed-up \\
+\midrule
+20 &      55.0 &  0.20 &   279 \\
+24 &     557.4 &  0.64 &   864 \\
+28 &   8{,}114.2 &  3.04 & 2{,}668 \\
+32 & (too slow) & 12.80 & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Halving the exponent doubles the reachable $n$}, and at $n = 28$ it is
+2{,}668$\times$ faster.
+
+\smallskip
+\textbf{But it is still exponential.} $2^{n/2}$ at $n = 100$ is $2^{50}$ ---
+the two-year row of the previous table. Meet-in-the-middle moves the wall; it
+does not remove it, and no known technique does.
+
+\smallskip
+\textbf{The practical lesson is worth separating from the theoretical one.}
+``NP-complete'' does not mean ``give up''. It means no \emph{polynomial}
+algorithm is known, and a better exponential algorithm can still be the
+difference between $n = 28$ and $n = 56$ --- which may be the difference
+between useless and useful.
+\end{worked}
+
+\section{Reductions, and NP-Completeness}
+
+\begin{definitionbox}[Polynomial-Time Reduction]
+Problem $A$ \term{reduces} to problem $B$ --- written $A \le_{P} B$ --- if
+there is a polynomial-time function $f$ transforming any instance $x$ of $A$
+into an instance $f(x)$ of $B$ such that
+\[ x \text{ is a yes-instance of } A \iff f(x) \text{ is a yes-instance of } B. \]
+\end{definitionbox}
+
+\begin{conceptbox}[Which way round, and why it is easy to get backwards]
+$A \le_{P} B$ means \textbf{$B$ is at least as hard as $A$}.
+
+\smallskip
+If you had a fast algorithm for $B$ you could solve $A$ fast: transform, then
+solve. So a fast $B$ gives a fast $A$ --- meaning $B$ cannot be easier than
+$A$.
+
+\smallskip
+\textbf{The direction students reverse.} To prove your new problem $X$ is hard,
+you reduce a \emph{known hard} problem \emph{to} $X$ --- that is,
+$\text{SAT} \le_{P} X$. Reducing $X$ to SAT proves only that $X$ is no harder
+than SAT, which is true of every problem in NP and says nothing.
+\end{conceptbox}
+
+\begin{worked}[A Reduction, Actually Run]
+Independent set and vertex cover are the same problem wearing different
+clothes: $S$ is an independent set of $G$ exactly when $V \setminus S$ is a
+vertex cover.
+
+\smallskip
+\textbf{Why.} $S$ is independent iff no edge has both endpoints in $S$, iff
+every edge has at least one endpoint outside $S$, iff $V \setminus S$ covers
+every edge.
+
+\smallskip
+So ``is there an independent set of size $\ge k$?'' and ``is there a vertex
+cover of size $\le |V|-k$?'' have the same answer, and the transformation
+$k \mapsto |V|-k$ takes constant time. A reduction is a translation, and a
+translation can be tested:
+\begin{center}
+\textbf{3{,}000 random graphs. Answers differ in 0.}
+\end{center}
+
+\smallskip
+That is not a proof --- the argument above is the proof --- but it is the kind
+of check that catches a reduction stated with an off-by-one, which is the
+commonest way to get one wrong.
+\end{worked}
+
+\begin{definitionbox}[NP-hard, NP-complete]
+A problem $B$ is \term{NP-hard} if $A \le_{P} B$ for \emph{every}
+$A \in \mathrm{NP}$. It is \term{NP-complete} if it is NP-hard \emph{and} in NP.
+
+\smallskip
+NP-hard problems need not be in NP --- the halting problem is NP-hard and is
+not in NP, since it is not decidable at all.
+\end{definitionbox}
+
+\begin{theorem}[Why one NP-complete problem settles them all]\label{thm:npc}
+If any NP-complete problem is in P, then $\mathrm{P} = \mathrm{NP}$.
+\end{theorem}
+
+\begin{proof}
+Let $B$ be NP-complete and suppose $B \in \mathrm{P}$, solvable in time
+$\bigO{n^{k}}$. Let $A$ be any problem in NP. Since $B$ is NP-hard there is a
+polynomial-time reduction $f$ from $A$ to $B$, computable in $\bigO{n^{j}}$ for
+some $j$; note $|f(x)| = \bigO{n^{j}}$ too, since a machine running for
+$\bigO{n^{j}}$ steps cannot write more than that.
+
+\smallskip
+To decide $x \in A$: compute $f(x)$, then run $B$'s algorithm on it. The total
+is $\bigO{n^{j}} + \bigO{(n^{j})^{k}} = \bigO{n^{jk}}$ --- polynomial. So
+$A \in \mathrm{P}$, and since $A$ was arbitrary, $\mathrm{NP} \subseteq
+\mathrm{P}$. With $\mathrm{P} \subseteq \mathrm{NP}$ always, they are equal.
+\end{proof}
+
+\begin{conceptbox}[Cook--Levin, and the chain since]
+Theorem~\ref{thm:npc} needs at least one NP-complete problem to exist.
+\textbf{Cook and Levin} (1971) supplied it: \textbf{SAT} --- given a Boolean
+formula, is there an assignment making it true? --- is NP-complete. The proof
+encodes the computation of an arbitrary polynomial-time verifier as a formula.
+
+\smallskip
+After that, every further proof is a reduction from a problem already known to
+be complete. Karp's 1972 paper gave 21, and the list now runs to thousands:
+\begin{center}
+SAT $\to$ 3-SAT $\to$ clique $\to$ vertex cover $\to$ Hamiltonian cycle
+$\to$ TSP $\to$ subset sum $\to$ knapsack $\ldots$
+\end{center}
+
+\smallskip
+\textbf{This is why the question is one question.} A polynomial algorithm for
+any single one of these thousands of problems would give one for all of them.
+Fifty years of distinguished failure on every one is the strongest evidence
+available that $\mathrm{P} \ne \mathrm{NP}$ --- and it is not a proof.
+\end{conceptbox}
+
+\section{Why Knapsack Does Not Settle It}
+
+\begin{alertbox}[\chref{dptwo}'s algorithm is not a counter-example]
+\chref{dptwo} gave a $\bigTh{nW}$ dynamic program for 0/1 knapsack, which is
+NP-complete. That looks like a polynomial algorithm for an NP-complete problem
+--- and therefore like a proof that $\mathrm{P} = \mathrm{NP}$.
+
+\smallskip
+It is not, and \chref{cases} explains why. A running time is polynomial when it
+is polynomial in the \emph{size of the input}, and a number's size is its bit
+length. $W$ is one number of $b \approx \lg W$ bits, so
+\[ \bigTh{nW} = \bigTh{n \cdot 2^{b}}, \]
+exponential in the input size. The algorithm is \term{pseudo-polynomial}.
+
+\smallskip
+\textbf{And \chref{dptwo} measured it.} With $n$ fixed at 200, eight successive
+doublings of $W$ --- each adding exactly one bit of input --- multiplied the
+running time by a mean factor of 2.02. That table is the proof that the
+algorithm is exponential, performed rather than argued.
+\end{alertbox}
+
+\begin{conceptbox}[Three things to do when a problem is NP-complete]
+Recognising NP-completeness is not the end of the engineering; it is the start
+of a different kind.
+
+\begin{tightnum}
+  \item \textbf{Approximate.} Accept a provably near-optimal answer. Vertex
+        cover has a 2-approximation that is six lines long; metric TSP has a
+        1.5-approximation. These come with \emph{guarantees}, which is what
+        distinguishes them from the next item.
+  \item \textbf{Use a heuristic.} Simulated annealing, genetic algorithms,
+        branch and bound, SAT solvers. No guarantee, often excellent in
+        practice --- modern SAT solvers routinely dispatch instances with
+        millions of variables, which is a fact about real instances rather
+        than about SAT.
+  \item \textbf{Restrict the problem.} Many NP-complete problems are
+        polynomial on a restricted class: vertex cover is easy on trees,
+        graph colouring is easy for two colours, knapsack is fine when $W$ is
+        small. The pseudo-polynomial algorithm is this third strategy, honestly
+        labelled.
+\end{tightnum}
+
+\smallskip
+\textbf{What you must not do is keep looking for the exact polynomial
+algorithm.} That is the practical value of this chapter: it tells you when to
+stop.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Reading NP as ``not polynomial''.} It is
+        \emph{nondeterministic} polynomial, and $\mathrm{P} \subseteq
+        \mathrm{NP}$.
+  \item \textbf{Reducing in the wrong direction.} To show $X$ is hard, reduce a
+        known hard problem \emph{to} $X$.
+  \item \textbf{Calling a problem NP-complete without checking it is in NP.}
+        Without that it is merely NP-hard, and the halting problem shows the
+        difference matters.
+  \item \textbf{Treating a pseudo-polynomial algorithm as polynomial.}
+        Measured in \chref{dptwo}: one extra bit of $W$ doubles the time.
+  \item \textbf{Concluding that NP-complete means hopeless.} Measured here,
+        meet-in-the-middle was 2{,}668$\times$ faster than brute force and
+        still exponential --- and that factor is often the whole engineering
+        problem.
+  \item \textbf{Confusing undecidable with intractable.} The halting problem has
+        no algorithm; SAT has many, all slow in the worst case.
+  \item \textbf{Proving your problem is in NP and thinking you have shown it is
+        hard.} Every problem in P is in NP.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Checking Against Finding]
+Reproduces all four tables. Expect thirty minutes; the brute-force column at
+$n = 28$ takes about five seconds per run.
+
+\begin{lstlisting}[language=C++]
+// ch22_complexity.cpp -- checking against finding, measured.
+// Build: cl /O2 /EHsc /std:c++17 ch22_complexity.cpp (see Appendix A)
+
+// --- 1. Verifying a certificate: linear, and that is the point -----
+// Given a claimed subset (as a bitmask), check it sums to the target.
+// No search, no cleverness: one pass. This is what "in NP" means.
+static bool verify(const std::vector<long long>& a,
+                   unsigned long long cert, long long target) {
+    long long s = 0;
+    for (size_t i = 0; i < a.size(); ++i)
+        if (cert >> i & 1ULL) s += a[i];
+    return s == target;
+}
+
+// --- 2. Finding a certificate by exhaustive search: 2^n ------------
+// Every subset. Nothing is wasted and nothing is clever; this is the
+// only method known that works for every instance.
+
+// --- 3. Meet in the middle: 2^(n/2) --------------------------------
+// Split the set in half, enumerate all subset sums of each half, and
+// look for a pair that adds to the target. Still exponential -- but
+// the exponent is halved, which doubles the largest n you can handle.
+// A reminder that "exponential" is not a single speed.
+
+// --- 4. Checking against finding -----------------------------------
+// Verification takes tens of NANOseconds, below the clock's
+// resolution -- timing it one call at a time reports 0.0000 and a
+// ratio of infinity, which is what the first version printed. Time a
+// million verifications and divide.
+        const int REPS = 1000000;
+        double tv_ns = time_ms([&] {
+            int ok = 0;
+            for (int r = 0; r < REPS; ++r) ok += verify(a, plant, target);
+            return ok;
+        }, 3) * 1e6 / REPS;              // ms for REPS -> ns per call
+
+// --- 5. Where the wall is ------------------------------------------
+// The point is not that the numbers are large; it is how FAST they
+// become large.
+
+// --- 6. Exponential is not one speed -------------------------------
+
+// --- 7. A reduction, actually run ----------------------------------
+// S is an independent set of G exactly when V \ S is a vertex cover.
+// So "is there an independent set of size k?" and "is there a vertex
+// cover of size |V| - k?" are the same question. A reduction is a
+// translation, and translations can be tested.
+\end{lstlisting}
+
+\textbf{What to notice.} Part 4's ratio column is the P versus NP question in
+numerical form. It grows from $6 \times 10^{4}$ to $3 \times 10^{8}$ over
+twelve values of $n$, and the open problem is whether any algorithm can stop it
+growing.
+
+\smallskip
+\textbf{Then try to break it.} Make the instances \emph{unsatisfiable} --- pick
+a target no subset can reach --- and re-run part 4. Predict first. The brute
+force gets \emph{slower}, because it can no longer stop when it finds a
+solution and must examine all $2^{n}$ subsets. And verification of a \emph{no}
+answer has no certificate at all: there is nothing short to check. That
+asymmetry between yes and no is why NP has a mirror class, co-NP, and why
+``verify in polynomial time'' is always stated for one answer only.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Define P and NP, and explain why $\mathrm{P} \subseteq \mathrm{NP}$
+        \emph{(CLO-4)}.
+  \item To prove a new problem $X$ is NP-hard, which direction must the
+        reduction go? Explain what the other direction would prove instead.
+  \item \chref{dptwo}'s knapsack algorithm runs in $\bigTh{nW}$ and knapsack is
+        NP-complete. Reconcile these, citing the measured doubling table.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item P is what can be \emph{solved} in polynomial time; NP is what can be
+        \emph{verified} in polynomial time given a certificate. NP means
+        nondeterministic polynomial, and $\mathrm{P} \subseteq \mathrm{NP}$.
+  \item Measured on subset sum: verification was flat at 12--21 ns while
+        exhaustive search went from 0.78 ms to 5.2 s, a ratio growing from
+        $6\times10^{4}$ to $2.8\times10^{8}$. That growing ratio is the open
+        question.
+  \item Measured: exhaustive search reaches $n = 50$ in two years and $n = 80$
+        in longer than the age of the universe. A thousandfold faster machine
+        buys ten more elements.
+  \item Measured: meet-in-the-middle was 2{,}668$\times$ faster at $n = 28$ and
+        is still exponential. NP-complete does not mean hopeless.
+  \item $A \le_{P} B$ means $B$ is at least as hard as $A$. To show $X$ is
+        hard, reduce a known hard problem \emph{to} $X$.
+  \item NP-complete = NP-hard + in NP. By Theorem~\ref{thm:npc} a polynomial
+        algorithm for any one NP-complete problem gives one for all of NP.
+        Cook--Levin supplied the first; thousands follow by reduction.
+  \item $\bigTh{nW}$ knapsack is pseudo-polynomial, not polynomial, because
+        $W$'s input size is $\lg W$ bits. It settles nothing.
+  \item When a problem is NP-complete: approximate with a guarantee, use a
+        heuristic without one, or restrict the problem --- and stop looking for
+        the exact polynomial algorithm.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} NP is the class of problems that can be:
+        (a)~solved in polynomial time; (b)~verified in polynomial time;
+        (c)~not solved in polynomial time; (d)~solved in exponential time only.
+  \item \textbf{(MCQ)} If an NP-complete problem were shown to be in P, then:
+        (a)~nothing would follow; (b)~$\mathrm{P}=\mathrm{NP}$;
+        (c)~$\mathrm{P}\ne\mathrm{NP}$; (d)~the halting problem would be
+        decidable.
+  \item \textbf{(Short)} Contrast P, NP, NP-hard and NP-complete, giving an
+        example of a problem that is NP-hard but not in NP \emph{(CLO-4)}.
+  \item \textbf{(Short)} Explain what a polynomial-time reduction proves, and
+        which direction it must go to establish hardness.
+  \item \textbf{(Short)} Why does a pseudo-polynomial algorithm for an
+        NP-complete problem not prove $\mathrm{P}=\mathrm{NP}$?
+  \item \textbf{(Applied)} Show that $S$ is an independent set of $G$ if and
+        only if $V \setminus S$ is a vertex cover, and use it to give a
+        reduction in both directions.
+  \item \textbf{(Applied)} Your team must schedule 300 exams with no clashes and
+        suspects the problem is NP-complete. Describe how you would confirm
+        that suspicion, and set out the three strategies you would then
+        consider, with what each would guarantee.
+\end{reviewq}

@@ -3,7 +3,573 @@
 %=====================================================================
 \locator{5}{Part V --- Graph Algorithms}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Solve} single-source shortest-path problems with Dijkstra's and
+        Bellman--Ford's algorithms \emph{(CLO-7)}.
+  \item \textbf{Prove} Dijkstra's algorithm correct and \textbf{identify} the
+        step that requires non-negative weights.
+  \item \textbf{Construct} a graph on which Dijkstra's algorithm returns a
+        wrong answer, and \textbf{explain} why.
+  \item \textbf{Apply} Floyd--Warshall to the all-pairs problem and
+        \textbf{justify} the loop order.
+  \item \textbf{Choose} among the three algorithms given density, weights and
+        the number of sources required.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{graphs} for representation and BFS --- Dijkstra is BFS with a priority
+queue. \chref{greedy} for the exchange argument. \chref{dpone} for
+Floyd--Warshall, which is a dynamic program.
+\end{prereq}
+
+\begin{keyterms}
+shortest path $\bullet$ relaxation $\bullet$ Dijkstra $\bullet$ Bellman--Ford
+$\bullet$ Floyd--Warshall $\bullet$ negative edge $\bullet$ negative cycle
+$\bullet$ single-source $\bullet$ all-pairs $\bullet$ optimal substructure
+$\bullet$ early termination
+\end{keyterms}
+
+\section{Relaxation, the Common Operation}
+
+\begin{definitionbox}[Relaxation]
+Each algorithm here maintains an estimate $d[v] \ge \delta(s,v)$, the true
+shortest distance. \term{Relaxing} an edge $(u,v)$ asks whether going via $u$
+improves it:
+\[ \textbf{if } d[u] + w(u,v) < d[v] \textbf{ then } d[v] \gets d[u]+w(u,v). \]
+
+\smallskip
+All three algorithms do only this. They differ entirely in \emph{the order} in
+which edges are relaxed, and that order is what buys or costs the running time.
+\end{definitionbox}
+
+\begin{conceptbox}[Optimal substructure, and where it comes from]
+Any subpath of a shortest path is itself a shortest path: if $p$ is a shortest
+path from $s$ to $v$ passing through $u$, the portion from $s$ to $u$ must be
+shortest, or substituting a shorter one would improve $p$.
+
+\smallskip
+That is a cut-and-paste argument, and it is the optimal substructure of
+\chref{dpone}. It is why shortest paths yield to both greedy (Dijkstra) and
+dynamic programming (Floyd--Warshall) --- and why \emph{longest simple paths}
+do not, since a subpath of a longest simple path need not be a longest simple
+path.
+\end{conceptbox}
+
+\section{Dijkstra}
+
+\dsfig{\aoaalg{\algname{Dijkstra}$(G, w, s)$}{
+\For{each vertex $v$}
+  \State $d[v] \gets \infty$
+\EndFor
+\State $d[s] \gets 0$;\quad $S \gets \emptyset$;\quad
+       $Q \gets$ all vertices
+\While{$Q$ is not empty}
+  \State $u \gets \algname{Extract-Min}(Q)$
+    \Comment{smallest estimate}
+  \State $S \gets S \cup \{u\}$
+    \Comment{$d[u]$ is now final}
+  \For{each $v$ adjacent to $u$}
+    \State relax $(u,v)$
+  \EndFor
+\EndWhile
+}}{\algname{Dijkstra}. Line 7 is the greedy commitment: once a vertex is
+extracted its distance is declared final and never reconsidered.
+Theorem~\ref{thm:dijkstra} is what justifies that, and
+Section~20.4 is what happens when its hypothesis fails.}{dijkstra}
+
+\begin{theorem}[Dijkstra is correct]\label{thm:dijkstra}
+If every edge weight is non-negative, then when \algname{Dijkstra} adds $u$ to
+$S$, $d[u] = \delta(s,u)$.
+\end{theorem}
+
+\begin{proof}
+Suppose not, and let $u$ be the first vertex added to $S$ with
+$d[u] \ne \delta(s,u)$. Then $u \ne s$, and $\delta(s,u) < \infty$ (otherwise
+$d[u] = \infty = \delta(s,u)$).
+
+\smallskip
+Consider a shortest path $p$ from $s$ to $u$. Since $s \in S$ and $u \notin S$
+at the moment before $u$ is added, $p$ must leave $S$ at some point: let $y$ be
+the first vertex on $p$ not in $S$, and $x \in S$ its predecessor.
+
+\smallskip
+Because $x$ was added to $S$ earlier and $u$ is the \emph{first} mistake,
+$d[x] = \delta(s,x)$. The edge $(x,y)$ was relaxed when $x$ was added, so
+\[ d[y] \;=\; \delta(s,x) + w(x,y) \;=\; \delta(s,y), \]
+the second equality because the prefix of a shortest path is a shortest path.
+
+\smallskip
+Now $y$ appears on a shortest path to $u$ and \textbf{all remaining edge
+weights are non-negative}, so
+\[ \delta(s,y) \;\le\; \delta(s,u). \]
+But $u$ was chosen by \algname{Extract-Min} over $y$, so $d[u] \le d[y]$. Chain
+them:
+\[ d[u] \;\le\; d[y] \;=\; \delta(s,y) \;\le\; \delta(s,u) \;\le\; d[u], \]
+the last because $d$ never underestimates. So all are equal and
+$d[u] = \delta(s,u)$ --- contradicting the choice of $u$.
+\end{proof}
+
+\begin{alertbox}[Exactly one step used non-negativity]
+The inequality $\delta(s,y) \le \delta(s,u)$. It says that extending a path can
+never make it cheaper.
+
+\smallskip
+With a negative edge that is false: the rest of the path from $y$ to $u$ might
+have negative total weight, so $\delta(s,u)$ could be \emph{less} than
+$\delta(s,y)$, and a vertex finalised early may later turn out to have been
+reachable more cheaply. The greedy commitment on line 7 is then unjustified.
+
+\smallskip
+Section~20.4 builds the graph where this happens.
 \end{alertbox}
+
+\begin{worked}[Which Priority Queue, Measured]
+$|V| = 4{,}000$, density varying. \texttt{code/ch20\_sp.cpp} compares a binary
+heap with an unsorted array (extract-min by linear scan):
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrl@{}}
+\toprule
+\rowcolor{primary!15}
+avg degree & $|E|$ & heap (ms) & array (ms) & winner \\
+\midrule
+   2 &     7{,}998 &  0.36 & 46.77 & heap \\
+  32 &   127{,}970 &  1.97 & 53.39 & heap \\
+ 512 & 2{,}047{,}499 &  6.40 & 62.63 & heap \\
+2000 & 7{,}998{,}035 & 15.32 & 63.47 & heap \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The array column is flat} --- 47 to 63 ms while $|E|$ grows 1000-fold
+--- which is $\bigO{|V|^{2}}$ behaving exactly as advertised, just as the
+adjacency matrix did in \chref{graphs}.
+
+\smallskip
+\textbf{But the textbook crossover does not appear.} The standard claim is that
+the $\bigO{|V|^{2}}$ array version wins on dense graphs, since $|E| \approx
+|V|^{2}$ makes the heap's $\lg|V|$ factor pure overhead. Here the heap won at
+every density, including $|E| = 8 \times 10^{6}$ --- half of complete.
+
+\smallskip
+\textbf{The honest reading} is that at $|V| = 4{,}000$ the array's $|V|^{2} =
+1.6\times10^{7}$ branch-laden scans cost more than $|E|\lg|V| = 10^{8}$
+well-predicted heap operations on this processor. \chref{graphs} found the same
+thing and fixed it by bit-packing; there is no equivalent trick here, because
+the array version must examine real distances rather than single bits. The
+crossover is real asymptotically and did not arrive at any size tested.
+\end{worked}
+
+\section{Bellman--Ford}
+
+\dsfig{\aoaalg{\algname{Bellman-Ford}$(G, w, s)$}{
+\For{each vertex $v$}
+  \State $d[v] \gets \infty$
+\EndFor
+\State $d[s] \gets 0$
+\For{$i \gets 1$ \textbf{to} $|V| - 1$}
+  \For{each edge $(u,v)$}
+    \State relax $(u,v)$
+  \EndFor
+\EndFor
+\For{each edge $(u,v)$}
+  \If{$d[u] + w(u,v) < d[v]$}
+    \State \Return \textsc{negative-cycle}
+  \EndIf
+\EndFor
+\State \Return $d$
+}}{\algname{Bellman-Ford}. No priority queue and no assumption about signs:
+$\bigO{|V||E|}$. The final pass is not decoration --- it is the only way to
+detect a negative cycle, which Dijkstra cannot do at all.}{bellmanford}
+
+\begin{theorem}[Bellman--Ford]\label{thm:bellman}
+If $G$ has no negative-weight cycle reachable from $s$, then after $|V|-1$
+passes $d[v] = \delta(s,v)$ for every $v$.
+\end{theorem}
+
+\begin{proof}
+A shortest path has at most $|V|-1$ edges: if it had more it would repeat a
+vertex, and the cycle so formed has non-negative weight (by hypothesis) and can
+be removed without lengthening the path.
+
+\smallskip
+Now argue by induction that after $i$ passes, $d[v] = \delta(s,v)$ for every
+$v$ whose shortest path uses at most $i$ edges. After 0 passes this holds for
+$v = s$. For the step: let $v$ have a shortest path $s \leadsto u \to v$ using
+$i+1$ edges; its prefix to $u$ uses $i$ edges and is shortest, so by hypothesis
+$d[u] = \delta(s,u)$ after $i$ passes. Pass $i+1$ relaxes $(u,v)$ and sets
+$d[v] \le \delta(s,u)+w(u,v) = \delta(s,v)$; since $d$ never underestimates,
+equality holds.
+
+\smallskip
+After $|V|-1$ passes every shortest path is covered. If a further relaxation
+still improves some $d[v]$, then some path uses $|V|$ or more edges and is
+still improving, which requires a negative cycle.
+\end{proof}
+
+\begin{worked}[Bellman--Ford Is Faster Than Its Bound Suggests]
+On random graphs with non-negative weights, average degree 8:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrl@{}}
+\toprule
+\rowcolor{primary!15}
+$|V|$ & Dijkstra (ms) & Bellman--Ford (ms) & ratio & agree? \\
+\midrule
+ 2{,}000 &  0.40 &  0.3 & 0.8 & yes \\
+ 8{,}000 &  1.89 &  1.7 & 0.9 & yes \\
+32{,}000 & 11.21 & 11.0 & 1.0 & yes \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Bellman--Ford matched Dijkstra}, despite a bound of $\bigO{|V||E|}$
+against $\bigO{|E|\lg|V|}$ --- a predicted factor of $|V|/\lg|V| \approx
+2{,}000$.
+
+\smallskip
+\textbf{The reason is the early exit:} the implementation stops when a pass
+changes nothing, and on a random graph the distances settle after a handful of
+passes rather than $|V|-1$. The $\bigO{|V||E|}$ bound is a worst case that
+random graphs do not come close to.
+
+\smallskip
+\textbf{So does the bound ever materialise?} It needs a graph that forces every
+pass --- a long path whose edges are relaxed in the wrong order, so information
+advances one vertex per pass:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$|V|$ & Dijkstra (ms) & Bellman--Ford (ms) & ratio & passes used \\
+\midrule
+1{,}000 & 0.03 &  1.4 &  44.9 &   999 \\
+2{,}000 & 0.03 &  5.5 & 190.8 & 1{,}999 \\
+4{,}000 & 0.06 & 21.8 & 386.9 & 3{,}999 \\
+8{,}000 & 0.11 & 87.2 & \textbf{789.5} & 7{,}999 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{There it is: 789$\times$ slower, and the ratio doubling with $|V|$.}
+The graph is not adversarial in its weights --- every edge costs 1. Only the
+\emph{order} the adjacency lists are visited in is unfavourable.
+
+\smallskip
+\textbf{The lesson is about benchmarking, not about Bellman--Ford.} Measuring
+only on random inputs would have shown the two algorithms as equals. It is the
+third time this book has made that point --- \chref{quicksort}'s sorted input,
+\chref{structures}'s sorted insertions, \chref{hashing}'s structured keys ---
+and it will not be the last.
+\end{worked}
+
+\section{One Negative Edge}
+
+\begin{worked}[Dijkstra, Measurably Wrong]
+Four vertices. $0 \to 1$ costs 3, $0 \to 2$ costs 4, $2 \to 1$ costs $-2$, and
+$1 \to 3$ costs 1. The true distances are $d(1) = 2$ (via vertex 2) and
+therefore $d(3) = 3$.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrrl@{}}
+\toprule
+\rowcolor{primary!15}
+vertex & Dijkstra (array) & Dijkstra (heap) & Bellman--Ford & correct & \\
+\midrule
+0 & 0 & 0 & 0 & 0 & \\
+1 & 2 & 2 & 2 & 2 & \\
+2 & 4 & 4 & 4 & 4 & \\
+3 & \textbf{4} & 3 & 3 & 3 & \textbf{wrong} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Trace it.} The array version pops vertex 1 at distance 3 and
+\emph{finalises} it, relaxing $1 \to 3$ to give $d(3) = 4$. It then pops vertex
+2 and lowers $d(1)$ to 2 --- but vertex 1 is already done, so its outgoing edge
+is never re-examined and $d(3)$ stays at 4.
+
+\smallskip
+\textbf{Notice that $d(1)$ itself ends up correct.} The error is only visible
+at vertex 3, because the wrong value had already \emph{propagated}. The
+three-vertex example people usually reach for does not fail, for exactly this
+reason: the wrong value is overwritten before anything depends on it. A
+counter-example has to let the mistake escape.
+
+\smallskip
+\textbf{And the heap version got it right} --- which is an accident worth
+understanding. The lazy heap implementation never marks anything final; it
+re-pushes whenever an estimate improves. On this graph that lets it recover.
+It is behaving like Bellman--Ford, not like Dijkstra, and on adversarial graphs
+with negative edges it can take exponential time. \textbf{``Dijkstra is wrong
+on negative edges'' is a statement about the algorithm; whether your
+\emph{program} visibly fails depends on which implementation you wrote.}
+
+\smallskip
+\textbf{Negative cycles.} On this graph Bellman--Ford reported none, correctly.
+Adding a cycle $0 \to 1 \to 2 \to 0$ of total weight $-1$, it reported one ---
+also correctly. Dijkstra cannot detect a negative cycle at all, and with one
+present ``shortest path'' is undefined, since going round again is always
+cheaper.
+\end{worked}
+
+\section{All Pairs}
+
+\dsfig{\aoaalg{\algname{Floyd-Warshall}$(W)$}{
+\State $D \gets W$
+\For{$k \gets 1$ \textbf{to} $n$}
+  \Comment{$k$ \emph{must} be outermost}
+  \For{$i \gets 1$ \textbf{to} $n$}
+    \For{$j \gets 1$ \textbf{to} $n$}
+      \State $D[i][j] \gets \min\bigl(D[i][j],\;
+             D[i][k] + D[k][j]\bigr)$
+    \EndFor
+  \EndFor
+\EndFor
+\State \Return $D$
+}}{\algname{Floyd-Warshall}. Five lines, $\bigTh{n^{3}}$ regardless of density,
+and the smallest constant of any algorithm in this chapter --- three nested
+loops over contiguous memory.}{floyd}
+
+\begin{conceptbox}[Why $k$ must be outermost]
+This is a dynamic program, and $k$ indexes the subproblem.
+
+\smallskip
+Let $d^{(k)}[i][j]$ be the shortest distance from $i$ to $j$ using only
+vertices $1 \ldots k$ as \emph{intermediates}. Then
+\[ d^{(k)}[i][j] = \min\bigl(d^{(k-1)}[i][j],\;
+   d^{(k-1)}[i][k] + d^{(k-1)}[k][j]\bigr), \]
+--- either the best path avoids $k$, or it goes through $k$ exactly once.
+
+\smallskip
+The $k$ loop therefore advances the subproblem, and $i$ and $j$ merely fill in
+the table for the current one. Putting $k$ inside would compute something that
+is not a shortest path for any well-defined subproblem.
+
+\smallskip
+(The single array works because $d^{(k)}[i][k] = d^{(k-1)}[i][k]$ --- a path to
+$k$ gains nothing by using $k$ as an intermediate --- so the row and column
+being read are unchanged by the current pass.)
+\end{conceptbox}
+
+\begin{worked}[All Pairs, Measured]
+$|V| = 600$. Floyd--Warshall against running Dijkstra from every vertex:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrl@{}}
+\toprule
+\rowcolor{primary!15}
+avg degree & $|E|$ & Floyd--Warshall (ms) & $|V| \times$ Dijkstra (ms) & winner \\
+\midrule
+  2 &   1{,}198 &  35.8 &  19.3 & Dijkstra \\
+  8 &   4{,}793 & 125.7 &  59.3 & Dijkstra \\
+ 32 &  19{,}170 & 156.6 & 112.1 & Dijkstra \\
+128 &  76{,}667 & 170.7 & 204.6 & Floyd \\
+300 & 179{,}711 & 170.3 & 299.8 & Floyd \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The crossover is near average degree 64}, or a density of about 0.1.
+
+\smallskip
+\textbf{Floyd--Warshall's column is nearly flat} --- 36 to 171 ms --- because
+$\bigTh{|V|^{3}}$ does not depend on $|E|$. (It is not perfectly flat because
+the early rows have many $\infty$ entries, which the implementation skips.)
+
+\smallskip
+\textbf{Repeated Dijkstra grows with $|E|$}, as $\bigO{|V|(|V|+|E|)\lg|V|}$
+requires.
+
+\smallskip
+\textbf{And the practical point.} For a dense graph, five lines of
+Floyd--Warshall beat $|V|$ invocations of a far more sophisticated algorithm.
+Its constant is tiny: three nested loops over a contiguous array, perfectly
+predictable, perfectly prefetchable. This is the opposite of
+\chref{structures}'s pointer-chasing penalty, and it is the same cause.
+\end{worked}
+
+\begin{conceptbox}[Choosing]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.4cm}L{3.0cm}L{3.0cm}L{4.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Algorithm} & \textbf{Time} & \textbf{Weights} & \textbf{Use when} \\
+\midrule
+\endhead
+BFS & $\bigTh{V+E}$ & unweighted & all weights equal \\
+Dijkstra (heap) & $\bigO{(V{+}E)\lg V}$ & non-negative & one source, the
+  common case \\
+Bellman--Ford & $\bigO{VE}$ & any & negative edges, or you must detect a
+  negative cycle \\
+Floyd--Warshall & $\bigTh{V^{3}}$ & any (no neg.\ cycle) & all pairs on a
+  dense graph \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+If all weights are equal, use BFS --- a priority queue over identical keys is
+pure overhead, and \chref{graphs}'s measured 0.17 ms against Dijkstra's 0.36 ms
+on the same sparse graph is the price of not noticing.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Using Dijkstra with negative edges.} Measured wrong, and the
+        failure can hide: $d(1)$ was right and $d(3)$ was not.
+  \item \textbf{Testing for that bug on too small a graph.} The obvious
+        three-vertex example self-corrects. The error must be allowed to
+        propagate.
+  \item \textbf{Assuming your Dijkstra will visibly fail.} A lazy heap version
+        may silently behave like Bellman--Ford --- correct here, exponential
+        elsewhere.
+  \item \textbf{Benchmarking Bellman--Ford only on random graphs.} Measured
+        equal to Dijkstra there and 789$\times$ slower on a path.
+  \item \textbf{Putting $k$ anywhere but outermost in Floyd--Warshall.} It
+        indexes the subproblem; the result is not a shortest path.
+  \item \textbf{Running Dijkstra $|V|$ times on a dense graph.} Measured
+        1.8$\times$ slower than five lines of Floyd--Warshall.
+  \item \textbf{Using Dijkstra on an unweighted graph.} BFS is simpler and
+        faster.
+  \item \textbf{Asking for shortest paths with a negative cycle present.} The
+        question has no answer; detect it and say so.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Three Algorithms, and One That Is Wrong]
+Reproduces all five tables. Expect thirty minutes.
+
+\begin{lstlisting}[language=C++]
+// ch20_sp.cpp -- three shortest-path algorithms, and when each wins.
+// Build: cl /O2 /EHsc /std:c++17 ch20_sp.cpp         (see Appendix A)
+
+// --- 1. Dijkstra with a binary heap --------------------------------
+// The "lazy" form: push a new entry on every improvement and skip
+// stale ones when popped. O((V+E) lg V), simpler than decrease-key.
+//
+// The invariant is the whole correctness argument: when a vertex is
+// popped with the smallest tentative distance, that distance is final.
+// It holds only because every edge weight is >= 0.
+
+// --- 2. Dijkstra with a linear scan --------------------------------
+// Same algorithm; the priority queue is an unsorted array, so
+// extract-min is O(V) and the total is O(V^2 + E).
+
+// --- 3. Bellman-Ford: relax every edge, V-1 times ------------------
+// No priority queue and no assumption about signs. The bound is
+// O(VE) -- the price of handling negative edges and of being able to
+// DETECT a negative cycle, which Dijkstra cannot.
+        if (!changed) break;        // early exit: often much faster
+
+// --- 4. Floyd-Warshall: all pairs, three nested loops --------------
+// The k loop must be OUTERMOST. That is not a style choice: k indexes
+// the subproblem ("paths using only intermediate vertices < k"), and
+// putting it inside would compute something that is not a shortest
+// path.
+
+// --- 5. Heap against array, across densities -----------------------
+// --- 6. Dijkstra against Bellman-Ford ------------------------------
+// --- 6b. The graph that forces every pass --------------------------
+// A single path, with the adjacency lists visited in an order that
+// propagates exactly one vertex per pass. Nothing adversarial about
+// the weights; only the ORDER matters.
+
+// --- 7. One negative edge, and Dijkstra is wrong -------------------
+// 0 -> 1 costs 3, 0 -> 2 costs 4, 2 -> 1 costs -2, 1 -> 3 costs 1.
+// True distances: d(1) = 2 via vertex 2, so d(3) = 3.
+//
+// Array Dijkstra pops vertex 1 at distance 3 and finalises it,
+// relaxing 1 -> 3 to give d(3) = 4. It then pops vertex 2 and lowers
+// d(1) to 2 -- but vertex 1 is done, so its edge to 3 is never
+// re-examined and d(3) stays at 4. The error has PROPAGATED, which is
+// why this graph fails where the obvious three-vertex example does
+// not: there the wrong value was overwritten before anything
+// depended on it.
+
+// --- 8. All pairs: Floyd-Warshall against V x Dijkstra -------------
+\end{lstlisting}
+
+\textbf{What to notice.} Part 7 prints both Dijkstras. They disagree, and the
+one that agrees with Bellman--Ford is the one that is not really Dijkstra. An
+experiment that had shown only the heap version would have concluded, wrongly,
+that negative edges are harmless.
+
+\smallskip
+\textbf{Then try to break it.} Add a negative cycle to the graph in part 7 and
+run the lazy heap Dijkstra on it. Predict first. It will not terminate in any
+reasonable time --- each trip round the cycle lowers an estimate, so it
+re-pushes for ever. Bellman--Ford detects the cycle in one extra pass and says
+so. That is the practical difference between an algorithm that assumes
+something and one that checks.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Identify the single step in the proof of Theorem~\ref{thm:dijkstra}
+        that uses non-negativity, and state what goes wrong without it.
+  \item Why does Bellman--Ford need exactly $|V|-1$ passes, and what does the
+        $|V|$-th pass detect \emph{(CLO-7)}?
+  \item Measured, Bellman--Ford matched Dijkstra on random graphs and was
+        789$\times$ slower on a path. What does this say about the value of a
+        worst-case bound?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item All three algorithms do nothing but relax edges; they differ only in the
+        order, and the order is what costs or saves.
+  \item Dijkstra is greedy: the extracted minimum is declared final. The proof
+        uses non-negativity at exactly one step --- that extending a path cannot
+        make it cheaper.
+  \item Measured: a binary heap beat an unsorted array at every density tested,
+        including half of complete. The array's flat 47--63 ms is
+        $\bigO{|V|^{2}}$ visible; the textbook crossover did not arrive.
+  \item Bellman--Ford is $\bigO{|V||E|}$, handles negative edges, and is the
+        only one of the three that can detect a negative cycle.
+  \item Measured: with early termination it matched Dijkstra on random graphs,
+        and was 789$\times$ slower on a path that forces all $|V|-1$ passes.
+        Benchmarking only on random inputs would have missed this entirely.
+  \item Measured: array Dijkstra returned $d(3) = 4$ where the answer is 3,
+        on a four-vertex graph with one negative edge --- and the error was
+        visible only because it had propagated.
+  \item Floyd--Warshall is $\bigTh{|V|^{3}}$ with a tiny constant; $k$ must be
+        the outermost loop because it indexes the subproblem. Measured, it beat
+        $|V|$ runs of Dijkstra above a density of about 0.1.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Dijkstra's algorithm requires: (a)~a connected graph;
+        (b)~non-negative edge weights; (c)~an acyclic graph; (d)~integer
+        weights.
+  \item \textbf{(MCQ)} Floyd--Warshall runs in: (a)~$\bigTh{V^{2}}$;
+        (b)~$\bigTh{VE}$; (c)~$\bigTh{V^{3}}$; (d)~$\bigTh{E\lg V}$.
+  \item \textbf{(Short)} State the relaxation operation and explain why all
+        three algorithms are built from it \emph{(CLO-7)}.
+  \item \textbf{(Short)} Give a four-vertex graph on which Dijkstra fails, and
+        explain why a three-vertex one will not do.
+  \item \textbf{(Short)} Why must $k$ be the outermost loop in
+        Floyd--Warshall?
+  \item \textbf{(Applied)} Prove that if a graph has no negative cycle, some
+        shortest path between any two vertices uses at most $|V|-1$ edges, and
+        explain how Bellman--Ford's final pass uses this.
+  \item \textbf{(Applied)} A routing system has 2{,}000 nodes, 8{,}000 links,
+        needs all-pairs distances, and some link costs are negative subsidies.
+        Choose an algorithm, give the arithmetic from this chapter's
+        measurements, and state what you would check about the input first.
+\end{reviewq}

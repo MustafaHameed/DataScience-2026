@@ -3,6 +3,558 @@
 %=====================================================================
 \normalfigures
 
-\begin{alertbox}[Not written yet]
-This appendix is a placeholder.
-\end{alertbox}
+Three answers per chapter, in order. Attempt the checkpoint from memory before
+reading these, and argue with them where you disagree --- several are judgement
+calls rather than facts, and they say so.
+
+% The slide pipeline parses this appendix: \ansch{<number> --- <title>} must be
+% followed immediately by an ans environment of exactly three items.
+\newcommand{\ansch}[1]{\subsection*{\color{primary}Chapter #1}}
+\newenvironment{ans}
+  {\begin{enumerate}[leftmargin=*, itemsep=4pt, topsep=3pt,
+                     label=\textbf{\arabic*.}]}
+  {\end{enumerate}}
+
+%---------------------------------------------------------------------
+\ansch{1 --- The Role of Algorithms}
+\begin{ans}
+  \item $n$ grew by 4 and the time by 16, so the time grew as $n^{2}$:
+        $\bigTh{n^{2}}$. The reasoning is the ratio test of Section~1.4 --- for
+        $T = cn^{2}$, $T(4n)/T(n) = 16$ independent of $c$, so the constant
+        never has to be known. One check is weak evidence; three doublings in
+        a row would be convincing.
+  \item A: $(10^{4})^{3}/10^{9} = 10^{12}/10^{9} = \mathbf{1000}$ s. B:
+        $100 \times (10^{4})^{2}/10^{7} = 10^{10}/10^{7} = \mathbf{1000}$ s.
+        They \textbf{tie exactly} at $n = 10^{4}$. Below it B wins, above it A
+        loses --- the crossover is at that point, which is the real content of
+        the question.
+  \item \textbf{Harmless:} comparing insertion sort with merge sort at
+        $n = 32{,}000$, where the orders of growth differ by a factor of 50 and
+        a cache factor of a few cannot reverse the ranking.
+        \textbf{Not harmless:} comparing two $\bigTh{n\lg n}$ sorts, where the
+        orders of growth are equal and memory behaviour is the whole
+        difference --- \chref{mergesort} measured \texttt{std::sort} beating
+        merge sort by 39\% for exactly this reason.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{2 --- Input Size and the Three Cases}
+\begin{ans}
+  \item Yes. The input is $n^{2}$ numbers, so writing $N = n^{2}$ for the true
+        input size gives $\bigTh{n^{3}} = \bigTh{N^{1.5}}$ --- polynomial in
+        $N$. Indeed $\bigTh{n^{3}}$ is only $n$ times the time needed to
+        \emph{read} the input, which is why matrix multiplication is considered
+        nearly efficient rather than slow.
+  \item Because $(n+1)/2$ and $n$ differ by a constant factor of 2, and
+        $\bigTh{\cdot}$ discards constants. Both are $\bigTh{n}$. The average
+        case differs from the worst only in the constant, exactly as insertion
+        sort's does (Section~2.2), and that is the common situation.
+  \item \textbf{``Averaged over what distribution of inputs?''} Without it the
+        claim is unfalsifiable. The usual answer --- a uniform random
+        permutation --- is very often false of real data, which arrives partly
+        sorted; and if the answer is instead ``expected over the algorithm's
+        own randomness'' then the bound is much stronger and holds for your
+        data too.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{3 --- Asymptotic Notation}
+\begin{ans}
+  \item For $n \ge 1$ we have $n^{2} \le n^{3}$ and $1 \le n^{3}$, so
+        $5n^{3} + 200n^{2} + 17 \le (5+200+17)n^{3} = 222n^{3}$. Take
+        $c = 222$, $n_{0} = 1$. At $n = 1$: LHS $= 222$, RHS $= 222$, so the
+        inequality holds with equality. A sharper pair such as $c = 6$,
+        $n_{0} = 201$ is equally valid --- the definition asks only that
+        \emph{some} pair exist.
+  \item \textbf{Yes.} Given any $c > 0$ we need $n^{2} < c\,n^{2}\lg n$ for all
+        large $n$, i.e.\ $1 < c\lg n$, i.e.\ $n > 2^{1/c}$. So
+        $n_{0} = \lceil 2^{1/c}\rceil + 1$ works for every $c$, which is the
+        definition of $o$. (Note $2^{1/c}$ is large when $c$ is small, as it
+        must be --- but it is finite, and that is all that is required.)
+  \item \textbf{(a)} Both are upper bounds and need not be tight: the first
+        algorithm might be $\bigTh{n}$ and merely \emph{described} as
+        $\bigO{n^{3}}$. \textbf{(b)} Even if both bounds are tight, the
+        constants and the range of $n$ decide which is faster in practice ---
+        $0.001n^{3}$ beats $1000n^{2}$ for every $n$ below $10^{6}$.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{4 --- Correctness: Loop Invariants}
+\begin{ans}
+  \item Invariant: \emph{at the start of the iteration for $i$,
+        \textit{total} $= \sum_{k=1}^{i-1} A[k]$.} Initialisation:
+        $i = 1$ and the empty sum is 0. Maintenance: adding $A[i]$ extends the
+        sum by one term. Termination: $i = n+1$ gives
+        $\sum_{k=1}^{n}A[k]$. The measure is $n + 1 - i$, a non-negative
+        integer strictly decreasing each iteration.
+  \item A program that overwrites $A[1 \mathinner{\ldotp\ldotp} k]$ with
+        zeros satisfies it: the prefix is sorted at every step. Repair:
+        \emph{$A[1\mathinner{\ldotp\ldotp}k]$ is sorted \textbf{and} contains
+        the $k$ smallest elements of the original array, and
+        $A[k+1\mathinner{\ldotp\ldotp}n]$ holds the rest.} The second clause is
+        what forbids inventing values.
+  \item Initialisation and maintenance give \emph{partial} correctness --- if
+        the loop halts, the invariant plus the exit condition give the
+        postcondition. They say nothing about halting. What is missing is a
+        \emph{loop variant}: an integer-valued measure that strictly decreases
+        and is bounded below. Section~4.6's binary search has a valid invariant
+        and no such measure, and it ran for ever on 13{,}228 of 20{,}000 trials.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{5 --- Recurrences I}
+\begin{ans}
+  \item The tree is a \emph{path}: one node at each level, doing $n$, $n-1$,
+        $n-2$, \ldots\ work, with $n$ levels. The total is
+        $\sum_{k=1}^{n} k = n(n+1)/2 = \bigTh{n^{2}}$. It is not
+        $\bigTh{n\lg n}$ because the argument shrinks by a constant
+        \emph{amount}, not a constant \emph{fraction} --- so the depth is $n$
+        rather than $\lg n$.
+  \item Guess $T(n) \le cn^{2}$. Then
+        $T(n) \le 2c(n/2)^{2} + n^{2} = cn^{2}/2 + n^{2}$, which is
+        $\le cn^{2}$ provided $n^{2} \le cn^{2}/2$, i.e.\ $\mathbf{c \ge 2}$.
+        With a base case at $n_{0} = 1$ and $c = \max\{2, T(1)\}$ the induction
+        closes. (This is case 3 of the master theorem, confirming the answer.)
+  \item A 1-to-99 split divides the problem by the constant factors 100 and
+        $100/99$, so the depth is $\log_{100/99} n = \bigTh{\lg n}$ and every
+        full level does $n$ work: $\bigTh{n\lg n}$, with a larger constant. A
+        1-to-$(n-1)$ split removes one element per level, so the depth is $n$
+        and the total is $\bigTh{n^{2}}$. \textbf{Constant fraction, not
+        constant amount} is the distinction.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{6 --- Recurrences II: The Master Theorem}
+\begin{ans}
+  \item $a = 4$, $b = 2$, $f(n) = n$. Watershed $n^{\log_{2}4} = n^{2}$. Since
+        $f(n) = n = \bigO{n^{2-\varepsilon}}$ with $\varepsilon = 1$, this is
+        \textbf{case 1}, and $T(n) = \bigTh{n^{2}}$. The leaves dominate; the
+        combining work is irrelevant.
+  \item \textbf{None.} Watershed $n^{\log_{2}2} = n$, and $f(n) = n/\lg n$ is
+        \emph{smaller} than $n$ --- but only by a logarithmic factor, and case 1
+        needs $f = \bigO{n^{1-\varepsilon}}$ for a \emph{constant}
+        $\varepsilon > 0$. Since $n/\lg n = \omega(n^{1-\varepsilon})$ for
+        every such $\varepsilon$, no case applies. (A recursion tree gives
+        $\bigTh{n \lg\lg n}$.)
+  \item In case 2 every level of the tree does the same total work, so the
+        total is (work per level) $\times$ (number of levels), and the number
+        of levels is $\lg_{b} n = \bigTh{\lg n}$. In case 1 the work grows
+        geometrically towards the leaves and the last level dominates; in
+        case 3 it shrinks geometrically and the root dominates. Only a tie
+        makes every level count, and counting levels is where a logarithm comes
+        from.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{7 --- Brute Force}
+\begin{ans}
+  \item The sum is $\sum_{p=1}^{n} p(p+1)/2$. For $n = 100$ this is
+        $\tfrac12\bigl(\tfrac{100\cdot101\cdot201}{6} + \tfrac{100\cdot101}{2}\bigr)
+        = \tfrac12(338{,}350 + 5{,}050) = \mathbf{171{,}700}$. Against
+        $n^{3}/6 = 166{,}667$ that is 3\% high, as it should be --- the
+        leading term is $n^{3}/6$ and the next is $n^{2}/2$.
+  \item The $n^{3} \to n^{2}$ step removed \emph{redundant arithmetic inside}
+        the search: the same set of $\binom{n}{2}$ candidate blocks is still
+        examined, each now in $\bigO{1}$ instead of $\bigO{n}$. The
+        $n^{2} \to n$ step changed \emph{the search itself} --- Kadane's
+        observation about blocks ending at $j$ means pairs are never enumerated
+        at all. The first is careful programming; the second needs an idea
+        about the problem.
+  \item Ship the cubic version when $n$ is \emph{bounded by something real} and
+        small --- a board of at most 64 squares, a form with at most 50 fields
+        --- and the routine is off the critical path. Measured, it costs 79
+        $\mu$s at $n = 100$. \textbf{The fact that would change my mind:} that
+        $n$ is user-supplied or unbounded, because then the bound is a
+        prediction rather than a fact.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{8 --- Divide and Conquer}
+\begin{ans}
+  \item Because merge sort's control flow does not depend on the data. The
+        split is always into halves and \algname{Merge} always performs
+        $\bigTh{n_{1}+n_{2}}$ work, whatever the values. Insertion sort's inner
+        loop runs a number of times that depends on the number of inversions,
+        which is 0, $\approx n^{2}/4$ or $\approx n^{2}/2$ depending on the
+        input --- so it has three analyses and merge sort has one.
+  \item The minimum $\min(n_{1},n_{2})$ is attained when one run is entirely
+        smaller than the other, as on \textbf{already-sorted} input, where the
+        loop exhausts the left run first. The maximum $n_{1}+n_{2}-1$ is
+        attained when the runs \textbf{interleave}, as on random input, so that
+        both are nearly exhausted together. Measured: $0.496\,n\lg n$ against
+        $0.940\,n\lg n$ --- almost exactly the predicted factor of 2.
+  \item They measure different things. \chref{role}'s 65 is where insertion
+        sort beats merge sort on a \emph{whole array}, timed from cold. The
+        cutoff of 32 is where insertion sort beats \emph{continued recursion}
+        on a subarray that is already in cache and already part of a larger
+        sort. The second has less overhead to beat, so it turns over sooner.
+        Either is a plausible answer; the point is that they are not the same
+        quantity.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{9 --- Quicksort}
+\begin{ans}
+  \item On sorted input the pivot (the last element) is the largest, so
+        \algname{Partition} compares it with all $k-1$ others and splits
+        $(k-1, 0)$. The subproblem sizes are therefore $n-1, n-2, \ldots, 1$,
+        and the comparisons are $(n-1) + (n-2) + \cdots + 1 = n(n-1)/2$.
+        Measured $0.9990 \to 0.9999$ of $n^{2}/2$.
+  \item ``Average case'' averages over \emph{inputs} and so needs an assumption
+        about the data; an adversary who knows your algorithm simply supplies
+        an input outside that distribution --- and sorted data arrives by
+        accident anyway. ``Expected'' averages over the algorithm's \emph{own
+        coin flips} with the input held fixed, so it holds for every input
+        including the adversary's. He would need to predict your random numbers,
+        not your data.
+  \item $1\,\text{MB} / 64\,\text{bytes} = 16{,}384$ frames, and the depth is
+        $n-1$, so it crashes for $n > 16{,}384$ --- confirmed at
+        $n = 32{,}000$. Doubling the stack buys $n = 32{,}768$: one more
+        doubling of $n$, for twice the memory. It does not fix anything,
+        because the depth grows linearly and the stack can only grow by
+        constants. Recursing on the smaller side first bounds the depth at
+        $\bigO{\lg n}$ and does fix it.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{10 --- The Comparison Lower Bound}
+\begin{ans}
+  \item At least $4! = 24$ leaves, so height $\ge \lceil \lg 24 \rceil =
+        \lceil 4.585 \rceil = \mathbf{5}$. And $\lg(4!) = 4.585$, so the bound
+        says at least 5 comparisons in the worst case. (Five is in fact
+        achievable, so the bound is tight here.)
+  \item The step that fails is \emph{``a binary tree of height $h$ has at most
+        $2^{h}$ leaves''} --- or rather, the premise that counting sort's
+        execution is modelled by a binary decision tree at all. Counting sort
+        uses a key as an \emph{array index}, an operation with $K$ possible
+        outcomes rather than 2, so it extracts more than one bit per step and
+        the tree is not binary. The theorem's hypothesis, not its conclusion,
+        is what it escapes.
+  \item The comparison count cannot improve by more than 1\%, so essentially
+        none of \texttt{std::sort}'s 39\% comes from doing fewer comparisons.
+        It comes from everything the comparison model does not charge for:
+        sorting in place and so touching half as much memory, better locality,
+        and fewer branch mispredictions. The lower bound tells you where the
+        remaining performance is \emph{not}.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{11 --- Selection and Order Statistics}
+\begin{ans}
+  \item Quicksort: $a = 2$, $b = 2$, watershed $n^{\log_{2}2} = n = f(n)$, so
+        \textbf{case 2}, giving $\bigTh{n\lg n}$. Quickselect: $a = 1$,
+        $b = 2$, watershed $n^{\log_{2}1} = n^{0} = 1$, far below $f(n) = n$,
+        so \textbf{case 3}, giving $\bigTh{n}$. The $\lg n$ was the number of
+        \emph{levels}; discarding one branch collapses the tree to a path whose
+        work halves each step, and $n + n/2 + n/4 + \cdots < 2n$.
+  \item The last-element pivot on sorted input is always the largest, so the
+        range shrinks from the top by one each iteration. To reach the median
+        the range must fall from $n$ to $n/2$, costing
+        $n + (n-1) + \cdots + n/2 = \frac{(n + n/2)}{2}\cdot\frac{n}{2}
+        = 3n^{2}/8$. Measured $0.7500 \times n^{2}/2$, which is the same
+        number.
+  \item With groups of 5, the pivot exceeds at least $3 \cdot \tfrac12 \cdot
+        \tfrac{n}{5} = \tfrac{3n}{10}$ elements, so the recursion is on at most
+        $7n/10$ and the recurrence is $T(n/5) + T(7n/10) + \bigTh{n}$ with
+        $\tfrac15 + \tfrac{7}{10} = \tfrac{9}{10} < 1$. With groups of 3 the
+        pivot exceeds only $2\cdot\tfrac12\cdot\tfrac{n}{3} = \tfrac{n}{3}$, so
+        the recurrence is $T(n/3) + T(2n/3) + \bigTh{n}$ and
+        $\tfrac13 + \tfrac23 = 1$. The substitution $T(n) \le cn$ then gives
+        $cn + an \le cn$, which is false for every $c$, and the true bound is
+        $\bigTh{n\lg n}$.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{12 --- Heaps and Search Trees}
+\begin{ans}
+  \item Because the shape is enforced by the \emph{addressing scheme}, not
+        maintained by an algorithm. A heap is stored in an array with node $i$'s
+        children at $2i+1$ and $2i+2$, and a new element goes at index $n$.
+        There is no insertion order that produces an unbalanced heap, because
+        there is no array layout in which an unbalanced heap could be
+        represented. A BST has no such constraint, which is why it needs
+        rotations and a heap does not.
+  \item The loose step is charging \emph{every} node the cost of the
+        \emph{worst} node. In fact at most $\lceil n/2^{j+1}\rceil$ nodes have
+        height $j$, so the total is
+        $\bigO{n\sum_{j\ge0} j/2^{j}}$. And
+        $\sum_{j \ge 0} j/2^{j} = \mathbf{2}$, from
+        $\sum_{j\ge0} jx^{j} = x/(1-x)^{2}$ at $x = 1/2$. So the true total is
+        $\bigO{2n} = \bigTh{n}$.
+  \item \textbf{``In what order were the keys inserted?''} If they were
+        shuffled, the height is about $2.3\lg n$ and the benchmark is
+        meaningless for sorted input --- which is what real data often is.
+        Measured, the same keys in sorted order gave height exactly $n$ and
+        searches 650$\times$ slower.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{13 --- Hashing}
+\begin{ans}
+  \item \emph{Each key is equally likely to hash to any of the $m$ slots,
+        independently of the others.} It is a claim about the hash \emph{and}
+        the keys because the hash function is deterministic: given the keys,
+        the slot of each is fixed, and whether they scatter depends entirely on
+        the relationship between the function and the key set. Section~13.3's
+        $k \bmod 2^{20}$ is a perfectly good hash for unstructured keys and
+        uses 1.6\% of the table for keys with a stride of 64.
+  \item Searching for $x_{i}$, the elements examined first are those inserted
+        after it that hashed to the same slot; for $j > i$ that happens with
+        probability $1/m$. Averaging over $i$:
+        $1 + \frac{1}{nm}\sum_{i=1}^{n}(n-i) = 1 + \frac{\alpha}{2} -
+        \frac{\alpha}{2n}$. At $\alpha = 4$ this is $1 + 2 = 3$ for large $n$;
+        measured $\mathbf{2.998}$.
+  \item The \textbf{distribution} of chain lengths --- specifically the longest
+        chain and the mean probe count --- not the mean chain length. The mean
+        chain length is $n/m$ \emph{by definition}, whatever the hash does,
+        because every key lands somewhere. Only the spread distinguishes a hash
+        that scatters from one that piles up: measured, longest chain 8 against
+        62, and mean probes 1.5 against 31.0.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{14 --- Greedy Algorithms}
+\begin{ans}
+  \item \emph{Greedy-choice property:} some optimal solution contains the
+        locally best first choice. \emph{Optimal substructure:} an optimal
+        solution contains optimal solutions to the subproblems remaining after
+        that choice. \textbf{A problem with the second and not the first:} 0/1
+        knapsack. Its optimal solution does contain optimal sub-solutions, so
+        dynamic programming works (\chref{dptwo}); but taking the highest
+        value-per-weight item first can be wrong, so greedy fails. Coin change
+        with $\{1,3,4\}$ is the same story.
+  \item \textbf{8.} Greedy takes $4+3+1$ = three coins; optimal is $4+4$ = two.
+        (The first failure is 6, as the chapter says; 7 is $4+3$ for both.)
+        The counter-examples are small because greedy's mistake is made at the
+        \emph{first} step, so the smallest instance exhibiting it is the
+        smallest amount where the largest coin is the wrong first choice ---
+        and that is bounded by the largest denomination.
+  \item Huffman assigns each symbol a \emph{whole number} of bits, with a
+        minimum of 1. A symbol of probability 0.95 carries only
+        $-\lg 0.95 = 0.074$ bits of information, and Huffman must spend 1 on
+        it. The algorithm is provably optimal \emph{among prefix codes}; the
+        restriction to integer code lengths is what costs the 0.71 bits, and
+        arithmetic coding, which can spend fractional bits, removes it.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{15 --- Dynamic Programming I}
+\begin{ans}
+  \item Optimal substructure and overlapping subproblems. \textbf{A problem
+        with the first and not the second:} merge sort --- sorting optimally
+        requires sorting the halves, but the two halves are different
+        subproblems and no subproblem ever recurs, so memoising it buys exactly
+        nothing. Binary search is another.
+  \item $T(0) = 1$ and $T(n) = 1 + \sum_{j=0}^{n-1} T(j)$. By induction,
+        assuming $T(j) = 2^{j}$ for all $j < n$:
+        $T(n) = 1 + \sum_{j=0}^{n-1}2^{j} = 1 + (2^{n}-1) = 2^{n}$. At
+        $n = 22$ this is $4{,}194{,}304$, which is what the program counted ---
+        exactly, not approximately.
+  \item $\bigTh{mnk}$: (number of distinct subproblems) $\times$ (work per
+        subproblem). For rod cutting there are $n$ subproblems and the maximum
+        is over at most $n$ choices, giving $\bigTh{n \cdot n} =
+        \bigTh{n^{2}}$. Note the measured caveat: with a price table capped at
+        30 entries the inner loop runs at most 30 times, so the \emph{measured}
+        behaviour was $\bigTh{30n}$ --- linear. Check the parameters before
+        quoting the bound.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{16 --- Dynamic Programming II}
+\begin{ans}
+  \item $c[i][j] = c[i-1][j-1]+1$ when $x_{i} = y_{j}$, else
+        $\max(c[i-1][j], c[i][j-1])$, with $c[i][0] = c[0][j] = 0$. No maximum
+        is needed in the equal case because including the matching character
+        can never hurt: given any common subsequence of $X_{1..i}, Y_{1..j}$ not
+        ending in it, appending it yields one at least as long. So some LCS
+        does end in that character, and the rest is an LCS of the two shortened
+        prefixes.
+  \item A running time is polynomial when polynomial in the \emph{size} of the
+        input, and a number's size is its bit length (\chref{cases}). $W$ is
+        one number of $b \approx \lg W$ bits, so $\bigTh{nW} =
+        \bigTh{n2^{b}}$ --- exponential in $b$. Measured: eight doublings of
+        $W$, each adding one bit, gave time ratios of mean $2.02$. This is the
+        same phenomenon as \chref{cases}'s trial division, whose eight ratios
+        averaged $2.02$ per two bits, reached from the opposite direction.
+  \item \textbf{Appropriate:} computing only the \emph{length} of an LCS, or
+        only the edit \emph{distance}, where the answer is the final table
+        entry. \textbf{Not appropriate:} recovering the subsequence or the
+        alignment itself, which requires walking backwards through the whole
+        table. What distinguishes them is whether the answer is a single value
+        or a \emph{path}; a path needs the table that produced it. Hirschberg's
+        algorithm gets both, at twice the code.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{17 --- Amortised Analysis}
+\begin{ans}
+  \item Copying happens at lengths $1, 2, 4, \ldots$, the powers of two up to
+        $n$, and the copy at length $2^{k}$ moves $2^{k}$ elements. So the
+        total is $\sum_{k=0}^{\lfloor\lg n\rfloor} 2^{k} =
+        2^{\lfloor\lg n\rfloor+1}-1 < 2n$. The measured 1.024 is just over
+        $1n$, not $2n$, because when $n$ is a power of two the sum is exactly
+        $n-1$; the bound of $2n$ is the worst position within a doubling
+        interval.
+  \item \textbf{Cheap:} $c = 1$, \textit{len} rises by 1 so $\Phi$ rises by 2,
+        giving $\hat c = 1 + 2 = 3$. \textbf{Expensive} (resize from $m$ to
+        $2m$ with \textit{len} $= m$): $c = m+1$; before,
+        $\Phi = 2m - m = m$; after, $\Phi = 2(m{+}1) - 2m = 2$; so
+        $\hat c = (m+1) + 2 - m = 3$. They \emph{must} come out equal, or the
+        potential function would not be doing its job --- the whole point is to
+        choose $\Phi$ so that the expensive operation's real cost is exactly
+        paid for by the potential the cheap ones accumulated.
+  \item Any \textbf{latency-bounded} context: a 16 ms frame deadline, an
+        interrupt handler, an audio callback, a trading system. Measured, the
+        amortised cost was 1.049 copies per append and the worst single append
+        copied \textbf{524{,}288} elements --- half a million times the
+        average. And only 20 of a million appends were expensive, so a
+        latency histogram with a thousand samples would very likely contain
+        none of them, and the system would look fine until it was not.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{18 --- Graphs}
+\begin{ans}
+  \item Each edge $\{u,v\}$ contributes 1 to $\deg(u)$ and 1 to $\deg(v)$, so
+        summing degrees counts every edge twice. Theorem~18.1 uses it to turn
+        the per-vertex inner loop into a bound in $|E|$: the BFS inner loop
+        runs $\deg(u)$ times for each dequeued $u$, and
+        $\sum_{u}\deg(u) = 2|E|$ gives the $\bigTh{|V|+|E|}$.
+  \item $|E| = 3 \times 10^{6}$. \textbf{Matrix:} $|V|^{2} = 10^{12}$ bytes
+        $= 1$ TB --- impossible. \textbf{List:} about
+        $(10^{6} \cdot 8) + (6 \times 10^{6} \cdot 4) \approx 32$ MB. BFS is
+        $\bigTh{|V|^{2}} = 10^{12}$ steps from the matrix and
+        $\bigTh{|V|+|E|} = 7 \times 10^{6}$ from the list --- a factor of
+        140{,}000, and the matrix cannot be built anyway.
+  \item That a crossover density quoted without an implementation is
+        meaningless. The same two \emph{data structures} gave a crossover at
+        0.26 with one implementation of the matrix and no crossover at all with
+        another, and the gap between a good and a poor implementation of the
+        matrix (8--20$\times$) was larger than the gap between the two
+        structures. Quote the crossover for \emph{your} code, measured.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{19 --- Minimum Spanning Trees}
+\begin{ans}
+  \item \emph{Let $A$ be a subset of some MST and let $(S, V\setminus S)$ be a
+        cut that no edge of $A$ crosses. Then any light edge for that cut is
+        safe.} The hypothesis that makes the exchange safe is \textbf{that no
+        edge of $A$ crosses the cut}: it guarantees that the edge $e'$ removed
+        from the cycle --- which does cross the cut --- is not in $A$, so
+        $A$ survives the exchange and remains inside the new MST.
+  \item \textbf{Prim's cut} is (vertices in the tree so far) against the rest,
+        so the light edge is the cheapest edge leaving the tree, and the
+        structure needed is a \textbf{priority queue}. \textbf{Kruskal's cut}
+        is between the two components that the next edge would join, so what is
+        needed is a test for ``are these already connected?'' ---
+        \textbf{disjoint-set union}. One theorem, two cuts, two data
+        structures.
+  \item It is wrong because $\alpha(n)$ is not constant --- it grows, and the
+        measurement shows it growing, from 1.62 to 1.88. It does not matter
+        because $\alpha$ grows so slowly that $\alpha(n) \le 4$ for every $n$
+        that can be written down; reaching 5 needs an $n$ far larger than the
+        number of atoms in the observable universe. It is also an
+        \emph{amortised} bound, so a single \texttt{find} can still cost
+        $\bigTh{\lg|V|}$.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{20 --- Shortest Paths}
+\begin{ans}
+  \item The inequality $\delta(s,y) \le \delta(s,u)$, where $y$ lies on a
+        shortest path to $u$. It says extending a path cannot make it cheaper,
+        which requires non-negative weights. Without it, the remaining portion
+        from $y$ to $u$ may have negative total weight, so a vertex finalised
+        early can later prove reachable more cheaply --- and Dijkstra never
+        revisits it. Measured in Section~20.4: $d(3) = 4$ where the answer
+        is 3.
+  \item Because a shortest path in a graph with no negative cycle uses at most
+        $|V|-1$ edges (more would repeat a vertex, and the cycle so formed has
+        non-negative weight and can be removed). Each pass propagates correct
+        distances one more edge along every path, so $|V|-1$ passes suffice.
+        \textbf{The $|V|$-th pass detects a negative cycle}: if any distance
+        still improves, some path is using $|V|$ or more edges and still
+        getting shorter, which only a negative cycle permits.
+  \item That a worst-case bound describes the worst case and not the typical
+        one, and that both facts matter. Bellman--Ford's $\bigO{|V||E|}$ is
+        real --- the path graph attained it, 789$\times$ slower than Dijkstra
+        --- and on random graphs the early exit made it indistinguishable. A
+        benchmark on random inputs alone would have reported them equal; the
+        bound is what told us to go looking for the input where they are not.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{21 --- String Matching}
+\begin{ans}
+  \item For $P = \texttt{aabaaab}$:
+        $\pi = [0, 1, 0, 1, 2, 2, 3]$. (At $i=5$, \texttt{aa} is a border of
+        \texttt{aabaa}; at $i=7$, \texttt{aab} is a border of
+        \texttt{aabaaab}.) After a mismatch having matched 6 characters,
+        $k \gets \pi[6] = 2$ --- the pattern shifts so that its first 2
+        characters align with the last 2 matched, a shift of $6-2 = 4$
+        positions.
+  \item Because the inner loop only ever \emph{decreases} $k$, and $k$ is
+        increased by at most 1 per outer iteration. Take $\Phi = k$: it starts
+        at 0, never goes negative, and rises by at most $n$ in total across the
+        run, so it can fall at most $n$ times in total. The inner loop
+        therefore executes at most $n$ times \emph{over the whole run}, not per
+        iteration --- the same amortised argument as \algname{Build-Heap} and
+        the dynamic array.
+  \item \textbf{Naive:} every alignment matches the $m-1$ leading
+        \texttt{a}'s and fails on the final \texttt{b}, so each of the $n$
+        shifts costs $m$ comparisons --- the worst case, attained exactly.
+        \textbf{Rabin--Karp:} it never compares characters at all unless the
+        hashes agree. Every window of $\texttt{a}^{n}$ has the same hash, and
+        $\texttt{a}^{m-1}\texttt{b}$ has a different one, so every window is
+        rejected in one integer comparison. The two algorithms fail on
+        different things: naive on \emph{long partial matches}, Rabin--Karp on
+        \emph{hash collisions}.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{22 --- Complexity Classes}
+\begin{ans}
+  \item \textbf{P} is the class of decision problems solvable in polynomial
+        time. \textbf{NP} is the class whose yes-instances have a certificate
+        verifiable in polynomial time. $\mathrm{P} \subseteq \mathrm{NP}$
+        because if you can \emph{solve} a problem in polynomial time you can
+        verify any proposed certificate in polynomial time by ignoring it and
+        solving the instance yourself.
+  \item From a \textbf{known hard problem to $X$}: $\text{SAT} \le_{P} X$.
+        That shows $X$ is at least as hard as SAT, since a fast algorithm for
+        $X$ would give one for SAT. The other direction, $X \le_{P}
+        \text{SAT}$, proves only that $X$ is no \emph{harder} than SAT --- which
+        is true of every problem in NP and says nothing about $X$'s difficulty.
+  \item $\bigTh{nW}$ is polynomial in the \emph{value} $W$ and exponential in
+        its \emph{length} $\lg W$, so it is pseudo-polynomial, not polynomial,
+        and does not place knapsack in P. \chref{dptwo} measured this: with $n$
+        fixed at 200, eight doublings of $W$ --- each adding exactly one bit of
+        input --- multiplied the running time by a mean factor of 2.02. An
+        algorithm whose time doubles when the input grows by one bit is
+        exponential in the input size.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{23 --- The Semester Project}
+\begin{ans}
+  \item For example: \emph{``The best insertion-sort cutoff for 64-byte records
+        is larger than the best cutoff for 4-byte integers, on the same
+        machine.''} It predicts a direction, it names the quantity to measure,
+        and the result ``it is smaller'' or ``there is no difference'' would
+        refute it. Compare with ``I will compare sorting algorithms'', which no
+        measurement could contradict.
+  \item \textbf{Your noise level and your clock resolution.} If repeated runs of
+        the \emph{same} measurement vary by $\pm 15\%$, then 3.6--4.4 is
+        consistent with 4 and the answer is yes. If they vary by $\pm 1\%$,
+        a spread of 3.6 to 4.4 is a real effect and something else is going on.
+        Also check that the smallest time is well above the clock resolution.
+        A ratio without a noise estimate is not evidence either way.
+  \item For example: \textbf{(a)} uniformly random keys, probing the ideal
+        case the analysis assumes; \textbf{(b)} keys with a fixed stride, such
+        as multiples of 64, probing whether the hash uses the whole key ---
+        \chref{hashing} measured 31 probes instead of 1.5 here; \textbf{(c)}
+        keys deliberately chosen to collide under your hash, probing the
+        adversarial worst case. Several other answers are good: a realistic
+        sample of your own data is often the most informative of all.
+\end{ans}

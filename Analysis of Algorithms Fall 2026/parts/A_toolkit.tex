@@ -1,8 +1,263 @@
 %=====================================================================
-\chapter{The C++ Toolkit, and How to Time Honestly}\label{app:toolkit}
+\chapter{The C++ Toolkit}\label{app:toolkit}
 %=====================================================================
 \normalfigures
 
-\begin{alertbox}[Not written yet]
-This appendix is a placeholder.
+Every measurement in this handout was produced by compiling and running a
+program in \texttt{code/} on one machine. This appendix is what you need to do
+the same, and the rules that make the result mean something.
+
+\section{The Machine These Numbers Came From}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.4cm}L{10.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Item} & \textbf{This book} \\
+\midrule
+\endhead
+Operating system & Windows 11 Pro, 64-bit \\
+Compiler & MSVC 19.44 (Visual Studio 2022 Build Tools, toolset 14.44) \\
+Flags & \texttt{/O2 /EHsc /std:c++17} \\
+Standard library & Microsoft STL as shipped with that toolset \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Your absolute numbers will differ. Your ratios should not.]
+A different processor, compiler or afternoon changes every millisecond in this
+book. What it must not change is the \emph{ratio} column --- insertion sort's
+$\approx 4$ on doubling, merge sort's $\approx 2.2$, trial division's
+$\approx 2$ per two bits.
+
+\smallskip
+If your absolute times differ, that is expected. If your \emph{ratios} differ,
+something is wrong with the measurement, and Section~A.4 is the checklist.
+\end{alertbox}
+
+\section{Installing the Compiler}
+
+\begin{conceptbox}[Windows: MSVC]
+Install \textbf{Visual Studio Build Tools} (the free standalone download; the
+full IDE is not needed) and select the workload \emph{Desktop development with
+C++}.
+
+\smallskip
+The compiler is not on the \texttt{PATH} by default. Open the
+\textbf{x64 Native Tools Command Prompt} from the Start menu, or run
+\begin{center}
+\texttt{"C:\textbackslash Program Files (x86)\textbackslash Microsoft Visual
+Studio\textbackslash 2022\textbackslash BuildTools\textbackslash
+VC\textbackslash Auxiliary\textbackslash Build\textbackslash vcvars64.bat"}
+\end{center}
+in an ordinary prompt first. Then:
+\begin{center}
+\texttt{cl /O2 /EHsc /std:c++17 ch01\_growth.cpp}\\
+\texttt{ch01\_growth.exe}
+\end{center}
+\end{conceptbox}
+
+\begin{conceptbox}[Linux or macOS: g++ or clang++]
+Every program in \texttt{code/} is portable C++17 with two exceptions, both in
+\chref{graphs}: \texttt{<intrin.h>} and \texttt{\_BitScanForward64}. Replace
+them with
+\begin{center}
+\texttt{\_\_builtin\_ctzll(bits)}
+\end{center}
+on GCC and Clang, or with \texttt{std::countr\_zero} if you compile as C++20.
+
+\smallskip
+Otherwise:
+\begin{center}
+\texttt{g++ -O2 -std=c++17 -o ch01\_growth ch01\_growth.cpp}\\
+\texttt{./ch01\_growth}
+\end{center}
+
+\smallskip
+The flag correspondence is \texttt{/O2} $\leftrightarrow$ \texttt{-O2} and
+\texttt{/std:c++17} $\leftrightarrow$ \texttt{-std=c++17}. \texttt{/EHsc} sets
+the exception model and has no \texttt{g++} counterpart; it is not needed
+there.
+\end{conceptbox}
+
+\section{Why the Flags Matter}
+
+\begin{alertbox}[Timing a debug build is the commonest fatal error]
+Without \texttt{/O2} (or \texttt{-O2}) the compiler keeps every variable in
+memory, inlines nothing, and leaves the loop structure as written. The result
+is 5 to 10 times slower --- and, fatally, slower \emph{by different factors for
+different code}.
+
+\smallskip
+A tight loop over an array loses far more to a debug build than a
+pointer-chasing recursion does, so a debug-build comparison can reverse the
+ranking of two algorithms. That is not a slower measurement; it is a
+measurement of something else.
+
+\smallskip
+\textbf{Every number in this handout was produced with optimisation on, and
+yours must be too.}
+\end{alertbox}
+
+\begin{conceptbox}[Stopping the compiler from deleting your benchmark]
+An optimising compiler may remove a computation whose result is unused. Then
+you time an empty loop and report a spectacular speed-up.
+
+\smallskip
+Two defences are used throughout \texttt{code/}:
+\begin{tight}
+  \item assign the result to a \texttt{volatile} variable, which the compiler
+        may not elide --- \texttt{ch06\_master.cpp}'s \texttt{sink};
+  \item fold everything into a checksum and print it at the end ---
+        \texttt{ch06\_master.cpp} prints \texttt{(checksum ...)} for exactly
+        this reason.
+\end{tight}
+
+\smallskip
+\textbf{How to tell it happened:} a time that does not grow with $n$ at all, or
+a measurement at or below the clock resolution. If a sort of ten million
+elements reports 0.0001 ms, nothing was sorted.
+\end{conceptbox}
+
+\section{Timing Correctly}
+
+\begin{conceptbox}[The rules, with the chapter that learnt each]
+\begin{tightnum}
+  \item \textbf{Use \texttt{std::chrono::steady\_clock}}, not
+        \texttt{system\_clock}. The latter can jump backwards when the machine
+        synchronises its time.
+  \item \textbf{Take the median of an odd number of runs.} A mean is dragged by
+        one scheduler interruption; a minimum flatters the cache; one run
+        measures the weather (\chref{role}).
+  \item \textbf{Generate the input before the timer starts.} \chref{asymptotics}
+        allocated inside the timed region and measured the allocator
+        (\chref{asymptotics}).
+  \item \textbf{Measure the setup separately and subtract it}, and print the
+        setup cost so a reader can check the subtraction was small
+        (\chref{asymptotics}).
+  \item \textbf{Know what your clock can resolve.} \texttt{ch23\_harness.cpp}
+        measures it; on the book's machine it is 0.0001 ms, so nothing below
+        about 0.01 ms is evidence.
+  \item \textbf{Warm up.} The first run of anything pays for cold caches, page
+        faults and lazy loading. Taking a median of five discards it
+        naturally.
+  \item \textbf{Close everything else.} A browser rebuilding a page in the
+        background is a 30\% measurement error.
+\end{tightnum}
+\end{conceptbox}
+
+\begin{conceptbox}[The timing function used everywhere in \texttt{code/}]
+\begin{lstlisting}[language=C++]
+template <class F>
+static double time_ms(F&& f, int reps) {
+    std::vector<double> t;
+    for (int r = 0; r < reps; ++r) {
+        auto t0 = std::chrono::steady_clock::now();
+        f();
+        auto t1 = std::chrono::steady_clock::now();
+        t.push_back(
+            std::chrono::duration<double, std::milli>(t1 - t0).count());
+    }
+    std::sort(t.begin(), t.end());
+    return t[t.size() / 2];          // the MEDIAN
+}
+\end{lstlisting}
+Seven lines, and it encodes rules 1, 2 and 6. Copy it.
+\end{conceptbox}
+
+\section{Pseudocode and C++: the Index Translation}
+
+\begin{alertbox}[Why the book indexes from 1 and the code from 0]
+The pseudocode in this book indexes arrays from 1, as the mathematical
+literature does; the C++ indexes from 0, as C++ does.
+
+\smallskip
+This is deliberate. The mathematics is cleaner from 1 --- $A[1
+\mathinner{\ldotp\ldotp} n]$ has $n$ elements, and sums run $\sum_{i=1}^{n}$
+without off-by-one corrections. The code is cleaner from 0, and rewriting it
+otherwise would make every lab unidiomatic.
+
+\smallskip
+\textbf{The translation:}
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Pseudocode} & \textbf{C++} \\
+\midrule
+$A[1 \mathinner{\ldotp\ldotp} n]$ & \texttt{a[0 .. n-1]} \\
+\textbf{for} $j \gets 2$ \textbf{to} $n$ & \texttt{for (size\_t j = 1; j < n; ++j)} \\
+$A[j]$ & \texttt{a[j]} \\
+$A[i+1] \gets A[i]$ & \texttt{a[i] = a[i-1]} \\
+\textbf{while} $i > 0$ & \texttt{while (i > 0)} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+Compare \algname{Insertion-Sort} in \chref{invariants} with
+\texttt{insertion\_sort} in \texttt{ch01\_growth.cpp} line by line; they are the
+same algorithm and the indices differ by one throughout.
+\end{alertbox}
+
+\begin{alertbox}[One trap this causes]
+In C++, \texttt{size\_t} is \emph{unsigned}. The loop
+\begin{center}
+\texttt{for (size\_t i = n - 1; i >= 0; --i)}
+\end{center}
+never terminates: when \texttt{i} reaches 0 and is decremented it wraps to a
+very large number, which is still $\ge 0$. The pseudocode
+\textbf{downto} $0$ has no such problem.
+
+\smallskip
+The idiom used in \texttt{code/} is
+\begin{center}
+\texttt{for (size\_t i = n; i-- > 0;)}
+\end{center}
+which tests and then decrements, and stops correctly. \chref{lowerbound}'s
+counting sort uses it.
+\end{alertbox}
+
+\section{Reproducing the Handout's Tables}
+
+\begin{conceptbox}[What is in \texttt{code/}]
+One program per chapter, named \texttt{chNN\_topic.cpp}, each self-contained
+and each printing the tables that appear in that chapter's worked examples.
+
+\smallskip
+\textbf{Every program:}
+\begin{tight}
+  \item needs no input files and no arguments;
+  \item prints its own headings, so the output can be read on its own;
+  \item has numbered step comments \texttt{// --- n.} matching the lab listing
+        in the handout;
+  \item runs in under a minute, with the exceptions noted in each chapter's lab
+        box (\chref{mst} is the slowest, at about forty minutes).
+\end{tight}
+
+\smallskip
+\texttt{code/README.md} records which results are machine-specific and which
+should reproduce anywhere.
+\end{conceptbox}
+
+\begin{alertbox}[If your numbers look wrong]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{5.6cm}L{8.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Symptom} & \textbf{Likely cause} \\
+\midrule
+\endhead
+All times 5--10$\times$ the book's & debug build; add \texttt{/O2} \\
+A time that does not grow with $n$ & the compiler deleted the computation; add
+  a \texttt{volatile} sink \\
+Ratios wildly noisy at small $n$ & times near the clock resolution; raise $n$
+  or the repetition count \\
+Ratios noisy at \emph{large} $n$ & thermal throttling or another process; close
+  things, take more runs \\
+A ratio of exactly 1.00 everywhere & you are timing the setup, not the
+  algorithm \\
+Times vary 2$\times$ between runs & a laptop on battery; plug it in \\
+\bottomrule
+\end{longtable}
 \end{alertbox}

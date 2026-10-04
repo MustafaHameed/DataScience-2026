@@ -3,7 +3,490 @@
 %=====================================================================
 \locator{4}{Part IV --- The Design Paradigms}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Derive} the recurrence for longest common subsequence and edit
+        distance, and \textbf{implement} both \emph{(CLO-6)}.
+  \item \textbf{Reduce} a dynamic program's space from $\bigTh{mn}$ to
+        $\bigTh{\min(m,n)}$, and \textbf{state} what that costs.
+  \item \textbf{Formulate} 0/1 knapsack as a dynamic program and
+        \textbf{analyse} its $\bigTh{nW}$ running time.
+  \item \textbf{Explain} why $\bigTh{nW}$ is \emph{pseudo-polynomial} rather
+        than polynomial, in terms of input size.
+  \item \textbf{Choose} a DP formulation by identifying the subproblem
+        parameters.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{dpone} for the method. \chref{cases} is essential for Section~16.4 ---
+the pseudo-polynomial argument is exactly that chapter's point about a number's
+size being its bit length.
+\end{prereq}
+
+\begin{keyterms}
+longest common subsequence $\bullet$ edit distance $\bullet$ Levenshtein
+$\bullet$ alignment $\bullet$ 0/1 knapsack $\bullet$ matrix-chain
+multiplication $\bullet$ pseudo-polynomial $\bullet$ rolling array $\bullet$
+reconstruction $\bullet$ subproblem parameters
+\end{keyterms}
+
+\section{Longest Common Subsequence}
+
+\begin{definitionbox}[Subsequence, LCS]
+A \term{subsequence} of a sequence is obtained by deleting zero or more
+elements without reordering the rest. \texttt{ALRIT} is a subsequence of
+\texttt{ALGORITHM}.
+
+\smallskip
+The \term{longest common subsequence} of $X$ and $Y$ is a longest sequence that
+is a subsequence of both. Note that it need not be contiguous --- that would be
+the longest common \emph{substring}, a different and easier problem.
+\end{definitionbox}
+
+\begin{conceptbox}[Finding the recurrence]
+Let $c[i][j]$ be the LCS length of the prefixes $X_{1..i}$ and $Y_{1..j}$.
+Consider the last characters.
+
+\smallskip
+\textbf{If $x_{i} = y_{j}$}, there is an LCS ending with that character ---
+including it can never hurt --- so $c[i][j] = c[i-1][j-1] + 1$.
+
+\smallskip
+\textbf{If $x_{i} \ne y_{j}$}, the LCS cannot end with both, so at least one of
+$x_{i}, y_{j}$ is unused, and $c[i][j] = \max(c[i-1][j],\, c[i][j-1])$.
+
+\smallskip
+\[ c[i][j] = \begin{cases}
+   0 & i = 0 \text{ or } j = 0, \\
+   c[i-1][j-1] + 1 & x_{i} = y_{j}, \\
+   \max\bigl(c[i-1][j],\, c[i][j-1]\bigr) & \text{otherwise.}
+   \end{cases} \]
+
+\smallskip
+\textbf{Both conditions of \chref{dpone} hold.} Optimal substructure is the
+argument above. Overlap is severe: $c[i-1][j]$ and $c[i][j-1]$ both depend on
+$c[i-1][j-1]$, so a naive recursion solves it twice, and the duplication
+compounds exponentially.
+\end{conceptbox}
+
+\dsfig{\aoaalg{\algname{LCS-Length}$(X, Y, m, n)$}{
+\For{$i \gets 0$ \textbf{to} $m$}
+  \State $c[i][0] \gets 0$
+\EndFor
+\For{$j \gets 0$ \textbf{to} $n$}
+  \State $c[0][j] \gets 0$
+\EndFor
+\For{$i \gets 1$ \textbf{to} $m$}
+  \For{$j \gets 1$ \textbf{to} $n$}
+    \If{$x_{i} = y_{j}$}
+      \State $c[i][j] \gets c[i-1][j-1] + 1$
+    \Else
+      \State $c[i][j] \gets \max\bigl(c[i-1][j],\, c[i][j-1]\bigr)$
+    \EndIf
+  \EndFor
+\EndFor
+\State \Return $c[m][n]$
+}}{\algname{LCS-Length}. $mn$ subproblems, $\bigO{1}$ work each, so
+$\bigTh{mn}$ time --- and $\bigTh{mn}$ space, which Section~16.3 reduces.}{lcs}
+
+\begin{theorem}[LCS]\label{thm:lcs}
+\algname{LCS-Length} computes the LCS length of $X$ and $Y$ in $\bigTh{mn}$
+time and $\bigTh{mn}$ space.
+\end{theorem}
+
+\begin{proof}
+The nested loops perform $mn$ iterations with $\bigO{1}$ bodies, and the
+initialisation is $\bigTh{m+n}$, giving $\bigTh{mn}$ time; the table gives the
+space.
+
+\smallskip
+Correctness follows by induction on $i+j$. For $i = 0$ or $j = 0$ one prefix is
+empty and the LCS length is 0. For $i, j \ge 1$, assume the entries with
+smaller $i+j$ are correct. If $x_{i} = y_{j}$: any common subsequence of
+$X_{1..i}, Y_{1..j}$ not ending in that character can be extended by it, so
+some LCS does end in it, and removing it leaves an LCS of $X_{1..i-1},
+Y_{1..j-1}$ --- giving $c[i-1][j-1]+1$. If $x_{i} \ne y_{j}$: an LCS cannot use
+both last characters, so it is an LCS of $X_{1..i-1}, Y_{1..j}$ or of
+$X_{1..i}, Y_{1..j-1}$, and the maximum of the two is correct.
+\end{proof}
+
+\begin{worked}[A Small Instance, Checkable by Eye]
+\texttt{code/ch16\_dp2.cpp} on \texttt{ALGORITHM} and \texttt{ALTRUISTIC}:
+\begin{center}
+LCS length $= 5$, the subsequence \texttt{ALRIT};\qquad
+edit distance $= 6$.
+\end{center}
+Trace \texttt{ALRIT} through both words to confirm it is a subsequence of each,
+and satisfy yourself that no common subsequence of length 6 exists. Small
+instances you can check by hand are worth more than large ones you cannot.
+\end{worked}
+
+\section{Edit Distance}
+
+\begin{definitionbox}[Edit Distance]
+The \term{edit distance} (Levenshtein distance) between two strings is the
+minimum number of single-character insertions, deletions and substitutions that
+turn one into the other.
+\end{definitionbox}
+
+\begin{conceptbox}[The same table, three choices instead of two]
+Let $d[i][j]$ be the distance between $X_{1..i}$ and $Y_{1..j}$. To account for
+the last position there are exactly three possibilities:
+\[ d[i][j] = \min\begin{cases}
+   d[i-1][j] + 1 & \text{delete } x_{i}, \\
+   d[i][j-1] + 1 & \text{insert } y_{j}, \\
+   d[i-1][j-1] + [\,x_{i} \ne y_{j}\,] & \text{substitute, or match free.}
+   \end{cases} \]
+with $d[i][0] = i$ and $d[0][j] = j$ --- deleting or inserting everything.
+
+\smallskip
+\textbf{LCS and edit distance are the same algorithm with a different cost
+table}, which is worth noticing: once you can write one, you can write
+spell-checking, DNA alignment, \texttt{diff}, and fuzzy search. All of them are
+$\bigTh{mn}$ with different weights on the three moves.
+\end{conceptbox}
+
+\begin{worked}[Measured: Both Are Quadratic]
+Random strings over a 4-letter alphabet; doubling both lengths should quadruple
+the time.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$n$ & LCS full (ms) & ratio & LCS 2-row (ms) & ratio & edit dist (ms) \\
+\midrule
+   500 &   1.4 & ---  &   0.7 & ---  &   1.3 \\
+1{,}000 &   5.5 & 4.08 &   3.2 & 4.65 &   5.2 \\
+2{,}000 &  24.4 & 4.43 &  14.6 & 4.59 &  22.1 \\
+4{,}000 & 107.0 & 4.39 &  61.2 & 4.19 &  82.4 \\
+8{,}000 & 403.6 & 3.77 & 240.2 & 3.93 & 320.3 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+Mean ratios 4.17 and 4.34 against a predicted 4. The two-row version is
+consistently about 1.7$\times$ faster than the full table --- not because it
+does less arithmetic, but because it touches $\bigTh{n}$ memory instead of
+$\bigTh{n^{2}}$ and stays in cache.
+\end{worked}
+
+\section{Saving Space, and What It Costs}
+
+\begin{conceptbox}[The rolling array]
+Row $i$ of the LCS table depends only on row $i-1$ and on earlier entries of
+row $i$. So only two rows need exist at a time, and the space falls from
+$\bigTh{mn}$ to $\bigTh{n}$ --- or $\bigTh{\min(m,n)}$, by iterating over the
+longer string in the outer loop.
+
+\smallskip
+At $m = n = 100{,}000$ that is the difference between 40 GB and 400 KB. It is
+not an optimisation; it is the difference between possible and impossible.
+
+\smallskip
+\textbf{And here is the cost.} Reconstructing the actual subsequence requires
+walking \emph{backwards} through the table, which needs the whole table. With
+two rows you get the length and nothing else.
+
+\smallskip
+\textbf{So the choice is:}
+\begin{tight}
+  \item need the length only $\Rightarrow$ two rows, $\bigTh{\min(m,n)}$ space;
+  \item need the sequence $\Rightarrow$ full table, $\bigTh{mn}$ space;
+  \item need the sequence and cannot afford the table $\Rightarrow$
+        Hirschberg's algorithm, which combines the rolling array with
+        divide-and-conquer to reconstruct in $\bigTh{mn}$ time and
+        $\bigTh{\min(m,n)}$ space. It is the right answer and it is twice the
+        code.
+\end{tight}
+\end{conceptbox}
+
+\section{0/1 Knapsack, and a Word That Matters}
+
+\begin{definitionbox}[0/1 Knapsack]
+Given $n$ items, item $i$ having integer weight $w_{i}$ and value $v_{i}$, and
+a knapsack of integer capacity $W$, choose a subset of maximum total value
+whose total weight is at most $W$. Each item is taken whole or not at all ---
+hence 0/1.
+\end{definitionbox}
+
+\dsfig{\aoaalg{\algname{Knapsack}$(w, v, n, W)$}{
+\For{$\mathit{cap} \gets 0$ \textbf{to} $W$}
+  \State $b[\mathit{cap}] \gets 0$
+\EndFor
+\For{$i \gets 1$ \textbf{to} $n$}
+  \For{$\mathit{cap} \gets W$ \textbf{downto} $w_{i}$}
+    \State $b[\mathit{cap}] \gets \max\bigl(b[\mathit{cap}],\;
+           b[\mathit{cap} - w_{i}] + v_{i}\bigr)$
+  \EndFor
+\EndFor
+\State \Return $b[W]$
+}}{\algname{Knapsack}, one row at a time. The inner loop counts \emph{down},
+which is what enforces 0/1: counting up would let item $i$ be used more than
+once, solving the unbounded knapsack problem instead.}{knapsack}
+
+\begin{theorem}[Knapsack]\label{thm:knapsack}
+\algname{Knapsack} computes the optimal value in $\bigTh{nW}$ time and
+$\bigTh{W}$ space.
+\end{theorem}
+
+\begin{proof}
+There are $nW$ subproblems --- one per (item prefix, capacity) pair --- each
+resolved by one comparison, giving $\bigTh{nW}$ by the formula of
+\chref{dpone}. The single array gives $\bigTh{W}$ space.
+
+\smallskip
+For the downward inner loop: when $b[\mathit{cap}]$ is updated it reads
+$b[\mathit{cap}-w_{i}]$, which at that moment still holds the value from
+iteration $i-1$, because indices below $\mathit{cap}$ have not yet been visited
+in this pass. So each item is considered at most once per capacity, as 0/1
+requires.
+\end{proof}
+
+\begin{worked}[Checked Against an Oracle]
+\chref{bruteforce}'s technique again: 300 random instances with $n = 18$, where
+all $2^{18}$ subsets can be enumerated.
+\begin{center}
+\textbf{300 instances, 0 disagreements.}
+\end{center}
+Worth the twenty lines. The downward loop is exactly the kind of detail that is
+easy to get backwards and produces plausible-but-wrong answers.
+\end{worked}
+
+\begin{alertbox}[$\bigTh{nW}$ is not a polynomial running time]
+This is the most important sentence in the chapter, and it takes
+\chref{cases} to understand.
+
+\smallskip
+$\bigTh{nW}$ \emph{looks} polynomial: no exponents, no factorials. But a
+running time is polynomial when it is polynomial in the \textbf{size of the
+input}, and \chref{cases} established that a number's size is its \emph{bit
+length}, not its value.
+
+\smallskip
+$W$ is one number. Writing it takes $b \approx \lg W$ bits. So
+\[ \bigTh{nW} = \bigTh{n \cdot 2^{b}} \]
+--- \textbf{exponential in the length of the input}. Add one bit to $W$ and the
+running time doubles.
+
+\smallskip
+An algorithm polynomial in the numeric value of its input but exponential in
+its length is called \term{pseudo-polynomial}. \chref{complexity} explains why
+this distinction decides whether a problem counts as solved: 0/1 knapsack is
+NP-complete, and this algorithm is not a counter-example to that.
 \end{alertbox}
+
+\begin{worked}[The Claim, Measured]
+$n$ fixed at 200. Only the capacity changes, and the capacity is a single
+number.
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$W$ & bits & time (ms) & ratio \\
+\midrule
+      65{,}536 & 17 &    16.4 & ---  \\
+     131{,}072 & 18 &    34.9 & 2.13 \\
+     262{,}144 & 19 &    64.1 & 1.84 \\
+     524{,}288 & 20 &   134.0 & 2.09 \\
+   1{,}048{,}576 & 21 &   275.9 & 2.06 \\
+   2{,}097{,}152 & 22 &   630.5 & 2.29 \\
+   4{,}194{,}304 & 23 & 1{,}138.3 & 1.81 \\
+   8{,}388{,}608 & 24 & 2{,}278.9 & 2.00 \\
+  16{,}777{,}216 & 25 & 4{,}540.1 & 1.99 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Eight ratios, mean 2.02. Each row adds exactly one bit of input and
+doubles the running time.}
+
+\smallskip
+\textbf{Compare this table with \chref{cases}'s trial-division table}, where
+adding two bits to a prime doubled the work, mean ratio 2.02. They are the same
+phenomenon, reached from opposite directions: there, an algorithm that looked
+exponential and was; here, an algorithm that looks polynomial and is not.
+
+\smallskip
+\textbf{Extrapolate.} A 64-bit capacity --- an entirely ordinary thing to find
+in a struct --- is $2^{39}$ times the last row: about $7 \times 10^{11}$
+seconds, or \textbf{22{,}000 years}. The algorithm is excellent for small
+capacities and useless for large ones, and no amount of optimisation changes
+that, because the table has $nW$ entries and they must be written.
+\end{worked}
+
+\begin{conceptbox}[How to find the subproblem parameters]
+Every DP in this chapter is defined by \emph{what the subproblems are indexed
+by}, and finding that is the whole design task.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.4cm}L{4.2cm}L{3.0cm}L{3.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Problem} & \textbf{Subproblem indexed by} & \textbf{Count} &
+\textbf{Time} \\
+\midrule
+\endhead
+rod cutting & remaining length & $n$ & $\bigTh{n^{2}}$ \\
+LCS & two prefix lengths & $mn$ & $\bigTh{mn}$ \\
+edit distance & two prefix lengths & $mn$ & $\bigTh{mn}$ \\
+0/1 knapsack & item prefix, capacity & $nW$ & $\bigTh{nW}$ \\
+matrix chain & a range $(i,j)$ & $n^{2}$ & $\bigTh{n^{3}}$ \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+Matrix-chain multiplication is the one with $\bigTh{n^{3}}$: there are
+$\bigTh{n^{2}}$ ranges and each requires a maximum over $\bigO{n}$ split
+points. The formula of \chref{dpone} gives the time directly once the
+parameters are named.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Calling $\bigTh{nW}$ polynomial.} It is pseudo-polynomial, and
+        measured, one more bit of $W$ doubles the time.
+  \item \textbf{Counting the knapsack inner loop upwards.} That solves
+        \emph{unbounded} knapsack --- each item reusable. Both are legitimate
+        problems; they are not the same problem.
+  \item \textbf{Confusing subsequence with substring.} LCS allows gaps; longest
+        common substring does not and has a different recurrence.
+  \item \textbf{Using the two-row trick and then trying to reconstruct.} The
+        table is gone. Use the full table or Hirschberg's algorithm.
+  \item \textbf{Getting the edit-distance base cases wrong.} $d[i][0] = i$,
+        not 0 --- deleting $i$ characters costs $i$.
+  \item \textbf{Skipping the brute-force oracle.} 300 instances at $n = 18$
+        cost seconds and caught nothing here, which is the point: it is cheap
+        evidence that the loop direction is right.
+  \item \textbf{Assuming a DP's space equals its time.} LCS is $\bigTh{mn}$
+        time and can be $\bigTh{\min(m,n)}$ space.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Three Classics and One Surprise]
+Reproduces all four tables. Expect thirty minutes; part D takes about nine
+seconds in its last row.
+
+\begin{lstlisting}[language=C++]
+// ch16_dp2.cpp -- the classic dynamic programs, and one nasty surprise.
+// Build: cl /O2 /EHsc /std:c++17 ch16_dp2.cpp        (see Appendix A)
+
+// --- 1. LCS: the full table, so the subsequence can be recovered ---
+    for (size_t i = 1; i <= m; ++i)
+        for (size_t j = 1; j <= n; ++j)
+            c[i][j] = (a[i-1] == b[j-1]) ? c[i-1][j-1] + 1
+                                         : std::max(c[i-1][j], c[i][j-1]);
+
+// --- 2. LCS in two rows --------------------------------------------
+// Row i depends only on row i-1, so only two rows need to exist. The
+// LENGTH survives; the subsequence does not, because reconstructing
+// it needs the whole table. That is the trade, and it is typical.
+
+// --- 3. Edit distance: the same shape, three choices per cell ------
+// Insert, delete or substitute. The recurrence differs from LCS only
+// in what the three predecessors cost.
+            cur[j] = std::min({prev[j] + 1,            // delete
+                               cur[j - 1] + 1,         // insert
+                               prev[j-1] + (a[i-1] != b[j-1])});
+
+// --- 4. 0/1 knapsack: Theta(nW), and W is a number not a count -----
+// The inner loop counts DOWN, which is what enforces 0/1: counting up
+// would let item i be used more than once.
+static long long knapsack(const std::vector<int>& w,
+                          const std::vector<long long>& v, int W) {
+    std::vector<long long> best(W + 1, 0);
+    for (size_t i = 0; i < w.size(); ++i)
+        for (int cap = W; cap >= w[i]; --cap)
+            best[cap] = std::max(best[cap], best[cap - w[i]] + v[i]);
+    return best[W];
+}
+
+// --- 5. The same problem by brute force, as an oracle --------------
+// 2^n subsets. Only usable for n <= 22, which is exactly why DP
+// exists -- and exactly why it is a trustworthy oracle.
+
+// --- 6. LCS and edit distance are Theta(mn) ------------------------
+// --- 7. A worked instance, small enough to check by eye ------------
+// --- 8. Knapsack: DP against brute force ---------------------------
+
+// --- 9. The surprise: doubling W doubles the time ------------------
+// n is FIXED at 200 here. Only the capacity changes, and the capacity
+// is one number. Writing 2W instead of W adds ONE BIT to the input
+// and doubles the running time. Theta(nW) is polynomial in the VALUE
+// of W and exponential in its LENGTH: pseudo-polynomial.
+\end{lstlisting}
+
+\textbf{What to notice.} Part 9's \texttt{bits} column is the whole lesson. The
+input is not getting appreciably bigger --- it gains one bit per row, while the
+200 items stay fixed --- and the running time doubles each time.
+
+\smallskip
+\textbf{Then try to break it.} Change the inner loop of \texttt{knapsack} to
+count \emph{up} and re-run part 8 against the brute-force oracle. It will
+disagree, and the answers will be too \emph{large} --- the algorithm now takes
+some items repeatedly. Then work out which problem the upward loop solves, and
+note that it is a perfectly good algorithm for a different question.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Write the LCS recurrence and explain why the case $x_{i} = y_{j}$ does
+        not need a maximum.
+  \item Explain why $\bigTh{nW}$ is pseudo-polynomial, using the measured
+        doubling table, and relate it to \chref{cases}'s trial division.
+  \item Give one problem for which the two-row space trick is appropriate and
+        one for which it is not, and say what distinguishes them.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item LCS and edit distance share one table shape: $mn$ subproblems indexed
+        by two prefix lengths, $\bigO{1}$ work each, so $\bigTh{mn}$. They
+        differ only in the cost of the three moves.
+  \item Measured: both quadratic, mean ratios 4.17 and 4.34 on doubling against
+        a predicted 4; the two-row version was 1.7$\times$ faster through cache
+        behaviour alone.
+  \item The rolling array cuts space from $\bigTh{mn}$ to $\bigTh{\min(m,n)}$
+        and makes reconstruction impossible. Hirschberg's algorithm gets both,
+        at twice the code.
+  \item 0/1 knapsack is $\bigTh{nW}$ with $nW$ subproblems. The inner loop must
+        count down, or it solves the unbounded problem instead.
+  \item $\bigTh{nW}$ is \textbf{pseudo-polynomial}: $W$ is a value, its input
+        size is $\lg W$ bits, so the time is $\bigTh{n2^{b}}$.
+  \item Measured with $n$ fixed at 200: eight doublings of $W$ gave time ratios
+        of mean 2.02, each row adding one bit of input. A 64-bit capacity would
+        take about 22{,}000 years.
+  \item Find the subproblem parameters first; the running time follows from
+        (count) $\times$ (work each).
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The LCS of two strings of lengths $m$ and $n$ is computed
+        in: (a)~$\bigTh{m+n}$; (b)~$\bigTh{mn}$; (c)~$\bigTh{mn\lg n}$;
+        (d)~$\bigTh{2^{n}}$.
+  \item \textbf{(MCQ)} $\bigTh{nW}$ for 0/1 knapsack is:
+        (a)~polynomial; (b)~pseudo-polynomial; (c)~logarithmic;
+        (d)~constant in $W$.
+  \item \textbf{(Short)} Derive the edit-distance recurrence, naming the three
+        operations and their costs \emph{(CLO-6)}.
+  \item \textbf{(Short)} Why must the knapsack inner loop count downwards?
+        State what the upward version computes.
+  \item \textbf{(Short)} Explain the trade-off between the full LCS table and
+        the two-row version.
+  \item \textbf{(Applied)} Give the dynamic program for matrix-chain
+        multiplication: state the subproblem parameters, the recurrence, the
+        number of subproblems and the running time.
+  \item \textbf{(Applied)} A colleague proposes shipping the $\bigTh{nW}$
+        knapsack solver for a logistics system where capacities are given in
+        grams and can reach $10^{8}$. Using the measured table, estimate the
+        running time, and propose two alternatives.
+\end{reviewq}

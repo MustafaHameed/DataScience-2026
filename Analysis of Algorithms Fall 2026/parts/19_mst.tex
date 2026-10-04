@@ -3,7 +3,525 @@
 %=====================================================================
 \locator{5}{Part V --- Graph Algorithms}
 
-\begin{alertbox}[Not written yet]
-This chapter is a placeholder. It exists so that the master document builds
-with no undefined references while the chapters are written one at a time.
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} and \textbf{prove} the cut property, and
+        \textbf{explain} why it makes both MST algorithms greedy
+        \emph{(CLO-7)}.
+  \item \textbf{Trace} Kruskal's and Prim's algorithms and \textbf{derive}
+        their running times.
+  \item \textbf{Describe} union by rank and path compression, and
+        \textbf{state} the amortised bound they give.
+  \item \textbf{Measure} the effect of each union--find optimisation and
+        \textbf{relate} it to \chref{amortised}.
+  \item \textbf{Choose} between Kruskal and Prim for a given density.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{greedy} for the exchange argument --- the cut property is one.
+\chref{amortised} for the union--find bound, which is meaningless without it.
+\chref{graphs} for representations.
+\end{prereq}
+
+\begin{keyterms}
+spanning tree $\bullet$ minimum spanning tree $\bullet$ cut $\bullet$
+crossing edge $\bullet$ light edge $\bullet$ cut property $\bullet$ safe edge
+$\bullet$ Kruskal $\bullet$ Prim $\bullet$ disjoint-set union $\bullet$ union
+by rank $\bullet$ path compression $\bullet$ inverse Ackermann
+\end{keyterms}
+
+\begin{alertbox}[Why this chapter exists although the outline omits it]
+The HEC 2023 outline's graph clause names ``graph algorithms, shortest paths,
+sparse graphs'' and does not mention spanning trees. \textbf{CLO-7 requires
+them by name}, and the Course Specification records the discrepancy.
+
+\smallskip
+It would earn its place regardless: the cut property is the cleanest exchange
+argument in the book, and union--find is where \chref{amortised} is paid back.
 \end{alertbox}
+
+\section{The Cut Property}
+
+\begin{definitionbox}[Spanning Tree, MST]
+A \term{spanning tree} of a connected undirected graph is a subset of edges
+that connects every vertex and contains no cycle. It has exactly $|V|-1$ edges.
+
+\smallskip
+A \term{minimum spanning tree} is one of least total weight.
+\end{definitionbox}
+
+\begin{definitionbox}[Cut, Crossing, Light]
+A \term{cut} $(S, V \setminus S)$ is a partition of the vertices. An edge
+\term{crosses} the cut if its endpoints lie on opposite sides. A crossing edge
+of least weight is a \term{light} edge for that cut.
+\end{definitionbox}
+
+\begin{theorem}[The cut property]\label{thm:cut}
+Let $A$ be a subset of some minimum spanning tree, and let $(S, V\setminus S)$
+be any cut that no edge of $A$ crosses. Then any light edge for that cut is
+safe: $A \cup \{e\}$ is still contained in some minimum spanning tree.
+\end{theorem}
+
+\begin{proof}
+An exchange argument, in the pattern of \chref{greedy}.
+
+\smallskip
+Let $T$ be an MST containing $A$. If $e \in T$ there is nothing to prove, so
+assume $e = (u,v) \notin T$.
+
+\smallskip
+Adding $e$ to $T$ creates exactly one cycle, since $T$ is a tree and $e$ joins
+two vertices already connected by a unique path. That cycle contains the path
+in $T$ from $u$ to $v$, and since $u$ and $v$ lie on opposite sides of the cut,
+that path must cross the cut at least once --- say at edge $e'$.
+
+\smallskip
+Now $e'$ is a crossing edge and $e$ is a \emph{light} crossing edge, so
+$w(e) \le w(e')$. Form
+\[ T' = \bigl(T \setminus \{e'\}\bigr) \cup \{e\}. \]
+Removing $e'$ from the cycle leaves a tree spanning the same vertices, so $T'$
+is a spanning tree, and
+\[ w(T') = w(T) - w(e') + w(e) \le w(T). \]
+Since $T$ was minimum, $w(T') = w(T)$ and $T'$ is also an MST.
+
+\smallskip
+Finally $A \subseteq T'$: no edge of $A$ crosses the cut, so $e' \notin A$, and
+removing $e'$ did not disturb $A$. Hence $A \cup \{e\} \subseteq T'$, an MST.
+\end{proof}
+
+\begin{conceptbox}[One theorem, two algorithms]
+Theorem~\ref{thm:cut} says a light crossing edge may always be taken. It does
+not say \emph{which} cut to use, and the two classical algorithms are two
+answers.
+
+\smallskip
+\textbf{Prim} takes $S$ = the vertices of the tree built so far. The light edge
+is the cheapest edge leaving the tree, so the structure needed is a
+\textbf{priority queue}.
+
+\smallskip
+\textbf{Kruskal} considers edges in increasing weight order; when an edge joins
+two different components, the cut separating those components is crossed by no
+chosen edge, and this edge is lightest among those remaining. The structure
+needed is one that answers \textbf{``are these two vertices already
+connected?''} --- disjoint-set union.
+
+\smallskip
+Both are greedy, both are optimal, and both are optimal \emph{for the same
+reason}. The difference is entirely which data structure the chosen cut
+requires.
+\end{conceptbox}
+
+\section{Kruskal, and the Structure It Needs}
+
+\dsfig{\aoaalg{\algname{Kruskal}$(G, w)$}{
+\State $A \gets \emptyset$
+\For{each vertex $v$}
+  \State \algname{Make-Set}$(v)$
+\EndFor
+\State sort the edges by non-decreasing weight
+\For{each edge $(u,v)$ in that order}
+  \If{\algname{Find}$(u) \ne$ \algname{Find}$(v)$}
+    \State $A \gets A \cup \{(u,v)\}$
+      \Comment{safe, by the cut property}
+    \State \algname{Union}$(u, v)$
+  \EndIf
+\EndFor
+\State \Return $A$
+}}{\algname{Kruskal}. The sort is $\bigTh{|E| \lg |E|}$ and dominates; the
+$\bigO{|E|}$ union--find operations cost $\bigO{|E|\,\alpha(|V|)}$, which is
+why the amortised bound matters.}{kruskal}
+
+\begin{definitionbox}[Disjoint-Set Union]
+Maintains a partition of the vertices under three operations:
+\algname{Make-Set}$(v)$, \algname{Find}$(v)$ returning the representative of
+$v$'s set, and \algname{Union}$(u,v)$ merging two sets.
+
+\smallskip
+Each set is a tree whose root is the representative. \algname{Find} walks to
+the root, so its cost is the depth.
+\end{definitionbox}
+
+\begin{conceptbox}[Two optimisations, both two lines]
+\textbf{Union by rank.} When merging, attach the shorter tree under the taller.
+This alone bounds the depth by $\bigO{\lg |V|}$, since a tree of rank $r$ has
+at least $2^{r}$ nodes.
+
+\smallskip
+\textbf{Path compression.} After \algname{Find} locates the root, make every
+node on the path point directly at it. The walk is done anyway; flattening
+costs one extra pass and makes all future finds on those nodes $\bigO{1}$.
+
+\smallskip
+\textbf{Together} they give an amortised cost of $\bigO{\alpha(|V|)}$ per
+operation, where $\alpha$ is the inverse Ackermann function. $\alpha(n) \le 4$
+for every $n$ that can be written down --- $\alpha(n) = 4$ requires $n$ larger
+than the number of atoms in the universe.
+
+\smallskip
+\textbf{This bound is amortised and nothing else.} A single \algname{Find} can
+cost $\bigTh{\lg |V|}$; it is only over a sequence that the average falls to
+$\alpha$. It is proved by the potential method of \chref{amortised}, and it is
+the most dramatic amortised result in common use.
+\end{conceptbox}
+
+\begin{theorem}[Kruskal's running time]\label{thm:kruskaltime}
+With union by rank and path compression, \algname{Kruskal} runs in
+$\bigO{|E| \lg |E|}$ time, which is $\bigO{|E| \lg |V|}$.
+\end{theorem}
+
+\begin{proof}
+Sorting the edges is $\bigTh{|E|\lg|E|}$. There are $|V|$ \algname{Make-Set}
+operations and at most $2|E|$ \algname{Find} plus $|V|-1$ \algname{Union}
+operations, costing $\bigO{(|E|+|V|)\,\alpha(|V|)}$ in total. Since
+$\alpha(|V|) = \bigO{\lg |E|}$ trivially, the sort dominates, giving
+$\bigO{|E|\lg|E|}$. Finally $|E| \le |V|^{2}$ gives $\lg|E| \le 2\lg|V|$, so
+the bound is $\bigO{|E|\lg|V|}$.
+\end{proof}
+
+\begin{alertbox}[Note what the theorem says about the clever part]
+The union--find work is \emph{not} the bottleneck --- the sort is. So why
+bother with path compression at all?
+
+\smallskip
+Because without it the union--find work \emph{becomes} the bottleneck, by a
+long way. Section~19.4 measures a naive implementation running 1{,}254$\times$
+slower than the optimised one on the same graph. An optimisation that makes a
+non-dominant term stay non-dominant is still doing essential work.
+\end{alertbox}
+
+\section{Prim}
+
+\dsfig{\aoaalg{\algname{Prim}$(G, w, r)$}{
+\For{each vertex $u$}
+  \State $\mathit{key}[u] \gets \infty$;\quad $\pi[u] \gets$ \textsc{nil}
+\EndFor
+\State $\mathit{key}[r] \gets 0$
+\State $Q \gets$ min-priority queue of all vertices, keyed by $\mathit{key}$
+\While{$Q$ is not empty}
+  \State $u \gets \algname{Extract-Min}(Q)$
+    \Comment{the light edge leaving the tree}
+  \For{each $v$ adjacent to $u$}
+    \If{$v \in Q$ \textbf{and} $w(u,v) < \mathit{key}[v]$}
+      \State $\pi[v] \gets u$;\quad
+             $\algname{Decrease-Key}(Q, v, w(u,v))$
+    \EndIf
+  \EndFor
+\EndWhile
+}}{\algname{Prim}. With a binary heap this is $\bigO{(|V|+|E|)\lg|V|}$; the
+cut is always ``tree so far'' against ``everything else''.}{prim}
+
+\begin{conceptbox}[Which heap, and what it is worth]
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.6cm}L{3.2cm}L{3.2cm}L{4.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Priority queue} & \textbf{Extract-Min} & \textbf{Decrease-Key} &
+\textbf{Prim total} \\
+\midrule
+\endhead
+unsorted array & $\bigO{|V|}$ & $\bigO{1}$ & $\bigO{|V|^{2}}$ \\
+binary heap & $\bigO{\lg|V|}$ & $\bigO{\lg|V|}$ & $\bigO{|E|\lg|V|}$ \\
+Fibonacci heap & $\bigO{\lg|V|}$ & $\bigO{1}$ amortised &
+  $\bigO{|E| + |V|\lg|V|}$ \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+The Fibonacci heap's $\bigO{1}$ \algname{Decrease-Key} is amortised --- another
+debt to \chref{amortised} --- and it gives the best known asymptotic bound.
+Its constants are poor enough that binary heaps win in practice for all but
+enormous dense graphs, which is a recurring theme: \chref{selection}'s
+median-of-medians, \chref{quicksort}'s heapsort fallback, and now this.
+\end{conceptbox}
+
+\section{Measured}
+
+\begin{worked}[First, Do They Agree?]
+Two different greedy rules; the cut property says they must produce the same
+total weight.
+\begin{center}
+\textbf{2{,}000 random connected graphs. Disagreements: 0.}
+\end{center}
+Cheap evidence that Theorem~\ref{thm:cut} is doing what it claims --- and, more
+practically, that neither implementation has a bug.
+\end{worked}
+
+\begin{worked}[Union--Find: the Optimisations, Counted]
+\texttt{code/ch19\_mst.cpp} counts pointer hops inside \algname{Find},
+divided by the number of operations:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$|V|$ & naive & by rank & rank + compression & naive/both \\
+\midrule
+ 10{,}000 &  1{,}406.77 & 2.89 & \textbf{1.62} &   868.6 \\
+ 20{,}000 &  2{,}880.47 & 3.05 & \textbf{1.66} & 1{,}733.3 \\
+ 40{,}000 &  6{,}044.05 & 3.28 & \textbf{1.73} & 3{,}495.4 \\
+ 80{,}000 & 12{,}542.07 & 3.46 & \textbf{1.79} & 7{,}025.0 \\
+160{,}000 & 25{,}469.42 & 3.44 & \textbf{1.82} & 14{,}008.8 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{The naive column doubles when $|V|$ doubles} --- it is $\bigTh{|V|}$ per
+find, because an unbalanced union can build a path. The ratio to the optimised
+version grows without limit: 869 to 14{,}009.
+
+\smallskip
+\textbf{Union by rank alone drops it to about 3}, an improvement of four orders
+of magnitude from two lines of code.
+
+\smallskip
+\textbf{And rank plus compression is essentially flat.} Carried further, with
+the naive variant omitted because it would not finish:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$|V|$ & by rank & rank + compression & $\alpha(|V|) \le$ \\
+\midrule
+   320{,}000 & 3.43 & 1.78 & 4 \\
+ 1{,}280{,}000 & 3.61 & 1.85 & 4 \\
+ 5{,}120{,}000 & 3.68 & \textbf{1.88} & 4 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{From $|V| = 10{,}000$ to $|V| = 5{,}120{,}000$ --- a 512-fold range ---
+the cost per find went from 1.62 to 1.88.} That is the inverse Ackermann bound,
+made visible. It is not constant, and it is not distinguishable from constant by
+any measurement you can make.
+\end{worked}
+
+\begin{worked}[And in Seconds]
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\rowcolor{primary!15}
+$|V|$ & naive (ms) & by rank (ms) & rank + compr. (ms) & speed-up \\
+\midrule
+ 25{,}000 &  1{,}064.4 &  8.9 &  8.4 &   127.2 \\
+ 50{,}000 &  4{,}910.3 & 19.5 & 17.3 &   283.5 \\
+100{,}000 & 44{,}306.2 & 44.1 & 35.3 & \textbf{1{,}254.4} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{44 seconds against 35 milliseconds.} The naive column is quadratic ---
+each doubling of $|V|$ multiplies it by about 9, not 2.
+
+\smallskip
+\textbf{Note also that rank alone gets most of the benefit} (44.1 ms against
+35.3 ms). Path compression adds a further 20\%. The first optimisation is
+transformative and the second is an improvement --- worth knowing when you are
+deciding what to implement first.
+\end{worked}
+
+\begin{worked}[Kruskal Against Prim]
+$|V| = 100{,}000$, density varying:
+
+\rowcolors{2}{white}{lightbg}
+\begin{center}
+\begin{tabular}{@{}rrrrl@{}}
+\toprule
+\rowcolor{primary!15}
+avg degree & $|E|$ & Kruskal (ms) & Prim (ms) & winner \\
+\midrule
+ 2 &   100{,}000 &  10.0 &   4.9 & Prim \\
+ 4 &   200{,}000 &  19.1 &  36.2 & Kruskal \\
+ 8 &   400{,}000 &  39.2 &  64.4 & Kruskal \\
+16 &   800{,}000 &  76.2 & 109.6 & Kruskal \\
+32 & 1{,}600{,}000 & 148.3 & 155.2 & Kruskal \\
+64 & 3{,}200{,}000 & 303.1 & 226.4 & Prim \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\textbf{Neither wins everywhere, and the pattern is not monotonic.} Prim wins
+at the extreme sparse end and again when dense; Kruskal wins in the middle.
+
+\smallskip
+\textbf{Both are $\bigO{|E|\lg|V|}$}, so asymptotic analysis predicts no
+winner at all --- and is right, in the sense that the measured ratio never
+exceeds about 2 in either direction. Everything in this table is constants.
+
+\smallskip
+\textbf{The practical rules that come out of it:}
+\begin{tight}
+  \item \textbf{Kruskal} if the edges are \emph{already sorted}, or can be
+        sorted cheaply --- then its dominant term vanishes;
+  \item \textbf{Prim} on dense graphs, where it never materialises an edge
+        list at all and touches the adjacency structure in place;
+  \item \textbf{either}, in the broad middle, where the difference is under
+        2$\times$ and other considerations should decide.
+\end{tight}
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Union--find without union by rank.} Measured 14{,}000$\times$
+        more pointer hops and 44 seconds against 35 milliseconds.
+  \item \textbf{Quoting $\bigO{\alpha(n)}$ as a worst case.} It is amortised; a
+        single find can still be $\bigTh{\lg|V|}$.
+  \item \textbf{Assuming the MST is unique.} It is unique only if all edge
+        weights are distinct. With ties there may be many, and two correct
+        algorithms may return different trees of the same weight.
+  \item \textbf{Running an MST algorithm on a disconnected graph.} There is no
+        spanning tree; you get a spanning \emph{forest}, and the code should
+        say which it computed.
+  \item \textbf{Using Kruskal on a dense graph without thinking about the
+        sort.} $\bigTh{|E|\lg|E|}$ with $|E| = \bigTh{|V|^{2}}$ is
+        $\bigTh{|V|^{2}\lg|V|}$.
+  \item \textbf{Reaching for a Fibonacci heap.} Better asymptotically, worse in
+        practice at every size you will meet --- the same story as
+        median-of-medians.
+  \item \textbf{Forgetting that the cut property needs $A$ to cross no edge of
+        the cut.} That hypothesis is what makes the exchange safe.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Where Amortised Analysis Pays Off]
+Reproduces all four tables. Expect forty minutes --- the naive union--find at
+$|V| = 100{,}000$ takes 44 seconds per run, three times over.
+
+\begin{lstlisting}[language=C++]
+// ch19_mst.cpp -- Kruskal, Prim, and where Chapter 17 pays off.
+// Build: cl /O2 /EHsc /std:c++17 ch19_mst.cpp        (see Appendix A)
+
+// --- 1. Union-find, three ways -------------------------------------
+// The only differences are whether union balances the trees and
+// whether find flattens the path behind it. Both are two lines, and
+// together they take the amortised cost from O(lg n) to O(alpha(n)).
+    int find(int x) {
+        if (!compress) {
+            while (parent[x] != x) { x = parent[x]; ++steps; }
+            return x;
+        }
+        int root = x;
+        while (parent[root] != root) { root = parent[root]; ++steps; }
+        while (parent[x] != root) {          // second pass: flatten
+            int next = parent[x];
+            parent[x] = root;
+            x = next;
+        }
+        return root;
+    }
+    bool unite(int a, int b) {
+        a = find(a); b = find(b);
+        if (a == b) return false;
+        if (!by_rank) { parent[a] = b; return true; }
+        if (rank_[a] < rank_[b]) std::swap(a, b);
+        parent[b] = a;
+        if (rank_[a] == rank_[b]) ++rank_[a];
+        return true;
+    }
+
+// --- 2. Kruskal: sort, then add anything that is safe --------------
+// The sort is Theta(E lg E) and dominates; the union-find work is
+// E * alpha(V), which is why the structure's amortised cost matters.
+
+// --- 3. Prim: grow one tree from a root ----------------------------
+// The "lazy" form pushes every edge and discards stale entries when
+// popped, which is simpler than decrease-key and no worse
+// asymptotically.
+
+// --- 4. Do the two algorithms agree? -------------------------------
+// They are different greedy rules. If the cut property is right, they
+// must produce the same total weight.
+
+// --- 5. The three union-find variants ------------------------------
+// "steps" counts pointer hops inside find(). This is the measurement
+// Chapter 17 predicts: naive grows, rank alone is much better, and
+// rank + compression is essentially flat.
+//
+// The naive variant's find() is LINEAR in the component size, so the
+// whole run is quadratic and V = 320,000 does not finish in any
+// reasonable time. It stops at 160,000; the other two carry on, and
+// that asymmetry is itself the result.
+
+// --- 6. And the same thing in seconds ------------------------------
+// --- 7. Kruskal against Prim, by density ---------------------------
+\end{lstlisting}
+
+\textbf{What to notice.} The \texttt{rank+compress} column in part 5 goes from
+1.62 to 1.88 while $|V|$ multiplies by 512. If you plotted it you would draw a
+horizontal line, and the theory says it is growing --- just slower than any
+function you can name.
+
+\smallskip
+\textbf{Then try to break it.} Implement path compression \emph{without} union
+by rank and measure it. Predict first. It is far better than naive and slightly
+worse than the pair --- compression alone gives $\bigO{\lg n}$ amortised, and
+it is the combination that gives $\alpha$. Two optimisations that each help and
+only together give the famous bound is an unusual and instructive situation.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item State the cut property and identify the hypothesis that makes the
+        exchange in its proof safe.
+  \item Kruskal and Prim use the same theorem on different cuts. Describe each
+        algorithm's cut, and say which data structure it forces \emph{(CLO-7)}.
+  \item The measured cost per find was 1.62 at $|V| = 10^{4}$ and 1.88 at
+        $|V| = 5 \times 10^{6}$. Why is it wrong to call this $\bigO{1}$, and
+        why does it not matter in practice?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item The cut property: a light edge crossing any cut uncrossed by the
+        current partial tree is safe. It is proved by an exchange argument, and
+        it is why both MST algorithms are greedy and optimal.
+  \item Kruskal takes the cut between components (needing union--find); Prim
+        takes the cut between the tree and the rest (needing a priority queue).
+        One theorem, two data structures.
+  \item Union by rank gives $\bigO{\lg|V|}$ per find; adding path compression
+        gives $\bigO{\alpha(|V|)}$ amortised, with $\alpha \le 4$ for any
+        writable $n$.
+  \item Measured: pointer hops per find were 25{,}469 (naive), 3.44 (rank) and
+        1.82 (rank + compression) at $|V| = 160{,}000$ --- a ratio of 14{,}009.
+  \item Measured: from $|V| = 10^{4}$ to $5.12\times10^{6}$, the optimised cost
+        per find rose only from 1.62 to 1.88.
+  \item Measured: Kruskal took 44.3 seconds with naive union--find and 35
+        milliseconds with the optimisations, at $|V| = 100{,}000$. Rank alone
+        got most of the way; compression added a further 20\%.
+  \item Measured: Kruskal and Prim never differed by more than about 2$\times$
+        across densities, and neither won everywhere. Both are
+        $\bigO{|E|\lg|V|}$; the table is entirely constants.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} With union by rank and path compression, the amortised
+        cost of a disjoint-set operation is: (a)~$\bigO{1}$ worst case;
+        (b)~$\bigO{\alpha(n)}$; (c)~$\bigO{\lg n}$; (d)~$\bigO{n}$.
+  \item \textbf{(MCQ)} Kruskal's running time is dominated by:
+        (a)~the union--find operations; (b)~sorting the edges; (c)~the
+        priority queue; (d)~the initialisation.
+  \item \textbf{(Short)} State and prove the cut property \emph{(CLO-7)}.
+  \item \textbf{(Short)} Explain why Kruskal needs union--find and Prim needs a
+        priority queue, in terms of the cut each one uses.
+  \item \textbf{(Short)} An MST is unique under what condition? Give a graph
+        with two distinct minimum spanning trees.
+  \item \textbf{(Applied)} Prove that a disjoint-set tree of rank $r$ built with
+        union by rank contains at least $2^{r}$ nodes, and deduce the
+        $\bigO{\lg n}$ depth bound.
+  \item \textbf{(Applied)} You must build an MST on a graph of 10 million
+        vertices and 60 million edges, already sorted by weight. Choose an
+        algorithm, give the arithmetic, and say which measurement in this
+        chapter most supports your choice.
+\end{reviewq}
