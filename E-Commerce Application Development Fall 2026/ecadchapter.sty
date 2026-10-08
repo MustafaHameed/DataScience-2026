@@ -1,0 +1,153 @@
+%=====================================================================
+%  ecadchapter.sty
+%  Cover sheet and furniture for a SINGLE-CHAPTER extract of the
+%  E-Commerce Application Development Fall 2026 handout.
+%
+%  Why this exists.  The master handout is one volume of ~240 pages.  That
+%  is the right object for a student to keep and the wrong object to hand
+%  out in a 90-minute class: nobody prints 240 pages a week, and a student
+%  who is given the whole book in week 3 reads none of it.  So the same
+%  parts/ files are also built one chapter at a time, by makechapters.py,
+%  each with the cover below.
+%
+%  This package is loaded AFTER ecadhandout by the generated drivers.  It
+%  adds and overrides; it never duplicates.  Nothing in here is used by
+%  the master build, which is why it is a separate package rather than
+%  more lines in ecadhandout.sty: an extract-only device that the master
+%  loads is an extract-only device the master can break.
+%=====================================================================
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{ecadchapter}[2026/10/08 ECAD single-chapter extract]
+
+\@ifpackageloaded{ecadhandout}{}{%
+  \PackageError{ecadchapter}{ecadhandout must be loaded first}{%
+    Put \protect\usepackage{ecadhandout} before
+    \protect\usepackage{ecadchapter}.}}
+
+%---------------------------------------------------------------------
+% Footer.  The master's footer is a bare page number, which is right for a
+% bound volume and wrong for a loose extract: a page that falls out of a
+% stapled handout has to be able to say which handout it fell out of.
+%---------------------------------------------------------------------
+\newcommand{\ecadch@foot}{}
+\newcommand{\extractfooter}[1]{\renewcommand{\ecadch@foot}{#1}}
+\fancyfoot[L]{\footnotesize\color{neutral}\ecadch@foot}
+\fancyfoot[C]{\small\thepage}
+\fancyfoot[R]{\footnotesize\color{neutral}ECAD $\cdot$ Fall 2026}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyfoot[L]{\footnotesize\color{neutral}\ecadch@foot}%
+  \fancyfoot[C]{\small\thepage}%
+  \fancyfoot[R]{\footnotesize\color{neutral}ECAD $\cdot$ Fall 2026}%
+  \renewcommand{\headrulewidth}{0pt}%
+  \renewcommand{\footrulewidth}{0.3pt}}
+
+%---------------------------------------------------------------------
+% One row of the cover's facts table.  Kept as a macro so that an empty
+% value prints an em dash rather than a ragged blank cell.
+%---------------------------------------------------------------------
+\newcommand{\ecadch@fact}[2]{%
+  \textbf{\color{primary}#1} &
+  \ifstrempty{#2}{\color{neutral}---}{#2}\\}
+
+%---------------------------------------------------------------------
+%  \chapterextract{<kind>}{<number>}{<title>}{<part line>}
+%                 {<week>}{<lab>}{<assessment>}
+%
+%  <kind>      Chapter | Appendix
+%  <number>    5 | A            (printed, not computed)
+%  <part line> the \locator subtitle, or empty for an appendix
+%  <week>      taught-in week, from parts/G_schedule.tex, or empty
+%  <lab>       that week's laboratory, or empty
+%  <assessment> that week's assessment, or empty
+%---------------------------------------------------------------------
+\newcommand{\chapterextract}[7]{%
+  \thispagestyle{empty}%
+  \begin{center}
+  \vspace*{0.2cm}
+
+  % --- institutional row -------------------------------------------
+  \noindent\begin{minipage}{\textwidth}
+    \centering
+    \includegraphics[height=1.55cm]{assets/iub-logo.png}%
+    \hspace{0.7cm}%
+    \raisebox{0.35cm}{\begin{minipage}{7.4cm}\centering
+      {\small\textsc{\color{primary}The Islamia University of Bahawalpur}}\\[2pt]
+      {\footnotesize\color{neutral}Department of Information Technology}
+    \end{minipage}}%
+    \hspace{0.7cm}%
+    \includegraphics[height=1.55cm]{assets/dit-logo.png}
+  \end{minipage}
+
+  \vspace{0.55cm}
+  {\color{secondary}\rule{\textwidth}{1.2pt}}\\[8pt]
+
+  % --- course identity ---------------------------------------------
+  {\small\textsc{\color{secondary}INFT-4041 $\cdot$ BSIT $\cdot$ 5th Semester
+   $\cdot$ Fall 2026}}\\[4pt]
+  {\Large\bfseries\color{primary}E-Commerce Application Development}\\[8pt]
+  {\color{secondary}\rule{\textwidth}{1.2pt}}
+
+  \vspace{0.9cm}
+
+  % --- which chapter -----------------------------------------------
+  % The numeral is set large and pale, so that a student going through a
+  % stack of week's handouts can find one by its number from a metre away.
+  % It ends its own paragraph rather than taking a \\[...]: at 56 pt the
+  % line box is taller than any negative skip worth writing, and a skip
+  % tuned for "5" collides with the title under "23".
+  {\normalsize\textsc{\color{neutral}#1}}\\[2pt]
+  {\fontsize{56}{56}\selectfont\bfseries\color{primary!22}#2}
+
+  \vspace{0.55cm}
+  \begin{minipage}{0.88\textwidth}
+    \centering
+    {\LARGE\bfseries\color{primary}#3}
+  \end{minipage}\\[10pt]
+  \ifstrempty{#4}{}{{\small\itshape\color{secondary}#4}\\[2pt]}
+
+  \vspace{0.7cm}
+
+  % --- where it sits in the semester -------------------------------
+  \begin{tcolorbox}[enhanced, width=0.9\textwidth, colback=lightbg,
+    colframe=primary, boxrule=0pt, leftrule=4pt, arc=2pt,
+    top=7pt, bottom=7pt, left=9pt, right=9pt]
+  \small
+  \begin{tabular}{@{}p{2.5cm}@{}p{11.0cm}@{}}
+    \ecadch@fact{Taught in}{#5}
+    \ecadch@fact{Laboratory}{#6}
+    \ecadch@fact{Assessment}{#7}
+  \end{tabular}
+  \end{tcolorbox}
+
+  \vspace{0.5cm}
+
+  % --- what this document is, and is not ---------------------------
+  \begin{tcolorbox}[enhanced, width=0.9\textwidth, colback=white,
+    colframe=neutral!45, boxrule=0.5pt, arc=2pt,
+    top=7pt, bottom=7pt, left=9pt, right=9pt]
+  \footnotesize
+  \textbf{\color{primary}This is a class extract.} It is \emph{#1~#2} of the
+  unified handout, printed on its own so that a week's reading is a week's
+  reading. Page numbers restart at~1 and are local to this extract; chapter,
+  figure and table numbers are the ones the full volume gives them, so a
+  reference you follow here lands in the same place there.
+
+  \smallskip
+  Cross-references to other chapters print as their numbers in the full
+  volume. For the whole course in one file --- front matter, the HEC tracing
+  table, all twenty-three chapters and all seven appendices --- see
+  \texttt{ECAD\_Fall2026\_Handout.pdf}.
+  \end{tcolorbox}
+
+  \vfill
+  {\small\color{neutral}Dr.\ Mustafa Hameed $\cdot$ Department of Information
+   Technology}\\[2pt]
+  {\footnotesize\color{neutral}Generated from \texttt{parts/} by
+   \texttt{makechapters.py}; do not edit this PDF's source by hand}
+  \vspace{0.2cm}
+  \end{center}
+  \clearpage
+  \setcounter{page}{1}}
+
+\endinput

@@ -1,0 +1,659 @@
+%=====================================================================
+% FRONT MATTER
+%=====================================================================
+\pagenumbering{roman}
+\structuralfigures{F.}
+\thispagestyle{empty}
+
+\begin{center}
+\vspace*{1.0cm}
+
+{\color{secondary}\rule{0.85\textwidth}{2pt}}\\[6pt]
+{\large\textsc{\color{secondary}Bachelor of Science in Information Technology}}\\[18pt]
+
+{\Huge\bfseries\color{primary}E-COMMERCE APPLICATION\\[4pt]DEVELOPMENT}\\[10pt]
+{\LARGE\bfseries\color{primary}Building, Running and Securing an Online Shop}\\[16pt]
+
+{\color{secondary}\rule{0.85\textwidth}{2pt}}\\[16pt]
+
+{\Large\textsc{Unified Lecture Handout}}\\[6pt]
+{\large\color{gray!70!black}Complete Course in One Volume $\bullet$ Fall 2026}\\[24pt]
+
+% --- the claim the whole book rests on ---
+\begin{tikzpicture}
+  \node[rounded corners=4pt, draw=primary, line width=1.1pt, fill=primary!6,
+        text=primary, align=center, font=\small\bfseries,
+        minimum width=11.6cm, minimum height=1.5cm]
+       {\faIcon{store}\\[2pt]Anyone can install a storefront in an afternoon.
+        This course is everything after that.};
+\end{tikzpicture}\\[10pt]
+{\small\itshape\color{gray!70!black}A shop is not a website. It takes money,
+holds other people's data, and is answerable in law --- and each of those
+changes what ``finished'' means.}
+
+\vspace{1.0cm}
+
+\begin{tcolorbox}[enhanced, width=0.86\textwidth, colback=lightbg,
+  colframe=primary, boxrule=0pt, leftrule=4pt, arc=2pt, top=6pt, bottom=6pt]
+\small
+\textbf{\color{primary}What this volume covers.} Every distinct clause of the
+HEC outline for \emph{E-Commerce}, in the order the outline gives them, traced
+chapter by chapter in the Course Specification overleaf.
+
+\smallskip
+That outline is published once only, in the \textbf{2017} curriculum (p.~94),
+where the course is an \emph{elective in BS Software Engineering} rather than a
+BSIT course at all. The 2023 curriculum drops it completely; the 2025
+curriculum renames it \emph{Digital Marketing \& E-Commerce} and publishes no
+contents. The department teaches it as \textbf{INFT-4041}, BSIT, 5th semester,
+3 credit hours. All of that is recorded in the Course Specification rather
+than smoothed over.
+
+\smallskip
+The course is taught on a \textbf{running shop}. One storefront is installed in
+Chapter~5 and every chapter afterwards adds a layer to it; by Chapter~23 it is
+the semester project. Appendix~A sets up the stack in one sitting.
+\end{tcolorbox}
+
+\vspace{0.9cm}
+{\small\color{gray!60!black}Six Parts $\bullet$ Twenty-Three Chapters $\bullet$ Seven Appendices}
+\vspace{1cm}
+\end{center}
+
+\newpage
+
+%=====================================================================
+\chapter*{How to Use This Handout}
+\addcontentsline{toc}{chapter}{How to Use This Handout}
+\markboth{How to Use This Handout}{}
+
+There are two ways to teach this subject badly.
+
+The first is to teach it as business studies: models, channels, trends, the
+history of the dot-com boom, and a graduate who can describe an online shop but
+has never configured a tax rule. The second is to teach it as programming
+exercises: write a cart class, write a checkout function, and a graduate who has
+built a toy that no one would take money through.
+
+This handout takes the third path, which is also the one the published outline
+describes if you read it closely. You install a real, open-source storefront in
+Chapter~5, and you spend the rest of the course making it into a shop that could
+actually trade: a catalogue that models real products, a checkout that handles
+shipping and tax, a payment path that survives a failed transaction, an admin
+who can process a refund, a server that does not leak its database, and a listing
+a search engine can find. Where the platform cannot do what you need --- and in
+Chapter~19 it cannot --- you write the code that extends it.
+
+\section*{The six parts}
+
+\textbf{Part~I --- E-Commerce and Its Models} (Chapters 1--4) is the business
+grounding, and it is short on purpose. What electronic commerce actually changed;
+the models and where the revenue comes from; auctions, portals and communities;
+and the build-buy-or-extend decision that justifies everything the rest of the
+book does.
+
+\textbf{Part~II --- Standing the Shop Up} (Chapters 5--8) gets a storefront
+running and fills it. The stack and what each layer does; products and categories,
+with the tables underneath them; variants, options and uploads; then the theme.
+
+\textbf{Part~III --- From Basket to Order} (Chapters 9--12) is the pipeline a
+customer walks through. Where basket state lives; the checkout and the order
+state machine; shipping, tax and zones; discounts, vouchers and referrals.
+
+\textbf{Part~IV --- Money and Identity} (Chapters 13--16) is the part where
+mistakes cost money. Payment systems and who carries the risk; integrating a
+gateway and testing it in a sandbox; accounts, sessions and password storage;
+then securing the whole thing.
+
+\textbf{Part~V --- Running and Extending the Shop} (Chapters 17--20) is the half
+of the job nobody demonstrates: the dashboard and what to watch, the back office,
+writing your first module, and deployment with everything that follows it.
+
+\textbf{Part~VI --- Reach, Law and Practice} (Chapters 21--23) closes with being
+found, being lawful, and your project.
+
+\begin{conceptbox}
+Why Chapter~19 is the hinge of the course. Everything before it is
+\emph{configuration}: you are choosing among the options a platform already
+offers, and a careful non-programmer could do most of it. Chapter~19 is the
+first time the answer to ``can the shop do this?'' is no, and you have to write
+the code that makes it yes. That is the difference between the outline's bare
+title, \emph{E-Commerce}, and the one this department teaches,
+\emph{E-Commerce Application Development}.
+\end{conceptbox}
+
+\section*{The furniture of every chapter}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.6cm}L{10.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Box} & \textbf{What it is for} \\
+\midrule
+\endhead
+\faIcon{bullseye}~\textbf{Outcomes} & What you will be able to \emph{do}. Bloom
+verbs, not topics. \\
+\faIcon{link}~\textbf{Before you start} & Which earlier chapters this one stands
+on, and what state your shop should be in. \\
+\faIcon{tags}~\textbf{Key terms} & The vocabulary introduced; all of it is in the
+glossary of Appendix~D. \\
+\faIcon{book}~\textbf{Definition} & The canonical statement. In this subject
+several ordinary English words --- order, basket, customer, product --- are
+technical terms with narrower meanings, and confusing the two causes real bugs. \\
+\faIcon{lightbulb}~\textbf{Concept} & The judgement call: what an experienced
+practitioner would decide, and why. \\
+\faIcon{exclamation-triangle}~\textbf{Warning} & Something that will bite you,
+usually in production rather than in the examination. \\
+\faIcon{calculator}~\textbf{Worked example} & Real arithmetic --- a tax
+calculation, a gateway fee, a discount applied in the wrong order --- with every
+step shown. \\
+\faIcon{tachometer-alt}~\textbf{Measured} & A number produced by running
+something, not by asserting it. Twelve chapters carry one; see below. \\
+\faIcon{exclamation-circle}~\textbf{Common pitfalls} & The mistakes that are
+actually made. \\
+\faIcon{flask}~\textbf{Try it yourself} & The laboratory. Every one of them
+changes the same shop, and they are cumulative: skip Chapter~9's and
+Chapter~10's will have nothing to check out. \\
+\faIcon{question-circle}~\textbf{Checkpoint} & Three questions. Attempt them
+before reading Appendix~C. \\
+\faIcon{clipboard-check}~\textbf{Chapter summary} & What to retain. \\
+\faIcon{pen-fancy}~\textbf{Review questions} & Examination practice: multiple
+choice, short answer, applied. \\
+\bottomrule
+\end{longtable}
+
+\newpage
+
+Two typographic conventions carry a lot of weight in a course taught through a
+graphical interface, and they are worth learning on this page:
+
+\begin{itemize}[leftmargin=1.6em, itemsep=3pt, topsep=4pt]
+  \item \adminpath{Catalog, Products, Add New} is a \textbf{click path} through
+        the administration panel. Read the chevrons as ``then''.
+  \item \uiel{Save} on its own is a single control --- a button, a field, a tab
+        or a menu item. Anything in \texttt{typewriter} is text you type or a
+        file you edit, which is a different thing entirely.
+\end{itemize}
+
+\begin{alertbox}[The measured strand, and why it is only in twelve chapters]
+Twelve of the twenty-three chapters end with a number that was produced rather
+than asserted: a page time, a query count, a request rate, a hash cost, a list
+of security headers present and absent.
+
+\smallskip
+They are the twelve where measuring genuinely teaches something. ``Add an index
+and the category page gets faster'' is a claim a student can be told and will
+forget; watching the same page go from a table scan at fifty thousand products
+to an index seek, and reading both numbers off your own machine, is not. The
+other eleven chapters argue in prose, because dressing up a legal obligation or
+a business model with a stopwatch would be theatre.
+
+\smallskip
+Every figure in a \faIcon{tachometer-alt}~\textbf{Measured} box was produced by
+the file named beside it, in \texttt{code/}, against the stack in Appendix~A.
+Rerun them. Your numbers will differ from the book's --- different machine,
+different disk, different day --- and the \emph{shape} should not. Where a
+result depends on the particular machine, the box says so.
+\end{alertbox}
+
+\newpage
+
+%=====================================================================
+\chapter*{Course Specification}
+\addcontentsline{toc}{chapter}{Course Specification}
+\markboth{Course Specification}{}
+
+This page is the course file. It states what HEC requires of a course called
+\emph{E-Commerce} and shows where each requirement is met.
+
+That is harder here than in most courses, because the requirement has been
+published exactly once and then withdrawn. The three editions are traced below
+so that an accreditation review against any of them has something to check.
+
+\section*{Course particulars}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.2cm}L{11.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Item} & \textbf{Value} \\
+\midrule
+\endhead
+Course title & \emph{E-Commerce Application Development}, as taught. HEC 2017
+calls it simply \emph{E-Commerce}; HEC 2025 calls it \emph{Digital Marketing \&
+E-Commerce}. The department's title is the accurate one, and the Course
+Specification justifies the two added words \\
+Course code & INFT-4041 \\
+Programme & BS Information Technology, 5th semester. Under HEC 2017 the course
+is an \textbf{elective in BS Software Engineering} (2017, p.~38, ``select any
+FIVE'') and does not appear in the BSIT scheme at all \\
+Credit hours & 3: three credit hours of lectures, no separate laboratory credit.
+The laboratory work in this handout is therefore done in lecture time and as
+homework, which is why every lab is small and cumulative \\
+Prerequisite & \emph{Web Technologies} (CS-207 / INFT-4005, 4th semester). HEC
+2017 names the prerequisite \emph{Web Engineering}; the department's course of
+that content is called Web Technologies. The name differs, the dependency is
+satisfied --- see Appendix~F \\
+Duration & Sixteen teaching weeks, midterm in Week~8, project due Week~16
+(Appendix~G) \\
+Teaching methodology & As published (HEC 2017): lecturing, written assignments,
+\textbf{project}, report writing \\
+Assessment & As published: sessional examination, home assignments, quizzes,
+project, presentations, final examination \\
+Set texts & As published: Laudon and Traver, \emph{E-Commerce}; Peacock,
+\emph{PHP 5 E-commerce Development}; Rayport, \emph{Introduction to E-Commerce};
+Schneider, \emph{Electronic Commerce}. See defect~5 below, and Appendix~E \\
+\bottomrule
+\end{longtable}
+
+\section*{The three editions}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{1.5cm}L{3.6cm}L{6.4cm}L{3.3cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Ed.} & \textbf{Title} & \textbf{Status} & \textbf{Contents} \\
+\midrule
+\endhead
+2017 & E-Commerce & Elective in BS Software Engineering (p.~38); absent from
+BSIT. 3(3,0); prerequisite \emph{Web Engineering} & \textbf{Yes, p.~94 --- the
+only published outline in any edition} \\
+2023 & --- & \textbf{Absent entirely.} The course appears nowhere in the
+computing-disciplines curriculum except as an incidental application domain
+(p.~23) & No \\
+2025 & Digital Marketing \& E-Commerce & Interdisciplinary / Allied course,
+item~11 (p.~16). Not a computing core; universities may add others & No --- title
+and credit hours only \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Five defects in the published document]
+Recorded here so that a reader comparing this handout with the HEC booklet is
+not confused, and so that the department's own course file does not inherit
+them.
+
+\smallskip
+\textbf{1. Two learning outcomes, both too broad to assess.} HEC publishes
+exactly two: ``Understand the concepts and standards related to the discipline
+of E-Commerce'' and ``Analyze complex real world problems found in E-Commerce''.
+Sibling courses publish eight. Two cannot carry sixteen weeks or a question
+paper, so this department adds six, each traced back to one of HEC's two and
+each marked as departmental in the table below.
+
+\smallskip
+\textbf{2. The Bloom's Taxonomy column is blank} for both outcomes --- only the
+Domain column (``C'') is filled. The levels below are therefore
+\emph{assigned by this department}, and are marked as such.
+
+\smallskip
+\textbf{3. The ``Course Content'' paragraph is the table of contents of its own
+reference book.} Clause for clause, in order, it is the chapter list of
+Michael Peacock's \emph{PHP 5 E-commerce Development} (Packt, 2010), which is
+reference~2 on the same page. HEC did not write an outline for this course; it
+pasted a contents page.
+
+\smallskip
+\textbf{4. Two clauses are duplicated}, which is what pasting a contents page
+does. ``Checkout'' appears twice --- once as ``The Checkout and Order Process''
+--- and ``Managing Products and Categories'' appears twice, once on its own and
+once under Administration. Twenty-four clauses; twenty-two distinct.
+
+\smallskip
+\textbf{5. The prescribed technology is end-of-life and the editions are stale.}
+PHP~5 lost security support on 31~December 2018: the prescribed text targets a
+runtime that has been unsafe to deploy for longer than most of this class has
+been studying. Laudon and Traver is cited at the 13th edition (2017) and Rayport
+at 2007. Appendix~E cites current editions and explains each gap.
+\end{alertbox}
+
+\section*{Coverage of the HEC 2017 course outline}
+
+The published outline is a single run-on paragraph. Each of its clauses is
+traced below, in the order HEC writes them. Nothing is omitted, and the two
+duplicates are shown where they fall rather than quietly merged.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{6.4cm}L{2.0cm}L{6.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{HEC 2017 clause} & \textbf{Chapter} & \textbf{Where exactly} \\
+\midrule
+\endhead
+``An overview of E-Commerce \& its business models and concepts'' & 1, 2 & What
+changed and why; then the models, with the revenue model treated as the
+question that decides the rest \\
+``Planning an E-Commerce Framework'' & 4 & Requirements, and the
+build-buy-or-extend decision this course's answer rests on \\
+``Managing Products and Categories'' & 6 & The admin screens, and the tables
+beneath them \\
+``Product Variations and User Uploads'' & 7 & Options and variants, the
+combinatorics they generate, and why an upload field is a security question \\
+``Enhancing the User Experience'' & 8 & Themes and template overrides, measured
+by page weight rather than taste \\
+``The Shopping Basket'' & 9 & Session, cookie or database, and what survives a
+restart \\
+``The Checkout and Order Process'' & 10 & The order state machine, step by
+step \\
+``Shipping and Tax'' & 11 & Geo zones, tax classes, and sales tax on a
+Pakistani online sale \\
+``Discounts, Vouchers, and Referrals'' & 12 & All three, and the order in which
+they must be applied \\
+``Checkout'' \emph{(duplicate of clause~7)} & 10 & Same chapter; see defect~4 \\
+``Taking Payment for Orders'' & 14 & The gateway handshake, the sandbox, and
+what happens when it fails halfway \\
+``User Account Management'' & 15 & Registration, sessions, password storage,
+reset flows \\
+``Administration: Dashboard'' & 17 & The dashboard, and which of its numbers
+are worth acting on \\
+``Managing Products and Categories'' \emph{(duplicate of clause~3)} & 6, 17 &
+Same material from the back office; see defect~4 \\
+``Managing Orders'' & 18 & Order states, fulfilment, partial shipment \\
+``Customers'' & 18 & Customer records, groups and approval \\
+``Refunds'' & 18 & Returns, credit and what the order state machine does next \\
+``Voucher Codes'' & 12, 18 & Created in 12, administered in 18 \\
+``Shipping'' \emph{(administration)} & 11, 18 & Configured in 11, operated
+in 18 \\
+``Deploying, Security, and Maintenance'' & 16, 20 & Security is given its own
+chapter --- see the note below --- and deployment, backup and maintenance
+share 20 \\
+``Web Payment Systems'' & 13 & Cards, wallets, bank transfer and cash on
+delivery; cost and risk for each \\
+``Social, Legal, and Ethical Issues of E-Commerce'' & 22 & Consumer rights,
+privacy, dark patterns, accessibility, and the Pakistani statute \\
+``Auctions, Portals, and Communities'' & 3 & Moved forward to Part~I, where it
+belongs: these are business models \\
+``SEO'' & 21 & Crawlability, URL structure, metadata, sitemaps \\
+\bottomrule
+\end{longtable}
+
+\section*{Course learning outcomes}
+
+The two outcomes HEC publishes, verbatim, followed by the six this department
+adds. Bloom levels are assigned by this department throughout, because the
+published table leaves the column blank.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{1.3cm}L{7.6cm}L{2.1cm}L{3.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{CLO} & \textbf{By the end of the course the student will be able to} &
+\textbf{Bloom} & \textbf{Chapters} \\
+\midrule
+\endhead
+CLO-1 & \emph{(HEC, verbatim)} Understand the concepts and standards related to
+the discipline of E-Commerce & C2 Understand & 1--4, 13, 22 \\
+CLO-2 & \emph{(HEC, verbatim)} Analyze complex real world problems found in
+E-Commerce & C4 Analyse & 6, 10, 16, 20, 23 \\
+CLO-3 & \emph{(dept.)} Explain e-commerce business and revenue models, and
+classify a given venture against them & C2 Understand & 2, 3 \\
+CLO-4 & \emph{(dept.)} Install, configure and secure an open-source storefront
+on a reproducible stack & C3 Apply & 5, 16, 20 \\
+CLO-5 & \emph{(dept.)} Model a catalogue --- products, categories, options and
+variants --- and justify the schema that results & C3 Apply & 6, 7 \\
+CLO-6 & \emph{(dept.)} Configure the order pipeline end to end: basket,
+checkout, shipping, tax, discounts and payment & C3 Apply & 9--12, 14 \\
+CLO-7 & \emph{(dept.)} Analyse a storefront's performance and security posture
+from measurement rather than assertion & C4 Analyse & 6, 8, 15, 16, 20, 21 \\
+CLO-8 & \emph{(dept.)} Extend the platform with a module meeting a stated
+requirement, then deploy, present and defend the result & C5 Evaluate &
+19, 20, 23 \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Three topics taught that the outline does not name]
+Each is justified here rather than smuggled in, because a reviewer will ask.
+
+\smallskip
+\textbf{Chapter~6's data model.} The outline names the screens --- ``Managing
+Products and Categories'' --- but never the tables. A graduate who can fill in
+an admin form but cannot say why a product's name lives in a different table
+from its price has not understood the catalogue, and \emph{Database Systems} is
+a prerequisite that ought to be paid off rather than left on the shelf.
+
+\smallskip
+\textbf{Chapter~16, Security, as a chapter of its own.} HEC buries it inside
+``Deploying, Security, and Maintenance'', one clause among three. A shop holds
+addresses, order histories and password hashes, and CLO-7 asks for a security
+posture to be \emph{analysed}. One third of one clause will not do it.
+
+\smallskip
+\textbf{Chapter~19, module development.} The outline is configuration from end
+to end; nothing in it requires a student to write a line of code. The
+department's title says \emph{Application Development}, the HEC teaching
+methodology requires a project, and a project that is entirely configuration is
+not a computing project.
+\end{conceptbox}
+
+\begin{alertbox}[Where this course sits, and the one awkwardness]
+The outline this handout traces was written for \emph{software engineering}
+students as an elective, and it shows: it assumes the reader will build a cart
+from scratch in PHP. This department teaches it to \emph{information technology}
+students as a 5th-semester course, where the useful skill is standing up,
+configuring, securing and extending a real platform rather than reimplementing
+one badly.
+
+\smallskip
+This handout therefore follows the outline's \emph{clauses} faithfully and its
+\emph{method} not at all. Every topic HEC lists is taught; none of it is taught
+by writing a shopping cart in PHP~5. Chapter~4 makes that argument explicitly,
+so that the student can defend the choice rather than merely inherit it.
+\end{alertbox}
+
+\newpage
+
+%=====================================================================
+\chapter*{The Course at a Glance}
+\addcontentsline{toc}{chapter}{The Course at a Glance}
+\markboth{The Course at a Glance}{}
+
+\dsfigh{%
+\begin{tikzpicture}[
+  part/.style={rounded corners=3pt, fill=#1, text=white, font=\bfseries\footnotesize,
+               minimum width=2.5cm, text width=2.2cm, minimum height=0.95cm,
+               align=center},
+  ch/.style={rounded corners=2pt, draw=#1, line width=0.7pt, fill=#1!7, text=#1!60!black,
+             font=\scriptsize, minimum width=2.5cm, minimum height=0.52cm, align=center},
+  arr/.style={-{Stealth[length=2mm]}, primary!45, line width=0.8pt}
+]
+\node[part=primary]   (p1) at (0,0)    {Part I\\Models};
+\node[part=secondary] (p2) at (3.0,0)  {Part II\\Standing It Up};
+\node[part=greenhl]   (p3) at (6.0,0)  {Part III\\Basket to Order};
+\node[part=purplehl]  (p4) at (9.0,0)  {Part IV\\Money and Identity};
+\node[part=tealhl]    (p5) at (12.0,0) {Part V\\Running It};
+\node[part=goldhl]    (p6) at (15.0,0) {Part VI\\Reach and Law};
+
+\foreach \a/\b in {p1/p2,p2/p3,p3/p4,p4/p5,p5/p6}{\draw[arr] (\a) -- (\b);}
+
+\foreach \i/\t in {1/{1. What changed}, 2/{2. Business models},
+                   3/{3. Auctions, portals}, 4/{4. Build or extend}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=primary] at (0,\yy) {\t};}
+
+\foreach \i/\t in {1/{5. The stack}, 2/{6. Catalogue},
+                   3/{7. Variations}, 4/{8. Theme and UX}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=secondary] at (3.0,\yy) {\t};}
+
+\foreach \i/\t in {1/{9. The basket}, 2/{10. Checkout},
+                   3/{11. Shipping, tax}, 4/{12. Discounts}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=greenhl] at (6.0,\yy) {\t};}
+
+\foreach \i/\t in {1/{13. Payment systems}, 2/{14. The gateway},
+                   3/{15. Accounts}, 4/{16. Security}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=purplehl] at (9.0,\yy) {\t};}
+
+\foreach \i/\t in {1/{17. Dashboard}, 2/{18. Orders, refunds},
+                   3/{19. Your first module}, 4/{20. Deployment}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=tealhl] at (12.0,\yy) {\t};}
+
+\foreach \i/\t in {1/{21. SEO}, 2/{22. Law and ethics},
+                   3/{23. Project}}{
+  \pgfmathsetmacro{\yy}{-0.90-(\i-1)*0.62}
+  \node[ch=goldhl] at (15.0,\yy) {\t};}
+
+\node[rounded corners=3pt, fill=primary!7, draw=primary!30,
+      minimum width=17.3cm, minimum height=0.66cm,
+      font=\scriptsize\bfseries, text=primary] at (7.5,-4.35)
+      {\faIcon{store}~~One shop, installed in Chapter 5 and added to every week
+       until it is the project in Chapter 23.};
+\end{tikzpicture}}%
+{The six parts and the chapters in each. Chapter 19 is the hinge: it is the
+first chapter in which configuring the platform is not enough and you have to
+write code.}{coursemap}
+
+\vspace{4pt}
+{\small\itshape\color{gray!70!black}
+This course stands on \emph{Web Technologies} and \emph{Database Systems}, and
+shares its deployment ground with \emph{Virtual Systems and Services} in the
+same semester. Appendix~F states what belongs to each.}
+
+\newpage
+
+%=====================================================================
+\chapter*{The Shop We Build}
+\addcontentsline{toc}{chapter}{The Shop We Build}
+\markboth{The Shop We Build}{}
+
+Every lab in this book changes the same shop. Nothing is thrown away, and
+nothing is built twice. This page is the map of what gets added when, so that
+you can tell at any point in the semester whether you are behind.
+
+\dsfigh{%
+\begin{tikzpicture}[
+  lay/.style={rounded corners=2pt, draw=#1, line width=0.8pt, fill=#1!8,
+              text=#1!55!black, font=\scriptsize, minimum height=0.62cm,
+              text width=4.6cm, align=center},
+  sidenote/.style={font=\scriptsize\bfseries, text=primary, anchor=west}
+]
+\node[rounded corners=3pt, fill=primary, text=white, font=\bfseries\footnotesize,
+      minimum width=5.0cm, minimum height=0.8cm, align=center] (base) at (0,0)
+     {Ch 5\\The stack, running};
+
+\foreach \i/\c/\t in {
+   1/secondary/{Ch 6--7: a catalogue},
+   2/secondary/{Ch 8: a theme},
+   3/greenhl/{Ch 9--10: basket and checkout},
+   4/greenhl/{Ch 11--12: shipping, tax, vouchers},
+   5/purplehl/{Ch 14: a payment gateway},
+   6/purplehl/{Ch 15: customer accounts},
+   7/purplehl/{Ch 16: hardened},
+   8/tealhl/{Ch 19: your own module},
+   9/goldhl/{Ch 20--21: deployed, indexed}}{
+  \pgfmathsetmacro{\yy}{0.95+(\i-1)*0.78}
+  \node[lay=\c] at (0,\yy) {\t};}
+
+\draw[-{Stealth[length=2mm]}, primary!40, line width=1pt]
+      (-3.3,-0.45) -- (-3.3,8.15);
+\node[rotate=90, font=\scriptsize\bfseries, text=primary!70]
+      at (-3.65,3.85) {sixteen weeks};
+
+\node[rounded corners=3pt, fill=goldhl, text=white, font=\bfseries\footnotesize,
+      minimum width=5.0cm, minimum height=0.8cm, align=center] at (0,8.55)
+     {Ch 23\\Defended as the project};
+
+% Each note sits at the mid-height of the layers it describes, which is why
+% these y-values are not evenly spaced: the layers are, the groups are not.
+\node[sidenote, text width=6.0cm] at (2.9,0)    {Docker Compose brings up the
+   storefront, the database and a database console. Nothing is installed on
+   your own machine.};
+\node[sidenote, text width=6.0cm] at (2.9,1.34) {Real products, with real option
+   combinations, in a schema you can explain --- and a shop that looks like
+   somebody's.};
+\node[sidenote, text width=6.0cm] at (2.9,2.90) {A customer can now get from the
+   front page to a confirmed order, at the right price.};
+\node[sidenote, text width=6.0cm] at (2.9,4.85) {That order is now paid for, by
+   an identified customer, over a shop that has been attacked and hardened.};
+\node[sidenote, text width=6.0cm] at (2.9,6.41) {The platform does something it
+   was not shipped able to do.};
+\node[sidenote, text width=6.0cm] at (2.9,7.19) {Somebody who is not you can
+   reach it, and find it.};
+\end{tikzpicture}}%
+{What each part adds to the one shop. A lab skipped is a lab the next chapter
+cannot build on --- Chapter 10 has nothing to check out if Chapter 9's basket
+was never configured.}{shoplayers}
+
+\begin{alertbox}[Before Week 2]
+The stack runs in containers, so nothing in this course asks you to install a
+web server, PHP or a database on your own machine. It does ask you to install
+\textbf{one} thing: a container runtime. Appendix~A does it in one sitting and
+lists what to do when it will not start, which on a university laptop it
+sometimes will not.
+
+\smallskip
+Do it before Week~2. From Chapter~5 onward every chapter assumes a shop you can
+reach in a browser, and a student without one spends the semester reading about
+a course the rest of the class is taking.
+\end{alertbox}
+
+\newpage
+
+%=====================================================================
+\chapter*{Prerequisite Self-Check}
+\addcontentsline{toc}{chapter}{Prerequisite Self-Check}
+\markboth{Prerequisite Self-Check}{}
+
+Twelve questions. If you can answer ten, begin at Chapter~1. If you cannot,
+Appendix~B covers the PHP, SQL and template syntax this book assumes, your
+\emph{Web Technologies} and \emph{Database Systems} notes cover the rest --- and
+the gap is worth closing in Week~1 rather than Week~9.
+
+\begin{enumerate}[leftmargin=2.4em, itemsep=4pt, topsep=4pt]
+  \item What is the difference between an HTTP \texttt{GET} and an HTTP
+        \texttt{POST}, and which one must a form that charges a card use? Why?
+        \hfill{\scriptsize\color{neutral}(Web Technologies)}
+  \item What do the status codes 200, 302, 404 and 500 mean, and which one does
+        a browser follow without telling the user?
+        \hfill{\scriptsize\color{neutral}(Web Technologies)}
+  \item HTTP is stateless. How, then, does a server know that two requests came
+        from the same visitor?
+        \hfill{\scriptsize\color{neutral}(Web Technologies, \chref{basket})}
+  \item Write a \texttt{SELECT} that joins two tables and returns one row per
+        match. \hfill{\scriptsize\color{neutral}(Database Systems, Appendix~B)}
+  \item What is a database index for, and what does adding one cost?
+        \hfill{\scriptsize\color{neutral}(Database Systems, \chref{catalogue})}
+  \item Distinguish a primary key from a foreign key, and say what the database
+        guarantees about each.
+        \hfill{\scriptsize\color{neutral}(Database Systems)}
+  \item One product has many photographs. Which table holds the photographs, and
+        why not the product table?
+        \hfill{\scriptsize\color{neutral}(Database Systems, \chref{catalogue})}
+  \item In an HTML form, what does the \texttt{name} attribute do, and where
+        does its value arrive on the server?
+        \hfill{\scriptsize\color{neutral}(Web Technologies)}
+  \item A theme sets a heading to 18\,px and you want 24\,px. Give two ways to
+        override it in CSS, and say which one you would not use.
+        \hfill{\scriptsize\color{neutral}(Web Technologies, \chref{ux})}
+  \item In PHP, what does \texttt{\$\_POST['qty']} contain, and why may you
+        never use it in a query without doing something to it first?
+        \hfill{\scriptsize\color{neutral}(Appendix~B, \chref{security})}
+  \item What does HTTPS protect, and name one thing it does \emph{not} protect.
+        \hfill{\scriptsize\color{neutral}(Information Security, \chref{security})}
+  \item Open a terminal in a named directory, run a command, and read its
+        output. If that sentence is not routine, start with Appendix~A.
+        \hfill{\scriptsize\color{neutral}(Appendix~A)}
+\end{enumerate}
+
+\begin{conceptbox}
+Notice what is \emph{not} on that list. You do not need to be a strong PHP
+programmer: until Chapter~19 you will read far more code than you write, and
+Appendix~B gives you enough syntax to read it. You do not need any business
+background. You do not need a powerful machine.
+
+\smallskip
+What you do need is the habit of \emph{checking} --- opening the database to
+see what the form actually wrote, reading the error log rather than guessing,
+rerunning a measurement after changing one thing. Most of what goes wrong in
+this course is invisible from the front page of the shop, and every chapter
+tries to teach you where to look.
+\end{conceptbox}
+
+\newpage
+\tableofcontents
+\newpage
+\listoffigures
+\newpage
+
+\pagenumbering{arabic}

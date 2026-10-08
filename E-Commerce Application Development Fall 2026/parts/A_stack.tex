@@ -1,0 +1,212 @@
+%=====================================================================
+\chapter{The Stack: Setting It Up and Keeping It}\label{app:stack}
+%=====================================================================
+\normalfigures
+
+Everything in this book from \chref{stack} onward assumes a shop you can reach
+in a browser. This appendix gets you one, in a single sitting, and lists what
+to do when it refuses --- which on a university laptop it sometimes will.
+
+\section{What You Install}
+
+\textbf{One thing: a container runtime.} Not a web server, not PHP, not a
+database. Those three run inside containers and never touch your own machine,
+which is why the shop is identical on every laptop in the class and why
+uninstalling it is one command.
+
+\begin{tight}
+  \item \textbf{Windows or macOS:} Docker Desktop, from
+        \texttt{docker.com}. On Windows it needs WSL~2, which its installer
+        offers to set up.
+  \item \textbf{Linux:} the \texttt{docker.io} and \texttt{docker-compose-v2}
+        packages from your distribution, then add yourself to the
+        \texttt{docker} group and log out and in again.
+\end{tight}
+
+Check it with:
+
+\begin{lstlisting}[language=bash]
+docker --version
+docker compose version
+docker run --rm hello-world
+\end{lstlisting}
+
+The third is the one that matters. The first two only prove the program is
+installed; the third proves the \emph{engine} is running, which is a different
+claim and the one that usually fails.
+
+\section{Starting the Shop}
+
+\begin{lstlisting}[language=bash]
+cd code
+cp .env.example .env
+docker compose up -d --build
+python waitfor.py
+\end{lstlisting}
+
+The first run takes a few minutes and downloads about 1.5~GB; later runs take
+seconds. \chref{stack} measures both and explains why the difference matters.
+
+\rowcolors{2}{white}{lightbg}
+% The middle column must hold "http://localhost:8090/admin/" unbroken at
+% 10.95 pt typewriter, which needs 5.8 cm; at 5.4 it overflows by 7.3 pt.
+\begin{longtable}{@{}L{2.9cm}L{5.9cm}L{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{What} & \textbf{Where} & \textbf{Sign in with} \\
+\midrule
+\endhead
+The storefront & \texttt{http://localhost:8090/} & nobody; you are a customer \\
+The admin panel & \texttt{http://localhost:8090/admin/} & \texttt{admin} /
+\texttt{admin123} \\
+The database console & \texttt{http://localhost:8091/} & server \texttt{db},
+user \texttt{shop}, password \texttt{shoppw}, database \texttt{opencart} \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Those credentials are deliberately bad]
+\texttt{admin} / \texttt{admin123} is exactly the kind of credential
+\chref{security} goes looking for and finds. It is the default so that you can
+measure the shop before and after hardening it; Chapter~16 asks you to change
+it, and until then every student in the class can sign in to every other
+student's shop if they can reach it.
+
+\smallskip
+Which they cannot, because nothing here is published to the internet. If you
+ever expose this stack beyond your own machine, change the credentials in
+\texttt{.env} \emph{first}.
+\end{alertbox}
+
+\section{The Four Commands Worth Memorising}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{5.0cm}L{10.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Command} & \textbf{What it does} \\
+\midrule
+\endhead
+\texttt{docker compose up -d} & Start everything. Safe to run when it is
+already running \\
+\texttt{docker compose down} & Stop everything. \textbf{Your shop is kept} \\
+\texttt{docker compose logs -f shop} & Watch the shop's log. This is where PHP
+errors go, and they go nowhere else \\
+\texttt{docker compose down -v} & Stop everything \textbf{and delete your
+shop}. The reset button, and the one mistake with no undo \\
+\bottomrule
+\end{longtable}
+
+\section{When It Will Not Start}
+
+Five failures account for nearly all of them, and four are not really about
+Docker.
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=5pt, topsep=4pt]
+  \item \textbf{``Cannot connect to the Docker daemon''} --- the engine is not
+        running. On Windows and macOS, start Docker Desktop and wait for its
+        icon to stop animating; the command line is ready several seconds
+        before the whale stops moving.
+  \item \textbf{``Ports are not available''} or ``address already in use'' ---
+        something else on your machine already holds port 8090 or 8091. This is
+        common; the development machine for this book had both 8080 and 8081
+        taken, which is why the defaults are 8090 and 8091 in the first place.
+        Edit \texttt{.env}, change \texttt{SHOP\_PORT}, and bring it up again.
+        Change only the port in \texttt{.env} --- \texttt{OC\_HTTP\_SERVER}
+        reads the same variable, so links keep working.
+  \item \textbf{The shop answers but every page is an error} --- the install
+        did not finish. Read \texttt{docker compose logs shop} and look for
+        ``SUCCESS! OpenCart successfully installed''. If it is absent, the
+        database was not ready; \texttt{docker compose down -v} and start
+        again.
+  \item \textbf{WSL 2 is not installed, or virtualisation is disabled} ---
+        Windows only. Docker Desktop's installer handles the first; the second
+        is a BIOS setting (often called ``Intel VT-x'', ``AMD-V'' or
+        ``SVM Mode'') that some laptops ship disabled.
+  \item \textbf{It worked yesterday and today it does not} --- almost always
+        disk space. \texttt{docker system df} will tell you;
+        \texttt{docker system prune} reclaims what is not in use. It does not
+        touch named volumes, so your shop survives --- but read what it
+        proposes before agreeing.
+\end{enumerate}
+
+\begin{conceptbox}[Read the log before changing anything]
+The single most useful habit in this appendix. A shop that is broken is
+broken for a reason, and the reason is almost always written down in
+\texttt{docker compose logs shop}.
+
+\smallskip
+Restarting, rebuilding and resetting are the three things students try first,
+and all three destroy the evidence. Look at the log, then act.
+\end{conceptbox}
+
+\section{Backing Up, and Why You Will Wish You Had}
+
+Your shop lives in two named volumes. \texttt{down -v} deletes them, and so
+does an afternoon of clearing disk space without reading the prompt.
+
+\begin{lstlisting}[language=bash]
+# Dump the database into the repository, where git can see it.
+docker compose exec -T db mariadb-dump -ushop -pshoppw opencart \
+  > backups/shop-$(date +%Y%m%d).sql
+
+# Put it back.
+docker compose exec -T db mariadb -ushop -pshoppw opencart \
+  < backups/shop-20261001.sql
+\end{lstlisting}
+
+Take one after every chapter's laboratory. It costs two seconds, and
+\chref{deploy} measures what the alternative costs.
+
+\begin{alertbox}[Where to keep your own work]
+Anything you write that must survive belongs in \texttt{code/}, in the
+repository --- not inside a running container, where it is deleted at the next
+rebuild, and not only in the admin panel, where it is deleted by
+\texttt{down -v}.
+
+\smallskip
+This matters most in \chref{modules}, where you write a module. Write it in
+\texttt{code/modules/} and mount it; do not edit it in place inside the
+container. Students who learn this in Week~14 learn it the expensive way.
+\end{alertbox}
+
+\section{The Machine Every Measurement Was Taken On}
+
+Every figure in a \faIcon{tachometer-alt}~\textbf{Measured} box in this book was
+produced on this machine. Yours will differ; the shapes and ratios should not.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.6cm}L{10.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Item} & \textbf{Value} \\
+\midrule
+\endhead
+Host & Windows 11 Pro, 4 CPU cores, 7.7 GiB available to the container
+runtime \\
+Container runtime & Docker 28.1.1, Linux containers \\
+Web and application & Apache 2.4.68, PHP 8.2.34 with OPcache enabled \\
+Database & MariaDB 11.8.9 \\
+Application & OpenCart 4.1.0.4, installed from the pinned release in
+\texttt{code/shop/Dockerfile} \\
+Everything on & one machine, so no figure here includes real network latency \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The scope of Chapter 16's security work]
+\chref{security} asks you to attack a shop: SQL injection, cross-site
+scripting, missing security headers, default credentials, an exposed
+administrative path. Every one of those exercises is scoped, in the chapter and
+here, to \textbf{the container running on your own machine, reached at
+\texttt{localhost}, which you installed and which contains no real person's
+data}.
+
+\smallskip
+That is the whole of it. Running the same checks against any system you do not
+own and have not been authorised in writing to test is a criminal offence in
+Pakistan under the Prevention of Electronic Crimes Act 2016, and a sackable one
+nearly everywhere else. The skill is valuable precisely because it is
+dangerous, and the boundary is not a formality.
+
+\smallskip
+\chref{legal} returns to this with the statute in front of it.
+\end{alertbox}

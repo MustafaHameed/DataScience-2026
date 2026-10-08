@@ -1,0 +1,88 @@
+# The teaching stack: one shop, one database, one database console.
+#
+#   docker compose up -d --build     bring it up (first run builds and installs)
+#   docker compose down              stop it, keep the shop
+#   docker compose down -v           stop it and throw the shop away
+#
+# Three services and no more.  OpenCart's own compose file also starts Redis,
+# Memcached and PostgreSQL, none of which a stock install uses; they are there
+# so upstream can test against them.  Starting services a course never
+# mentions teaches students that a stack is a pile of things somebody else
+# chose, which is the opposite of Chapter 5.
+#
+# There is no "version:" key.  It has been obsolete since Compose v2 and
+# current Compose warns about it -- including in the file OpenCart ships.
+
+name: ecad-shop
+
+services:
+  # ------------------------------------------------------------------
+  # The database.  MariaDB 11, not the mysql:5.7 that OpenCart's own
+  # compose file pins: 5.7 reached end of life in October 2023 and takes
+  # no further security fixes.  Chapter 20 returns to this.
+  # ------------------------------------------------------------------
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpw}
+      MARIADB_DATABASE: ${DB_NAME:-opencart}
+      MARIADB_USER: ${DB_USER:-shop}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-shoppw}
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    # Not published to the host by default.  The database is reachable from
+    # the other containers by the name "db" and from you through Adminer.
+    # Chapter 16 asks what you have exposed to your network, and a course
+    # that ships an open database port cannot ask that with a straight face.
+
+  # ------------------------------------------------------------------
+  # The shop.
+  # ------------------------------------------------------------------
+  shop:
+    build:
+      context: ./shop
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_NAME: ${DB_NAME:-opencart}
+      DB_USER: ${DB_USER:-shop}
+      DB_PASSWORD: ${DB_PASSWORD:-shoppw}
+      OC_ADMIN_USER: ${OC_ADMIN_USER:-admin}
+      OC_ADMIN_PASSWORD: ${OC_ADMIN_PASSWORD:-admin123}
+      OC_ADMIN_EMAIL: ${OC_ADMIN_EMAIL:-admin@example.com}
+      OC_HTTP_SERVER: http://localhost:${SHOP_PORT:-8090}/
+    ports:
+      - "${SHOP_PORT:-8090}:80"
+    volumes:
+      # The install lives in a named volume, so that "down" keeps your shop
+      # and "down -v" resets it.  Without this every restart would either
+      # lose the catalogue or reinstall over it.
+      - shopdata:/var/www/html
+
+  # ------------------------------------------------------------------
+  # The database console.  Chapters 6, 9 and 10 ask you to look at what the
+  # admin panel actually wrote, which is the single most useful habit this
+  # course tries to build.
+  # ------------------------------------------------------------------
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    ports:
+      - "${ADMINER_PORT:-8091}:8080"
+
+volumes:
+  dbdata:
+  shopdata:

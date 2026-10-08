@@ -1,0 +1,657 @@
+%=====================================================================
+%  ecadhandout.sty
+%  Shared style + pedagogy package for the
+%  E-Commerce Application Development Fall 2026 Master Lecture Handout
+%
+%  A deliberate sibling of ../Analysis of Algorithms Fall 2026/
+%  aoahandout.sty and the VSS, AI, ML and Data Science styles: same
+%  palette, same boxes, same macro names (\dsfig, \dsref, \chref), so the
+%  seven courses read as one series and one slide pipeline parses all of
+%  them.  Copied from aoahandout.sty; differences from it are marked
+%  "ECAD:" below.
+%
+%  What ECAD removes: the whole theorem/proof/pseudocode apparatus that
+%  the algorithms course added.  This course states no theorems.  See the
+%  "ECAD ONLY" block further down for what replaced it and why removing
+%  rather than ignoring it mattered.
+%
+%  What ECAD adds: \uiel and \adminpath, because a course taught through
+%  a graphical admin panel names a control or a click path on nearly every
+%  page; and the measured box, because only twelve of the twenty-three
+%  chapters carry an experiment and the strand has to be visible.
+%
+%  Like every sibling except Data Science, this course has no four-lens
+%  device: examples are chosen per chapter.
+%
+%  Single source of truth for colours, boxes, figures and the
+%  per-chapter pedagogical furniture. Do not duplicate this preamble
+%  into individual part files.
+%=====================================================================
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{ecadhandout}[2026/10/07 E-Commerce Application Development Fall 2026 handout style]
+
+%---------------------------------------------------------------------
+% Packages
+%---------------------------------------------------------------------
+\RequirePackage[margin=2.4cm,top=2.6cm,bottom=2.4cm]{geometry}
+% Latin Modern + T1 before microtype: the default CM fonts include bitmap
+% variants (notably TS1 cmtt), and microtype's font expansion is a fatal
+% error on any non-scalable font. lmodern is scalable Type1 throughout.
+\RequirePackage{lmodern}
+\RequirePackage[T1]{fontenc}
+\RequirePackage[utf8]{inputenc}
+\RequirePackage{textcomp}
+\RequirePackage{microtype}
+% Latin Modern Roman has no bold small-caps shape (T1/lmr/bx/sc does not
+% exist), so asking for bold small caps silently loses the caps. The part and
+% chapter kickers therefore use medium-weight small caps, letterspaced --
+% which is what a kicker wants anyway. Tracking needs microtype's tracking
+% feature, which is available under pdfTeX.
+\SetTracking{encoding=*, shape=sc}{45}
+\RequirePackage{graphicx}
+\RequirePackage{tikz}
+% ECAD: fit and backgrounds do the heavy lifting in this book.  Almost every
+% figure here is an annotated wireframe of an admin or storefront screen -- a
+% browser chrome, a sidebar, a form, a table, with callouts pointing into it --
+% and those are built by fitting a node around a group and layering a panel
+% behind it.  matrix lays out the admin grids; chains the order state machine
+% (Ch 10) and the gateway handshake (Ch 14); trees the category hierarchy
+% (Ch 6) and the option combinations (Ch 7).
+% extract_figures.py lifts this line out of the .sty to build its standalone
+% preamble, so adding a library here reaches the slides too.
+\usetikzlibrary{shapes,shapes.geometric,shapes.misc,arrows.meta,positioning,calc,fit,
+                backgrounds,shadows.blur,decorations.pathmorphing,
+                decorations.pathreplacing,decorations.markings,patterns,matrix,
+                chains,intersections,through,angles,quotes,trees,folding}
+\RequirePackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{fillbetween,statistics,groupplots,dateplot}
+\RequirePackage{colortbl}
+\RequirePackage{enumitem}
+\RequirePackage{booktabs}
+\RequirePackage{longtable}
+\RequirePackage{array}
+\RequirePackage{tabularx}
+% ragged2e, not the kernel's \raggedright: \RaggedRight caps the stretch it
+% allows and keeps hyphenation on, so a 2.5 cm column comes out with a soft
+% right edge instead of a saw-toothed one.
+\RequirePackage{ragged2e}
+\RequirePackage{xcolor}
+\RequirePackage{fancyhdr}
+\RequirePackage{titlesec}
+\RequirePackage[most]{tcolorbox}
+\RequirePackage{multicol}
+\RequirePackage{amsmath,amssymb}
+\RequirePackage{multirow}
+\RequirePackage{setspace}
+\RequirePackage{fontawesome5}
+\RequirePackage{listings}
+\RequirePackage{float}
+\RequirePackage{caption}
+% Figures here are conceptual diagrams tightly coupled to the text that
+% introduces them, so a float must never drift past its own section heading.
+\RequirePackage[section]{placeins}
+\RequirePackage{emptypage}
+% A section heading must not be stranded at the foot of a page: the float that
+% follows it has nowhere to go and prints over the footer. \Needspace reserves
+% room for the heading plus the first few lines or the top of the first figure.
+\RequirePackage{needspace}
+% hidelinks is deliberately not used: the \hypersetup below turns colourlinks
+% on, which would override it anyway. Links are coloured, never boxed.
+\RequirePackage{hyperref}
+\RequirePackage{bookmark}
+
+%---------------------------------------------------------------------
+% Spacing
+%---------------------------------------------------------------------
+\setlength{\parskip}{3pt plus 1pt minus 1pt}
+\setlength{\parindent}{0pt}
+\setlength{\emergencystretch}{3em}
+% A single line of a paragraph stranded at the top or bottom of a page is the
+% most common way a printed handout loses a reader mid-argument. Forbid it
+% outright; there is enough stretch elsewhere on the page to absorb the cost.
+\widowpenalty=10000
+\clubpenalty=10000
+\displaywidowpenalty=10000
+% brokenpenalty stays finite: forbidding a break after a hyphenated line
+% outright leaves TeX no legal break at all on some figure-heavy pages.
+\brokenpenalty=4000
+\renewcommand{\arraystretch}{1.15}
+
+% Table paragraph columns in this handout are narrow (often under 4 cm) and hold
+% ordinary prose. Justifying them opens rivers and forces hundreds of underfull
+% lines, so every one of them is set ragged right. Use L{<width>} wherever you
+% would otherwise write p{<width>}; the L type also restores the row-break
+% command, which a >{...} declaration would otherwise shadow.
+%
+% ragged2e allows only 2 em of stretch, which in a 2.5 cm column is tight
+% enough that TeX reaches for a hyphen on almost every line -- "Legal opera-
+% tions" in a column head. Widen the allowance and make hyphens expensive, so
+% they appear only for words that genuinely will not fit.
+\setlength{\RaggedRightRightskip}{0pt plus 4em}
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash\hyphenpenalty=2000\relax}p{#1}}
+
+% \rowcolors is global, so the stripes set up for the last longtable also
+% paint every later array -- including the arrays inside cases and matrix
+% environments in displayed maths. Switch the stripes off inside those.
+% Carried from aihandout.sty, which covers array and aligned as well as the
+% four mlhandout.sty patches.
+% (\hiderowcolors itself cannot be used here: it is a \noalign, legal only
+% between table rows. Clearing colortbl's flag locally does the same job, and
+% the environment's own group restores it afterwards.)
+\RequirePackage{etoolbox}
+\newcommand{\ecad@nostripes}{\@rowcolorsfalse\@norowcolor}
+\AtBeginEnvironment{cases}{\ecad@nostripes}
+\AtBeginEnvironment{matrix}{\ecad@nostripes}
+\AtBeginEnvironment{pmatrix}{\ecad@nostripes}
+\AtBeginEnvironment{bmatrix}{\ecad@nostripes}
+\AtBeginEnvironment{array}{\ecad@nostripes}
+\AtBeginEnvironment{aligned}{\ecad@nostripes}
+
+% snake_case identifiers appear inline in the prose throughout, and TeX has no
+% break point inside one, so a long identifier near the end of a line forces an
+% overfull box. Allow a break after an underscore. No hyphen is inserted, so the
+% identifier stays readable across the break; maths is left alone.
+\let\dsunderscore\_
+\renewcommand{\_}{\dsunderscore\ifmmode\else\allowbreak\fi}
+
+% Float placement: make LaTeX far more willing to keep a figure on the page
+% that discusses it, rather than deferring it to a float page later.
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{4}
+\renewcommand{\topfraction}{0.92}
+\renewcommand{\bottomfraction}{0.75}
+\renewcommand{\textfraction}{0.06}
+\renewcommand{\floatpagefraction}{0.70}
+
+%---------------------------------------------------------------------
+% Colour palette (inherited from the Spring 2026 handouts)
+%---------------------------------------------------------------------
+\definecolor{primary}{HTML}{1A5276}
+\definecolor{secondary}{HTML}{2E86C1}
+\definecolor{accent}{HTML}{E74C3C}
+\definecolor{lightbg}{HTML}{EBF5FB}
+\definecolor{defbg}{HTML}{FDF2E9}
+\definecolor{greenhl}{HTML}{27AE60}
+\definecolor{purplehl}{HTML}{8E44AD}
+\definecolor{codebg}{HTML}{F4F6F7}
+\definecolor{goldhl}{HTML}{B7950B}
+\definecolor{tealhl}{HTML}{117A65}
+% A named neutral. Styles that build derived shades (#1!50!black) cannot take
+% an already-mixed expression such as gray!60 as their argument, so figures
+% needing a grey element use this instead.
+\definecolor{neutral}{HTML}{707B7C}
+
+% ECAD: the six parts are coloured, in order, primary / secondary / greenhl /
+% purplehl / tealhl / goldhl -- the same assignment as the sibling courses.
+% VSS_Fall2026_Lecture_Schedule.tex defines its own p1..p6 as slightly
+% darkened variants of these six; that is deliberate, not drift.  Its part
+% chips carry 6 pt white text, which the lighter secondary and greenhl cannot
+% hold legibly at that size.  Do not "fix" either file to match the other.
+
+\hypersetup{
+  colorlinks=true, linkcolor=primary, urlcolor=secondary, citecolor=primary,
+  % The printed table of contents stops at section level (tocdepth=1), but the
+  % PDF navigation pane is free, so let it go one level deeper. Parts and
+  % chapters open by default; sections stay folded until wanted.
+  bookmarksnumbered=true, bookmarksdepth=2,
+  bookmarksopen=true, bookmarksopenlevel=1,
+  % Document properties, so the file identifies itself in a reader's title bar,
+  % in search results and in a library catalogue.
+  pdftitle={E-Commerce Application Development --- Building, Running and
+            Securing an Online Shop},
+  pdfauthor={Dr. Mustafa Hameed},
+  pdfsubject={Unified lecture handout for the BSIT E-Commerce Application
+              Development course (INFT-4041), Fall 2026, following the only
+              published HEC outline for the course (BS \& MS (CS, SE \& IT)
+              Curriculum 2017, p. 94)},
+  pdfkeywords={e-commerce, electronic commerce, e-commerce application
+               development, online shop, storefront, business model, revenue
+               model, B2C, B2B, C2C, marketplace, auction, portal, online
+               community, OpenCart, Docker, Docker Compose, LAMP, PHP, MySQL,
+               MariaDB, Twig, catalogue, product category, product option,
+               product variant, shopping basket, shopping cart, checkout,
+               order process, order state machine, shipping, geo zone, tax
+               class, discount, voucher, coupon, referral, web payment system,
+               payment gateway, sandbox, PCI DSS, JazzCash, Easypaisa, cash on
+               delivery, user account management, session, password hashing,
+               bcrypt, web application security, OWASP, SQL injection,
+               cross-site scripting, CSRF, security header, admin dashboard,
+               order management, refund, module development, OCMod, event
+               system, deployment, backup, caching, performance, load testing,
+               SEO, search engine optimisation, sitemap, digital marketing,
+               consumer rights, dark pattern, PECA 2016, e-commerce policy,
+               BSIT, HEC, lecture handout},
+  pdfdisplaydoctitle=true}
+
+%---------------------------------------------------------------------
+% Code listings
+%---------------------------------------------------------------------
+\lstdefinestyle{dsstyle}{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{primary}\bfseries,
+  stringstyle=\color{greenhl},
+  commentstyle=\color{gray}\itshape,
+  breaklines=true,
+  showstringspaces=false,
+  frame=l,
+  framerule=2pt,
+  rulecolor=\color{secondary!40},
+  xleftmargin=8pt,
+  framexleftmargin=6pt,
+  aboveskip=6pt,
+  belowskip=6pt,
+  columns=fullflexible,
+  keepspaces=true
+}
+\lstset{style=dsstyle}
+\lstdefinelanguage{PythonDS}[]{Python}{
+  morekeywords={pandas,numpy,sklearn,as,with,assert}
+}
+
+% ECAD: this course's labs are not in one language, and that is a fact about
+% the subject rather than a lapse.  Extending a storefront means PHP for the
+% module, Twig for the template, SQL for the query, YAML for the stack and
+% Python for the measurement -- five languages in one afternoon's work, which
+% is what the job actually looks like.  The siblings each needed one lexer.
+%
+% The slide pipeline reads the language= option off each lstlisting and maps
+% it to a Pygments lexer, so each name here must be one Pygments also knows:
+% php, twig, sql, yaml, json, bash, python.  Spelling drift between the two
+% ends is the defect to watch for; the algorithms course shipped lab cards
+% reading "73 lines of C" because "C++" lost its plus signs on the way.
+%
+% A lab listing is always pure ASCII: listings has no Unicode support under
+% pdfLaTeX, so a stray arrow or non-breaking space is a compile error, not a
+% typo.  Keep lines at or under 76 columns -- wider than that and the code
+% panel on the slide has to shrink below the 10.5 pt floor.  checklabs.py
+% enforces both, and accepts "// --- n." as a step marker as well as "# --- n."
+% and "-- --- n." for SQL.
+%
+% listings ships PHP, SQL and bash; YAML, JSON and Twig it does not, so they
+% are defined here from scratch.
+% PHP, SQL and bash are used exactly as listings ships them, with no derived
+% dialect.  A derived one is a trap here: listings matches language names
+% case-insensitively, so \lstdefinelanguage{PhpEC}[]{PHP} followed by
+% \lstalias{php}{PhpEC} makes "php" resolve to a dialect whose base is
+% itself, and the first listing exhausts the TeX input stack.  The
+% algorithms course got away with CppAoA only because "cpp" and "C++" are
+% different strings.  Keeping the stock names also keeps them identical to
+% the Pygments lexer names the slide pipeline asks for, which is the thing
+% most worth having.
+
+\lstdefinelanguage{YAML}{
+  keywords={true,false,null,yes,no,on,off},
+  sensitive=false,
+  morecomment=[l]{\#},
+  morestring=[b]",
+  morestring=[b]',
+}
+\lstalias{yml}{YAML}
+
+\lstdefinelanguage{JSON}{
+  keywords={true,false,null},
+  sensitive=true,
+  morestring=[b]",
+}
+
+\lstdefinelanguage{Twig}{
+  morekeywords={if,else,elseif,endif,for,endfor,in,block,endblock,extends,
+                include,embed,set,with,apply,endapply,filter,default,escape,
+                raw,length,trans,is,not,and,or,empty,defined},
+  sensitive=true,
+  morestring=[b]",
+  morestring=[b]',
+}
+
+%---------------------------------------------------------------------
+% Running heads
+%---------------------------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+% ECAD: the term is deliberately NOT in the running head, although every
+% sibling course puts it there.  This course's name is fourteen characters
+% longer than the longest sibling's, and with "--- Fall 2026" appended the
+% left head runs into \leftmark on any chapter whose title is longer than
+% about thirty characters -- which is nine of the twenty-three.  The term is
+% on the title page, in the PDF metadata and in the footer of the schedule;
+% it does not also need to be on all 240 pages.
+\fancyhead[L]{\small\textcolor{primary}{\textbf{E-Commerce Application Development}}}
+\fancyhead[R]{\small\textcolor{primary}{\nouppercase{\leftmark}}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.5pt}
+\renewcommand{\footrulewidth}{0.3pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}\fancyfoot[C]{\small\thepage}%
+  \renewcommand{\headrulewidth}{0pt}\renewcommand{\footrulewidth}{0.3pt}}
+\renewcommand{\chaptermark}[1]{\markboth{\thechapter.~#1}{}}
+
+%---------------------------------------------------------------------
+% Part / chapter / section formatting
+%---------------------------------------------------------------------
+\titleformat{\part}[display]
+  {\centering\normalfont\huge\bfseries\color{primary}}
+  {\Large\mdseries\textsc{Part \thepart}}{12pt}{\Huge}[\vspace{6pt}{\color{secondary}\rule{0.7\textwidth}{1.5pt}}]
+
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries\color{primary}}
+  {\raggedright\normalsize\mdseries\textsc{\color{secondary}Chapter \thechapter}}{4pt}{\Large\raggedright}
+  [\vspace{3pt}{\color{secondary}\rule{\textwidth}{1.2pt}}]
+\titlespacing*{\chapter}{0pt}{-18pt}{14pt}
+
+\titleformat{\section}{\large\bfseries\color{primary}}{\thesection}{0.6em}{}[\vspace{1pt}{\color{secondary!35}\titlerule}]
+\titleformat{\subsection}{\normalsize\bfseries\color{secondary}}{\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}{\small\bfseries\color{primary}}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{13pt}{6pt}
+\titlespacing*{\subsection}{0pt}{9pt}{4pt}
+\titlespacing*{\subsubsection}{0pt}{7pt}{3pt}
+
+\setcounter{tocdepth}{1}
+\setcounter{secnumdepth}{3}
+
+% Never strand a section heading at the foot of a page. Every \section first
+% asks for room for itself plus a few lines of what follows; if the page
+% cannot give it, the heading moves to the next page. (Sections that open
+% straight into a tall figure may still want an explicit, larger \Needspace.)
+\pretocmd{\section}{\Needspace{7\baselineskip}}{}{\PackageWarning{ecadhandout}{could not patch \string\section}}
+\pretocmd{\subsection}{\Needspace{5\baselineskip}}{}{\PackageWarning{ecadhandout}{could not patch \string\subsection}}
+
+%---------------------------------------------------------------------
+% Core content boxes (carried over from the Spring handouts)
+%---------------------------------------------------------------------
+\newtcolorbox{definitionbox}[1][]{
+  enhanced, breakable,
+  colback=defbg, colframe=orange!60!black,
+  colbacktitle=orange!70!black, coltitle=white,
+  title={\faIcon{book}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!15},
+  top=4pt, bottom=4pt, left=8pt, right=8pt
+}
+\newtcolorbox{conceptbox}[1][]{
+  enhanced, breakable,
+  colback=lightbg, colframe=secondary,
+  colbacktitle=secondary, coltitle=white,
+  title={\faIcon{lightbulb}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!15},
+  top=4pt, bottom=4pt, left=8pt, right=8pt
+}
+\newtcolorbox{alertbox}[1][]{
+  enhanced, breakable,
+  colback=red!4, colframe=accent,
+  colbacktitle=accent, coltitle=white,
+  title={\faIcon{exclamation-triangle}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!12},
+  top=3pt, bottom=3pt, left=8pt, right=8pt
+}
+\newtcolorbox{examplebox}[1][]{
+  enhanced, breakable,
+  colback=green!4, colframe=greenhl,
+  colbacktitle=greenhl, coltitle=white,
+  title={\faIcon{code}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!12},
+  top=3pt, bottom=3pt, left=8pt, right=8pt
+}
+
+%---------------------------------------------------------------------
+% Pedagogy furniture
+%---------------------------------------------------------------------
+% Learning outcomes -- one per chapter, Bloom verbs.
+\newtcolorbox{outcomes}{
+  enhanced, breakable,
+  colback=primary!4, colframe=primary,
+  colbacktitle=primary, coltitle=white,
+  title={\faIcon{bullseye}~Learning Outcomes}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!12},
+  top=4pt, bottom=4pt, left=8pt, right=8pt
+}
+% Prerequisites -- explicit back-references to earlier chapters.
+\newtcolorbox{prereq}{
+  enhanced, breakable,
+  colback=gray!6, colframe=gray!60!black,
+  colbacktitle=gray!60!black, coltitle=white,
+  title={\faIcon{link}~Before You Start}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=8pt, right=8pt
+}
+% Key terms introduced in the chapter.
+\newtcolorbox{keyterms}{
+  enhanced, breakable,
+  colback=purplehl!4, colframe=purplehl,
+  colbacktitle=purplehl, coltitle=white,
+  title={\faIcon{tags}~Key Terms in This Chapter}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=8pt, right=8pt
+}
+% Worked numeric example.
+\newtcolorbox{worked}[1][]{
+  enhanced, breakable,
+  colback=goldhl!5, colframe=goldhl,
+  colbacktitle=goldhl, coltitle=white,
+  title={\faIcon{calculator}~Worked Example: #1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!12},
+  top=4pt, bottom=4pt, left=8pt, right=8pt
+}
+% Common mistakes.
+\newtcolorbox{pitfall}[1][Common Pitfalls]{
+  enhanced, breakable,
+  colback=accent!4, colframe=accent,
+  colbacktitle=accent, coltitle=white,
+  title={\faIcon{exclamation-circle}~#1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=8pt, right=8pt
+}
+% Hands-on lab.
+\newtcolorbox{lab}[1][]{
+  enhanced, breakable,
+  colback=tealhl!4, colframe=tealhl,
+  colbacktitle=tealhl, coltitle=white,
+  title={\faIcon{flask}~Try It Yourself: #1}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!12},
+  top=4pt, bottom=4pt, left=8pt, right=8pt
+}
+% Self-check; answers live in Appendix D.
+\newtcolorbox{checkpoint}{
+  enhanced, breakable,
+  colback=secondary!5, colframe=secondary!80!black,
+  colbacktitle=secondary!80!black, coltitle=white,
+  title={\faIcon{question-circle}~Checkpoint --- Test Yourself}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  top=3pt, bottom=3pt, left=8pt, right=8pt
+}
+% Chapter summary.
+\newtcolorbox{chaptersummary}{
+  enhanced, breakable,
+  colback=primary!5, colframe=primary!80!black,
+  colbacktitle=primary!80!black, coltitle=white,
+  title={\faIcon{clipboard-check}~Chapter Summary}, fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!12},
+  top=4pt, bottom=4pt, left=8pt, right=8pt
+}
+
+%=====================================================================
+% ECAD ONLY: the furniture a platform course needs
+%
+% Copied from aoahandout.sty, whose theorem apparatus stood here --
+% amsthm, algpseudocode, the numbered \aoa@result factory, \aoaalg,
+% \algname and \bigO/\bigOm/\bigTh -- and has been removed rather than
+% left in place.  This course states no theorems and proves nothing, so
+% all of it was dead weight, and two pieces were traps: a surviving
+% \bigO invites an asymptotic bound into a shop course, and the slide
+% pipeline's dropped-content audit miscounts when it still knows about
+% result environments that no chapter contains.
+%
+% In their place, three devices this course uses on almost every page.
+%=====================================================================
+
+%---------------------------------------------------------------------
+% \uiel -- the name of a button, field, tab or menu item.
+%
+% Sans-serif against the body serif, which is the whole point: a reader
+% skimming for "where do I click" should be able to find every control
+% on the page without reading a word.  Deliberately distinct from \term
+% (bold serif, primary), which marks a concept being defined, and from
+% \texttt, which marks something typed literally.
+%
+% \ignorespaces and \unskip make the macro trim its own argument, so
+% that \adminpath below can hand it list items without worrying about
+% the space after a comma.
+%---------------------------------------------------------------------
+\newcommand{\uiel}[1]{{\sffamily\small\bfseries
+  \color{primary!85!black}\ignorespaces#1\unskip}}
+
+%---------------------------------------------------------------------
+% \adminpath{Catalog, Products, Add New} -- a navigation trail.
+%
+% A GUI course states a click path on nearly every page.  Left to ad-hoc
+% markup those arrive as a mixture of bold, typewriter, "->" and "|",
+% and the slide pipeline cannot style what it cannot recognise.
+%
+% The argument is a comma list, which keeps the chapter sources ASCII
+% and free of any separator macro; the chevrons are the macro's
+% business.  \@for does not trim its items, so \uiel does it instead.
+%
+% Each element is set with \uiel because a path is exactly a sequence of
+% UI elements and ought to look like one.
+%---------------------------------------------------------------------
+\newif\ifecad@apfirst
+\newcommand{\ecad@apsep}{%
+  \,\textcolor{neutral}{\footnotesize\faIcon{angle-right}}\,}
+\newcommand{\adminpath}[1]{%
+  \begingroup
+  \ecad@apfirsttrue
+  \@for\ecad@ape:=#1\do{%
+    \ifecad@apfirst\ecad@apfirstfalse\else\ecad@apsep\fi
+    \uiel{\ecad@ape}}%
+  \endgroup}
+
+%---------------------------------------------------------------------
+% The measured box.
+%
+% Twelve of the twenty-three chapters carry an experiment; the other
+% eleven argue in prose.  The Analysis of Algorithms handout ran its
+% measurements as ordinary paragraphs because *every* chapter measured,
+% so the strand needed no marking.  Here it is the lighter of the two
+% strands and has to be visible, or a number the reader could have
+% reproduced for themselves reads as one the author merely asserted.
+%
+% Graphite rather than another hue from the palette: every other colour
+% is already spoken for (teal is the lab, gold the worked example, green
+% the code example), and a near-white panel in a graphite frame reads
+% like an instrument reading, which is what it is.
+%---------------------------------------------------------------------
+% The optional argument extends the title rather than replacing it, so that
+% every box in the strand still announces itself as "Measured" and a reader
+% can find them all by flicking through.  \ifstrempty (etoolbox, loaded
+% above) keeps the untitled form from printing a dangling colon, which is a
+% small blemish the sibling courses' \worked box does have.
+\definecolor{measurehl}{HTML}{212F3D}
+\newtcolorbox{measured}[1][]{
+  enhanced, breakable,
+  colback=measurehl!3, colframe=measurehl,
+  colbacktitle=measurehl, coltitle=white,
+  title={\faIcon{tachometer-alt}~Measured\ifstrempty{#1}{}{: #1}},
+  fonttitle=\bfseries\small,
+  boxrule=0pt, leftrule=4pt, arc=2pt,
+  shadow={1mm}{-1mm}{0mm}{black!12},
+  top=4pt, bottom=4pt, left=8pt, right=8pt
+}
+
+%---------------------------------------------------------------------
+% Figures. Every figure in this handout goes through \dsfig so that it
+% is numbered, captioned, labelled and collected in the List of Figures.
+%
+%   \dsfig{<tikz or pgfplots code>}{<caption>}{<label suffix>}
+%---------------------------------------------------------------------
+% \dsfitw caps a figure at the text width: content wider than the text block
+% is scaled down proportionally, content that already fits is left untouched.
+% This makes it impossible for a figure to overflow into the margin.
+\newcommand{\dsfitw}[1]{%
+  \resizebox{\ifdim\width>\linewidth \linewidth\else \width\fi}{!}{#1}}
+
+\newcommand{\dsfig}[3]{%
+  \begin{figure}[htbp]
+    \centering
+    \dsfitw{#1}
+    \caption{#2}\label{fig:#3}
+  \end{figure}}
+
+% Same, but forced in place (for tightly-coupled diagrams).
+\newcommand{\dsfigh}[3]{%
+  \begin{figure}[H]
+    \centering
+    \dsfitw{#1}
+    \caption{#2}\label{fig:#3}
+  \end{figure}}
+\captionsetup{font=small, labelfont={bf,color=primary}, skip=6pt,
+              justification=centering, width=0.92\linewidth}
+
+%---------------------------------------------------------------------
+% Structural figures (front matter and part openers) sit outside any
+% chapter, so the default \thechapter.\arabic{figure} scheme would give
+% them a misleading chapter number. Give them their own prefix instead.
+%   \structuralfigures{F.}   -> F.1, F.2, ...
+%   \structuralfigures{P3.}  -> P3.1, ...
+% \locator restores normal per-chapter numbering, so every chapter file
+% is unaffected.
+%---------------------------------------------------------------------
+\newcommand{\structuralfigures}[1]{%
+  \setcounter{figure}{0}%
+  \renewcommand{\thefigure}{#1\arabic{figure}}%
+  \setcounter{table}{0}%
+  \renewcommand{\thetable}{#1\arabic{table}}}
+
+\newcommand{\normalfigures}{%
+  \renewcommand{\thefigure}{\thechapter.\arabic{figure}}%
+  \renewcommand{\thetable}{\thechapter.\arabic{table}}}
+
+%---------------------------------------------------------------------
+% Chapter locator strip: shows where the chapter sits in the 6-part arc.
+%   \locator{<part number 1-6>}{<part title>}
+%---------------------------------------------------------------------
+\newcommand{\locator}[2]{%
+  \normalfigures
+  \begingroup
+  \noindent\begin{tikzpicture}[baseline]
+    \foreach \i in {1,...,6}{
+      \pgfmathsetmacro{\xx}{(\i-1)*2.42}
+      \ifnum\i=#1
+        \node[rounded corners=2pt, fill=primary, text=white, font=\scriptsize\bfseries,
+              minimum width=2.3cm, minimum height=0.42cm] at (\xx,0) {Part \i};
+      \else
+        \node[rounded corners=2pt, fill=primary!10, text=primary!60, font=\scriptsize,
+              minimum width=2.3cm, minimum height=0.42cm] at (\xx,0) {Part \i};
+      \fi}
+  \end{tikzpicture}\\[2pt]
+  {\small\itshape\color{secondary}#2}\par\vspace{4pt}
+  \endgroup}
+
+%---------------------------------------------------------------------
+% Small helpers
+%---------------------------------------------------------------------
+\newcommand{\term}[1]{\textbf{\textcolor{primary}{#1}}}
+\newcommand{\dsref}[1]{Figure~\ref{fig:#1}}
+\newcommand{\chref}[1]{Chapter~\ref{ch:#1}}
+% Review-question list, restarting per chapter.
+\newenvironment{reviewq}
+  {\subsection*{\color{primary}\faIcon{pen-fancy}~Review Questions}
+   \begin{enumerate}[leftmargin=*, itemsep=3pt, label=\textbf{\arabic*.}]}
+  {\end{enumerate}}
+% Compact bullet list used everywhere.
+\newenvironment{tight}
+  {\begin{itemize}[leftmargin=1.3em, itemsep=2pt, topsep=2pt, parsep=0pt]}
+  {\end{itemize}}
+\newenvironment{tightnum}
+  {\begin{enumerate}[leftmargin=1.5em, itemsep=2pt, topsep=2pt, parsep=0pt]}
+  {\end{enumerate}}
+
+\endinput

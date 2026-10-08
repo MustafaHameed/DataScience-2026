@@ -1,0 +1,465 @@
+%=====================================================================
+\chapter{The Stack, and Your Shop in One Command}\label{ch:stack}
+%=====================================================================
+\locator{2}{Part II --- Standing the Shop Up}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Name} the four layers a web shop runs on and \textbf{state}
+        what each one is responsible for.
+  \item \textbf{Explain} what a container is, and \textbf{distinguish} it from
+        a virtual machine and from an installer.
+  \item \textbf{Read} a Compose file and \textbf{say} what each service, port
+        and volume in it does.
+  \item \textbf{Bring up} a working storefront, \textbf{verify} it from outside,
+        and \textbf{reset} it to a known state.
+  \item \textbf{Measure} what the stack costs to start and to store, and
+        \textbf{distinguish} the cost paid once from the cost paid daily.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{planning}: the decision to use a self-hosted open-source platform, and
+why. Appendix~A must be finished before this chapter --- you need a working
+container runtime, and if it is going to fight you, it will fight you now
+rather than in Week~9.
+\end{prereq}
+
+\begin{keyterms}
+stack $\bullet$ LAMP $\bullet$ web server $\bullet$ application server
+$\bullet$ database server $\bullet$ container $\bullet$ image $\bullet$ volume
+$\bullet$ port mapping $\bullet$ Docker Compose $\bullet$ service $\bullet$
+environment variable $\bullet$ reproducibility $\bullet$ idempotent
+$\bullet$ pinning $\bullet$ checksum
+\end{keyterms}
+
+\section{Four Layers, and What Each One Does}
+
+When you type a shop's address into a browser, four distinct pieces of software
+answer in turn. Knowing which is which is the difference between fixing a
+problem and restarting things until it goes away.
+
+\dsfig{%
+\begin{tikzpicture}[
+  lyr/.style={rounded corners=3pt, draw=#1, line width=1.1pt, fill=#1!8,
+              text=#1!60!black, font=\bfseries\small, align=center,
+              text width=3.1cm, minimum height=1.15cm},
+  job/.style={font=\scriptsize, text=neutral, align=left, text width=7.4cm,
+              anchor=west},
+  arr/.style={-{Stealth[length=2.2mm]}, primary!50, line width=0.9pt}
+]
+  \node[lyr=neutral]   (os) at (0,0)    {Operating system\\{\scriptsize
+       \mdseries Debian Linux}};
+  \node[lyr=secondary] (ws) at (0,1.55) {Web server\\{\scriptsize\mdseries
+       Apache 2.4}};
+  \node[lyr=greenhl]   (ap) at (0,3.10) {Application\\{\scriptsize\mdseries
+       PHP 8.2 + OpenCart}};
+  \node[lyr=purplehl]  (db) at (0,4.65) {Database\\{\scriptsize\mdseries
+       MariaDB 11}};
+
+  \foreach \a/\b in {os/ws, ws/ap, ap/db}{\draw[arr] (\a) -- (\b);}
+
+  \node[job] at (2.0,0)    {Files, processes, the network socket. You will
+       almost never touch it.};
+  \node[job] at (2.0,1.55) {Accepts the HTTP request, decides which file
+       answers it, serves images and stylesheets itself.};
+  \node[job] at (2.0,3.10) {Runs the shop's code: works out what the page
+       should say, asks the database, builds the HTML.};
+  \node[job] at (2.0,4.65) {Remembers everything --- products, prices, baskets,
+       orders, customers. The only layer whose loss is unrecoverable.};
+
+  \node[font=\scriptsize\itshape, text=accent, align=center] at (4.8,5.85)
+       {A slow page is usually this layer. A lost order is always this one.};
+\end{tikzpicture}}%
+{The four layers. The traditional name for this arrangement is LAMP --- Linux,
+Apache, MySQL, PHP --- and although every letter has alternatives now, the
+shape has not changed in twenty-five years.}{lampstack}
+
+\begin{conceptbox}[Which layer is this problem in?]
+A diagnostic habit worth building on day one, because it turns ``the site is
+broken'' into a question with an answer.
+
+\begin{tight}
+  \item \textbf{Nothing answers at all}, the browser cannot connect: the web
+        server is down, or the port is wrong. Nothing above it has run.
+  \item \textbf{A page appears but says ``500''}: the web server is fine; the
+        application failed. The reason is in the PHP error log, never on the
+        screen --- and \chref{security} explains why you want it that way.
+  \item \textbf{A page appears, looks right, but data is missing or stale}: the
+        application ran and the database answered something unexpected.
+  \item \textbf{Everything works and is slow}: usually the database, and
+        \chref{catalogue} measures exactly that.
+\end{tight}
+\end{conceptbox}
+
+\section{Containers, and What They Are Not}
+
+The traditional way to get those four layers is to install them: a web server, a
+database, a PHP runtime, each with its own installer, its own configuration
+file in its own place, and its own way of being slightly different on your
+machine from on everybody else's.
+
+A \term{container} replaces that with a package that already contains the
+software \emph{and} everything it depends on, down to the system libraries,
+arranged exactly as its author arranged it.
+
+\begin{definitionbox}[Image, Container, Volume]
+An \term{image} is a read-only, layered filesystem containing an application
+and its dependencies. It is built once and is identical everywhere.
+
+\smallskip
+A \term{container} is a running instance of an image. It has its own filesystem
+view and its own network identity, but it shares the host's kernel --- which is
+what makes it start in a second rather than a minute.
+
+\smallskip
+A \term{volume} is storage that lives \emph{outside} the container and survives
+it. This is the one that matters: everything inside a container is thrown away
+when the container is removed, so anything you want to keep --- your database,
+your shop --- must be in a volume.
+\end{definitionbox}
+
+\begin{alertbox}[Three things a container is not]
+\textbf{It is not a virtual machine.} A VM carries a whole operating system
+including its own kernel, takes a minute to boot and gigabytes of memory. A
+container shares the host kernel and starts in about a second. The isolation is
+correspondingly weaker, which matters in production and not in this course.
+
+\smallskip
+\textbf{It is not a backup.} ``It is in the container'' means it will be gone
+when the container is replaced, which happens every time you rebuild. Your shop
+survives because it is in a \emph{volume}, and \chref{deploy} is about what
+happens when somebody has not understood that distinction.
+
+\smallskip
+\textbf{It is not automatically secure.} A container with a weak password is a
+weak password that starts quickly. \chref{security} attacks this very stack and
+finds things.
+\end{alertbox}
+
+\section{The Three Services in This Course's Stack}
+
+The whole stack is described by one file, \texttt{code/docker-compose.yml},
+and it declares three \term{services}.
+
+\begin{lstlisting}[language=yaml]
+services:
+  db:                              # MariaDB 11: remembers everything
+    image: mariadb:11
+    volumes:
+      - dbdata:/var/lib/mysql      # the shop's memory, kept outside
+    healthcheck: ...               # "accepts a login", not "started"
+
+  shop:                            # Apache + PHP 8.2 + OpenCart 4.1.0.4
+    build: ./shop
+    depends_on:
+      db: { condition: service_healthy }
+    ports:
+      - "8090:80"                  # your 8090 -> the container's 80
+    volumes:
+      - shopdata:/var/www/html
+
+  adminer:                         # a database console in the browser
+    image: adminer:latest
+    ports:
+      - "8091:8080"
+\end{lstlisting}
+
+Three decisions in that file are worth understanding, because each one is a
+mistake people make.
+
+\textbf{The healthcheck, not just \texttt{depends\_on}.} Ordering container
+\emph{starts} is not enough. MariaDB accepts TCP connections several seconds
+before it will accept a login, so a shop that waits only for the database to
+have started will try to install itself against a database that refuses it ---
+intermittently, and more often on a fast machine. The condition
+\texttt{service\_healthy} waits for the database to say it is actually ready.
+
+\textbf{The port mapping is a translation, not a setting.} \texttt{8090:80}
+means ``traffic arriving at port 8090 on my machine goes to port 80 inside the
+container''. The shop always believes it is on port 80. If 8090 is busy on your
+machine --- and on a university laptop it often is --- change the left-hand
+number only.
+
+\textbf{Named volumes, so that a reset is deliberate.} \texttt{docker compose
+down} stops everything and keeps your shop. \texttt{docker compose down -v}
+removes the volumes too, and the next start reinstalls from nothing. That
+second command is how you recover from a shop you have broken beyond
+understanding, and it is also how you destroy a semester's work in week 14. It
+is worth knowing which is which before you need either.
+
+\begin{conceptbox}[Why the image is built here rather than downloaded]
+Most teaching material says ``pull the OpenCart image''. There is no longer one
+to pull: there has never been an official OpenCart image, and the widely-used
+third-party one was withdrawn. Every such instruction on the web is now dead.
+
+\smallskip
+So \texttt{code/shop/Dockerfile} builds it, from the official PHP image plus a
+\emph{pinned} OpenCart release --- pinned by version and by SHA-256 checksum,
+so that the shop you build this year is the shop a classmate builds next year.
+Two lines in that file do the real work:
+
+\begin{tight}
+  \item \texttt{ARG OC\_VERSION=4.1.0.4} --- the exact release.
+  \item \texttt{echo "\$\{OC\_SHA256\}  /tmp/oc.zip | sha256sum -c -} --- the
+        download really is the file we tested against. A version number alone
+        is not reproducible, because a release asset can be replaced.
+\end{tight}
+
+\smallskip
+There is a second reason, and it is the pedagogical one: \dsref{lampstack} is a
+diagram of something, and pulling one opaque image would have left you unable
+to point at any of it. Here the layers are in the file, in order.
+\end{conceptbox}
+
+\begin{alertbox}[OpenCart ships its own Dockerfile, and it does not work]
+The release archive contains a \texttt{Dockerfile} and a
+\texttt{docker-compose.yml} at the top level. This course uses neither, for two
+reasons you can verify yourself in five minutes.
+
+\smallskip
+The Dockerfile contains a shell syntax error --- \texttt{docker-php-ext-install
+zip \&\& \&\& docker-php-ext-enable zip} --- so it has never built. The compose
+file pins \texttt{mysql:5.7}, which reached end of life in October~2023 and
+receives no further security fixes, and starts Redis, Memcached and PostgreSQL
+that a stock install does not use.
+
+\smallskip
+The lesson is not that OpenCart is bad software; it is a mature project that
+runs a large share of the world's small shops. The lesson is that an artefact
+being official is evidence and not authority. You are allowed to check, and in
+this course you are expected to.
+\end{alertbox}
+
+\section{What Happens the First Time}
+
+One command brings the whole thing up:
+
+\begin{lstlisting}[language=bash]
+docker compose up -d --build
+\end{lstlisting}
+
+On a first run this does rather a lot: downloads about 1.5~GB of images, builds
+the shop image, starts three containers, waits for the database, and then runs
+OpenCart's command-line installer, which creates 159 tables and populates them
+with a demonstration catalogue. On every later run it does almost none of it.
+
+That difference is worth measuring rather than asserting.
+
+\begin{measured}[What the Stack Costs to Start]
+Produced by \texttt{code/m05\_coldstart.py --scratch}, which removes every
+image and volume first, on the machine in Appendix~A --- 4 cores, 7.7~GiB
+available to the container runtime.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{5.8cm}L{2.6cm}L{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Start} & \textbf{To first 200} & \textbf{What it had to do} \\
+\midrule
+\endhead
+From scratch (no images at all) & \textbf{338.4 s} & Download 1.5 GB, compile
+three PHP extensions, fetch and verify OpenCart, install 159 tables. Of this,
+214.6 s was the build alone \\
+Cold (images built, no shop) & \textbf{34.1 s} & Start three containers, wait
+for the database, install OpenCart \\
+Warm (the shop already exists) & \textbf{16.4 s} & Start three containers.
+Nothing else \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Footprint.} Images: shop 882~MB, MariaDB 462~MB, Adminer 164~MB ---
+\textbf{1{,}508~MB} in all. Volumes after installation: database 181~MB, shop
+files 40~MB. About 1.7~GB of disk for a complete shop.
+
+\smallskip
+\textbf{The ratio is the point.} From scratch to warm is \textbf{20.6$\times$}.
+You pay the 338 seconds once, in Week~3, and the 16 seconds perhaps sixty times
+over the semester. Quoting a single ``startup time'' for this stack would
+describe an experience nobody has.
+
+\smallskip
+\textbf{On variance.} An earlier run of the same measurement on the same
+machine gave 17.6 s cold and 7.7 s warm --- roughly half --- because less was
+running at the time. Your numbers will differ from these by more than you
+expect. The \emph{ratio} between cold and warm should not.
+\end{measured}
+
+\section{Looking At What You Were Given}
+
+The installer leaves you a working shop with a demonstration catalogue. It is
+worth knowing its shape, because every chapter in Part~II changes part of it.
+
+\begin{examplebox}[The shop, counted]
+Asked of the database directly, through Adminer or the command line:
+
+\begin{lstlisting}[language=sql]
+SELECT (SELECT COUNT(*) FROM oc_product)    AS products,
+       (SELECT COUNT(*) FROM oc_category)   AS categories,
+       (SELECT COUNT(*) FROM oc_order)      AS orders,
+       (SELECT COUNT(*) FROM oc_customer)   AS customers;
+\end{lstlisting}
+
+\begin{tight}
+  \item \textbf{159 tables} in total.
+  \item \textbf{19 products} and \textbf{38 categories} of demonstration data.
+  \item \textbf{0 orders} and \textbf{0 customers} --- nobody has shopped here
+        yet.
+  \item \textbf{18 tables whose name begins \texttt{oc\_product}}. One product
+        is not one row, and \chref{catalogue} is about why.
+\end{tight}
+
+\smallskip
+That last number is the one to sit with. A beginner expects a products table.
+There are eighteen, because a product has descriptions in several languages,
+images, options, attributes, discounts, related items and category memberships
+--- and each of those is a different relationship.
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Running \texttt{down -v} when you meant \texttt{down}.} The
+        \texttt{-v} removes the volumes, which is your shop. There is no undo.
+  \item \textbf{Editing files inside a running container.} They are gone at the
+        next rebuild. Changes that must survive belong in the image or in a
+        volume.
+  \item \textbf{Assuming \texttt{up} means ready.} It means \emph{started}.
+        On a first run the shop answers about twenty seconds later; every
+        measurement in this book calls \texttt{waitfor.py} first for exactly
+        this reason.
+  \item \textbf{Changing the right-hand side of a port mapping.} In
+        \texttt{8090:80}, the 80 is the port inside the container and the shop
+        expects it. Change the left number.
+  \item \textbf{Treating a container as a backup.} It is the opposite of one.
+  \item \textbf{Giving up when it does not start.} Appendix~A lists the five
+        failures that account for nearly all of them, and four are a busy port
+        or a runtime that is not actually running.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Your shop, up, verified, broken and restored]
+From here to \chref{project} this is the same shop. Treat it accordingly.
+
+\begin{lstlisting}[language=bash]
+# --- 1. Bring the whole stack up -----------------------------------
+# First run: expect about five minutes and 1.5 GB of download.
+cd code
+cp .env.example .env
+docker compose up -d --build
+
+# --- 2. Watch it install -------------------------------------------
+# Not optional. You should see "SUCCESS! OpenCart successfully
+# installed" go past; if you never see it, nothing below will work.
+docker compose logs -f shop
+
+# --- 3. Verify from outside, not from the logs ---------------------
+# Three URLs must answer 200. waitfor.py checks all three and is the
+# answer to "is my shop up?" for the rest of the semester.
+python waitfor.py
+
+# --- 4. Look at the shop, as a customer and as the owner -----------
+# Storefront   http://localhost:8090/
+# Admin        http://localhost:8090/admin/   (admin / admin123)
+# Database     http://localhost:8091/         (shop / shoppw / opencart)
+
+# --- 5. Count what you were given ----------------------------------
+# In Adminer, or here. 159 tables; 19 products; 0 orders.
+docker compose exec db mariadb -ushop -pshoppw opencart \
+  -e "SELECT COUNT(*) FROM information_schema.tables \
+      WHERE table_schema='opencart';"
+
+# --- 6. Prove the volume is doing what you think -------------------
+# Change something in the admin panel first -- edit a product name.
+# Then stop WITHOUT -v and start again. Your change is still there.
+docker compose down
+docker compose up -d
+python waitfor.py
+
+# --- 7. Now reset it deliberately ----------------------------------
+# -v throws the volumes away. The shop reinstalls from nothing and
+# your edit is gone. Do this once, now, while it costs you nothing.
+docker compose down -v
+docker compose up -d
+python waitfor.py
+
+# --- 8. Measure it -------------------------------------------------
+# Produces the table quoted above, on YOUR machine.
+python m05_coldstart.py --warm
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step~6 and step~7 differ by two characters and by
+everything else. Having done both deliberately, in a week when the shop
+contains nothing you care about, is the cheapest possible way to learn the
+difference.
+
+\smallskip
+Also notice that step~3 does not trust step~2. The log said the install
+succeeded; step~3 asks the shop. Throughout this course, the thing that
+reports success and the thing that is true are kept apart on purpose.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A classmate's shop returns ``500 Internal Server Error'' on every page.
+        Which of the four layers in \dsref{lampstack} are known to be working,
+        which is known to have failed, and where would you look first?
+  \item Explain why \texttt{depends\_on} alone is not enough to order the
+        database before the shop, and describe the failure it produces.
+  \item You run \texttt{docker compose down -v} by mistake in Week~12. State
+        exactly what is lost, what is not, and what would have had to exist
+        beforehand for this to be a minor inconvenience.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A shop runs on four layers --- operating system, web server,
+        application, database. Knowing which layer a symptom belongs to is most
+        of diagnosis; only the database's loss is unrecoverable.
+  \item An image is a built filesystem, a container is a running instance of
+        one, and a volume is the only part that survives the container. A
+        container is not a virtual machine, not a backup, and not secure by
+        itself.
+  \item The whole stack is three services in one Compose file: database, shop,
+        database console.
+  \item \texttt{depends\_on} orders starts, not readiness. A healthcheck is what
+        makes the shop wait until the database will actually accept a login.
+  \item \texttt{down} keeps your shop; \texttt{down -v} destroys it. Learn the
+        difference in Week~3.
+  \item The image is built from a pinned release verified by checksum, because
+        no maintained OpenCart image exists to pull and because a version
+        number alone is not reproducible.
+  \item Measured on this machine: 338.4 s from scratch, 34.1 s cold, 16.4 s
+        warm --- a ratio of 20.6$\times$ between the cost paid once and the cost
+        paid daily. The stack occupies about 1.7 GB.
+  \item The installed shop has 159 tables and 19 products, and eighteen of
+        those tables are about products. One product is not one row.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} In the port mapping \texttt{8090:80}, the 80 is:
+        (a)~the port on your machine; (b)~the port inside the container;
+        (c)~the database port; (d)~an arbitrary label.
+  \item \textbf{(MCQ)} Which survives \texttt{docker compose down}?
+        (a)~Nothing; (b)~the containers; (c)~data written to a named volume;
+        (d)~files edited inside a running container.
+  \item \textbf{(Short)} Distinguish a container from a virtual machine, and
+        give one consequence of the difference that matters in this course.
+  \item \textbf{(Short)} Why does this course build the shop image from a pinned
+        release rather than pulling a ready-made one? Give both reasons.
+  \item \textbf{(Short)} A page loads but shows yesterday's price. Which layer
+        is at fault, and what are the two most likely explanations?
+  \item \textbf{(Applied)} Your stack will not start: port 8090 is already in
+        use. Describe exactly what you would change, in which file, and what you
+        would then have to change in the shop's own configuration for links to
+        keep working. (Look at \texttt{OC\_HTTP\_SERVER} before answering.)
+  \item \textbf{(Applied)} Design a measurement that would show whether the
+        \emph{database} or the \emph{application} layer is responsible for a
+        slow category page, using only tools in this chapter. State what you
+        would record, at what catalogue sizes, and what result would point at
+        each layer. \chref{catalogue} runs your experiment; write it first.
+\end{reviewq}

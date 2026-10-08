@@ -1,0 +1,368 @@
+%=====================================================================
+\chapter{Auctions, Portals and Communities}\label{ch:auctions}
+%=====================================================================
+\locator{1}{Part I --- E-Commerce and Its Models}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} the four common auction formats and \textbf{explain}
+        what each one does to a bidder's incentive to bid honestly.
+  \item \textbf{Identify} the engineering problems an auction creates that a
+        fixed-price shop does not have.
+  \item \textbf{Explain} the role of escrow, and \textbf{describe} what a
+        marketplace operator must do when two users disagree.
+  \item \textbf{Distinguish} a portal, a marketplace and a community, and
+        \textbf{state} where each one's revenue comes from.
+  \item \textbf{Explain} the two-sided launch problem and \textbf{evaluate}
+        strategies for escaping it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{models}: the revenue models, especially commission, and the note on
+network effects at the end.
+\end{prereq}
+
+\begin{keyterms}
+auction $\bullet$ English auction $\bullet$ Dutch auction $\bullet$ sealed-bid
+auction $\bullet$ Vickrey auction $\bullet$ reserve price $\bullet$ proxy
+bidding $\bullet$ sniping $\bullet$ shill bidding $\bullet$ escrow $\bullet$
+dispute resolution $\bullet$ reputation system $\bullet$ portal
+$\bullet$ marketplace $\bullet$ two-sided market $\bullet$ chicken-and-egg
+problem
+\end{keyterms}
+
+\section{Why This Chapter Is Here Rather Than at the End}
+
+The published outline lists ``Auctions, Portals, and Communities'' second from
+last, after security and deployment. That is where it appears in the book whose
+contents page the outline was copied from, and it is the wrong place: these are
+not an afterthought to building a shop, they are \emph{alternative shapes} a
+business can take, and the decision between them belongs in Part~I alongside
+the other models.
+
+So this chapter sits where it belongs. It is also the chapter that explains why
+the rest of the book assumes a fixed-price shop: the alternatives are
+genuinely harder, and it is worth knowing exactly how.
+
+\section{Letting the Buyer Set the Price}
+
+A fixed-price shop answers ``what is this worth?'' before the customer
+arrives. An auction refuses to answer and lets the buyers decide.
+
+That is attractive when the seller genuinely does not know the price --- a
+second-hand item, a one-off, something whose value depends on who wants it. It
+is unnecessary when the seller does know, which is why most commerce is not
+conducted by auction.
+
+\begin{definitionbox}[Four Auction Formats]
+\term{English auction} --- ascending, open. The price rises until one bidder
+remains. What nearly everyone means by ``auction''.
+
+\smallskip
+\term{Dutch auction} --- descending, open. The price starts high and falls
+until somebody accepts. Fast, and used for perishable goods where speed matters
+more than the last rupee.
+
+\smallskip
+\term{Sealed-bid first-price} --- everyone submits one hidden bid; the highest
+wins and pays what they bid. Standard for tenders and contracts.
+
+\smallskip
+\term{Vickrey auction} (sealed-bid second-price) --- the highest bid wins but
+pays the \emph{second}-highest price. Its remarkable property is that bidding
+your true valuation is the best strategy whatever anyone else does, so there is
+nothing to be gained from strategising.
+\end{definitionbox}
+
+\begin{conceptbox}[Why the second-price rule removes the guessing]
+Suppose an item is worth Rs.~10{,}000 to you.
+
+\smallskip
+In a \emph{first-price} auction, bidding Rs.~10{,}000 guarantees you gain
+nothing even if you win --- so you must shade your bid downward, and how far
+depends on guessing what others will do. Everyone does this, and everyone
+guesses.
+
+\smallskip
+In a \emph{second-price} auction, bid Rs.~10{,}000. If the next highest bid is
+Rs.~8{,}000, you win and pay Rs.~8{,}000, gaining Rs.~2{,}000. If it is
+Rs.~11{,}000, you lose --- and you are glad, because winning would have cost
+more than the item was worth to you. Raising your bid above your valuation can
+only make you win auctions you did not want; lowering it can only make you lose
+auctions you did want. Telling the truth is simply best.
+
+\smallskip
+\textbf{Where you have met this already.} The ``proxy bidding'' on consumer
+auction sites --- you enter a maximum and the site bids on your behalf up to it
+--- is a Vickrey auction wearing an English auction's clothes. The winner pays
+one increment above the second-highest maximum, not their own.
+\end{conceptbox}
+
+\section{What an Auction Costs You in Engineering}
+
+A fixed-price product is a row that changes rarely. An auction is a small
+real-time system, and it brings four problems the rest of this book does not
+have to solve.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.6cm}L{11.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Problem} & \textbf{Why a fixed-price shop does not have it} \\
+\midrule
+\endhead
+\textbf{Time is part of the state} & A listing must close at an exact moment,
+unattended, and settle correctly whether or not anyone is looking. A product
+page has no deadline. This needs a scheduler, and a scheduler that did not run
+is a silent failure \\
+\textbf{Concurrent bids} & Two bids arriving in the same instant must produce
+one consistent outcome. This is the classic lost-update problem and it needs a
+transaction and a lock, not a quick read-then-write \\
+\textbf{Sniping} & A bid placed one second before closing wins without giving
+anyone a chance to respond. Fixes exist --- extend the closing time on a late
+bid --- and each changes the rules of the auction, which is a design decision
+rather than a bug fix \\
+\textbf{Shill bidding} & The seller, or a friend, bids to push the price up
+with no intention of buying. Detecting it means analysing bidding patterns
+across accounts, and it is fraud rather than a feature gap \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The lost update, concretely]
+Two bidders submit Rs.~5{,}000 at the same instant on an item currently at
+Rs.~4{,}500.
+
+\smallskip
+A naive implementation reads the current high bid, checks that the new bid
+beats it, and writes. Interleaved, both read Rs.~4{,}500, both pass the check,
+and both write Rs.~5{,}000 --- the second overwriting the first. One bidder's
+money is now owed on an item they did not win, and the audit trail shows a
+single bid.
+
+\smallskip
+The fix is the one \chref{checkout} uses for stock: do the check and the write
+in one atomic statement, inside a transaction, with the row locked. ``Read,
+decide, write'' is three steps, and anything can happen between them.
+\end{alertbox}
+
+\section{Holding Other People's Money}
+
+An auction site that merely introduces a buyer to a seller has introduced two
+strangers and left. Whoever moves first --- sends the money, or sends the goods
+--- carries all the risk.
+
+\term{Escrow} is the operator's answer: it holds the buyer's money, tells the
+seller to ship, and releases the money when the buyer confirms receipt or a
+time limit expires.
+
+\begin{definitionbox}[Escrow and Dispute Resolution]
+\term{Escrow} is the holding of a payment by a trusted third party until the
+conditions of the transaction are met.
+
+\smallskip
+It makes the operator a custodian of money that is not theirs, which in most
+jurisdictions --- Pakistan included --- carries regulatory obligations
+(\chref{legal}). It also makes the operator the \term{dispute resolution}
+authority, because somebody has to decide who is telling the truth when the
+buyer says the item never arrived and the seller says it did.
+
+\smallskip
+That adjudication cannot be automated away, and it is why marketplace
+commissions are higher than payment processing fees: the commission buys
+arbitration, not just plumbing.
+\end{definitionbox}
+
+\begin{examplebox}[Reputation as the cheap substitute, and what it cannot do]
+Escrow is expensive. The cheaper substitute is a \term{reputation system}:
+record how every past transaction went and let future counterparties read it.
+
+\smallskip
+It works, within limits, and the limits are worth knowing:
+
+\begin{tight}
+  \item \textbf{A new seller has no reputation}, so the system gives no
+        protection in exactly the case where it is most needed.
+  \item \textbf{Reputation can be bought} --- a hundred small honest sales, then
+        one large dishonest one. The score is an average; the fraud is a
+        maximum.
+  \item \textbf{Retaliation distorts it.} If each side rates the other, a buyer
+        who reports a problem risks a bad rating in return, so both sides learn
+        to stay quiet and the scores drift upward until they mean nothing.
+  \item \textbf{It cannot be transferred.} Years of standing on one platform are
+        worth nothing on another, which is exactly why the platform likes it.
+\end{tight}
+\end{examplebox}
+
+\section{Portals, Marketplaces and Communities}
+
+The three are often lumped together and should not be.
+
+A \term{portal} aggregates \emph{information} and sells attention --- a price
+comparison site, a news aggregator with shopping links. It carries no stock,
+handles no payment, and earns from advertising or affiliate referral. Its
+engineering problem is ingesting other people's data and keeping it fresh, and
+its commercial weakness is that it owns no transaction and can be cut out the
+moment a supplier decides to stop feeding it.
+
+A \term{marketplace} aggregates \emph{sellers} and hosts the transaction. It
+earns commission, and it is a shop in which the catalogue is written by
+strangers --- which turns catalogue quality, duplicate detection and fraud into
+daily operational work rather than a one-time setup.
+
+A \term{community} aggregates \emph{people} who are there for each other rather
+than to transact. Commerce, if any, is secondary, and the usual mistake is
+assuming an engaged community will convert into a profitable marketplace. Many
+do not: the thing people valued was the absence of selling.
+
+\begin{conceptbox}[The two-sided launch problem]
+A marketplace is worthless to buyers with no sellers, and worthless to sellers
+with no buyers. On day one it has neither, and every new one faces this.
+
+\smallskip
+The strategies that actually work are all variations on \emph{refusing to be
+two-sided at first}:
+
+\begin{tight}
+  \item \textbf{Be one of the sellers yourself} until there are enough others.
+        You take on stock you did not want, and you compete with your own
+        sellers, and it works.
+  \item \textbf{Pick one narrow side and own it completely} --- a single city, a
+        single category --- so that the market is small enough to fill.
+  \item \textbf{Be useful to one side alone.} Offer sellers a tool worth having
+        even with no buyers (stock management, a storefront), then introduce
+        buyers once the sellers are already there.
+  \item \textbf{Fake the thin side} by listing supply gathered from elsewhere.
+        Common, legally risky, and the point at which several well-known
+        companies acquired their reputations.
+\end{tight}
+
+\smallskip
+Notice that none of these is ``build a better marketplace''. The problem is not
+a product problem, and a student project that proposes a marketplace without
+addressing it has not yet met its hardest part.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Implementing bidding with read-then-write.} Two simultaneous
+        bids will eventually produce one lost bid, and it will be
+        unreproducible when reported.
+  \item \textbf{Closing auctions with a page request.} If closing happens when
+        somebody loads the page, an auction nobody looks at never closes. It
+        needs a scheduled job, and the job needs monitoring.
+  \item \textbf{Treating escrow as a feature.} It is custody of other people's
+        money and it is regulated. \chref{legal} is not optional reading if you
+        intend to hold funds.
+  \item \textbf{Believing a reputation score protects the first transaction.}
+        It protects the hundredth.
+  \item \textbf{Proposing a marketplace without a plan for the empty side.}
+        This is the single most common fatal flaw in student project proposals
+        for this course.
+  \item \textbf{Assuming a community will monetise.} The engagement you measured
+        may exist precisely because nothing was being sold.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Three shapes, and what each one must get right]
+No software yet. This is the last of the three analysis laboratories;
+\chref{stack} starts building.
+
+\smallskip
+Find one live example of each: an \textbf{auction}, a \textbf{marketplace} and
+a \textbf{portal}. They may be Pakistani or international, but you must be able
+to browse all three.
+
+\smallskip
+For each, record:
+
+\begin{tightnum}
+  \item \textbf{Who takes the risk} if the goods never arrive --- buyer, seller
+        or operator? Find the actual policy page, do not guess. Quote it.
+  \item \textbf{Where the money is} between payment and delivery. Is there
+        escrow? How long is it held, and what releases it?
+  \item \textbf{What the operator earns}, and from which side.
+  \item \textbf{One rule that exists because of a specific abuse.} Every mature
+        platform has several --- a bidding increment, a minimum feedback score,
+        a holding period for new sellers, a limit on listing edits. Name one and
+        work out what it is defending against.
+\end{tightnum}
+
+\smallskip
+Then, for the \textbf{auction} only: find the closing rules. Does a late bid
+extend the auction? By how much? Say which auction format that makes it, and
+whether it rewards bidding your true valuation.
+
+\smallskip
+\textbf{Write up half a page} ending with one sentence: of the three, which
+would be hardest to build, and which single problem makes it so?
+
+\smallskip
+\textbf{What to notice.} The rules that look arbitrary are nearly always scar
+tissue. Each one is a record of something that went wrong, and reading a mature
+platform's rules is the cheapest way to learn what will go wrong with yours.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item In a Vickrey auction an item is worth Rs.~15{,}000 to you. Bids of
+        Rs.~12{,}000 and Rs.~13{,}500 have been placed by others. What should
+        you bid, what do you pay if you win, and why would bidding Rs.~18{,}000
+        be a mistake?
+  \item An auction site closes listings when a visitor loads the listing page.
+        Describe precisely what happens to an auction for an unpopular item,
+        and what the seller sees.
+  \item A marketplace has plenty of buyers and too few sellers. Give two
+        strategies from this chapter that would address it, and name a cost of
+        each.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Auctions, portals, marketplaces and communities are alternative shapes
+        a business can take, which is why this chapter sits in Part~I rather
+        than where the published outline puts it.
+  \item The four formats are English, Dutch, sealed-bid first-price and
+        Vickrey. Under the Vickrey rule, bidding your true valuation is optimal
+        whatever others do --- and consumer proxy bidding is Vickrey in
+        disguise.
+  \item An auction adds four problems a fixed-price shop does not have: time as
+        state, concurrent bids, sniping and shill bidding. The first two are
+        engineering; the second two are rule design.
+  \item ``Read the high bid, check it, write it'' loses bids under concurrency.
+        The check and the write must be one atomic operation.
+  \item Escrow makes the operator a custodian of other people's money and the
+        arbiter of their disputes. Reputation is the cheap substitute and fails
+        exactly on the first transaction and the large one.
+  \item Portals aggregate information, marketplaces aggregate sellers,
+        communities aggregate people. Only the marketplace owns the
+        transaction.
+  \item Every two-sided market launches empty, and every strategy that works
+        amounts to refusing to be two-sided at the start.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} In a second-price sealed-bid auction, the optimal
+        strategy is to bid: (a)~slightly above your valuation; (b)~exactly your
+        valuation; (c)~slightly below it; (d)~it depends on the other bidders.
+  \item \textbf{(MCQ)} Which problem does a fixed-price shop share with an
+        auction site? (a)~Sniping; (b)~shill bidding; (c)~concurrent updates to
+        one row; (d)~scheduled closing.
+  \item \textbf{(Short)} Explain sniping, and give one rule change that
+        discourages it together with the cost of that change.
+  \item \textbf{(Short)} Distinguish a portal from a marketplace, and say which
+        is more easily cut out of its own business.
+  \item \textbf{(Short)} Give three distinct ways a reputation system can be
+        gamed or rendered meaningless.
+  \item \textbf{(Applied)} Design the database handling for a single bid.
+        Give the table columns you would need, the exact check that must happen
+        atomically, and state what goes wrong if the check and the write are
+        separate statements. You may write it as SQL or as precise prose.
+  \item \textbf{(Applied)} A student proposes a marketplace connecting
+        Bahawalpur tailors with customers. Identify the two-sided launch
+        problem in this specific case, choose one strategy from this chapter,
+        and describe concretely what the first eight weeks would consist of.
+\end{reviewq}

@@ -1,0 +1,368 @@
+%=====================================================================
+\chapter{Themes, Layout and the Customer's Experience}\label{ch:ux}
+%=====================================================================
+\locator{2}{Part II --- Standing the Shop Up}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} how a theme is built from templates, and
+        \textbf{override} one without editing the original.
+  \item \textbf{Explain} what a layout is, and \textbf{place} a module on a
+        chosen page without touching a template at all.
+  \item \textbf{Measure} a page's weight and \textbf{say} which part of it is
+        the weight.
+  \item \textbf{Distinguish} the optimisations that are worth doing from the
+        ones that are merely popular, using evidence.
+  \item \textbf{Judge} a storefront change by its effect on the customer rather
+        than by taste.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{catalogue} and \chref{variations}: a catalogue worth looking at.
+Appendix~B's Twig section --- this chapter edits templates. HTML and CSS from
+\emph{Web Technologies}.
+\end{prereq}
+
+\begin{keyterms}
+theme $\bullet$ template $\bullet$ Twig $\bullet$ template override $\bullet$
+layout $\bullet$ module $\bullet$ position $\bullet$ page weight $\bullet$
+request count $\bullet$ render-blocking $\bullet$ minification $\bullet$
+responsive design $\bullet$ above the fold $\bullet$ conversion
+\end{keyterms}
+
+\section{What a Theme Actually Is}
+
+``Change the theme'' sounds like changing a colour. It is not. A theme in
+OpenCart is a directory of Twig templates, and each one is responsible for one
+piece of the page.
+
+\begin{lstlisting}[language=bash]
+docker compose exec shop \
+  ls /var/www/html/catalog/view/template/product/
+# category.twig  product.twig  search.twig  special.twig ...
+\end{lstlisting}
+
+The default theme lives in
+\texttt{catalog/view/template/}. The important rule about it is one you should
+adopt before you change a single line:
+
+\begin{alertbox}[Never edit the default theme]
+Edit \texttt{catalog/view/template/product/category.twig} directly and three
+things happen. Your change is lost at the next upgrade. Nobody can tell what
+you changed, because there is no original to compare against. And a second
+developer, or you in March, will assume the file is stock and read it as
+documentation of how OpenCart works.
+
+\smallskip
+Make a \term{child theme} instead: a directory of your own that contains
+\emph{only} the templates you changed. OpenCart looks there first and falls
+back to the default for everything else, so your directory \emph{is} the list
+of your changes. A child theme with four files in it is a complete and honest
+statement that you changed four things.
+\end{alertbox}
+
+\section{Layouts, or How to Change a Page Without Editing It}
+
+A surprising amount of what people reach for a template to do can be done
+without touching one.
+
+\begin{definitionbox}[Layout, Module, Position]
+A \term{module} is a self-contained block --- a category list, a banner, a
+carousel, ``featured products''.
+
+\smallskip
+A \term{layout} says which modules appear on which \emph{kind} of page, and
+where. \adminpath{Design, Layouts} lists them: Home, Category, Product,
+Checkout, and so on.
+
+\smallskip
+A \term{position} is a slot in the page: \uiel{Column Left},
+\uiel{Column Right}, \uiel{Content Top}, \uiel{Content Bottom}. A module is
+placed in a position of a layout, with a sort order.
+
+\smallskip
+So ``put a banner above the products on every category page'' is three clicks
+in \adminpath{Design, Layouts, Category} and no code at all.
+\end{definitionbox}
+
+\begin{conceptbox}[Ask this before editing a template]
+\textbf{``Is this a layout change or a template change?''}
+
+\smallskip
+If you want something \emph{moved, added or removed} and it already exists as a
+module, it is a layout change --- do it in the admin panel, where it is
+visible to whoever comes next and survives upgrades.
+
+\smallskip
+Edit a template only when the \emph{markup itself} must differ: a field shown
+that the theme does not show, a different arrangement within a block, a tag the
+theme gets wrong. Then override exactly that file in your child theme and
+nothing else.
+
+\smallskip
+The commonest waste of effort in this chapter's laboratory is a student editing
+\texttt{category.twig} to do something \adminpath{Design, Layouts} would have
+done.
+\end{conceptbox}
+
+\section{What a Page Weighs}
+
+Here the chapter stops being about arrangement. A customer's experience of your
+shop is mostly its speed, and speed is mostly \emph{weight} --- how many bytes
+and how many separate requests the browser must complete before the page is
+usable.
+
+Note that this is a different question from \chref{catalogue}'s. That chapter
+measured how long the \emph{server} took to produce the HTML. This one measures
+everything that happens afterwards, and it is usually larger.
+
+\begin{measured}[What the Storefront Weighs]
+Produced by \texttt{code/m08\_pageweight.py} on the machine in Appendix~A. The
+harness fetches a page, finds every stylesheet, script and image the HTML
+names, requests each one once, and totals them.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.0cm}L{1.9cm}L{1.6cm}L{1.6cm}L{1.6cm}L{1.6cm}L{2.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Page} & \textbf{Requests} & \textbf{HTML} & \textbf{CSS} &
+\textbf{JS} & \textbf{Images} & \textbf{Total} \\
+\midrule
+\endhead
+Home & 25 & 32\,KB & 348\,KB & 223\,KB & 293\,KB & \textbf{895\,KB} \\
+Category & 20 & 46\,KB & 348\,KB & 223\,KB & 122\,KB & \textbf{738\,KB} \\
+Product & 18 & 54\,KB & 354\,KB & 243\,KB & 61\,KB & \textbf{713\,KB} \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{The framework is the page.} CSS and JavaScript come to about
+\textbf{570\,KB on every page}, and they do not vary with the content ---
+the same bytes on the home page, a category of 50{,}000 products and a single
+product. On the product page they are \textbf{84\% of the weight}. The HTML
+that the whole of \chref{catalogue} was spent optimising is 6--7\%.
+
+\smallskip
+\textbf{Images are not the problem here, although everyone optimises them
+first.} They are 33\% of the home page, 16\% of a category page and 9\% of a
+product page. The largest single image in the demonstration catalogue is
+13.9\,KB. You could halve every image on the category page and save 61\,KB ---
+about 8\%.
+
+\smallskip
+\textbf{The single largest file is 265\,KB of unminified CSS.}
+\texttt{bootstrap.css} ships at 271{,}637 bytes, and \textbf{no minified
+version ships with it} --- there is no \texttt{bootstrap.min.css} anywhere in
+the tree. A minified build of the same framework is around a tenth of that.
+That one file is 36\% of the category page.
+
+\smallskip
+\textbf{This measurement undercounts, and you should know how.} It follows only
+assets the \emph{HTML} names. Fonts are requested by the CSS, so they are
+invisible to it: the FontAwesome directory alone holds 248\,KB of
+\texttt{.woff2} files, of which a browser fetches whichever subsets it needs.
+The totals above are therefore a floor, not a figure. A tool that drove a real
+browser would see more; this one is honest about seeing less.
+\end{measured}
+
+\begin{conceptbox}[The order to optimise in, which is not the popular order]
+From the numbers above, for this shop:
+
+\begin{tightnum}
+  \item \textbf{Minify the CSS.} One file, 265\,KB to roughly 27\,KB. The
+        largest single saving available, and it changes nothing a customer can
+        see.
+  \item \textbf{Drop what you do not use.} Bootstrap and FontAwesome are
+        general-purpose libraries; a shop uses a fraction of either. Removing
+        the unused parts is the second-largest saving and the fiddliest.
+  \item \textbf{Cut the request count.} Twenty requests is twenty round trips.
+        On a fast link this hardly matters; on a phone on a slow connection in
+        Bahawalpur it is most of the wait.
+  \item \textbf{Then images} --- resize to the size actually displayed, and
+        serve modern formats.
+\end{tightnum}
+
+\smallskip
+Most advice reverses this list, because images are the thing people can see and
+a 2\,MB photograph is a vivid story. On \emph{this} shop images are 16\% and
+the framework is 77\%. On a shop with photographic product shots the balance
+moves. That is the point: the order depends on the measurement, and the
+measurement takes two minutes.
+\end{conceptbox}
+
+\begin{alertbox}[Render-blocking, and why position matters as much as size]
+A stylesheet in the \texttt{<head>} is \term{render-blocking}: the browser will
+not paint \emph{anything} until it has fetched and parsed it. So 348\,KB of CSS
+is not merely 348\,KB of transfer --- it is 348\,KB standing between the
+customer and the first pixel.
+
+\smallskip
+Scripts block too, unless marked \texttt{defer} or \texttt{async}. A
+\texttt{<script src>} in the head stops the parser dead while it downloads.
+
+\smallskip
+This is why page weight and page time are not the same measurement, and why
+``it is only 200\,KB'' can still be the reason a shop feels slow.
+\end{alertbox}
+
+\section{Judging a Change by the Customer}
+
+The hardest discipline in this chapter is not technical. It is resisting the
+urge to change the storefront because you would prefer it differently.
+
+\begin{examplebox}[Three changes, and how you would know if they helped]
+\textbf{``Make the Add to Cart button green.''} You cannot know without an
+experiment: show half your visitors one colour and half the other, and compare
+the proportion who buy. With thirty visitors a day you will wait months for an
+answer, which is itself the answer --- a shop this size should spend its
+effort elsewhere.
+
+\smallskip
+\textbf{``Show the delivery charge on the product page.''} This you can reason
+about. \chref{what}'s laboratory found that shops which hide the delivery
+charge until checkout lose customers there; it is the most-cited reason for
+abandonment. No experiment needed.
+
+\smallskip
+\textbf{``Minify the CSS.''} Measurable directly, in bytes, with no customers
+involved at all. 265\,KB to 27\,KB is a fact, and it cannot make anything
+worse.
+
+\smallskip
+\textbf{The pattern.} Prefer changes you can verify without an experiment you
+cannot afford to run. Most small shops cannot generate enough traffic to
+measure a colour, and should spend their effort on the things that are
+measurable in bytes or known from everybody else's evidence.
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Editing the default theme.} Lost at upgrade, invisible to the
+        next person. Override in a child theme.
+  \item \textbf{Editing a template to do a layout's job.} If the block exists
+        as a module, move it in \adminpath{Design, Layouts}.
+  \item \textbf{Optimising images first because they are visible.} On this shop
+        that addresses 16\% of the weight and ignores 77\%.
+  \item \textbf{Assuming a framework file is minified.} \texttt{bootstrap.css}
+        here is 265\,KB and there is no minified copy in the tree.
+  \item \textbf{Measuring page weight by counting every \texttt{<img>} tag.}
+        The same thumbnail on twenty cards is one request; counting it twenty
+        times overstates the weight several-fold.
+  \item \textbf{Forgetting fonts.} They are requested by CSS, so they are
+        invisible to any harness that reads only the HTML --- including this
+        chapter's.
+  \item \textbf{Redesigning on taste with no way to tell whether it helped.}
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Weigh your shop, then make it lighter]
+\begin{lstlisting}[language=bash]
+# --- 1. Weigh three pages -------------------------------------------
+cd code
+python m08_pageweight.py --compare
+
+# --- 2. Find the biggest single file --------------------------------
+# Predict it before you look. Most people guess an image.
+docker compose exec shop sh -c \
+  'ls -laS /var/www/html/catalog/view/stylesheet/ | head -5'
+
+# --- 3. Make a child theme ------------------------------------------
+# Admin: Design > Theme Editor. Override ONE template -- the category
+# product card -- and add the model number under each product name.
+# Your override directory is now the list of your changes.
+
+# --- 4. Do a layout change with no code -----------------------------
+# Admin: Design > Layouts > Category. Add a module to Content Top.
+# Reload a category page. No template was edited.
+
+# --- 5. Weigh it again ----------------------------------------------
+# Did your two changes move the number? By how much, and which one?
+python m08_pageweight.py
+
+# --- 6. Make a real saving ------------------------------------------
+# Minify bootstrap.css and serve the minified copy instead. Any
+# minifier will do. Record the before and after byte counts.
+
+# --- 7. Weigh it a third time, and account for the difference -------
+# The saving should be most of 240 KB. If it is not, find out what
+# else changed -- do not just record the number.
+python m08_pageweight.py
+
+# --- 8. Say what you would do next, and why -------------------------
+# One paragraph, ordered by measured saving rather than by what is
+# easiest to see. Chapter 20 returns to this with caching.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 2 against step 1: almost everyone predicts an
+image and the answer is a stylesheet. That gap between where people look for
+weight and where weight is, is the whole chapter.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A product page is 713\,KB, of which 597\,KB is CSS and JavaScript. A
+        colleague proposes compressing all the product photographs. What is the
+        best case for that change, and what would you propose instead?
+  \item Distinguish a layout change from a template change, and give one
+        example of each for the request ``show a trust badge under the Add to
+        Cart button on every product page''.
+  \item This chapter's harness reports 738\,KB for a category page, and a
+        browser's developer tools report more. Give two reasons the harness is
+        lower, and say which of them it could fix.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A theme is a directory of Twig templates. Never edit the default:
+        override only the files you change in a child theme, so that the
+        directory is the list of your changes and survives upgrades.
+  \item A layout places modules in positions on a kind of page. Moving, adding
+        or removing an existing block is a layout change made in the admin
+        panel, not a template edit.
+  \item Measured: the storefront weighs 713--895\,KB per page across 18--25
+        requests. CSS and JavaScript are about 570\,KB of that \emph{on every
+        page} and do not vary with content --- 84\% of the product page.
+  \item Images are 9--33\% depending on the page, although they are what people
+        optimise first.
+  \item The largest single file is \texttt{bootstrap.css} at 265\,KB,
+        unminified, with no minified copy anywhere in the tree.
+  \item The harness undercounts: it follows only assets named in the HTML, so
+        fonts requested by CSS (248\,KB in one directory) are invisible to it.
+        Know what your instrument cannot see.
+  \item Weight and time are not the same: a stylesheet in the head is
+        render-blocking and stands between the customer and the first pixel.
+  \item Prefer changes you can verify without an experiment you cannot afford
+        to run. A small shop cannot measure a button colour and can measure
+        240\,KB.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} On the measured product page, CSS and JavaScript are
+        what share of the weight? (a)~9\%; (b)~about a third; (c)~84\%;
+        (d)~it depends on the catalogue size.
+  \item \textbf{(MCQ)} ``Show the manufacturer's name under the product title''
+        where the theme does not show it at all is: (a)~a layout change;
+        (b)~a template override; (c)~a module setting; (d)~a database change.
+  \item \textbf{(Short)} Why is a child theme better than editing the default,
+        giving two reasons that are not about upgrades.
+  \item \textbf{(Short)} Explain render-blocking, and why page weight and page
+        time are different measurements.
+  \item \textbf{(Short)} This chapter's harness counts each unique asset once
+        rather than once per mention. Explain what would go wrong otherwise,
+        with a number.
+  \item \textbf{(Applied)} You are given a shop whose category page is 2.1\,MB:
+        HTML 40\,KB, CSS 90\,KB, JS 150\,KB, images 1.82\,MB across 40
+        requests. Give your optimisation order with a predicted saving for each
+        step, and say how this differs from the order you would use on the shop
+        in this chapter and why.
+  \item \textbf{(Applied)} Design a measurement that would tell you whether
+        showing the delivery charge on the product page increases or decreases
+        completed orders. State what you would record, how long you would need
+        to run it, and --- honestly --- whether a shop taking thirty orders a
+        day could reach a conclusion at all.
+\end{reviewq}

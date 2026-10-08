@@ -1,0 +1,423 @@
+%=====================================================================
+\chapter{Product Variations, Options and Uploads}\label{ch:variations}
+%=====================================================================
+\locator{2}{Part II --- Standing the Shop Up}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} an option from a variant, and \textbf{say} which
+        of the two a given requirement needs.
+  \item \textbf{Explain} why options do not store the combinations they imply,
+        and \textbf{state} what that makes impossible.
+  \item \textbf{Configure} option sets on a product and \textbf{predict} the
+        number of rows each one creates.
+  \item \textbf{Describe} what a shop must check before accepting an uploaded
+        file, and \textbf{identify} which of those checks a client can defeat.
+  \item \textbf{Test} your own shop's upload handling and \textbf{report} what
+        it accepts.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{catalogue}: the eighteen product tables, and the habit of looking at
+what a screen wrote. Your shop should still have its demonstration catalogue;
+\texttt{seed/catalogue.py --restore} puts it back if not.
+\end{prereq}
+
+\begin{keyterms}
+option $\bullet$ option value $\bullet$ variant $\bullet$ SKU $\bullet$
+modifier $\bullet$ price prefix $\bullet$ combinatorial explosion $\bullet$
+stock keeping $\bullet$ required option $\bullet$ file upload $\bullet$
+allow-list $\bullet$ MIME type $\bullet$ content sniffing $\bullet$ stored
+cross-site scripting
+\end{keyterms}
+
+\section{Two Ways to Say ``Comes in Three Colours''}
+
+A shirt in three colours and four sizes. Twelve things a customer might buy.
+How many rows is that?
+
+The honest answer is that it depends on a decision nobody will prompt you to
+make, and that the two answers have different consequences for the rest of the
+shop's life.
+
+\begin{definitionbox}[Option and Variant]
+An \term{option} is a choice attached to one product, whose values
+\emph{modify} it. The shirt is one product; ``Large'' adds Rs.~200 and
+``Red'' adds nothing. The twelve combinations are \textbf{not stored
+anywhere} --- they are computed when a customer picks.
+
+\smallskip
+A \term{variant} is a product in its own right, linked to a master. ``Red
+Large Shirt'' is a row in \texttt{oc\_product}, with
+\texttt{master\_id} pointing at the parent, its own model number, its own
+stock and its own price. Twelve combinations are twelve rows.
+
+\smallskip
+OpenCart~4 supports both --- \texttt{oc\_product} carries
+\texttt{master\_id}, \texttt{variant} and \texttt{override} columns alongside
+the older option tables. The admin panel shows options first, so options are
+what most shops end up with, including shops that needed variants.
+\end{definitionbox}
+
+\subsection{What options actually store}
+
+Two tables do the work, and a third names the choices globally.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{5.4cm}L{9.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Table} & \textbf{What a row means} \\
+\midrule
+\endhead
+\texttt{oc\_option} & A choice that exists in the shop at all --- ``Size'',
+``Colour'' --- with its \texttt{type}: \texttt{select}, \texttt{radio},
+\texttt{checkbox}, \texttt{text}, \texttt{textarea}, \texttt{date},
+\texttt{time}, \texttt{datetime}, \texttt{file} \\
+\texttt{oc\_option\_value} & One possible value of it: ``Large''. Shared
+across every product that uses the option \\
+\texttt{oc\_product\_option} & \emph{This} product offers \emph{that} option,
+and whether it is \texttt{required} \\
+\texttt{oc\_product\_option\_value} & This product offers that value, and
+what choosing it does: \texttt{price} with a \texttt{price\_prefix} of
+\texttt{+} or \texttt{-}, plus \texttt{quantity}, \texttt{weight} and
+\texttt{points} adjustments \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[What options make impossible]
+Look at where \texttt{quantity} lives: on
+\texttt{oc\_product\_option\_value}, which is \emph{per option value}, not per
+combination.
+
+\smallskip
+So the shop can know it has 40 Large shirts and 30 Red shirts. It
+\textbf{cannot} know how many Red Large shirts it has, because there is no row
+for that --- and no amount of configuration will add one. Three consequences
+follow, and all three are discovered late:
+
+\begin{tight}
+  \item \textbf{No stock per combination.} You will oversell the popular
+        combination and sit on the unpopular one.
+  \item \textbf{No SKU or barcode per combination}, so the shop cannot speak
+        to a warehouse system that works in SKUs --- which is all of them.
+  \item \textbf{No price history or reporting per combination.} ``How many
+        Red Large did we sell?'' has no answer.
+\end{tight}
+
+\smallskip
+If any of those three matter, you need variants, and you need to know that
+\emph{before} the catalogue is built. Migrating two thousand option-based
+products to variants is not a setting; it is a project.
+\end{alertbox}
+
+\begin{conceptbox}[Which one does this requirement need?]
+A test that settles most cases in one question: \textbf{does the shop need to
+count, price or identify the combination on its own?}
+
+\smallskip
+\textbf{Options are right} when the choice does not change what you hold in
+stock: an engraving message, a delivery date, a gift-wrap tick, a cable length
+that you cut to order. Also when the combination genuinely shares stock ---
+which is rarer than people assume.
+
+\smallskip
+\textbf{Variants are right} whenever the combination is a thing in a box on a
+shelf. Clothing, shoes, anything with a barcode. If a warehouse person could
+pick up exactly one combination and scan it, it is a variant.
+
+\smallskip
+\textbf{The common mistake} is to choose options because the admin panel
+offers them first and they are quicker to set up, and to discover in month
+nine --- during the first real stock-take --- that the shop has never known
+what it holds.
+\end{conceptbox}
+
+\section{What Each Choice Costs}
+
+Options are cheap to store and variants are not. That much is obvious. What is
+worth measuring is \emph{how fast} the difference grows, because it decides
+whether a catalogue is manageable.
+
+\begin{measured}[Options Against Variants]
+Produced by \texttt{code/m07\_variations.py} on the machine in Appendix~A.
+Option sets are attached to one product and the product page is requested seven
+times, median taken; the variant column is the number of
+\texttt{oc\_product} rows the same catalogue would need.
+
+\rowcolors{2}{white}{lightbg}
+% Six columns inside a tcolorbox: 10.4 cm of content plus five 0.42 cm gaps.
+% Seven columns overflowed by 12.3 pt, and "option rows" was the column the
+% prose could carry instead.
+\begin{longtable}{@{}L{1.9cm}L{1.7cm}L{1.7cm}L{1.6cm}L{1.4cm}L{2.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Options} & \textbf{Combin.} & \textbf{Value rows} & \textbf{Page} &
+\textbf{KB} & \textbf{As variants} \\
+\midrule
+\endhead
+3 & 3 & 3 & 87\,ms & 30.0 & 4 rows \\
+3$\times$4 & 12 & 7 & 104\,ms & 30.7 & 13 rows \\
+3$\times$4$\times$5 & 60 & 12 & 101\,ms & 31.3 & 61 rows \\
+6$\times$8$\times$5 & \textbf{240} & \textbf{19} & 103\,ms & 31.3 &
+\textbf{241 rows} \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Options grow by addition; variants grow by multiplication.} Three
+option sets of 6, 8 and 5 values are \textbf{19 rows} --- $6+8+5$ --- and
+express 240 combinations. The same catalogue as variants is \textbf{241
+product rows}, each with its own description row, its own store row and its
+own category rows. Add a sixth colour and options gain one row while variants
+gain forty.
+
+\smallskip
+\textbf{And the product page does not care.} From 3 combinations to 240, the
+page stayed at about 100\,ms and grew by \textbf{1.3 kilobytes} --- because the
+page renders the \emph{choices}, not the combinations. Nineteen values in three
+dropdowns, whatever the 240 products those values imply.
+
+\smallskip
+\textbf{So the cost of variants is not page speed; it is catalogue
+management.} Two hundred and forty-one rows that must each be priced, stocked,
+described, photographed and kept in step. That is the real bill, it is paid by
+a person rather than a server, and it is the reason shops that should have
+chosen variants did not.
+\end{measured}
+
+\section{Uploads, and What Your Shop Will Accept}
+
+One of the nine option types is \texttt{file}. Switch it on and a customer can
+send you a file --- a logo to print, a document to quote against, a photograph
+to frame.
+
+You have now accepted arbitrary bytes from a stranger, and everything that
+follows is about not regretting it.
+
+\begin{examplebox}[What OpenCart checks, in order]
+From \texttt{catalog/controller/tool/upload.php} in your own container. Read
+it; it is forty lines.
+
+\begin{tightnum}
+  \item \textbf{The filename is sanitised} --- everything outside
+        \texttt{[a-zA-Z0-9.\-\textvisiblespace+]} is stripped, then
+        \texttt{basename()} removes any path. This defeats
+        \texttt{../../etc/passwd} and it is solid.
+  \item \textbf{The length is checked}, 3 to 64 characters.
+  \item \textbf{The extension is checked against an allow-list}
+        (\texttt{config\_file\_ext\_allowed}). An allow-list is the right
+        shape: anything not named is refused.
+  \item \textbf{The MIME type is checked against a second allow-list}
+        (\texttt{config\_file\_mime\_allowed}).
+  \item \textbf{The stored name is randomised} --- the file is saved as the
+        name plus a 32-character token, so it cannot be guessed, and the real
+        name is kept in the database.
+\end{tightnum}
+\end{examplebox}
+
+\begin{alertbox}[Check 4 is worth almost nothing, and it is not a bug in OpenCart]
+The MIME type it compares is
+\texttt{\$\_FILES['file']['type']} --- and that value is \textbf{sent by the
+browser}. It is a claim made by the client about its own file. Anyone using
+anything other than a browser sets it to whatever passes.
+
+\smallskip
+The default allow-list makes this worse by including
+\texttt{application/octet-stream}, which means ``unidentified binary'' ---
+so the honest answer for almost any file is already on the list.
+
+\smallskip
+\textbf{This is not a criticism of OpenCart so much as a lesson about where a
+check must run.} A check performed on data the attacker controls is not a
+check. The extension allow-list is real because the server derives it from the
+name it has already sanitised. The MIME check is advisory, and the only
+server-side equivalent is to inspect the file's actual contents ---
+\texttt{finfo\_file()} in PHP, which reads the magic bytes.
+\end{alertbox}
+
+\begin{alertbox}[Two defaults on your shop, which you can verify in five minutes]
+Both of these are true of the stock install in \chref{stack}, and both are
+measured in \chref{security}.
+
+\smallskip
+\textbf{The allow-list includes \texttt{svg}.} An SVG is not a picture; it is
+an XML document, and it may contain \texttt{<script>}. A browser asked to
+display one from your origin will run it. The default list also carries
+\texttt{eps} and \texttt{ps}, which are PostScript --- a programming language
+--- and \texttt{msi}, \texttt{cab} and \texttt{rar}.
+
+\smallskip
+\textbf{Uploads are served over HTTP.} They land in
+\texttt{system/storage/upload/}, which is \emph{inside} the web root. Requesting
+a file there returns it: a text file comes back as \texttt{text/plain} and an
+SVG as \texttt{image/svg+xml}. The directory cannot be listed --- there is an
+empty \texttt{index.html} --- and names carry a 32-character token, so this is
+not trivially exploitable. But the protection is secrecy of the name, not
+inaccessibility of the directory, and Apache is configured with
+\texttt{AllowOverride None}, so the \texttt{.htaccess} OpenCart ships cannot
+change it.
+
+\smallskip
+\textbf{What to do about it} is \chref{security}'s subject. The short version:
+remove \texttt{svg} from the list unless you need it, serve uploads through a
+script that sets \texttt{Content-Disposition: attachment} rather than from the
+filesystem, and keep the storage directory outside the web root.
+\end{alertbox}
+
+\begin{conceptbox}[Two size limits, and the smaller one wins]
+\texttt{config\_file\_max\_size} is a setting in the admin panel. PHP has its
+own, \texttt{upload\_max\_filesize}, in \texttt{code/shop/php.ini}, and this
+course sets it to 8~MB.
+
+\smallskip
+If the admin setting is larger, it has no effect: PHP refuses the upload
+before any OpenCart code runs, and the error the customer sees is unhelpful.
+Whenever a limit appears not to work, look for the second limit --- there is
+nearly always a second limit, in the web server, the runtime or the proxy, and
+the smallest one is the one in force.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Choosing options when the requirement needs variants.} The
+        symptom arrives at the first stock-take, and the fix is a migration.
+  \item \textbf{Believing option \texttt{quantity} tracks combinations.} It
+        tracks one value. Red Large and Red Small share Red's stock.
+  \item \textbf{Trusting the uploaded MIME type.} The client supplies it.
+  \item \textbf{Allowing \texttt{svg} without thinking about it.} It is script
+        that renders as a picture.
+  \item \textbf{Setting a size limit in one place only.} The smaller of the
+        admin setting and \texttt{upload\_max\_filesize} wins.
+  \item \textbf{Making every option \texttt{required}.} The customer cannot
+        buy without choosing, and a required text option with no sensible
+        default costs sales.
+  \item \textbf{Forgetting that option values are global.} Editing ``Large''
+        edits it for every product that uses it.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Options, variants, and what your shop will swallow]
+\begin{lstlisting}[language=bash]
+# --- 1. Look at a product that already has every option type ---------
+# Product 42 in the demo catalogue carries all nine. Open it in the
+# admin panel: Catalog > Products > edit > Option.
+cd code
+docker compose exec db mariadb -ushop -pshoppw opencart
+
+# --- 2. Count what one option set costs ------------------------------
+# Add a Size option with three values, through the admin panel. Then
+# count the rows it created. Predict the number before you look.
+#   SELECT COUNT(*) FROM oc_product_option       WHERE product_id = 42;
+#   SELECT COUNT(*) FROM oc_product_option_value WHERE product_id = 42;
+
+# --- 3. Find the row that does not exist -----------------------------
+# Set stock on two option values. Then try to write a query that
+# answers "how many Red Large do we hold?". You cannot. Write down,
+# in one sentence, why -- that sentence is the whole of section 7.1.
+
+# --- 4. Measure options against variants -----------------------------
+python m07_variations.py
+
+# --- 5. Read the upload controller -----------------------------------
+# Forty lines. Find the five checks, and find the one the client
+# controls.
+docker compose exec shop \
+  cat /var/www/html/catalog/controller/tool/upload.php
+
+# --- 6. Find out what your shop allows -------------------------------
+docker compose exec db mariadb -ushop -pshoppw opencart -e \
+  "SELECT \`key\`,\`value\` FROM oc_setting \
+    WHERE \`key\` LIKE 'config_file%';"
+
+# --- 7. Prove the upload directory is served -------------------------
+# Put a file there yourself and fetch it. This is YOUR container; see
+# the scope statement in Appendix A before you try this anywhere else.
+docker compose exec shop sh -c \
+  'echo hello > /var/www/html/system/storage/upload/probe.txt'
+curl -i http://localhost:8090/system/storage/upload/probe.txt
+docker compose exec shop rm /var/www/html/system/storage/upload/probe.txt
+
+# --- 8. Decide, and write it down ------------------------------------
+# For the shop you described in Chapter 4: options or variants? One
+# paragraph, with the stock question answered explicitly. Chapter 23
+# marks you on whether the catalogue matches this decision.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 3 is the one that teaches. Everybody believes
+option stock tracks combinations until they try to write the query, and the
+minute spent failing to write it is worth more than this chapter's prose.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A shop sells mugs with a customer-supplied photograph printed on them,
+        in two sizes. Which choices are options and which are variants, and
+        why? Say what the shop must hold in stock.
+  \item A product has option sets of 4, 3 and 2 values. How many rows in
+        \texttt{oc\_product\_option\_value}, and how many
+        \texttt{oc\_product} rows would the same catalogue need as variants?
+  \item An attacker uploads a file named \texttt{logo.svg} containing
+        \texttt{<script>}, sending \texttt{Content-Type:} \texttt{image/png}.
+        Which of OpenCart's five checks does it pass, which does it fail, and
+        what would have to be true for this to harm a visitor?
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item An option modifies one product; a variant is a product of its own with
+        \texttt{master\_id} pointing at a master. OpenCart~4 supports both and
+        shows options first.
+  \item Options store choices, not combinations. Stock, price and weight sit on
+        the option \emph{value}, so there is no row for ``Red Large'' and no
+        query can produce one.
+  \item That makes three things impossible: stock per combination, a SKU per
+        combination, and reporting per combination. If any matters, use
+        variants, and decide before the catalogue is built.
+  \item The test: could a warehouse person pick up exactly this combination and
+        scan it? Then it is a variant.
+  \item Measured: option sets of 6, 8 and 5 values are 19 rows and express 240
+        combinations; the same catalogue as variants is 241 product rows.
+        Options grow by addition, variants by multiplication --- and the page
+        time is unaffected either way, because the page renders choices.
+  \item The real cost of variants is catalogue management by a person, not
+        server time.
+  \item A \texttt{file} option accepts arbitrary bytes from a stranger.
+        OpenCart sanitises the name, checks the extension against an allow-list
+        and randomises the stored name --- all sound. Its MIME check is not,
+        because the client supplies the MIME type.
+  \item On the stock install \texttt{svg} is allowed and the upload directory
+        is served over HTTP. The protection is an unguessable name, not an
+        unreachable directory. \chref{security} fixes both.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Stock quantity for an option lives on:
+        (a)~\texttt{oc\_product}; (b)~\texttt{oc\_product\_option};
+        (c)~\texttt{oc\_product\_option\_value}; (d)~a combination table.
+  \item \textbf{(MCQ)} Three option sets of 5, 4 and 3 values imply how many
+        combinations, and cost how many \texttt{oc\_product\_option\_value}
+        rows? (a)~12 and 12; (b)~60 and 12; (c)~60 and 60; (d)~12 and 60.
+  \item \textbf{(Short)} Give the one-question test for options against
+        variants, and apply it to a shop selling curtains cut to a
+        customer-specified width.
+  \item \textbf{(Short)} Why is checking \texttt{\$\_FILES['file']['type']}
+        not a security control, and what is the server-side equivalent?
+  \item \textbf{(Short)} An administrator raises the upload size limit in the
+        admin panel and large files are still refused. Explain, and say where
+        else to look.
+  \item \textbf{(Applied)} A clothing shop has 300 styles, each in 5 sizes and
+        4 colours. Compute the row counts for options and for variants across
+        \texttt{oc\_product} and \texttt{oc\_product\_description}. Then make a
+        recommendation, naming the single requirement that decides it.
+  \item \textbf{(Applied)} Design the upload handling you would write for a
+        shop that must accept customer artwork. State every check, say which
+        side it runs on, say what each one defends against, and say what you
+        would do with the file after accepting it so that serving it later is
+        safe.
+\end{reviewq}

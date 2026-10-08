@@ -1,0 +1,411 @@
+%=====================================================================
+\chapter{Planning an E-Commerce Framework}\label{ch:planning}
+%=====================================================================
+\locator{1}{Part I --- E-Commerce and Its Models}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} the four ways a shop can be obtained, and
+        \textbf{state} what each costs in money, time and control.
+  \item \textbf{Write} requirements for a shop in a form that discriminates
+        between those four rather than describing all of them equally.
+  \item \textbf{Identify} the small number of requirements that actually decide
+        the choice, and \textbf{explain} why most requirements do not.
+  \item \textbf{Compute} a total cost of ownership over three years, including
+        the costs that do not appear on a price list.
+  \item \textbf{Defend} a build-buy-or-extend decision against the obvious
+        objection to it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{models} for the business and revenue model, and its laboratory --- this
+chapter turns that one-page brief into a decision. \chref{auctions} if your
+venture is a marketplace rather than a shop.
+\end{prereq}
+
+\begin{keyterms}
+requirement $\bullet$ functional requirement $\bullet$ non-functional
+requirement $\bullet$ SaaS $\bullet$ hosted platform $\bullet$ self-hosted
+$\bullet$ open source $\bullet$ bespoke development $\bullet$ total cost of
+ownership $\bullet$ vendor lock-in $\bullet$ extensibility $\bullet$ data
+portability $\bullet$ decision matrix $\bullet$ minimum viable product
+\end{keyterms}
+
+\section{The Question This Chapter Answers}
+
+You have a business model, a revenue model and some idea of what you are
+selling. There is now exactly one decision to make before any of the rest of
+this book applies, and it is this: \emph{where does the software come from?}
+
+There are four answers, and the whole of Parts II to V is a consequence of
+which one you pick.
+
+\dsfig{%
+\begin{tikzpicture}[
+  opt/.style={rounded corners=3pt, draw=#1, line width=1.1pt, fill=#1!8,
+              text=#1!60!black, font=\bfseries\scriptsize, align=center,
+              text width=3.0cm, minimum height=1.5cm},
+  ax/.style={-{Stealth[length=2.4mm]}, neutral, line width=0.9pt},
+  tick/.style={font=\scriptsize, text=neutral, align=center}
+]
+  \node[opt=greenhl]   (a) at (0,0)    {Marketplace\\only\\{\scriptsize\mdseries
+       somebody else's shop}};
+  \node[opt=secondary] (b) at (3.7,0)  {Hosted\\platform\\{\scriptsize\mdseries
+       rented, monthly}};
+  \node[opt=primary]   (c) at (7.4,0)  {Self-hosted\\open source\\{\scriptsize
+       \mdseries installed and extended}};
+  \node[opt=purplehl]  (d) at (11.1,0) {Bespoke\\build\\{\scriptsize\mdseries
+       written from nothing}};
+
+  \draw[ax] (-1.8,-1.5) -- (12.9,-1.5);
+  \node[tick] at (0,-1.95)    {no control\\no effort};
+  \node[tick] at (11.1,-1.95) {total control\\total effort};
+  \node[font=\scriptsize\itshape, text=accent] at (5.6,-2.55)
+       {every step right costs more of your time and buys more of your fate};
+
+  \node[font=\scriptsize\bfseries, text=primary] at (7.4,1.25)
+       {this course};
+  \draw[-{Stealth[length=1.8mm]}, primary, line width=0.9pt]
+       (7.4,1.05) -- (7.4,0.80);
+\end{tikzpicture}}%
+{The four ways to obtain a shop. They are a spectrum, not a menu: each step to
+the right buys control and costs effort, and the right answer depends on
+which of the two you are shorter of.}{buildbuy}
+
+\section{The Four Options, Honestly}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.8cm}L{5.8cm}L{6.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Option} & \textbf{What it is good at} & \textbf{What it costs you} \\
+\midrule
+\endhead
+\textbf{Marketplace only} & Customers on day one. No software, no hosting, no
+payment integration. Genuinely the right answer for many small sellers & You
+perform none of the four functions (\chref{what}). You do not own the customer
+relationship, cannot email them, and can be delisted without appeal. The
+commission is the visible cost and the smallest one \\
+\textbf{Hosted platform} & Running in an afternoon, someone else patches it,
+payment and shipping already integrated & A monthly fee that scales with your
+success, a transaction cut on top, and a hard ceiling: when the platform
+cannot do something, it cannot do it. Getting your data out ranges from
+awkward to impossible \\
+\textbf{Self-hosted open source} & You can change anything, including the
+things the vendor never anticipated. No per-sale cut. The data is in your
+database & You are now responsible for hosting, backups, updates and
+\emph{security} --- an unpatched shop is a liability, not an inconvenience.
+Needs someone who can do \chref{deploy} \\
+\textbf{Bespoke build} & Fits the business exactly, because it was built for
+it. The only option when the business is genuinely unusual & Twelve to
+eighteen months before you sell anything, and you will reimplement baskets,
+tax tables and payment retries that have been solved for twenty years ---
+badly, because you will meet each edge case for the first time in production \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[The outline this course follows assumes the fourth option]
+The HEC outline for this course is, clause for clause, the contents page of a
+2010 book about writing a shopping cart from scratch in PHP~5 --- see the
+Course Specification. Taken literally, it asks a 5th-semester class to choose
+\emph{bespoke build}.
+
+\smallskip
+That was defensible in 2010 and is not now, for a reason this chapter can
+state precisely: the work has moved. In 2010, writing a basket and a checkout
+was most of the job. Today a mature, free, auditable implementation of both is
+one command away, and the job that remains --- modelling the catalogue,
+configuring tax and shipping, integrating payment, securing the result,
+extending what the platform cannot do --- is both larger and more
+representative of what an IT graduate is actually hired to do.
+
+\smallskip
+So this course teaches every \emph{topic} the outline lists, and reaches them
+by the third route rather than the fourth. You should be able to defend that
+choice, not merely inherit it, which is what this chapter is for --- and
+\chref{modules} is where the ``extend'' in ``self-hosted and extend'' stops
+being a word and becomes code you write.
+\end{alertbox}
+
+\section{Requirements That Actually Discriminate}
+
+Students write requirements like ``the system shall allow customers to add
+products to a basket''. Every one of the four options does that. A requirement
+that all four satisfy carries no information and cannot help you choose.
+
+\begin{definitionbox}[Functional and Non-Functional Requirements]
+A \term{functional requirement} says what the system must \emph{do}: accept a
+voucher code, calculate tax by province, email an invoice.
+
+\smallskip
+A \term{non-functional requirement} says how well, under what constraints: how
+fast, how many at once, how available, how secure, how maintainable, by whom.
+
+\smallskip
+For the build-buy-extend decision the useful requirements are nearly all
+non-functional or unusual-functional. The ordinary functional ones are table
+stakes --- everything does them --- and listing them at length is the most
+common way a requirements document ends up being thirty pages that decide
+nothing.
+\end{definitionbox}
+
+\begin{conceptbox}[The five questions that decide it]
+In practice the choice turns on a handful of questions. Ask these first, and
+most of the rest is detail.
+
+\begin{tightnum}
+  \item \textbf{Is there anything genuinely unusual about how you price, sell
+        or deliver?} Per-customer negotiated pricing, made-to-measure items,
+        rental with a return date, services booked by time slot. If yes, every
+        option except the last two gets harder fast.
+  \item \textbf{Who will maintain it in two years?} Not who will build it. A
+        self-hosted shop with nobody to patch it becomes a breach
+        (\chref{security}). If the honest answer is nobody, choose a hosted
+        platform and accept the ceiling.
+  \item \textbf{What volume, and how uneven?} Thirty orders a day and three
+        thousand are different systems; so are steady traffic and traffic that
+        multiplies tenfold for one week a year.
+  \item \textbf{How much does leaving cost?} Can you export your products,
+        customers and order history in a usable form? Ask it on day one,
+        because the answer never improves.
+  \item \textbf{What is the budget, over three years, including somebody's
+        time?} Not the setup cost. See below.
+\end{tightnum}
+\end{conceptbox}
+
+\section{The Cost That Is Not on the Price List}
+
+The commonest error here is comparing a monthly fee against ``free'' and
+concluding that open source is cheaper. Both numbers are wrong.
+
+\begin{worked}[Three years of a small shop, two ways]
+A shop expecting \textbf{Rs.~800{,}000 of sales a month}, growing slowly.
+Compare a hosted platform against self-hosted open source over three years.
+
+\smallskip
+\textbf{Hosted platform.}
+
+\begin{tight}
+  \item Subscription: \$79/month $\approx$ Rs.~22{,}000. Over 36 months:
+        \textbf{Rs.~792{,}000}.
+  \item Platform transaction fee, 0.5\% of sales --- charged on top of the
+        gateway's own fee: $0.005 \times 800{,}000 \times 36 =
+        \textbf{Rs.~144{,}000}$.
+  \item Two paid add-ons at \$15/month each $\approx$ Rs.~8{,}400/month:
+        \textbf{Rs.~302{,}400}.
+  \item Theme and setup, one-off: \textbf{Rs.~60{,}000}.
+  \item Maintenance labour: near zero; the vendor patches.
+  \item \textbf{Total: Rs.~1{,}298{,}400.}
+\end{tight}
+
+\smallskip
+\textbf{Self-hosted open source.}
+
+\begin{tight}
+  \item Licence: \textbf{Rs.~0}. This is the number people stop at.
+  \item Hosting, a modest virtual server plus backups, Rs.~9{,}000/month:
+        \textbf{Rs.~324{,}000}.
+  \item Setup and theming, 70 hours of somebody at Rs.~2{,}500/hour:
+        \textbf{Rs.~175{,}000}.
+  \item Two custom modules the platform does not ship, 40 hours:
+        \textbf{Rs.~100{,}000}.
+  \item \textbf{Maintenance: 4 hours a month} --- updates, patches, backups
+        checked, the occasional breakage. $4 \times 36 \times 2{,}500 =
+        \textbf{Rs.~360{,}000}$.
+  \item \textbf{Total: Rs.~959{,}000.}
+\end{tight}
+
+\smallskip
+\textbf{The result.} Self-hosting wins by Rs.~339{,}400 over three years ---
+about 26\%. But look at what decided it: \textbf{maintenance labour is
+Rs.~360{,}000}, the single largest line in the self-hosted column and the one
+most often entered as zero. Set it to zero and self-hosting appears to win by
+87\%. Double it, to eight hours a month because nobody on staff really knows
+the platform, and the two options are level.
+
+\smallskip
+\textbf{The lesson.} This calculation is not really about software prices. It
+is a question about whether you have, and will keep, somebody who can maintain
+a server --- and if the answer is no, the hosted option is cheaper at any
+subscription price, because the alternative is not a cheaper shop but an
+unpatched one.
+\end{worked}
+
+\begin{alertbox}[Two costs that appear in neither column]
+\textbf{Vendor lock-in} is not a line item until the day you want to leave, at
+which point it is the whole bill. Before committing, actually export your
+catalogue and customers from a trial account and look at what comes out. ``We
+support CSV export'' and ``you can reconstruct your shop from this'' are
+different claims.
+
+\smallskip
+\textbf{The ceiling} has no price at all. It is the feature you cannot have,
+discovered in month fourteen, when the business depends on it. The hosted
+option's real cost is the probability that this happens multiplied by what it
+does to you --- which is why question~1 above is first.
+\end{alertbox}
+
+\section{Making the Decision Defensible}
+
+Write it down as a matrix: criteria in rows, weights, options scored. Not
+because the arithmetic is wise --- it is easy to fit the weights to the answer
+you wanted --- but because it forces the weights into the open where somebody
+can disagree with them.
+
+\begin{examplebox}[A decision matrix for the shop in this course]
+Criteria weighted out of 100, each option scored 1--5.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.8cm}L{1.5cm}L{1.9cm}L{1.9cm}L{1.9cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Criterion} & \textbf{Weight} & \textbf{Hosted} & \textbf{Self-host} &
+\textbf{Bespoke} \\
+\midrule
+\endhead
+Students must see and change real code & 30 & 1 & 5 & 5 \\
+Working shop within three weeks & 25 & 5 & 4 & 1 \\
+Zero licence or subscription cost & 15 & 2 & 5 & 5 \\
+Runs identically on every laptop & 15 & 3 & 5 & 4 \\
+Covers the HEC clause list directly & 15 & 3 & 5 & 4 \\
+\midrule
+\textbf{Weighted total} & \textbf{100} & \textbf{2.75} & \textbf{4.75} &
+\textbf{3.70} \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Read the weights, not the totals.} The first row is worth 30 and it is
+where hosted loses the contest --- a course whose students cannot read the code
+is not this course. Change that weight to 5, as a small shopkeeper would, and
+hosted wins outright. The matrix did not make the decision; it made the
+decision \emph{visible}, which is all a matrix is for.
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Requirements that every option satisfies.} ``Customers can add
+        to a basket'' discriminates between nothing.
+  \item \textbf{Entering maintenance as zero.} It was the largest single line
+        in the worked example, and leaving it out reverses the answer.
+  \item \textbf{Comparing setup cost instead of three-year cost.} Subscriptions
+        and labour both accumulate; neither appears in a setup quote.
+  \item \textbf{Choosing bespoke because the platform is ``bloated''.} You will
+        reimplement the parts you called bloat, in production, one incident at
+        a time.
+  \item \textbf{Choosing self-hosted with nobody to maintain it.} This is not a
+        cheaper shop. It is a shop that will be compromised, and
+        \chref{security} shows how quickly.
+  \item \textbf{Not testing the export before committing.} Lock-in costs
+        nothing until it costs everything.
+  \item \textbf{Weighting the matrix after seeing the totals.} Everyone is
+        tempted; write the weights down first and date them.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Your requirements, and your decision]
+The last analysis laboratory. \chref{stack} installs software.
+
+\smallskip
+Using the venture from \chref{models}'s laboratory, produce a two-page
+document:
+
+\begin{tightnum}
+  \item \textbf{Twelve requirements}, each labelled functional or
+        non-functional, each numbered so you can refer to it later. At least
+        four must be non-functional, with a number attached: not ``must be
+        fast'' but ``a category page must render in under one second with
+        5{,}000 products''. You will test some of these in
+        \chref{catalogue} and \chref{deploy}, so make them checkable.
+  \item \textbf{Mark the discriminating ones.} Go through your twelve and strike
+        out every requirement that all four options satisfy. Most students
+        strike out eight or nine. What is left is your real requirements
+        document.
+  \item \textbf{Answer the five questions} from this chapter, in writing,
+        including the honest answer to ``who maintains this in two years?''
+  \item \textbf{A three-year total cost of ownership}, two columns, following
+        the worked example. Mark every figure you guessed, and state the one
+        number the answer is most sensitive to.
+  \item \textbf{A decision matrix}, weights written before scores, and a
+        two-sentence conclusion.
+  \item \textbf{The strongest objection to your decision}, and your answer to
+        it. If you cannot state a real objection, you have not understood the
+        option you rejected.
+\end{tightnum}
+
+\smallskip
+\textbf{What to notice.} Your decision does not have to be the one this course
+makes. A student whose venture is three products sold through Instagram should
+conclude ``marketplace only'' and say so --- and will still build the shop in
+Parts II--V, because the course has to teach the general case. Being right
+about your own venture and building something else deliberately is a perfectly
+coherent position, and a more useful one than pretending.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Classify each as functional or non-functional, and say which of them
+        discriminates between the four options: (a)~customers can reset a
+        forgotten password; (b)~prices are agreed per customer and may differ
+        for the same product; (c)~the shop stays up during a sale that brings
+        twenty times normal traffic.
+  \item A shop compares Rs.~22{,}000/month hosted against ``free'' open source
+        and concludes open source saves Rs.~792{,}000 over three years. Name
+        the three largest costs they have omitted.
+  \item Give a specific business for which this course's choice --- self-hosted
+        open source --- would be the wrong answer, and say which option you
+        would choose instead and why.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A shop can be obtained four ways: marketplace only, hosted platform,
+        self-hosted open source, or bespoke build. They form a spectrum trading
+        control against effort.
+  \item Requirements that every option satisfies cannot help you choose. Strike
+        them out; what remains is the document that matters.
+  \item Five questions decide most cases: anything unusual about pricing or
+        delivery, who maintains it in two years, volume and its unevenness, the
+        cost of leaving, and three-year budget including labour.
+  \item Compare total cost of ownership over three years, not setup cost. In
+        the worked example maintenance labour was the largest self-hosted line,
+        and entering it as zero reverses the conclusion.
+  \item Vendor lock-in and the feature ceiling appear in no price list and are
+        often the real cost of the hosted option.
+  \item A decision matrix does not make the decision; it makes the weights
+        visible so somebody can argue with them. Write the weights first.
+  \item This course chooses self-hosted open source and teaches every clause of
+        the outline through it, rather than writing a cart from scratch as the
+        2010 book behind the outline assumed. You should be able to defend
+        that, including knowing when it is the wrong answer.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which is a non-functional requirement? (a)~The shop
+        emails an invoice after each order; (b)~the checkout completes in under
+        two seconds at 200 concurrent users; (c)~customers can apply a voucher
+        code; (d)~administrators can issue refunds.
+  \item \textbf{(MCQ)} In the worked example, the largest single cost in the
+        self-hosted column was: (a)~hosting; (b)~setup and theming; (c)~custom
+        modules; (d)~maintenance labour.
+  \item \textbf{(Short)} Explain why a requirement satisfied by all four options
+        is useless for this decision, and give an example of one.
+  \item \textbf{(Short)} What is vendor lock-in, and what concrete test would
+        you run during a free trial to measure it?
+  \item \textbf{(Short)} Give the strongest argument \emph{against} the choice
+        this course makes, and then answer it.
+  \item \textbf{(Applied)} A tailoring business takes measurements in the shop,
+        makes garments to order over two weeks, and prices each job
+        individually after seeing the cloth. Work through the five questions
+        and recommend one of the four options, justifying it. Identify the one
+        requirement that makes this case different from a normal shop.
+  \item \textbf{(Applied)} Build a three-year total cost of ownership for a
+        shop doing Rs.~3{,}000{,}000 a month --- nearly four times the worked
+        example --- on both options, keeping all other assumptions. State which
+        option wins, and identify the single assumption that, if changed, would
+        reverse it.
+\end{reviewq}

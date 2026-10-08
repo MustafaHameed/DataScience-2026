@@ -1,0 +1,623 @@
+%=====================================================================
+\chapter{Products, Categories and Their Tables}\label{ch:catalogue}
+%=====================================================================
+\locator{2}{Part II --- Standing the Shop Up}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why one product occupies eighteen tables, and
+        \textbf{say} what decides which table a given fact belongs in.
+  \item \textbf{Create} products and categories through the admin panel, and
+        \textbf{find} in the database exactly what each screen wrote.
+  \item \textbf{Describe} how a category hierarchy is stored, and \textbf{say}
+        what the path table buys and what it costs.
+  \item \textbf{Read} the query a category page runs, and \textbf{use}
+        \texttt{EXPLAIN} to say what the database does with it.
+  \item \textbf{Measure} how the catalogue's size affects the page, and
+        \textbf{decide}, from evidence, whether an index would help.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{stack}: a running shop. \emph{Database Systems} for joins, keys and
+indexes; Appendix~B if those need refreshing. You will spend as much of this
+chapter in the database console as in the admin panel.
+\end{prereq}
+
+\begin{keyterms}
+catalogue $\bullet$ product $\bullet$ category $\bullet$ SKU $\bullet$ model
+$\bullet$ normalisation $\bullet$ junction table $\bullet$ many-to-many
+$\bullet$ localisation $\bullet$ materialised path $\bullet$ denormalisation
+$\bullet$ index $\bullet$ full table scan $\bullet$ filesort $\bullet$
+correlated subquery $\bullet$ pagination
+\end{keyterms}
+
+\section{One Product Is Not One Row}
+
+Ask a student to design a products table and you get something like this:
+
+\begin{lstlisting}[language=sql]
+CREATE TABLE product (
+  product_id  INT PRIMARY KEY,
+  name        VARCHAR(255),
+  description TEXT,
+  price       DECIMAL(10,2),
+  image       VARCHAR(255),
+  category    VARCHAR(100)
+);
+\end{lstlisting}
+
+It is a reasonable first attempt and every part of it is wrong in a way that
+matters. Your shop has \textbf{eighteen} tables whose names begin
+\texttt{oc\_product}, and the reasons for each are worth knowing, because the
+same reasons will apply to whatever you build after this course.
+
+\begin{lstlisting}[language=sql]
+SELECT table_name FROM information_schema.tables
+ WHERE table_schema = 'opencart'
+   AND table_name LIKE 'oc_product%'
+ ORDER BY table_name;
+\end{lstlisting}
+
+\begin{conceptbox}[Four questions that split a table]
+Every one of those eighteen tables exists because of one of four questions.
+Learn the questions and the table list stops being arbitrary.
+
+\begin{tightnum}
+  \item \textbf{``Does this fact depend on the language?''} A price does not;
+        a name does. So \texttt{price} lives in \texttt{oc\_product} and
+        \texttt{name} lives in \texttt{oc\_product\_description}, keyed on
+        \emph{both} the product and the language.
+  \item \textbf{``Can there be more than one?''} A product has one price and
+        many photographs, so photographs are rows in
+        \texttt{oc\_product\_image} rather than columns.
+  \item \textbf{``Does this relate two things that both exist already?''} A
+        product belongs to several categories and a category holds several
+        products. Neither can hold the other, so a junction table ---
+        \texttt{oc\_product\_to\_category} --- holds the relationship.
+  \item \textbf{``Is this about the product, or about something that happened
+        to it?''} \texttt{oc\_product\_viewed} and \texttt{oc\_product\_report}
+        record events, not properties, and grow without bound.
+\end{tightnum}
+\end{conceptbox}
+
+\subsection{The two tables you will use constantly}
+
+\begin{lstlisting}[language=sql]
+DESCRIBE oc_product;              -- the language-independent facts
+DESCRIBE oc_product_description;  -- the words, per language
+\end{lstlisting}
+
+\texttt{oc\_product} holds what is true regardless of who is reading:
+\texttt{price}, \texttt{quantity}, \texttt{weight}, \texttt{status},
+\texttt{date\_available}, \texttt{sort\_order}. Its primary key is
+\texttt{product\_id}.
+
+\texttt{oc\_product\_description} holds \texttt{name},
+\texttt{description}, \texttt{meta\_title} and the rest --- and its primary key
+is the \emph{pair} \texttt{(product\_id, language\_id)}. One product, one row
+per language.
+
+\begin{examplebox}[Why the split is not over-engineering]
+It looks like extra work for a shop that will only ever be in English. It is
+not, and the reason is worth more than the example.
+
+\smallskip
+Suppose name and price shared a row, and the shop later added Urdu. You now
+need a second row for the Urdu name --- which duplicates the price. Change the
+price and you must remember to change it in both rows, and the day somebody
+forgets, the shop charges two different prices depending on the language the
+customer is reading. That is not a bug that gets noticed quickly; it is a bug
+that gets noticed by an accountant, months later.
+
+\smallskip
+The split makes that mistake \emph{impossible to express}. There is exactly one
+place the price lives, so there is exactly one price. This is what
+normalisation is for, and it is the clearest small example of it you will meet.
+\end{examplebox}
+
+\section{The Screen, and What It Writes}
+
+Create a product: \adminpath{Catalog, Products, Add New}. The form has tabs ---
+\uiel{General}, \uiel{Data}, \uiel{Links}, \uiel{SEO} --- and the tabs are
+not a presentational choice. They are very nearly the table list.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.6cm}L{5.4cm}L{6.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Tab} & \textbf{What you type} & \textbf{Where it lands} \\
+\midrule
+\endhead
+\uiel{General} & Product name, description, meta title and tags & One row in
+\texttt{oc\_product\_description}, for the language you were editing \\
+\uiel{Data} & Model, price, quantity, weight, dimensions, date available,
+status & The single row in \texttt{oc\_product} \\
+\uiel{Links} & Manufacturer, categories, stores, related products & Rows in
+\texttt{oc\_product\_to\_category}, \texttt{oc\_product\_to\_store} and
+\texttt{oc\_product\_related} --- one per tick \\
+\uiel{Image} & Main image and additional images & \texttt{image} on the product
+row; the extras become rows in \texttt{oc\_product\_image} \\
+\uiel{SEO} & The URL keyword & \texttt{oc\_seo\_url} --- not a product table at
+all, which \chref{seo} explains \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Do this once, deliberately, and you will never be confused again]
+Create one product. Then, in the database console at
+\texttt{http://localhost:8091/}, run:
+
+\begin{lstlisting}[language=sql]
+SELECT MAX(product_id) FROM oc_product;   -- yours, the newest
+\end{lstlisting}
+
+and look at that id in \texttt{oc\_product}, then in
+\texttt{oc\_product\_description}, then in
+\texttt{oc\_product\_to\_category}. Three tables, one product, and you typed it
+all on one screen.
+
+\smallskip
+Every chapter after this one assumes you can do this. When something in the
+shop is not what you expected, the question is always ``what did it actually
+write?'', and the admin panel is the wrong place to look for the answer.
+\end{alertbox}
+
+\section{Categories, and the Table That Is Not Normalised}
+
+Categories form a tree: \adminpath{Components, Monitors} sits under
+\adminpath{Components}, which sits at the top. The obvious storage is a
+\texttt{parent\_id} on each category, and that is indeed what
+\texttt{oc\_category} has.
+
+It is not enough, and the reason is the one interesting thing about category
+storage.
+
+\begin{alertbox}[The question a parent pointer cannot answer cheaply]
+A customer opens \adminpath{Components}. The page must show every product in
+\emph{Components or anything beneath it}, however deep.
+
+\smallskip
+With only \texttt{parent\_id}, answering that means: find the children of
+Components; find their children; find theirs; stop when there are no more.
+That is a loop with a query inside it, and the number of queries depends on how
+deep the tree happens to be --- so the page gets slower as the shop's
+categories get better organised, which is precisely the wrong incentive.
+\end{alertbox}
+
+So OpenCart keeps a second table that stores the answer directly.
+
+\begin{lstlisting}[language=sql]
+DESCRIBE oc_category_path;
+-- category_id, path_id, level
+
+SELECT * FROM oc_category_path WHERE category_id = 27 ORDER BY level;
+-- category_id  path_id  level
+--          27       20      0      <- Components, the ancestor
+--          27       27      1      <- Monitors, itself
+\end{lstlisting}
+
+\begin{definitionbox}[Materialised Path]
+A \term{materialised path} stores, for every node, the complete list of its
+ancestors --- one row per ancestor, with the depth. The tree is still in
+\texttt{parent\_id}; this table is a \emph{precomputed answer} to ``who is
+above me?'', and therefore also to ``who is below me?''
+
+\smallskip
+It is a deliberate \term{denormalisation}: the same fact is now stored twice,
+in \texttt{oc\_category.parent\_id} and in \texttt{oc\_category\_path}. That
+buys a single-query answer to the descendants question, and costs the
+obligation to keep the two in step --- so moving one category in the admin
+panel rewrites every path row beneath it.
+
+\smallskip
+This is the trade-off in miniature: \textbf{denormalisation buys read speed
+with write complexity and the risk of disagreement.} Make it deliberately, and
+only where the reads vastly outnumber the writes --- which for a category tree
+they do, by perhaps a million to one.
+\end{definitionbox}
+
+\section{What the Category Page Actually Asks}
+
+Here is where this chapter stops being about design and starts being about
+evidence. The shop's own source is in your container, and you can read it:
+
+\begin{lstlisting}[language=bash]
+docker compose exec shop \
+  cat /var/www/html/catalog/model/catalog/product.php
+\end{lstlisting}
+
+The listing query is built up in \texttt{getProducts()}, and reduced to its
+skeleton it looks like this:
+
+\begin{lstlisting}[language=sql]
+SELECT DISTINCT *, pd.name, p.image,
+       (SELECT ... FROM oc_product_discount pd2
+         WHERE pd2.product_id = p.product_id ... LIMIT 1) AS discount,
+       (SELECT ... FROM oc_product_discount ps
+         WHERE ps.product_id = p.product_id ... LIMIT 1) AS special,
+       (SELECT pr.points FROM oc_product_reward pr
+         WHERE pr.product_id = p.product_id ...)         AS reward,
+       (SELECT COUNT(*) FROM oc_review r
+         WHERE r.product_id = p.product_id ...)          AS reviews
+  FROM oc_category_to_store c2s
+  LEFT JOIN oc_category_path cp  ON (cp.category_id = c2s.category_id)
+  LEFT JOIN oc_product_to_category p2c ON (p2c.category_id = cp.category_id)
+ INNER JOIN oc_product_to_store p2s ON (p2s.product_id = p2c.product_id)
+  LEFT JOIN oc_product p  ON (p.product_id = p2s.product_id
+                              AND p.status = 1
+                              AND p.date_available <= NOW())
+  LEFT JOIN oc_product_description pd ON (p.product_id = pd.product_id)
+ WHERE ...
+ ORDER BY p.sort_order
+ LIMIT 0, 20;
+\end{lstlisting}
+
+Four things in that query are worth naming, because each is a decision somebody
+made and each has a consequence you can measure.
+
+\begin{tightnum}
+  \item \textbf{\texttt{SELECT DISTINCT *}} --- every column of every joined
+        table, then deduplicated. The \texttt{DISTINCT} is there because the
+        path join can produce a product twice; it forces a temporary table.
+  \item \textbf{Four correlated subqueries.} Discount, special, reward and
+        review count are each evaluated \emph{per row returned}. With
+        \texttt{LIMIT 20} that is eighty extra queries' worth of work per page,
+        and it is the SQL form of the N+1 problem.
+  \item \textbf{\texttt{ORDER BY p.sort\_order}} is the default sort, and
+        \texttt{oc\_product} has \textbf{no index on \texttt{sort\_order}} ---
+        or on \texttt{price}, \texttt{status} or \texttt{date\_available}. It
+        has a primary key and nothing else.
+  \item \textbf{The whole join runs twice.} \texttt{getTotalProducts()} repeats
+        it with \texttt{COUNT(DISTINCT p.product\_id)}, because the page needs
+        to know how many pages there are. Every category page you have ever
+        loaded ran that join twice.
+\end{tightnum}
+
+\begin{examplebox}[Reading EXPLAIN on the real query]
+Put \texttt{EXPLAIN} in front of it and the database says what it intends:
+
+\smallskip
+\texttt{p:ALL [Using where; Using temporary; Using filesort]}
+
+\smallskip
+Three findings in one line. \textbf{\texttt{ALL}} is a full table scan of
+\texttt{oc\_product} --- every row read, at any catalogue size.
+\textbf{\texttt{Using temporary}} is the \texttt{DISTINCT} building a temporary
+table. \textbf{\texttt{Using filesort}} is the \texttt{ORDER BY} sorting the
+result afterwards, because no index offers it in that order.
+
+\smallskip
+Now ask for the same page sorted by name, which is \texttt{ORDER BY
+LCASE(pd.name)}:
+
+\smallskip
+\texttt{pd:index [Using where; Using index; Using temporary; Using filesort]}
+
+\smallskip
+Still a filesort --- and \texttt{oc\_product\_description} \emph{does} have an
+index on \texttt{name}. \chref{catalogue}'s key lesson is in that
+contradiction, and the next section measures it.
+\end{examplebox}
+
+\begin{conceptbox}[A function around a column hides the column]
+\texttt{ORDER BY LCASE(pd.name)} cannot use an index on \texttt{name}.
+
+\smallskip
+An index on \texttt{name} stores the \emph{names}, in order. The query does not
+ask for names in order --- it asks for \texttt{LCASE(name)} in order, and the
+database has no index on that. It cannot assume the two orderings agree,
+because for some collations they do not. So it reads every row, computes
+\texttt{LCASE} on each, and sorts the results.
+
+\smallskip
+\textbf{The rule, which is worth more than this example:} the moment you wrap a
+column in a function in \texttt{WHERE} or \texttt{ORDER BY}, any index on that
+column stops being usable. \texttt{WHERE YEAR(date\_added) = 2026} and
+\texttt{WHERE UPPER(email) = ?} are the same mistake, and they are extremely
+common.
+
+\smallskip
+The fixes are to store the value you actually search by, to use a
+case-insensitive collation so \texttt{LCASE} is unnecessary, or --- in modern
+MariaDB and MySQL --- to build an index on the expression itself.
+\end{conceptbox}
+
+\section{What It Costs, and What an Index Buys}
+
+The argument so far is that this query ought to be slow and that an index ought
+to help. Both halves are worth checking, and only one of them survives.
+
+\begin{measured}[The Category Page Against Catalogue Size]
+Produced by \texttt{code/m06\_catalogue.py} on the machine in Appendix~A.
+Products are seeded into one category; the page is requested seven times at
+each size and the median taken; then the same page is requested once more with
+MariaDB's query log recording \emph{every} statement it ran and how long each
+took.
+
+The whole run was done \textbf{twice}, because one of its results was
+surprising enough that a single observation would not have been worth
+reporting. Both runs are shown.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.0cm}L{2.5cm}L{2.2cm}L{2.6cm}L{2.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Products} & \textbf{Page} & \textbf{Queries} & \textbf{DB time} &
+\textbf{DB as \% of page} \\
+\midrule
+\endhead
+100 & 112 / 111\,ms & \textbf{144} & 60 / 35\,ms & 54\% / 32\% \\
+1{,}000 & 203 / 101\,ms & \textbf{144} & 60 / 60\,ms & 30\% / 60\% \\
+10{,}000 & 171 / 302\,ms & \textbf{144} & 114 / 128\,ms & 67\% / 43\% \\
+50{,}000 & 541 / 476\,ms & \textbf{146 / 144} & 402 / 477\,ms & 74\% / 100\% \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{One page, one hundred and forty-four queries} --- and that is the most
+stable number in the whole experiment. It is the same at a hundred products as
+at fifty thousand, in both runs. Twenty products are displayed, each needing
+its images, its discount, its special price and its review count, and around
+forty more queries fetch settings, languages, currencies, layout modules and
+the category tree. The $N+1$ problem here is per \emph{displayed} product,
+which is why growing the catalogue does not grow it.
+
+\smallskip
+\textbf{The catalogue's size does cost, and it lands on the database.} Five
+hundred times the products cost roughly 4$\times$ the page time and 8--13$\times$
+the database time, and the database's share rises from about a third to
+between 74\% and 100\%. At fifty thousand products this page is
+database-bound; at a hundred it is not.
+
+\smallskip
+\textbf{Now the surprise. The indexes help in the middle and hurt at the top.}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.2cm}L{3.0cm}L{3.0cm}L{4.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Products} & \textbf{DB before} & \textbf{DB after} &
+\textbf{Change (run 1 / run 2)} \\
+\midrule
+\endhead
+100 & 60 / 35\,ms & 43 / 42\,ms & $-28\%$ / $+19\%$ --- noise \\
+1{,}000 & 60 / 60\,ms & 41 / 48\,ms & $\mathbf{-31\%}$ / $\mathbf{-20\%}$ \\
+10{,}000 & 114 / 128\,ms & 107 / 106\,ms & $-6\%$ / $\mathbf{-18\%}$ \\
+50{,}000 & 402 / 477\,ms & 616 / 574\,ms & $\mathbf{+53\%}$ / $\mathbf{+20\%}$ \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+At a thousand and ten thousand products the indexes make the database faster,
+in both runs. At fifty thousand they make it \textbf{slower}, in both runs. The
+direction reproduces even though the magnitudes do not, which is what makes it
+worth believing.
+
+\smallskip
+\textbf{Why an index can lose.} \texttt{EXPLAIN} shows what changed:
+\texttt{p:ALL [\ldots\ Using filesort]} became \texttt{p:index [\ldots]}. Given
+an index on \texttt{sort\_order}, the optimiser walks the index in order and
+avoids the sort --- but it must then fetch each row by primary key, which is
+random access. Without the index it reads the table straight through, which is
+sequential, and sorts afterwards. The \texttt{DISTINCT} means it has to touch
+nearly every row either way, so the question is only whether those reads are
+sequential or scattered. At fifty thousand rows, \textbf{scattered reads plus
+no sort lose to sequential reads plus a sort.}
+
+\smallskip
+\textbf{The chapter's conclusion, which is not the one the chapter expected.}
+``Add an index'' is not a diagnosis, and removing a filesort is not
+automatically a win. The index is right for a mid-sized catalogue and wrong for
+a large one, and nothing in \texttt{EXPLAIN} told us that --- only the clock
+did. Meanwhile the page still runs 144 queries at every size, which no index
+touches at all. That is a structural problem, and \chref{deploy} meets it with
+the only tool that works at that level: caching.
+\end{measured}
+
+\begin{alertbox}[Three earlier versions of this measurement were wrong]
+All three are recorded because all three mistakes are ones you will make. The
+third is the worst kind.
+
+\smallskip
+\textbf{Third, and the one that should frighten you: the products were not
+there.} The seeder wrote \texttt{oc\_product\_to\_store} with
+\texttt{store\_id = 1}. The default store is \textbf{0}. Every storefront query
+filters on \texttt{p2s.store\_id = config\_store\_id}, so fifty thousand
+products sat in the database, appeared in the admin panel, and were invisible
+to every customer --- and to the measurement, which was timing a category page
+showing the nineteen demonstration products.
+
+\smallskip
+Nothing failed. No error, no warning, no empty page: the page rendered
+perfectly, returned 200, and meant something else. The numbers it produced were
+real numbers about a different question, and they were only caught because a
+\emph{later} chapter tried to open one of the seeded products and got a 404.
+
+\smallskip
+That is the characteristic shape of a measurement bug. It does not crash; it
+quietly answers a question you did not ask. The defence is to check that your
+setup did what you think before you trust what it tells you --- here, one
+\texttt{curl} for a seeded product's page would have caught it in week one.
+
+\smallskip
+\textbf{First: the harness timed itself.} It ran the listing query
+twenty-five times through \texttt{docker compose exec} and divided the wall
+clock by twenty-five. It reported \textbf{707\,ms of query time inside a
+277\,ms page} --- impossible, and the impossibility was the only reason it was
+questioned. What it was really measuring was the cost of spawning a process and
+opening a connection, which dwarfs the query. Timing a trivial statement first
+and subtracting it fixed the small sizes.
+
+\smallskip
+\textbf{Second, and worse: it was timing the wrong query.} The harness used a
+hand-written query that \emph{resembled} the one OpenCart runs. At 50{,}000
+products it still reported more database time than the whole page took, because
+the hand-copied version lacked the real one's restrictions and did far more
+work. Two queries that look alike are not alike.
+
+\smallskip
+\textbf{The fix was to stop guessing.} MariaDB will record every statement it
+executes, with its duration, if you set \texttt{long\_query\_time=0} and turn
+the slow query log on. That is what produced the table above --- the real
+queries, timed by the server, including the 146 of them.
+
+\smallskip
+Two rules, both expensive to learn any other way. \textbf{If a measurement
+gives you a number that cannot be true, believe the impossibility.} And
+\textbf{never hand-copy the query you mean to measure} --- ask the server what
+it ran.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Putting the name in \texttt{oc\_product}.} It is the one column
+        that depends on the language, and the one students most want to move.
+  \item \textbf{Editing \texttt{oc\_category\_path} by hand.} It is derived.
+        Move categories in the admin panel and let it rewrite the paths, or the
+        tree and the paths disagree and the storefront shows products in
+        categories they are not in.
+  \item \textbf{Wrapping a column in a function and expecting the index to
+        work.} \texttt{LCASE(name)}, \texttt{YEAR(date\_added)},
+        \texttt{UPPER(email)} --- all the same mistake.
+  \item \textbf{Adding indexes because a page is slow.} Measure first. This
+        chapter added three, removed a full scan and a filesort, and gained
+        nothing.
+  \item \textbf{Forgetting that the join runs twice.} Optimising the listing
+        query and ignoring the \texttt{COUNT} halves your improvement at best.
+  \item \textbf{Testing a catalogue with nineteen products.} Every interesting
+        behaviour in this chapter is invisible below about a thousand.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Fifty thousand products, and where the time goes]
+Your shop has nineteen products. By the end of this laboratory it will have had
+fifty thousand, and you will know what that costs.
+
+\begin{lstlisting}[language=bash]
+# --- 1. Look at what one product is, before changing anything -------
+# Create a product in the admin panel: Catalog > Products > Add New.
+# Fill in General (name), Data (model, price) and Links (a category).
+# Then find it three times, in three tables.
+cd code
+docker compose exec db mariadb -ushop -pshoppw opencart
+
+# --- 2. Count the tables one product touches -----------------------
+# 18 of them begin oc_product. Read the list and, for each, say which
+# of the four questions in this chapter put it there.
+
+# --- 3. Fill the catalogue ------------------------------------------
+# Seeded from a fixed seed, so your classmate's shop matches yours.
+python seed/catalogue.py 50000
+
+# --- 4. Load the category page and feel it --------------------------
+# http://localhost:8090/index.php?route=product/category&path=20
+# Then sort by name, and by price. One of those is slower; predict
+# which before you try it.
+
+# --- 5. Ask the database what it is doing ---------------------------
+# EXPLAIN the listing query. Find ALL, Using temporary, Using filesort.
+# Then EXPLAIN it with ORDER BY LCASE(pd.name) and explain why the
+# existing index on name does not save you.
+
+# --- 6. Run the measurement -----------------------------------------
+# Four catalogue sizes, with and without the missing indexes. Watch
+# the query COUNT as the catalogue grows -- it is the finding.
+python m06_catalogue.py
+
+# --- 7. Disagree with the book --------------------------------------
+# The book found 146 queries per page, and that the indexes halved
+# the database time without reliably moving the page time. Does
+# yours? Then answer the question the book leaves open: of those 146
+# queries, how many are for the 20 products shown, and how many would
+# still run on an EMPTY category? Find out by requesting a category
+# with no products in it, with the query log on.
+
+# --- 8. Put your shop back ------------------------------------------
+python seed/catalogue.py --restore
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 7 is the real exercise. The measurement in this
+book is a claim about one machine on one afternoon, and your job is not to
+reproduce the number but to find out whether the \emph{shape} holds on yours
+--- and, if it does, to say where the time is actually going. A student who can
+answer that can optimise a shop; one who can only add indexes cannot.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A shop adds Urdu. Which of these move to
+        \texttt{oc\_product\_description} and which stay in
+        \texttt{oc\_product}, and why: price, product name, weight, meta
+        description, stock quantity?
+  \item \texttt{oc\_category\_path} stores facts already derivable from
+        \texttt{oc\_category.parent\_id}. Name what this buys, what it costs,
+        and the one operation that makes the cost visible.
+  \item A colleague reports that a category page is slow, runs
+        \texttt{EXPLAIN}, sees \texttt{Using filesort}, adds an index, and the
+        page is no faster --- although the database's own time halved. Give two
+        distinct explanations for why the page did not improve, and say what you
+        would measure to tell them apart.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item One product occupies eighteen tables. Four questions decide which:
+        does the fact depend on language, can there be more than one, does it
+        relate two existing things, and is it a property or an event?
+  \item \texttt{oc\_product} holds the language-independent facts;
+        \texttt{oc\_product\_description} holds the words, keyed on
+        \texttt{(product\_id, language\_id)}. The split makes a price that
+        differs by language impossible to express.
+  \item The admin form's tabs are very nearly the table list. Create one
+        product and find it in three tables; every later chapter assumes you
+        can.
+  \item A parent pointer cannot answer ``everything beneath this category''
+        in one query, so \texttt{oc\_category\_path} stores the answer --- a
+        deliberate denormalisation buying read speed with write complexity.
+  \item The category listing query does \texttt{SELECT DISTINCT *} with four
+        correlated subqueries, sorts on an unindexed column, and the whole join
+        runs twice because the page needs a count.
+  \item \texttt{ORDER BY LCASE(name)} cannot use the index on \texttt{name}.
+        A function around a column hides the column from the optimiser.
+  \item Measured: \textbf{one category page runs 146 queries}, and that number
+        barely moves between a hundred products and fifty thousand. The $N+1$
+        is per displayed product, not per catalogue product.
+  \item Five hundred times the catalogue cost about 2.5$\times$ the page time,
+        because \texttt{LIMIT 20} bounds the work.
+  \item The three missing indexes cut database time by 45--62\% at every size,
+        and the page time did not reliably follow --- the gain is real and
+        smaller than the run-to-run noise. Measure the database to see it.
+  \item An index makes one query faster; it cannot make 145 others disappear.
+        The page's real problem is structural, and \chref{deploy} meets it with
+        caching.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The primary key of \texttt{oc\_product\_description} is:
+        (a)~\texttt{product\_id}; (b)~\texttt{(product\_id, language\_id)};
+        (c)~\texttt{name}; (d)~an auto-increment id.
+  \item \textbf{(MCQ)} \texttt{Using filesort} in \texttt{EXPLAIN} means:
+        (a)~the query wrote a temporary file to disk; (b)~the result had to be
+        sorted after fetching, because no index gave that order; (c)~the table
+        has no primary key; (d)~the query failed.
+  \item \textbf{(Short)} Give the four questions that decide which table a
+        product fact belongs in, with one example each.
+  \item \textbf{(Short)} Explain why \texttt{WHERE YEAR(date\_added) = 2026}
+        cannot use an index on \texttt{date\_added}, and rewrite it so it can.
+  \item \textbf{(Short)} What is a materialised path, and what has to happen
+        when a category is moved in the admin panel?
+  \item \textbf{(Applied)} A shop wants products to carry a ``minimum order
+        quantity'' that differs per customer group. Say which existing table
+        this belongs in or what new table is needed, give the columns and the
+        primary key, and justify it against the four questions.
+  \item \textbf{(Applied)} The measurement in this chapter found that removing
+        a full table scan and a filesort did not speed the page up. Design an
+        experiment that would locate where the time actually goes, using only
+        what is in your container. State what you would vary, what you would
+        hold fixed, what you would record, and what result would point at each
+        of the four layers in \dsref{lampstack}.
+\end{reviewq}

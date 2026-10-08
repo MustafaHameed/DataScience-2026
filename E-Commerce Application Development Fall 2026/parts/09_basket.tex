@@ -1,0 +1,551 @@
+%=====================================================================
+\chapter{The Shopping Basket, and Where State Lives}\label{ch:basket}
+%=====================================================================
+\locator{3}{Part III --- From Basket to Order}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why HTTP has no memory, and \textbf{name} the three
+        places a shop can keep what it remembers about a visitor.
+  \item \textbf{Locate} a basket in a running shop, and \textbf{state} which
+        store holds it, with evidence rather than with belief.
+  \item \textbf{Measure} what a session costs in rows, bytes and queries, and
+        \textbf{distinguish} the cost of a visitor from the cost of a customer.
+  \item \textbf{Predict} what survives a restart, a redeployment and a volume
+        deletion, and \textbf{verify} each prediction.
+  \item \textbf{Judge} a session configuration --- engine, expiry, cookie
+        flags --- against what the shop actually does.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{stack}: containers, volumes, and the difference between restarting a
+container and deleting one. \chref{catalogue}: the tables behind the screens,
+and how to read a query the server actually ran rather than one you assumed it
+ran. From Web Technologies: HTTP requests and responses, and what a cookie is.
+\end{prereq}
+
+\begin{keyterms}
+state $\bullet$ stateless protocol $\bullet$ cookie $\bullet$ session
+$\bullet$ session identifier $\bullet$ session engine $\bullet$ server-side
+state $\bullet$ client-side state $\bullet$ persistent cart $\bullet$
+abandoned basket $\bullet$ session expiry $\bullet$ garbage collection
+$\bullet$ volume $\bullet$ cache miss
+\end{keyterms}
+
+\section{The Problem: A Protocol With No Memory}
+
+A customer puts a laptop in the basket, browses to another category, comes back,
+and the laptop is still there. Nothing about HTTP makes that happen.
+
+Every HTTP request is independent. The server receives a request, answers it,
+and keeps nothing. The next request from the same person arrives looking exactly
+like a request from a stranger. If the shop is to know that these two requests
+belong to the same visitor, \emph{something carried between them} must say so,
+and that something can only travel in the request itself --- because the request
+is all there is.
+
+\begin{definitionbox}[State, Cookie, Session]
+\term{State} is anything the shop remembers between one request and the next:
+what is in the basket, who is logged in, which currency is being shown.
+
+\smallskip
+A \term{cookie} is a small named value the server asks the browser to store and
+send back on every subsequent request to that site. It is the only standard way
+to make a second request identifiably related to a first. It lives on the
+customer's machine, which means the customer can read it, change it and delete
+it.
+
+\smallskip
+A \term{session} is state the \emph{server} keeps, filed under a key. The
+browser carries only the key --- the \term{session identifier} --- in a cookie;
+the data stays on the server, where the customer cannot touch it.
+
+\smallskip
+The distinction is the whole of this chapter. A cookie is a place. A session is
+an arrangement that \emph{uses} a cookie to point at a place somewhere else.
+\end{definitionbox}
+
+\section{Three Places State Can Live}
+
+Given that the browser must carry something, a shop has three choices about
+\emph{how much} it carries, and they trade off against each other in ways worth
+seeing before measuring anything.
+
+\dsfig{%
+\begin{tikzpicture}[
+  store/.style={rounded corners=3pt, draw=#1, line width=1.1pt, fill=#1!8,
+                text=#1!60!black, font=\bfseries\small, align=center,
+                text width=3.4cm, minimum height=1.6cm},
+  note/.style={font=\scriptsize, text=neutral, align=left, text width=4.9cm,
+               anchor=west},
+  flow/.style={-{Stealth[length=2.2mm]}, primary!55, line width=0.9pt},
+  tagline/.style={font=\scriptsize\bfseries, text=#1, align=center}
+]
+  \node[store=accent]    (ck) at (0,4.3)  {In the cookie\\{\scriptsize
+       \mdseries the browser carries it all}};
+  \node[store=secondary] (ss) at (0,2.15) {In the session\\{\scriptsize
+       \mdseries server keeps it, cookie points}};
+  \node[store=purplehl]  (tb) at (0,0)    {In a table\\{\scriptsize
+       \mdseries a row per basket line}};
+
+  \node[note] at (2.1,4.3)  {Survives nothing you control. The customer can
+       edit it, and so can anyone who reads the traffic. Capped at about
+       4\,KB. No server storage at all.};
+  \node[note] at (2.1,2.15) {Server decides what is true. Lost when the
+       session expires or its store is cleared. Grows with visitors, not with
+       customers.};
+  \node[note] at (2.1,0)    {Queryable, joinable, reportable, and still there
+       tomorrow. Costs a write on every visit, and the rows outlive the
+       visitors who made them.};
+
+  \draw[flow] (ck) -- (ss);
+  \draw[flow] (ss) -- (tb);
+  \node[tagline=accent, anchor=west] at (-1.9,5.55)
+       {Less server cost, less trust, less memory \ \faIcon{arrow-down}};
+  \node[tagline=purplehl, anchor=west] at (-1.9,-1.25)
+       {\faIcon{arrow-up} \ More server cost, more trust, more memory};
+\end{tikzpicture}}%
+{The three stores, and what each one buys. Nothing forces a shop to pick one:
+most use all three at once, for different things. The question worth asking of
+any shop is not which one it uses, but which one holds the basket.}{threestores}
+
+\begin{conceptbox}[A rule of thumb, before any measurement]
+Put in the \textbf{cookie} only what you would not mind the customer editing ---
+a chosen language, a dismissed banner. Put in the \textbf{session} what must be
+true for this visit and need not outlive it. Put in a \textbf{table} anything
+you will later want to count, report on, or still have tomorrow.
+
+\smallskip
+Applying that rule to a basket gives an answer immediately: a shop wants to know
+how many baskets were abandoned last week, so the basket belongs in a table.
+That is an argument. The rest of this chapter is evidence.
+\end{conceptbox}
+
+\section{Where This Shop Actually Puts It}
+
+Almost every tutorial on this subject says the cart is kept in the session.
+Before believing that of the shop in front of you, look.
+
+The method is the one \chref{catalogue} arrived at the hard way: do not reason
+about what the code probably does, make the shop do it and read what changed.
+Add three products, and after each one measure all three stores at once.
+
+\begin{measured}[Add three products; watch all three stores]
+Produced by \texttt{code/m09\_basket.py --where} against the stack in
+Appendix~A. ``Cookie'' is what the browser sends up on every request;
+``session'' is the length of the stored session record; ``cart'' is rows in
+\texttt{oc\_cart} and the bytes in them.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.0cm}L{2.3cm}L{2.4cm}L{2.3cm}L{2.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{After adding} & \textbf{Cookie} & \textbf{Session} &
+\textbf{Cart rows} & \textbf{Cart bytes} \\
+\midrule
+\endhead
+(nothing) & 49\,B & 18\,B & 0 & 0 \\
+2 $\times$ MacBook & 49\,B & 18\,B & 1 & 53 \\
+1 $\times$ iPhone & 49\,B & 18\,B & 2 & 106 \\
+3 $\times$ HTC Touch HD & 49\,B & 18\,B & 3 & 159 \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{The cookie does not move, and the session does not move.} Both are
+constant across an empty basket and a three-line one. The entire session record
+is eighteen bytes:
+
+\smallskip
+\hspace*{1em}\texttt{\{"currency":"USD"\}}
+
+\smallskip
+\textbf{The basket is a table.} It is rows in \texttt{oc\_cart}, one per line,
+about 53 bytes each, keyed by the session identifier. The cookie carries a
+26-character identifier and a currency, 49 bytes in all, and that is the whole
+of what the browser knows.
+
+\smallskip
+So the common claim is false here. It is worth knowing \emph{why} it is so
+widely believed: in a simpler shop it is usually true, and the arrangement
+OpenCart uses --- session for identity, table for the basket --- is the one a
+shop adopts when it wants to report on baskets that were never checked out.
+\end{measured}
+
+\begin{alertbox}[``The cart is in the session'' --- check before you repeat it]
+This matters beyond trivia. If you believe the basket is in the session, you
+will also believe:
+
+\begin{tight}
+  \item that lengthening the session expiry lengthens the life of a basket
+        (here it does both, but for two different reasons, in two places);
+  \item that switching the session engine moves the basket (it does not --- see
+        the next measurement);
+  \item that clearing sessions clears baskets (it does not; it orphans them);
+  \item that you cannot report on abandoned baskets without extra work (you
+        can: they are rows, and \chref{dashboard} reads them).
+\end{tight}
+
+Each of those is a decision someone will make on a Friday afternoon. The
+evidence took one command.
+\end{alertbox}
+
+\section{What a Session Costs}
+
+The basket is in a table, but the shop still keeps sessions, and sessions are
+not free. Two questions: how many are created, and what does each one cost per
+request?
+
+\begin{measured}[A session is written before the visitor asks for anything]
+From \texttt{code/m09\_basket.py --sessions}. Twenty requests made as twenty
+first-time visitors, then twenty made by one visitor who keeps the cookie.
+
+\smallskip
+\begin{tabular}{@{}L{7.2cm}L{6.0cm}@{}}
+\textbf{20 first-time visitors} & \textbf{20} new session rows \\
+\textbf{1 visitor, 20 page views} & \textbf{1} new session row \\
+\end{tabular}
+
+\smallskip
+The session table on this machine held \textbf{645 rows, about 35.6\,KB},
+accumulated entirely by the measurements in this handout --- no human has ever
+shopped here.
+
+\smallskip
+\textbf{Every request writes a session, including the first.} A visitor who
+loads one page and leaves has cost a row. A crawler that ignores cookies costs
+one row per URL it touches, and the rows are removed on a clock rather than on
+departure: \texttt{config\_session\_expire} is \textbf{86{,}400 seconds},
+a full day.
+
+\smallskip
+This is the first number in the course that scales with \emph{traffic} rather
+than with \emph{business}. The catalogue in \chref{catalogue} grew because the
+shop sold more things. This grows because more robots visited.
+\end{measured}
+
+\begin{measured}[Database sessions against file sessions]
+From \texttt{code/m09\_basket.py --engine}. OpenCart ships three session
+engines --- \texttt{db}, \texttt{file} and \texttt{redis} --- selected in
+\texttt{system/config/catalog.php}. The storefront ships configured for
+\texttt{db}. Both rows below are the same home page, one engine apart.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.4cm}L{2.0cm}L{2.0cm}L{2.6cm}L{2.1cm}L{1.7cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Engine} & \textbf{Page} & \textbf{Queries} & \textbf{On session} &
+\textbf{Cart rows} & \textbf{Files} \\
+\midrule
+\endhead
+\texttt{db} & 89\,ms & 117 & 2 & 1 & 1 \\
+\texttt{file} & 71\,ms & 115 & 0 & 1 & 14 \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Exactly two queries per request are the session's} --- one
+\texttt{SELECT} to read it and one \texttt{REPLACE} to write it back. Moving to
+files removes both and takes about 20\% off the page on this machine, where the
+database and the web server are two containers on one host.
+
+\smallskip
+\textbf{The basket did not move.} The \texttt{Cart rows} column is 1 under both
+engines. The engine decides where eighteen bytes live; it has nothing to do
+with the basket.
+
+\smallskip
+\textbf{Files are not free either, they are just billed elsewhere.} Each session
+file holds those same eighteen bytes and occupies a 4\,KB filesystem block ---
+an amplification of more than two hundred. And a file session is tied to one
+machine's disk, so the moment the shop runs on two web servers, a customer
+served by the second one is a stranger. That, not speed, is why the shipped
+default is \texttt{db}.
+\end{measured}
+
+\begin{conceptbox}[Reading that 20\% honestly]
+It was measured on one host where the database is a container a virtual network
+hop away. On a deployment where the database is a separate machine, removing two
+round trips per request would save more. On a deployment behind a load balancer,
+the file engine would not work at all.
+
+\smallskip
+A measurement tells you what happened on the machine it ran on. Appendix~A names
+that machine for exactly this reason. Quoting 20\% as a property of OpenCart
+would be a misuse of your own result.
+\end{conceptbox}
+
+\section{Two Things the Source Does That the Screens Do Not Show}
+
+Reading \texttt{system/library/cart/cart.php} and
+\texttt{system/library/session.php} turns up two behaviours that no admin screen
+mentions and both measurements confirm.
+
+\begin{measured}[An empty basket costs more than a full one]
+From \texttt{code/m09\_basket.py --cache}. The same home page, with the basket
+holding 0, 1, 2 and 3 lines.
+
+\smallskip
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.2cm}L{3.0cm}L{3.4cm}L{3.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Basket lines} & \textbf{Queries} & \textbf{\texttt{SELECT} on cart} &
+\textbf{\texttt{DELETE} on cart} \\
+\midrule
+\endhead
+0 & 117 & \textbf{6} & 1 \\
+1 & 119 & 1 & 1 \\
+2 & 126 & 1 & 1 \\
+3 & 129 & 1 & 1 \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{An empty basket is read six times; a full one is read once.} The cache
+in \texttt{Cart::getProducts()} begins \texttt{if (!\$this->data)}, which is
+true both when the basket has not been loaded yet \emph{and} when it is empty.
+PHP cannot tell those apart that way, so an empty basket misses its own cache
+on every call --- and a shop's commonest visitor has an empty basket.
+
+\smallskip
+\textbf{Every storefront page deletes before it reads.} The
+\texttt{DELETE} column is 1 on every row, including the empty basket. The
+\texttt{Cart} constructor removes expired guest baskets each time it is built,
+so a page view is a write even when the visitor only looked.
+\end{measured}
+
+\begin{measured}[One request in five rebuilds the session table]
+From \texttt{code/m09\_basket.py --gc}, over two runs.
+
+\smallskip
+\begin{tabular}{@{}L{4.6cm}L{4.2cm}L{4.4cm}@{}}
+\textbf{25 requests} & \texttt{OPTIMIZE} ran 7 (28\%) & 555\,ms in total \\
+\textbf{60 requests} & \texttt{OPTIMIZE} ran 15 (25\%) & 889\,ms in total \\
+\end{tabular}
+
+\smallskip
+\texttt{Session::\_\_construct} registers \texttt{gc()} as a shutdown function,
+so garbage collection is \emph{considered} on every request;
+\texttt{session\_probability} and \texttt{session\_divisor} make it \emph{run}
+on about one in five. When it runs it deletes expired rows and then issues
+\texttt{OPTIMIZE TABLE}, which on InnoDB is a full table rebuild --- around
+60\,ms here, on a 645-row table.
+
+\smallskip
+Both runs are printed because neither is the answer. The configured rate is
+one in five; 7 of 25 and 15 of 60 are what one in five looks like in small
+samples, and reporting only the first would have claimed 28\%.
+\end{measured}
+
+\section{What Survives}
+
+\chref{stack} introduced volumes with the claim that they are what makes a
+container's data outlive the container. A basket is the smallest honest test of
+that claim, because you can put one somewhere and then try to destroy it three
+different ways.
+
+\begin{measured}[Three ways to stop a shop, and what is left afterwards]
+From \texttt{code/m09\_basket.py --restart --destroy}. A three-line basket is
+created, then each operation is applied in turn and the basket looked for again
+--- in the tables, and in the page the same browser is shown.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.8cm}L{1.7cm}L{2.3cm}L{2.5cm}L{2.7cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Operation} & \textbf{Took} & \textbf{Cart rows} &
+\textbf{Session rows} & \textbf{Basket shown} \\
+\midrule
+\endhead
+--- (before) & --- & 3 & 1 & yes \\
+\texttt{restart shop} & 3\,s & 3 & 1 & yes \\
+\texttt{down}, \texttt{up -d} & 10\,s & 3 & 1 & yes \\
+\texttt{down -v}, \texttt{up -d} & 17\,s & \textbf{0} & \textbf{0} &
+\textbf{no} \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Destroying the containers destroyed nothing.} \texttt{down} removes the
+containers; the named volumes stay, so the database files stay, so the basket
+stays. The browser's cookie still pointed at a session that still existed.
+
+\smallskip
+\textbf{\texttt{-v} is the whole difference.} It deletes the volumes. The shop
+reinstalled itself from scratch in 17 seconds --- which is a good property of
+the stack and a bad surprise for anyone who typed it to free disk space.
+
+\smallskip
+\textbf{Notice what the third row does \emph{not} say.} It does not say the
+shop broke. It came back, fast, looking perfectly healthy, with every customer's
+basket gone. \chref{deploy} returns to this with backups, where the lesson is
+the same one \chref{catalogue} taught about the store identifier: a shop that
+answers 200 is not thereby a shop that is right.
+\end{measured}
+
+\section{The Settings That Govern Any of This}
+
+Three of the behaviours above are configurable, and two of the three are in the
+admin panel rather than in a file.
+
+\begin{examplebox}[Where each decision is actually made]
+\begin{tight}
+  \item \textbf{How long an abandoned basket lives.}
+        \adminpath{System, Settings, Edit, Option} --- the session expiry,
+        \texttt{config\_session\_expire}, 86{,}400 seconds by default. It
+        governs both the session record and the \texttt{DELETE} in the
+        \texttt{Cart} constructor, so shortening it discards baskets sooner.
+  \item \textbf{Whether a basket needs an account at all.}
+        \adminpath{System, Settings, Edit, Option} --- \uiel{Guest Checkout}.
+        With it on, the basket is keyed by session alone and vanishes with the
+        cookie. With it off, every basket belongs to a customer and follows
+        them to another machine.
+  \item \textbf{Where the session itself is kept.} Not in the admin panel at
+        all, but in a file: the \texttt{session\_engine} line of
+        \texttt{system/config/catalog.php}. A setting that changes both a
+        performance characteristic and a deployment constraint, and that can
+        be reached only by editing a file, is worth noticing as a design
+        choice --- it is not meant to be changed by the shopkeeper.
+\end{tight}
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Assuming where the basket is instead of looking.} Every wrong
+        decision in this chapter follows from that one.
+  \item \textbf{Putting a price in the cookie.} Anything the browser carries,
+        the customer can edit. \texttt{oc\_cart} has a \texttt{price} column
+        and the shop recomputes rather than trusting it; your own extensions
+        must do the same.
+  \item \textbf{Lengthening session expiry to ``keep baskets''} without
+        noticing that it also keeps every robot's session row for the same
+        period.
+  \item \textbf{Clearing \texttt{oc\_session} to tidy up.} It does not delete
+        baskets; it strips them of the identifier that reaches them, leaving
+        rows nothing will ever read and nothing will ever remove.
+  \item \textbf{Typing \texttt{docker compose down -v} to free space.} It is
+        the one command in this chapter that cannot be undone.
+  \item \textbf{Reading a timing from one machine as a property of the
+        software.} The 20\% above is a fact about this host.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Find the basket, then try to destroy it]
+\begin{lstlisting}[language=bash]
+# --- 1. Predict, in writing, before running anything -----------------
+# Where is the basket: cookie, session, or a table? Commit to one.
+
+# --- 2. Look ---------------------------------------------------------
+cd code
+python m09_basket.py --where
+
+# --- 3. Read the session record yourself -----------------------------
+docker compose exec db mariadb -ushop -pshoppw opencart \
+  -e "SELECT session_id, LENGTH(data), data FROM oc_session LIMIT 3;"
+
+# --- 4. Find your own basket in the table ----------------------------
+docker compose exec db mariadb -ushop -pshoppw opencart \
+  -e "SELECT * FROM oc_cart;"
+
+# --- 5. Move the session to files, and check the basket --------------
+python m09_basket.py --engine
+# Did the basket move? Write down why not, in one sentence.
+
+# --- 6. Count what an empty basket costs -----------------------------
+python m09_basket.py --cache
+# Explain the first row to someone who has not read the source.
+
+# --- 7. Try to destroy it, in increasing order of violence -----------
+python m09_basket.py --restart
+# Predict each row before you read it.
+
+# --- 8. Now the one that works ---------------------------------------
+# Only when you are ready to reinstall the shop:
+python m09_basket.py --restart --destroy
+
+# --- 9. Change the expiry and show that it did something -------------
+# Admin: System > Settings > Edit > Option. Set session expiry to 60
+# seconds. Add a product, wait, reload. Record what you see and which
+# of the two mechanisms in this chapter produced it.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 1 against step 2 is the point of the lab. Keep
+your written prediction: the gap between what you expected and what the shop
+does is the only part of this exercise you will still remember in a year.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A colleague says ``move the sessions to Redis and the basket will be
+        faster''. Using this chapter's measurements, say what would and would
+        not change, and give the number that settles it.
+  \item The session table holds 645 rows on a shop that has never had a
+        customer. Explain where they came from, why they are not removed when
+        the visitor leaves, and what you would measure before deciding to
+        shorten the expiry.
+  \item \texttt{docker compose down} left a three-line basket intact and
+        \texttt{docker compose down -v} did not. Explain the difference in
+        terms of what each command removes, and name one other thing in your
+        shop that the second command destroys.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item HTTP keeps nothing between requests. A cookie is the only standard way
+        to make the second request identifiably related to the first.
+  \item A cookie is a place on the customer's machine; a session is server-side
+        state that \emph{uses} a cookie to point at itself. Confusing the two
+        confuses who can change what.
+  \item Measured: adding three products left the cookie at 49\,bytes and the
+        session at 18\,bytes, and added three rows to \texttt{oc\_cart}. The
+        basket in this shop is a table, not a session.
+  \item Measured: 20 first-time visitors created 20 session rows; one visitor
+        making 20 page views created one. Sessions scale with traffic, not with
+        trade.
+  \item Measured: the \texttt{db} engine costs exactly two queries per request;
+        the \texttt{file} engine costs none and took about 20\% off the page on
+        this host --- while moving no part of the basket, and while making a
+        second web server impossible.
+  \item Measured: an empty basket is read six times per page and a full one
+        once, because the cache test cannot distinguish ``empty'' from ``not
+        loaded''. Every storefront page also deletes from \texttt{oc\_cart}
+        before reading it.
+  \item Measured: about one request in five rebuilds the session table with
+        \texttt{OPTIMIZE TABLE}, at roughly 60\,ms.
+  \item Measured: \texttt{restart} and \texttt{down}/\texttt{up} left the
+        basket untouched; \texttt{down -v} destroyed it and the shop
+        reinstalled itself in 17 seconds looking perfectly healthy.
+  \item Where state lives decides what survives, what can be reported on, and
+        who is able to tamper with it. It is a design decision, not a detail.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} In the measured shop, adding a product to the basket
+        changes: (a)~the cookie; (b)~the session record; (c)~rows in a table;
+        (d)~all three.
+  \item \textbf{(MCQ)} Switching \texttt{session\_engine} from \texttt{db} to
+        \texttt{file} moved: (a)~the basket; (b)~the session record only;
+        (c)~both; (d)~neither.
+  \item \textbf{(Short)} Explain why a session identifier must be unguessable,
+        and what an attacker who obtained one could do in this shop.
+  \item \textbf{(Short)} Give two things that belong in a cookie and two that
+        must never go in one, with your reason in each case.
+  \item \textbf{(Short)} An empty basket costs six cart queries and a full one
+        costs one. Explain the cause, and propose a one-line change to the
+        condition that would fix it.
+  \item \textbf{(Applied)} A shop reports 400{,}000 session rows and 12 orders
+        a day. Work out what is producing the rows, state what you would
+        measure to confirm it, and give two changes you would make --- one to
+        configuration and one to the shop's robots policy.
+  \item \textbf{(Applied)} You are asked to make baskets survive for thirty
+        days so that customers can come back to them. Say exactly what you
+        would change, what each change costs, what it would break for a guest
+        with no account, and how you would measure whether it increased
+        completed orders at all.
+\end{reviewq}
