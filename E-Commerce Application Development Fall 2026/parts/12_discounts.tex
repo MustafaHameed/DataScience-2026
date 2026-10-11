@@ -1,0 +1,444 @@
+%=====================================================================
+\chapter{Discounts, Vouchers and Referrals}\label{ch:discounts}
+%=====================================================================
+\locator{3}{Part III --- From Basket to Order}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} the four price-reduction devices a storefront
+        offers, and \textbf{choose} the right one for a stated objective.
+  \item \textbf{Explain} why order totals are an ordered pipeline, and
+        \textbf{predict} what moving a line in it does to the customer's bill.
+  \item \textbf{Compute} the margin consequence of a discount, and
+        \textbf{state} the extra volume needed to pay for it.
+  \item \textbf{Describe} how a referral is tracked and paid, and
+        \textbf{identify} what can be claimed twice.
+  \item \textbf{Report} honestly on a feature a prescribed outline names and a
+        platform does not provide.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{shipping}: tax classes, rates and rules, and the worked order total.
+\chref{checkout}: the checkout sequence, and that an order copies its totals.
+A working checkout, so that discounts can be observed on real orders.
+\end{prereq}
+
+\begin{keyterms}
+discount $\bullet$ quantity break $\bullet$ special price $\bullet$ coupon
+$\bullet$ coupon code $\bullet$ gift voucher $\bullet$ store credit $\bullet$
+reward points $\bullet$ affiliate $\bullet$ referral $\bullet$ commission
+$\bullet$ tracking code $\bullet$ totals pipeline $\bullet$ sort order
+$\bullet$ gross margin
+\end{keyterms}
+
+\section{Four Devices, and What Each One Is For}
+
+``Give the customer money off'' is one sentence and four different mechanisms,
+which differ in \emph{who qualifies} and \emph{when the shop finds out}.
+
+\begin{definitionbox}[Quantity break, Special, Coupon, Credit]
+A \term{quantity break} reduces the unit price above a threshold --- buy ten,
+pay less each. It is attached to the product, applies to everyone, and the
+customer learns of it by filling the basket.
+
+\smallskip
+A \term{special} is a dated price that replaces the usual one for a period, for
+a customer group. Also attached to the product; also automatic; visible on the
+product page as a struck-through old price.
+
+\smallskip
+A \term{coupon} is a code the customer must type. It is attached to nothing
+--- it is its own object, with its own dates, its own usage limits and its own
+restriction to particular products or categories. The code is the point: it
+lets the shop give a discount \emph{to the people it gave the code to}.
+
+\smallskip
+\term{Store credit} is a balance on a customer's account that is spent like
+money. It is not a discount at all; it is a liability the shop already owes.
+\end{definitionbox}
+
+\begin{conceptbox}[Which to reach for]
+\begin{tight}
+  \item \textbf{To move stock} --- a special. It needs no action from the
+        customer and no code to leak.
+  \item \textbf{To reward larger baskets} --- a quantity break, which pays for
+        itself in picking and delivery.
+  \item \textbf{To measure a campaign} --- a coupon, and \emph{a different code
+        per channel}. The code is the only part of a discount that tells you
+        where the customer came from.
+  \item \textbf{To settle a complaint} --- store credit, which costs the shop
+        its margin rather than its price list, and brings the customer back.
+\end{tight}
+
+\smallskip
+The mistake is to use a coupon for everything. A public code is a price cut
+with extra steps, and it teaches customers to search for a code before buying
+--- which is a cost that arrives later and never goes away.
+\end{conceptbox}
+
+\section{The Clause the Platform Does Not Implement}
+
+HEC's outline names ``Discounts, \emph{Vouchers}, and Referrals''. A gift
+voucher --- a code bought by one person as a stored-value instrument and spent
+by another --- is a distinct thing from a coupon, and the shop in this course
+does not have one.
+
+\begin{alertbox}[There are no gift vouchers in this platform]
+Checked directly rather than assumed:
+
+\begin{tight}
+  \item \textbf{No tables.} \texttt{SHOW TABLES LIKE '\%voucher\%'} returns
+        nothing. The database has 159 tables and not one of them is a voucher.
+  \item \textbf{No totals extension.} The nine shipped are \texttt{sub\_total},
+        \texttt{shipping}, \texttt{coupon}, \texttt{tax}, \texttt{credit},
+        \texttt{reward}, \texttt{handling}, \texttt{low\_order\_fee} and
+        \texttt{total}. No voucher.
+  \item \textbf{One trace remains:} a demonstration image called
+        \texttt{gift-voucher-birthday.jpg}. The feature existed in version 3
+        and was removed; the picture was not.
+\end{tight}
+
+\smallskip
+\textbf{Why this is in the handout rather than quietly skipped.} HEC's clause
+list is the contents page of a book published in 2010 (see the Course
+Specification), when stored-value vouchers were a standard cart feature. The
+outline has not been revised; the software has. Stating that plainly is more
+useful to you than either pretending the feature exists or pretending the
+clause does not.
+
+\smallskip
+\textbf{What to do if a client asks for vouchers.} Store credit
+(\texttt{oc\_customer\_transaction} and the \texttt{credit} total) already
+provides the spending half: a balance that draws down across orders. What is
+missing is the \emph{buying} half --- selling a voucher as a product, issuing a
+code, and letting a different person redeem it. That is a module, and
+\chref{modules} is where you would write it. It is the single most realistic
+piece of commissioned work in this course.
+\end{alertbox}
+
+\section{Totals Are a Pipeline, and Position Decides the Bill}
+
+\chref{shipping} computed an order total by hand and found that the VAT line
+included the shipping charge. That was not arithmetic; it was \emph{ordering}.
+Every total line is produced by a separate extension with a \term{sort order},
+and each one works on the running total left by the lines before it.
+
+\dsfig{%
+\begin{tikzpicture}[
+  ln/.style={rounded corners=2pt, draw=#1, line width=1.0pt, fill=#1!8,
+             text=#1!60!black, font=\bfseries\scriptsize, align=center,
+             text width=2.0cm, minimum height=0.72cm},
+  num/.style={font=\scriptsize\bfseries, text=neutral},
+  arr/.style={-{Stealth[length=1.9mm]}, primary!50, line width=0.8pt}
+]
+  \node[ln=secondary] (a) at (0,0)    {Sub-Total};
+  \node[ln=neutral]   (b) at (2.35,0) {Reward};
+  \node[ln=neutral]   (c) at (4.70,0) {Shipping};
+  \node[ln=greenhl]   (d) at (7.05,0) {Coupon};
+  \node[ln=accent]    (e) at (9.40,0) {Tax};
+  \node[ln=secondary] (f) at (11.75,0) {Total};
+
+  \foreach \a/\b in {a/b, b/c, c/d, d/e, e/f}{\draw[arr] (\a) -- (\b);}
+  \foreach \n/\x in {1/0, 2/2.35, 3/4.70, 4/7.05, 5/9.40, 9/11.75}{
+    \node[num] at (\x,0.62) {\n};}
+
+  \node[font=\scriptsize, text=greenhl, align=center, text width=3.0cm]
+       at (7.05,-1.15) {The discount is subtracted \emph{here}\dots};
+  \node[font=\scriptsize, text=accent, align=center, text width=3.0cm]
+       at (9.40,-1.15) {\dots so tax is charged on what is left.};
+  \node[font=\scriptsize\itshape, text=neutral, align=center, text width=11.5cm]
+       at (5.9,-2.1) {Swap the two numbers and every page still works, every
+       line still adds up, and the customer pays more.};
+\end{tikzpicture}}%
+{The totals pipeline as the shop ships it, with each extension's sort order
+above it. The numbers are editable fields in the admin panel, and nothing
+warns you what they mean.}{totalspipeline}
+
+\begin{worked}
+\textbf{The same basket, with the coupon on either side of the tax.} Two real
+orders, produced by \texttt{code/m12\_discounts.py --sortorder}. The basket is
+\chref{checkout}'s: one MacBook at \$500.00 and two iPhones at \$101.00. The
+coupon is the one the shop ships with, code \texttt{2222}, 10\% off.
+
+\smallskip
+\textbf{As shipped --- coupon at 4, tax at 5:}
+
+\smallskip
+\begin{tabular}{@{}L{6.4cm}L{3.4cm}L{4.2cm}@{}}
+Sub-Total & 702.00 & \\
+Flat Shipping Rate & 5.00 & \\
+Coupon (2222) & $-70.20$ & $10\% \times 702.00$ \\
+Eco Tax (-2.00) & 6.00 & $3 \times 2.00$ \\
+VAT (20\%) & 127.36 & $20\% \times 636.80$ \\
+\textbf{Total} & \textbf{770.16} & \\
+\end{tabular}
+
+\smallskip
+The VAT base is $702.00 + 5.00 - 70.20 = 636.80$: the discount has already
+happened, so tax is charged on what the customer actually pays.
+
+\smallskip
+\textbf{Coupon moved to 6, after tax:}
+
+\smallskip
+\begin{tabular}{@{}L{6.4cm}L{3.4cm}L{4.2cm}@{}}
+Sub-Total & 702.00 & \\
+Flat Shipping Rate & 5.00 & \\
+Eco Tax (-2.00) & 6.00 & \\
+VAT (20\%) & 141.40 & $20\% \times 707.00$ \\
+Coupon (2222) & $-70.20$ & \\
+\textbf{Total} & \textbf{784.20} & \\
+\end{tabular}
+
+\smallskip
+\textbf{The difference is \$14.04}, and it is exactly 20\% of the \$70.20
+discount --- tax charged on money the customer was never asked for. On a \$770
+order that is 1.8\%, produced by changing one integer in an admin field that
+offers no explanation of what it does.
+
+\smallskip
+\textbf{Both orders are internally consistent.} Both add up. Both display
+correctly. No validation objects, because there is nothing malformed about
+either --- one of them is simply wrong about the world.
+\end{worked}
+
+\begin{alertbox}[A sequencing rule the checkout does not tell you about]
+Applying a coupon \emph{after} the customer has chosen a payment method
+invalidates the choice. The coupon changes the order total, the stored payment
+method no longer matches the recomputed list, and the final step answers:
+
+\smallskip
+\hspace*{1em}\texttt{\{"error":"Payment method is incorrect!"\}}
+
+\smallskip
+--- after which no order is created. The code was accepted, every earlier step
+reported success, and the sale is lost at the last click.
+
+\smallskip
+This was found by driving the sequence from a script, exactly as in
+\chref{checkout}, and it is the second fault in this course that is invisible
+from the browser. The remedy in your own shop is to put the coupon field
+\emph{before} the method steps, or to re-select the method whenever a total
+changes.
+\end{alertbox}
+
+\section{What a Discount Actually Costs}
+
+A discount is not a marketing decision with a financial side effect. It is a
+financial decision, and the arithmetic is short enough to do before the
+meeting rather than after it.
+
+\begin{worked}
+A product sells for \textbf{Rs~1{,}000} and costs the shop \textbf{Rs~700}.
+
+\smallskip
+\textbf{Gross margin today:} $1{,}000 - 700 = \mathbf{Rs~300}$ per unit, 30\%.
+
+\smallskip
+\textbf{With a 10\% coupon:} the customer pays $Rs~900$; the cost is unchanged.
+\[ 900 - 700 = \mathbf{Rs~200} \]
+
+\smallskip
+\textbf{The discount was 10\% of the price and 33\% of the profit.}
+\[ \frac{300 - 200}{300} = 33.3\% \]
+
+\smallskip
+\textbf{How much extra volume pays for it?} To earn the same total profit:
+\[ \frac{300}{200} = 1.5 \]
+\textbf{The shop needs 50\% more orders} to stand still. Not 10\% more --- 50\%.
+
+\smallskip
+And that is the optimistic case, because it assumes every discounted sale is a
+sale that would not otherwise have happened. In practice some share of the
+customers who used the code would have bought anyway, and every one of those is
+pure loss. If half of them would have bought anyway, the required uplift roughly
+doubles again.
+
+\smallskip
+\textbf{The general rule:} at a gross margin of $m$ and a discount of $d$ (both
+as fractions of price), the volume multiple needed to break even is
+\[ \frac{m}{m - d} \]
+which goes to infinity as $d$ approaches $m$, and is \emph{negative} --- that
+is, unachievable at any volume --- beyond it. A 30\% discount on a 30\% margin
+cannot be made up by selling more.
+\end{worked}
+
+\section{Referrals: Paying Someone Else to Send Customers}
+
+HEC's third term. The platform's mechanism is the \term{affiliate}: a customer
+account flagged as one, given a \term{tracking code}, and paid a commission on
+orders that arrive carrying it.
+
+\begin{examplebox}[How a referral is tracked, in four steps]
+\begin{tightnum}
+  \item A customer applies at \adminpath{Account, Affiliate} and is approved
+        --- or not, depending on \uiel{Affiliate Approval} in the settings.
+  \item They receive a tracking code and link their audience to
+        \texttt{?tracking=\textit{code}}.
+  \item A visitor arriving on that link has the code stored. The default
+        commission in this shop is \textbf{5\%}, set at
+        \adminpath{System, Settings, Edit, Option}.
+  \item When an order completes, a commission transaction is written against
+        the affiliate's account, becoming store credit or a payable.
+\end{tightnum}
+
+\smallskip
+\textbf{The question that decides whether this works:} how long does the
+tracking code survive? If it lasts one request, the affiliate is paid only for
+customers who buy immediately. If it lasts a month, the affiliate is paid for
+customers who were going to buy anyway. Neither extreme is right, and the shop
+--- not the affiliate --- must choose.
+\end{examplebox}
+
+\begin{alertbox}[Where referral money leaks]
+\begin{tight}
+  \item \textbf{Self-referral.} An affiliate buys through their own link. A 5\%
+        commission is a 5\% personal discount, paid for by the shop and
+        recorded as marketing spend.
+  \item \textbf{Stacking with a coupon.} A 10\% code plus a 5\% commission is
+        15\% off a margin that may be 30\%, and half the profit is gone with
+        two independently reasonable decisions.
+  \item \textbf{Commission on refunded orders.} Unless the commission is
+        reversed when the order is, the shop pays for a sale that was undone
+        --- \chref{orders}'s subject, and the commonest unreconciled figure in
+        a small shop's accounts.
+  \item \textbf{Commission on tax and shipping.} Paying 5\% of \$854.40 rather
+        than 5\% of the \$702.00 of goods means paying the affiliate a share of
+        money that belongs to the tax authority and the courier.
+\end{tight}
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Treating totals sort order as cosmetic.} It moved a bill by
+        \$14.04 and nothing warned.
+  \item \textbf{Putting the coupon field after the payment step}, which loses
+        the sale at the last click with an error nobody sees.
+  \item \textbf{Assuming a demonstration coupon is usable.} The shipped codes
+        are disabled and expired --- which is correct of them, and the first
+        thing to check when a code ``does not work''.
+  \item \textbf{Approving a discount without the margin arithmetic.} 10\% off a
+        30\% margin needs 50\% more orders.
+  \item \textbf{Publishing one coupon code everywhere}, which makes the
+        campaign unmeasurable and the discount permanent.
+  \item \textbf{Paying commission on gross order value} rather than on goods.
+  \item \textbf{Promising a client gift vouchers} because the outline mentions
+        them. This platform has none; it is a module, not a setting.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Move one number, and change what the customer pays]
+\begin{lstlisting}[language=bash]
+# --- 1. Find out why the shipped coupon does not work ---------------
+cd code
+docker compose exec db mariadb -ushop -pshoppw opencart -e \
+  "SELECT code,name,status,date_start,date_end FROM oc_coupon;"
+# Two reasons, not one. Name both before fixing either.
+
+# --- 2. Enable it ----------------------------------------------------
+python m12_discounts.py --coupon on
+
+# --- 3. Place one order with it and take the total apart ------------
+python m12_discounts.py --order
+# Reproduce every line with a calculator.
+
+# --- 4. Predict, in writing --------------------------------------
+# If the coupon were applied AFTER tax instead of before, would the
+# customer pay more, less, or the same? By how much? Commit first.
+
+# --- 5. Run the experiment ------------------------------------------
+python m12_discounts.py --sortorder
+
+# --- 6. Account for the difference exactly --------------------------
+# It is not an arbitrary number. Show where it comes from.
+
+# --- 7. Build a measurable campaign ---------------------------------
+# Admin: Marketing > Coupons. Make THREE codes for the same 10% offer,
+# one per channel. Say how you would later tell which worked.
+
+# --- 8. Do the margin arithmetic before you would ship it -----------
+# Your product costs 700 and sells for 1000. Work out the volume
+# uplift your 10% code needs. Then do it for 20%.
+
+# --- 9. Put everything back -----------------------------------------
+python m12_discounts.py --restore
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 4 against step 5. Most people predict ``the
+same'' --- the discount and the tax are both there either way. The 1.8\%
+difference is the whole chapter, and it lives in a numeric field with no label
+explaining it.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item The same basket produced totals of 770.16 and 784.20 depending on one
+        setting. Explain what the setting was, why the difference is exactly
+        14.04, and which total is correct --- giving your reason in terms of
+        what tax is owed on.
+  \item A client with a 25\% gross margin wants to run a permanent 15\% ``loyal
+        customer'' code. Work out the volume uplift needed to break even, state
+        two reasons the real requirement is higher than your figure, and
+        propose an alternative that costs less.
+  \item HEC's outline requires vouchers and the platform has none. Describe
+        what you would tell a client who asked for them, what the platform
+        already provides, and what specifically you would have to build.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Four devices, differing in who qualifies and when the shop learns of
+        it: quantity breaks and specials are automatic and attached to
+        products; a coupon is a code, which is what makes a campaign
+        measurable; store credit is a liability, not a discount.
+  \item This platform has \textbf{no gift vouchers} --- no tables, no totals
+        extension, only a leftover demonstration image. HEC's clause reflects a
+        2010 book, not current software. Say so rather than fudging it; the
+        gap is a module, and \chref{modules} is where it would be written.
+  \item Order totals are an ordered pipeline. Each line works on what the
+        previous lines left, and every extension's position is an editable
+        integer with no explanation attached.
+  \item Worked: the same basket totalled 770.16 with the coupon before tax and
+        784.20 with it after --- a difference of 14.04, exactly 20\% of the
+        70.20 discount. Both are internally consistent; one is wrong about what
+        tax is owed on.
+  \item Applying a coupon after the payment method is chosen invalidates the
+        choice and loses the order at the last click, with an error the browser
+        does not show.
+  \item Worked: a 10\% discount on a 30\% margin removes 33\% of the profit and
+        needs 50\% more orders to break even --- $m/(m-d)$ in general, and
+        unachievable once $d$ reaches $m$.
+  \item A referral is tracked by a code and paid as commission. The leaks are
+        self-referral, stacking with coupons, commission on refunded orders,
+        and commission on tax and shipping.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Moving the coupon line after the tax line in the totals
+        pipeline causes the customer to pay: (a)~less; (b)~the same;
+        (c)~more, by the tax on the discount; (d)~more, by the discount.
+  \item \textbf{(MCQ)} A 10\% discount on a product with a 30\% gross margin
+        removes what share of the profit? (a)~10\%; (b)~about a third;
+        (c)~half; (d)~it depends on the volume.
+  \item \textbf{(Short)} Give two things a coupon can do that a special cannot,
+        and one thing a special does better.
+  \item \textbf{(Short)} Explain why a shop should issue a different coupon
+        code for each channel, even for the same offer.
+  \item \textbf{(Short)} Explain why paying affiliate commission on the order
+        grand total rather than on the goods value is a mistake, using the
+        worked order in \chref{shipping} for your figures.
+  \item \textbf{(Applied)} A shop runs a 20\% code and a 5\% affiliate scheme
+        on products with a 35\% gross margin. Work out the margin on an order
+        that uses both, say what the shop should do about it, and state how you
+        would enforce your answer in the platform.
+  \item \textbf{(Applied)} Design the gift voucher the platform lacks. State
+        the tables you would add, how a voucher is bought, how it is redeemed
+        by a different person, what happens when it part-pays an order, where
+        it sits in the totals pipeline and why, and the two ways it could be
+        spent twice.
+\end{reviewq}

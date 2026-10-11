@@ -7,24 +7,42 @@ whole course is built on, and the measurements that keep its claims honest.
 **Dr. Mustafa Hameed · Department of Information Technology · The Islamia
 University of Bahawalpur**
 
-> **Status: in progress.** Chapters 1–8 of 23 are written — all of Parts I and II —
-> together with the front matter, all six part openers, and Appendices A, B,
-> C and G. See
-> [Not done](#not-done) for exactly what is missing.
+> **Status: complete.** All 23 chapters, all seven appendices, 24 decks, the
+> one-page schedule, 15 measurement harnesses and a per-chapter PDF for every
+> chapter and appendix. See [Not done](#not-done) for the two things that
+> remain.
 
 ---
 
 ## What is here
 
-| Artefact | Size now | Build with |
+| Artefact | Size | Build with |
 |---|---|---|
-| `probe_master.pdf` | 90 pp., 8 chapters, 4 appendices, 12 figures | `pdflatex probe_master.tex` |
-| `slides/out/*.pptx` | 9 decks, 331 slides | `python slides\build_slides.py --all` |
-| `code/` | a running OpenCart shop, a catalogue seeder, 4 measurement harnesses | `docker compose up -d --build` |
+| `ECAD_Fall2026_Handout.pdf` | **219 pp.**, 23 chapters, 7 appendices, 20 figures | `.\build.ps1` |
+| `ECAD_Fall2026_Lecture_Schedule.pdf` | one page, 16 weeks | `pdflatex ECAD_Fall2026_Lecture_Schedule.tex` |
+| `handouts/*.pdf` | **30 class extracts** — one per chapter and appendix | `python makechapters.py` |
+| `slides/out/*.pptx` | **24 decks, 1,000 slides** | `python slides\build_slides.py --all` |
+| `code/` | a running shop, a mock payment provider, 15 harnesses, a PHP extension | `docker compose up -d --build` |
 
-`ECAD_Fall2026_Handout.tex` is the real master and **does not build yet** — it
-`\input`s all 23 chapters and seven appendices. `probe_master.tex` builds the
-chapters that exist and is deleted when `parts/` is complete.
+### Per-chapter PDFs, for handing out in class
+
+The master is the right object for a student to keep and the wrong one to hand
+out in a ninety-minute class. `makechapters.py` builds the same `parts/` files
+one chapter at a time, each with a cover sheet naming the week it is taught,
+that week's laboratory and that week's assessment — all three read out of
+`parts/G_schedule.tex`, which stays the single source of record.
+
+```powershell
+python makechapters.py            # all 23 chapters and 7 appendices
+python makechapters.py 9 10       # just those
+python makechapters.py A B        # appendices
+```
+
+Page numbers restart at 1 per extract; chapter, figure and table numbers are
+the full volume's, so a reference followed in an extract lands where it does in
+the book. Cross-chapter references resolve through the master's `.aux`,
+filtered to drop the labels the extract defines itself — which is why each one
+is built twice.
 
 ---
 
@@ -194,15 +212,39 @@ measurement on the same machine gave 17.6 s cold and 7.7 s warm — roughly half
 — because less was running. Students' numbers will differ by more than they
 expect; the *ratio* should not.
 
+### The rest, one line each
+
+| Ch | Finding |
+|---|---|
+| 9 | Adding three products left the cookie at **49 B** and the session record at **18 B**, and added three rows to `oc_cart`. **The basket is not in the session.** Changing the session engine moves the 18 bytes and nothing else |
+| 9 | An **empty** basket is read six times per page and a full one once, because the cache test cannot tell "empty" from "not loaded" |
+| 10 | **A stock install cannot complete a guest checkout.** `config_checkout_payment_address` is read by ten controllers and written by none, so no shipping address is ever stored. Every page still returned 200 |
+| 10 | A checkout is **607 queries**; `confirm` performs **25 of its 55 writes** |
+| 12 | Moving the coupon line after the tax line changed the customer's bill from **770.16 to 784.20** — one integer in an unlabelled admin field |
+| 14 | Gateway latency is **bimodal**: median 321 ms, p95 3,774 ms. A 1-second timeout discards 11.7% of payments and a 3-second timeout 10.7% — the middle buys nothing |
+| 15 | bcrypt cost 8→14 ran 13.7 … 874 ms, an **exact doubling**. A wrong password on a registered address took **88.6 ms** and on an unknown one **23.0 ms** — a 65 ms gap, which *is* one bcrypt verify. **The leak is caused by the defence** |
+| 16 | The shop passed **5 of 15** checks as installed and **14 of 15** after one configuration file. The PHP error log was readable over HTTP. SQL injection and XSS were already handled |
+| 16 | Three hardening controls were applied correctly, accepted by Apache without a warning, and **did nothing** |
+| 17 | The same six orders were reported as **6, 5 and 2** by the table, the widgets and the chart. All three correct; none labelled with its filter |
+| 18 | The admin API ships enabled with an **empty** address allow-list, which permits nothing — so the admin panel cannot change an order |
+| 18 | Status 11 *Refunded* returns stock; status 12 *Reversed* does not. A return marked "Refunded" writes two rows and **does nothing else** |
+| 19 | A module instance costs 4 ms and **exactly 4 queries** — of which **one is the module's** |
+| 20 | Throughput **peaked at 5 concurrent clients and fell at 20** while the median grew 5.6×. opcache doubled throughput at the saturation point |
+| 20 | A 1.0 s backup took **6.4 s to restore** |
+| 21 | Turning on readable URLs without the server rewrite points **every link in the shop at a 404** — and the cause is Chapter 16's `AllowOverride None` |
+
 ---
 
 ## Building
 
 ```powershell
-pdflatex probe_master.tex             # until parts/ is complete
-.\build.ps1                           # the real handout, once it is
+.\build.ps1                           # the handout
+pdflatex ECAD_Fall2026_Lecture_Schedule.tex
+python makechapters.py                # the 30 class extracts
 python checkfigs.py                   # TikZ line-break and reserved-name traps
 python checklabs.py                   # listings: ASCII, <= 76 cols, step markers
+python code\sync_labs.py              # every command the labs print exists
+python code\run_all.py --quick        # every quoted result still holds
 python slides\texparse.py --all       # every chapter parses; Q/A counts match
 python slides\scanprose.py            # no sibling course's prose survives
 python slides\figures\extract_figures.py
@@ -215,21 +257,28 @@ python slides\qa.py --render          # static checks, then LOOK at the sheets
 
 | Gate | Required | Now |
 |---|---|---|
-| handout build | 0 errors, 0 overfull, 0 underfull, 0 font warnings | ✅ 90 pp. |
+| handout build | 0 errors, 0 undefined refs, 0 overfull, 0 underfull, 0 font warnings | ✅ **219 pp.** |
+| schedule build | one page, 0 warnings | ✅ |
+| `makechapters.py` | 30 extracts, 0 errors each | ✅ |
 | `checkfigs.py` | clean | ✅ |
 | `checklabs.py` | clean | ✅ |
-| `texparse.py --all` | every chapter parses; 3 questions = 3 answers | ✅ 8/8 |
+| `code/sync_labs.py` | every command, service, path and PHP line in the labs exists | ✅ 128 checked |
+| `code/run_all.py --quick` | every quoted result still reproduces | ✅ **24/24** |
+| `texparse.py --all` | every chapter parses; 3 questions = 3 answers | ✅ **23/23** |
 | `scanprose.py` | **0 suspicious literals** | ✅ |
 | `qa.py` | static checks clean | ✅ |
-| `qa.py --render` | **every contact sheet looked at** | ✅ 9/9 |
+| `qa.py --render` | **every contact sheet looked at** | ✅ 24/24 |
 
-Undefined references are expected until all 23 chapters exist: the written
-chapters forward-reference ones that do not yet.
+The last gate is not automatable and is not optional. In this course it caught
+**the Algorithms course's tagline, "Design, Proof and Measurement", on every
+title slide**; Chapter 6's title overflowing Chapter 5's chip by 156%; a
+15-row table running off the bottom of a slide; and a 30-line PHP listing doing
+the same. A clean build, clean static checks and a passing parse said nothing
+about any of them.
 
-The last gate is not automatable and is not optional. In this course so far it
-caught **the Algorithms course's tagline, "Design, Proof and Measurement", on
-every title slide** — a clean build, clean static checks and a passing parse
-all said nothing.
+`run_all.py` checks the *shape* of each result, not the number — the numbers
+are facts about one laptop. If a check fails, the handout and the software have
+diverged, and the first job is to find out which one moved.
 
 ---
 
@@ -278,11 +327,14 @@ is the one that bites.
 ```
 E-Commerce Application Development Fall 2026/
 ├── ECAD_Fall2026_Handout.tex    master: 6 parts, 23 chapters, 7 appendices
-├── probe_master.tex             scratch master; delete when parts/ is done
+├── ECAD_Fall2026_Lecture_Schedule.tex   the one-page schedule
 ├── ecadhandout.sty              house style + \uiel, \adminpath, measured
+├── ecadchapter.sty              cover sheet for a single-chapter extract
+├── makechapters.py              builds handouts/, one PDF per chapter
 ├── build.ps1  checklog.py  checkfigs.py  checklabs.py
 ├── parts/                       00_frontmatter, 6 openers, chapters, A–G
-├── code/                        docker-compose.yml, shop/, waitfor.py, mNN_*.py
+├── handouts/                    30 class extracts, one per chapter/appendix
+├── code/                        the stack, 15 harnesses, modules/ — see its README
 ├── assets/                      logos
 └── slides/                      the deck pipeline — see slides/README.md
 ```
@@ -298,16 +350,28 @@ followed immediately by an `ans` environment of **exactly three** items.
 
 ## Not done
 
-- **Chapters 9–23.** Fifteen of twenty-three; Parts I and II are complete.
-- **Appendices D, E and F.** A, B, C and G exist; C covers chapters 1–8 only.
-- **Eight of the twelve measurement harnesses.** `m05_coldstart.py`,
-  `m06_catalogue.py`, `m07_variations.py` and `m08_pageweight.py` are written.
-  `code/run_all.py` and `code/sync_labs.py` do not exist yet.
-- **The one-page lecture schedule** (`ECAD_Fall2026_Lecture_Schedule.tex`),
-  generated from Appendix G.
-- **`slides/README.md`** and **`code/README.md`**.
-- **The ~15 screenshots.** Playwright is not installed; the TikZ wireframes
-  carry the course meanwhile and no chapter's argument depends on a screenshot.
+- **The ~15 screenshots.** Playwright is not installed (`pip install
+  playwright && playwright install chromium`). The twenty TikZ wireframes
+  carry the course meanwhile, and **no chapter's argument depends on a
+  screenshot** — they were always the degradable part of the plan.
 - The curriculum map in `../HEC AI-DS Curriculum Map/` has no entry for this
   course. Out of scope here, by instruction.
 - No git commit has been made; nothing here is staged.
+
+## Four faults in the shipped software that the course turns into teaching
+
+Every one of them is a feature that is present, configured, enabled and inert,
+and every one of them leaves every page returning 200.
+
+1. **`config_checkout_payment_address` is never written by the installer**, so
+   a stock install cannot complete a guest checkout (Ch 10).
+2. **`.htaccess.txt` is never renamed, and `AllowOverride None` means it would
+   not be read if it were**, so the PHP error log is served over HTTP (Ch 16)
+   — and, two chapters later, readable URLs point at 404s (Ch 21).
+3. **`oc_api_ip` ships empty**, and an empty allow-list permits nothing, so the
+   admin panel cannot change an order (Ch 18).
+4. **The seeder's own `store_id` bug**, ours rather than the platform's, made
+   50,000 products invisible to every customer while the admin panel showed
+   them. It is recorded in Ch 6 rather than quietly fixed, because it is the
+   best example in the course of a system that answered correctly and meant
+   something else.

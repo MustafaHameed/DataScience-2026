@@ -1,0 +1,390 @@
+%=====================================================================
+\chapter{SEO and Digital Marketing}\label{ch:seo}
+%=====================================================================
+\locator{6}{Part VI --- Reach, Law and Practice}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} the parts of search optimisation you control and
+        can check from the parts you cannot.
+  \item \textbf{Measure} a shop's crawlability: URLs, titles, descriptions,
+        canonical links, sitemap and first byte.
+  \item \textbf{Explain} why readable URLs are two halves, and \textbf{apply}
+        both.
+  \item \textbf{Diagnose} a configuration change that makes a shop worse while
+        appearing to improve it.
+  \item \textbf{Prioritise} marketing work by what is checkable rather than by
+        what is advised.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{security}: \texttt{AllowOverride None}, and why \texttt{.htaccess} is
+never read on this stack. \chref{ux}: page weight and time to first byte.
+\chref{catalogue}: the catalogue tables behind the pages.
+\end{prereq}
+
+\begin{keyterms}
+crawler $\bullet$ indexing $\bullet$ readable URL $\bullet$ URL rewriting
+$\bullet$ canonical link $\bullet$ meta description $\bullet$ title tag
+$\bullet$ duplicate content $\bullet$ sitemap $\bullet$ robots.txt $\bullet$
+faceted navigation $\bullet$ time to first byte $\bullet$ structured data
+\end{keyterms}
+
+\section{What Is Checkable, and What Is Not}
+
+Most writing about search optimisation concerns things nobody outside the
+search engine can verify: how a ranking is computed, how a change affected it,
+what the algorithm rewards this month. This chapter does not go there, because
+a course that cannot check its claims has no business making them.
+
+\begin{conceptbox}[The question this chapter asks instead]
+Not ``how do I rank higher'', but: \textbf{can a crawler read these pages, tell
+them apart, and find all of them?}
+
+\smallskip
+Every part of that is checkable from outside, in about a minute, with the shop
+in front of you. And a shop that fails it cannot rank at all --- so it is the
+part worth doing first regardless of what you believe about the rest.
+\end{conceptbox}
+
+\section{Readable URLs Are Two Halves}
+
+\begin{definitionbox}[Readable URL, URL rewriting]
+A \term{readable URL} identifies a page by words rather than by parameters.
+This course's demonstration category is reached at
+
+\smallskip
+\hspace*{1em}\texttt{/en-gb/catalog/desktops}
+
+\smallskip
+\noindent rather than at
+
+\smallskip
+\hspace*{1em}\texttt{index.php?route=product/category\&path=20}
+
+\smallskip
+It needs two independent things.
+
+\smallskip
+The \term{application half} generates them: the shop looks each link up in a
+table of keywords and writes the readable form into its HTML.
+
+\smallskip
+The \term{server half} resolves them: the web server turns the readable path
+back into the parameters the application understands, \emph{before} the
+application sees the request.
+
+\smallskip
+Either half alone is useless. The second alone leaves the links unchanged. The
+first alone is \emph{worse than nothing}.
+\end{definitionbox}
+
+\begin{measured}[Each half on its own, and both together]
+From \texttt{code/m21\_seo.py --fix}. The shop ships with \textbf{78 prepared
+keywords} in \texttt{oc\_seo\_url} and \texttt{config\_seo\_url} set to
+\textbf{0}.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.8cm}L{2.2cm}L{1.6cm}L{4.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Configuration} & \textbf{Readable?} & \textbf{HTTP} &
+\textbf{A link the page emits} \\
+\midrule
+\endhead
+setting off, rewrite off & no & 200 & \texttt{index.php?route=\dots} \\
+\textbf{setting ON, rewrite off} & yes & \textbf{404} &
+\texttt{/en-gb/catalog/desktops} \\
+setting ON, rewrite ON & yes & 200 & \texttt{/en-gb/catalog/desktops} \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{The middle row is the finding.} Switching on the setting that every
+guide tells you to switch on rewrites every link in the shop into a readable
+one --- and \textbf{every one of them returns 404}. The home page still works,
+because its own address is unchanged; everything reachable from it is gone.
+
+\smallskip
+\textbf{And the cause is \chref{security}'s.} The rewrite ships in
+\texttt{.htaccess.txt}, and \texttt{AllowOverride None} means Apache never
+reads \texttt{.htaccess} at all. One misconfiguration, found while looking for
+an exposed error log, silently disables an unrelated feature two chapters
+later.
+
+\smallskip
+\textbf{The application half is faultless.} Fetching
+\texttt{index.php?\_route\_=htc-touch-hd} by hand returns 200 --- the lookup,
+the keyword table and the routing all work. Only the server was never told.
+\end{measured}
+
+\begin{alertbox}[A change that makes a shop worse while appearing to improve
+it]
+Consider what the shopkeeper sees after ticking that box. The admin panel
+reports success. The home page loads. The URLs in the address bar are now
+pretty, which is visibly what was asked for. Nothing in any log is unusual,
+because a 404 is a perfectly ordinary response.
+
+\smallskip
+What has actually happened is that \textbf{every product and category page in
+the shop has stopped existing}, and the first person to find out will be a
+customer or a crawler.
+
+\smallskip
+\textbf{The habit this argues for is one step long: after any configuration
+change, follow a link.} Not the page you changed --- a link from it. The whole
+of this failure is visible in one click and invisible in any amount of looking
+at the setting.
+\end{alertbox}
+
+\section{Can a Crawler Tell the Pages Apart?}
+
+\begin{measured}[Titles and descriptions across the catalogue]
+From \texttt{code/m21\_seo.py --meta}, over all 19 product pages.
+
+\smallskip
+\begin{tabular}{@{}L{7.4cm}L{2.4cm}L{4.2cm}@{}}
+Product pages checked & 19 & \\
+Distinct titles & \textbf{19} & no duplicates --- good \\
+Duplicate titles & 0 & \\
+\textbf{Pages with no meta description} & \textbf{19} & \textbf{all of them} \\
+Distinct descriptions & 0 & \\
+\end{tabular}
+
+\smallskip
+\textbf{Titles are fine.} Each is the product's name, and because product names
+differ, so do the titles. That is the one thing the platform gets right here,
+and it gets it right by accident rather than by design --- a shop selling
+``Blue T-Shirt'' in four sizes as four products would have four identical
+titles.
+
+\smallskip
+\textbf{Not one page has a meta description.} The field exists in
+\texttt{oc\_product\_description}; the demonstration data leaves it empty, and
+the platform writes nothing in its place. A search engine will then compose a
+description from whatever text it finds on the page, which for a product page
+is usually the navigation.
+
+\smallskip
+\textbf{And no page carries a canonical link} --- not the home page, not a
+category, not a product. So the same product reached through two categories is
+two URLs with identical content, and nothing tells a crawler which one is the
+real one.
+\end{measured}
+
+\begin{measured}[What a crawler is told, and how fast]
+From \texttt{code/m21\_seo.py --crawl}.
+
+\smallskip
+\begin{tabular}{@{}L{6.4cm}L{3.0cm}L{4.4cm}@{}}
+\texttt{robots.txt} & HTTP 200 & 16 \texttt{Disallow} rules \\
+\dots names a sitemap? & \textbf{no} & \\
+\texttt{/sitemap.xml} & \textbf{HTTP 404} & \\
+A sitemap extension & \textbf{HTTP 404} & none ships \\
+\end{tabular}
+
+\smallskip
+\begin{tabular}{@{}L{4.4cm}L{4.4cm}L{4.4cm}@{}}
+& \textbf{Canonical?} & \textbf{First byte (median)} \\
+Home & no & 114\,ms \\
+Category & no & 133\,ms \\
+Product & no & 110\,ms \\
+\end{tabular}
+
+\smallskip
+\textbf{The \texttt{robots.txt} is good work.} Its sixteen rules block sorted,
+paged and filtered variants of listing pages --- \texttt{?sort=},
+\texttt{\&page=}, \texttt{?filter\_name=} --- which is exactly the faceted
+navigation that otherwise generates thousands of near-identical URLs from
+twenty products. Somebody thought about this.
+
+\smallskip
+\textbf{There is no sitemap of any kind}, and \texttt{robots.txt} does not name
+one. A crawler therefore finds pages only by following links, so anything more
+than a few hops from the home page is, in practice, not there. For a catalogue
+of nineteen products this does not matter; at \chref{catalogue}'s fifty
+thousand it is most of the shop.
+
+\smallskip
+\textbf{First byte is 110--133\,ms}, which is the server's own thinking time
+and is respectable. \chref{ux} showed that the other 600\,KB is what the
+customer actually waits for --- so this number, the one most often quoted, is
+the smallest part of the experience.
+\end{measured}
+
+\section{The Order to Work In}
+
+\begin{conceptbox}[Six things, each of which you can verify yourself]
+\begin{tightnum}
+  \item \textbf{Make the pages reachable.} Both halves of readable URLs, or
+        neither. Then follow a link.
+  \item \textbf{Publish a sitemap} and name it in \texttt{robots.txt}. The
+        platform ships none, so this is a module (\chref{modules}) ---
+        a query over products and categories emitting XML.
+  \item \textbf{Give every page a canonical link.} One template override
+        (\chref{ux}), and it ends the duplicate-content question for the whole
+        shop.
+  \item \textbf{Write meta descriptions}, starting with the twenty products
+        that sell. It is data entry, it is nobody's favourite afternoon, and
+        it is the only one of these six a search engine shows to a human.
+  \item \textbf{Keep \texttt{robots.txt} blocking the facets.} It already does;
+        the risk is somebody replacing it.
+  \item \textbf{Then look at speed} --- and from \chref{ux}'s measurements,
+        at page weight rather than at first byte.
+\end{tightnum}
+
+\smallskip
+Everything above is checkable in your own shop, today, with no access to
+anybody's analytics. Advice that cannot be checked that way goes after all six.
+\end{conceptbox}
+
+\begin{alertbox}[On the marketing half of this chapter's title]
+The 2025 curriculum renames this course \emph{Digital Marketing \&
+E-Commerce}, and a handout traced to the 2017 outline should say what it is not
+covering. Campaign strategy, content marketing, social advertising and
+attribution modelling are a different subject with different methods, and three
+weeks of this course cannot do them justice.
+
+\smallskip
+What this course contributes to them is narrower and more durable:
+\textbf{a shop that can be crawled, a coupon code per channel
+(\chref{discounts}) so that a campaign is measurable at all, and the habit of
+asking what the denominator is (\chref{dashboard}) before believing a rate.}
+Without those three, a marketing budget is being spent on a shop that cannot
+report what it bought.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Switching on readable URLs without the rewrite.} Every link in
+        the shop becomes a 404 and nothing reports it.
+  \item \textbf{Changing a setting and checking the page you changed} instead
+        of following a link from it.
+  \item \textbf{Assuming \texttt{.htaccess} does anything on this stack.}
+  \item \textbf{Leaving meta descriptions empty} and letting the engine write
+        them from your navigation.
+  \item \textbf{Shipping without canonical links}, so that one product at four
+        URLs competes with itself.
+  \item \textbf{Removing the \texttt{robots.txt} facet rules} to ``let
+        everything be indexed''.
+  \item \textbf{Optimising first byte} when \chref{ux} measured 600\,KB of
+        assets after it.
+  \item \textbf{Believing any claim about ranking that you cannot test.}
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Make your shop findable, and break it first]
+\begin{lstlisting}[language=bash]
+# --- 1. Look at a link before changing anything ---------------------
+cd code
+curl -s "http://localhost:8090/index.php?route=product/category&path=20" \
+  | grep -o 'href="http://localhost:8090/[^"]*"' | head -3
+
+# --- 2. Turn on readable URLs the way every guide says --------------
+# Admin: System > Settings > Edit > Server > Use SEO URLs = Yes.
+
+# --- 3. Now FOLLOW A LINK -------------------------------------------
+# Click any category. Write down what happened before reading on.
+
+# --- 4. Measure all three configurations ----------------------------
+python m21_seo.py --fix
+
+# --- 5. Explain the middle row --------------------------------------
+# Name the chapter that already measured the cause.
+
+# --- 6. Audit what a crawler can tell apart -------------------------
+python m21_seo.py --meta
+python m21_seo.py --crawl
+
+# --- 7. Fix the cheapest finding ------------------------------------
+# Add a canonical link to the product template in your child theme
+# (Chapter 8). One line. Re-run --crawl and confirm it appears.
+
+# --- 8. Write the sitemap module ------------------------------------
+# Chapter 19's structure: one controller, one query over enabled
+# products and categories, XML out. Then name it in robots.txt.
+
+# --- 9. Write ten meta descriptions ---------------------------------
+# For ten real products. Then say honestly how long 50,000 would
+# take, and what you would do instead.
+
+# --- 10. Restore -----------------------------------------------------
+python m21_seo.py --restore
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 3. Almost everybody ticks the box, sees a pretty
+URL in the address bar, and concludes it worked. The entire shop is broken at
+that moment, and one click shows it.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A client turns on readable URLs and reports that ``the site looks the
+        same but customers say pages are missing''. Explain precisely what has
+        happened, name the two halves and which one is absent, give the command
+        that demonstrates it, and say why nothing appeared in any log.
+  \item All 19 product pages have distinct titles and none has a meta
+        description. Say which of those two facts is luck and which is design,
+        what happens on the pages with no description, and what you would do
+        first for a catalogue of 50{,}000.
+  \item This shop has no sitemap and no canonical links. Explain what each
+        absence costs, say which matters more for a 19-product shop and which
+        for a 50{,}000-product shop, and justify the difference.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Ask what is checkable: can a crawler read the pages, tell them apart,
+        and find all of them? A shop failing that cannot rank whatever else is
+        true.
+  \item Readable URLs are two halves --- the application generating them and
+        the server resolving them. Either alone is useless and the first alone
+        is harmful.
+  \item Measured: with the setting on and the rewrite off, every link the shop
+        emits returns \textbf{404}, while the home page and
+        \texttt{index.php?\_route\_=\dots} work perfectly. The cause is
+        \chref{security}'s \texttt{AllowOverride None}.
+  \item After any configuration change, follow a link. The whole of that
+        failure is visible in one click and invisible in any amount of
+        inspecting the setting.
+  \item Measured: 19 distinct titles and 0 duplicates --- by luck, because
+        product names differ --- and \textbf{19 pages with no meta description
+        at all}, and no canonical link on any page.
+  \item Measured: \texttt{robots.txt} blocks the faceted-navigation parameters,
+        which is good work; there is no sitemap of any kind and nothing names
+        one. First byte is 110--133\,ms, which \chref{ux} showed is the
+        smallest part of what the customer waits for.
+  \item Work in order: reachable, sitemap, canonical, descriptions, keep the
+        facet rules, then speed --- and page weight before first byte.
+  \item This course's contribution to marketing is a shop that can be crawled,
+        a code per channel so campaigns are measurable, and always asking what
+        the denominator is.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} With \texttt{config\_seo\_url} on and no server rewrite,
+        a link the category page emits returns: (a)~200; (b)~301; (c)~404;
+        (d)~500.
+  \item \textbf{(MCQ)} How many of the 19 product pages carried a meta
+        description? (a)~all 19; (b)~about half; (c)~one; (d)~none.
+  \item \textbf{(Short)} Explain what a canonical link is for, with an example
+        of two URLs in this shop that need one.
+  \item \textbf{(Short)} Why does \texttt{robots.txt} block \texttt{?sort=} and
+        \texttt{?filter\_name=}, and what would happen if it did not?
+  \item \textbf{(Short)} Give the one-step habit this chapter argues for after
+        any configuration change, and the failure it would have caught.
+  \item \textbf{(Applied)} You inherit a shop with 8{,}000 products, no
+        sitemap, no canonical links and meta descriptions on 200 of them. Set
+        out your plan in order, with the effort and the expected benefit of
+        each step, and say which steps you would automate and how.
+  \item \textbf{(Applied)} Specify the sitemap module this platform lacks: what
+        it queries, how it handles a 50{,}000-product catalogue within the
+        sitemap size limits, how often it is regenerated, how it is named in
+        \texttt{robots.txt}, and how you would verify it works without waiting
+        for a search engine.
+\end{reviewq}

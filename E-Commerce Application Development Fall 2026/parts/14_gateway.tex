@@ -1,0 +1,415 @@
+%=====================================================================
+\chapter{Taking Payment for Orders}\label{ch:gateway}
+%=====================================================================
+\locator{4}{Part IV --- Money and Identity}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} the handshake between a shop and a gateway, and
+        \textbf{name} the three outcomes of a payment request.
+  \item \textbf{Measure} a gateway's response-time distribution, and
+        \textbf{choose} a timeout from it rather than from its median.
+  \item \textbf{Explain} why a timed-out payment has an unknown outcome, and
+        \textbf{design} what the shop does next.
+  \item \textbf{Implement} idempotency, and \textbf{demonstrate} what happens
+        without it.
+  \item \textbf{State} what PCI DSS requires of a shop that never touches a
+        card number, and \textbf{identify} what would change that.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{payments}: the parties, and the difference between authorisation,
+capture and settlement. \chref{checkout}: the order state machine, status 0,
+and why the order identifier exists before the payment.
+\end{prereq}
+
+\begin{keyterms}
+gateway integration $\bullet$ hosted page $\bullet$ direct post $\bullet$
+server-to-server $\bullet$ callback $\bullet$ webhook $\bullet$ timeout
+$\bullet$ latency distribution $\bullet$ percentile $\bullet$ long tail
+$\bullet$ idempotency key $\bullet$ replay $\bullet$ reconciliation $\bullet$
+PCI DSS $\bullet$ SAQ-A
+\end{keyterms}
+
+\section{Three Ways to Take a Card, and Why One of Them Wins}
+
+A shop that wants a card number has three architectures available, and the
+choice determines how much of the payment industry's compliance regime applies
+to it.
+
+\begin{definitionbox}[Hosted page, Direct post, Server-to-server]
+A \term{hosted page} sends the customer to the provider's own site to type
+their card details, and receives them back afterwards with a result. The card
+number never reaches your server.
+
+\smallskip
+A \term{direct post} keeps the customer on your page, but the form submits
+straight to the provider. Your HTML is involved; your server is not.
+
+\smallskip
+\term{Server-to-server} means the card number arrives at your server and you
+forward it. You now hold card data, and almost every obligation in this chapter
+multiplies.
+
+\smallskip
+\textbf{For a shop of the size this course is about, the answer is always the
+first or the second,} and the reason is in the next box.
+\end{definitionbox}
+
+\begin{conceptbox}[What PCI DSS actually asks of you]
+The Payment Card Industry Data Security Standard governs anyone who stores,
+processes or transmits card data. Its reporting burden is graded by how much of
+that you do, through a Self-Assessment Questionnaire.
+
+\begin{tight}
+  \item \textbf{SAQ-A} is for a merchant who has \emph{entirely outsourced} card
+        handling to a validated third party --- a hosted page. It is the
+        shortest questionnaire, and most of it asks whether you are keeping
+        your own site from interfering with the provider's.
+  \item \textbf{SAQ-A-EP} applies to direct post: your page constructs the form,
+        so your page can be tampered with, and you are asked more.
+  \item \textbf{SAQ-D} is the full standard, and is what server-to-server costs
+        you. It runs to hundreds of requirements.
+\end{tight}
+
+\smallskip
+\textbf{The design decision and the compliance decision are the same
+decision.} Choosing a hosted page is not a shortcut around PCI DSS; it is the
+mechanism the standard offers for staying out of scope. A student who
+understands only this from the chapter has understood the important part.
+
+\smallskip
+\textbf{What would change it:} storing the card number ``for the customer's
+convenience'', logging the full request body, or accepting the number on your
+page ``just to validate it''. Each of these moves a shop from SAQ-A to SAQ-D
+with one line of code and no announcement.
+\end{conceptbox}
+
+\section{The Course Ships Its Own Gateway}
+
+Measuring a real gateway needs a merchant account, which needs a registered
+business. A sandbox needs credentials that cannot go in a handout and will have
+expired before anyone reads it. So the stack in Appendix~A includes a provider
+that does not exist.
+
+\begin{alertbox}[What \texttt{code/gateway/provider.py} is, and is not]
+It is not a toy card processor. It implements nothing about cards. It is a
+gateway reduced to the \textbf{three properties that make integrating with one
+difficult}, each configurable so that you can make it behave worse on purpose:
+
+\begin{tight}
+  \item \textbf{It is slow, and irregularly so.} A median around 300\,ms, with
+        a minority of requests taking ten times that.
+  \item \textbf{It sometimes does not answer at all.} About one request in
+        fifty hangs, which is the case the rest of the chapter is about.
+  \item \textbf{It tells you twice.} It honours an idempotency key if you send
+        one, and charges twice if you do not.
+\end{tight}
+
+\smallskip
+Those are the properties a real integration is actually built against.
+Everything else a provider does --- 3-D Secure, tokenisation, settlement
+reports --- is detail you will read in their documentation. These three are
+what the \emph{architecture} has to survive, and they are the same for every
+provider in every country.
+\end{alertbox}
+
+\section{Choosing a Timeout, Which Is Not a Performance Setting}
+
+\begin{measured}[200 authorisations, waiting as long as it takes]
+From \texttt{code/m14\_gateway.py --latency 200}, against the stack in
+Appendix~A.
+
+\smallskip
+\begin{tabular}{@{}L{4.2cm}L{3.0cm}L{6.4cm}@{}}
+Median & 321\,ms & what a single test request shows you \\
+Mean & 700\,ms & \emph{more than twice the median} \\
+90th percentile & 3{,}180\,ms & \\
+95th percentile & 3{,}774\,ms & \\
+99th percentile & 4{,}815\,ms & \\
+Slowest answer & 4{,}998\,ms & \textbf{16$\times$ the median} \\
+Never answered & 4 of 200 & 2\% \\
+\end{tabular}
+
+\smallskip
+\textbf{The mean is more than twice the median, which is the whole
+measurement.} A distribution where the mean sits far above the median is one
+with a long tail, and an average response time of 700\,ms describes almost none
+of the requests: most took a third of a second and a minority took five
+seconds. Reporting ``average response time'' here would be worse than reporting
+nothing, because it sounds like information.
+\end{measured}
+
+\begin{measured}[What each candidate timeout would have cost]
+The same 200 requests, re-read against each timeout a developer might choose.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.4cm}L{2.4cm}L{2.2cm}L{2.4cm}L{4.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Timeout} & \textbf{Answered} & \textbf{Cut off} & \textbf{Share} &
+\textbf{What the shop is doing} \\
+\midrule
+\endhead
+0.5\,s & 171 & 25 & 12.8\% & abandoning good payments \\
+1.0\,s & 173 & 23 & 11.7\% & abandoning good payments \\
+2.0\,s & 173 & 23 & 11.7\% & abandoning good payments \\
+3.0\,s & 175 & 21 & 10.7\% & abandoning good payments \\
+\textbf{5.0\,s} & \textbf{196} & \textbf{0} & \textbf{0.0\%} & waiting \\
+8.0\,s & 196 & 0 & 0.0\% & waiting \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{The counter-intuitive result is the flat middle.} Raising the timeout
+from 1\,second to 3\,seconds --- tripling how long the customer waits ---
+rescues two payments in two hundred. One percent. Almost nothing.
+
+\smallskip
+The reason is that the distribution is not a bell curve but \emph{two groups}:
+requests that answer in under half a second, and requests that take between two
+and five seconds. There is hardly anything in between, so a timeout placed in
+between catches hardly anything. \textbf{Either you wait for the slow group or
+you do not, and every value between those two decisions buys you nothing while
+costing the customer time.}
+
+\smallskip
+\textbf{A timeout chosen from the median rejects one payment in eight.} And
+each rejection is not a failed payment --- it is a payment whose outcome the
+shop does not know.
+\end{measured}
+
+\dsfig{%
+\begin{tikzpicture}[
+  st/.style={rounded corners=3pt, draw=#1, line width=1.1pt, fill=#1!8,
+             text=#1!60!black, font=\bfseries\small, align=center,
+             text width=3.1cm, minimum height=1.0cm},
+  arr/.style={-{Stealth[length=2.2mm]}, primary!55, line width=0.9pt},
+  note/.style={font=\scriptsize, text=neutral, align=left, text width=5.6cm,
+               anchor=west}
+]
+  \node[st=secondary] (req) at (0,0) {Shop asks\\{\scriptsize\mdseries
+       ``authorise this''}};
+  \node[st=greenhl]   (ok)  at (5.0,1.5)  {Approved};
+  \node[st=neutral]   (no)  at (5.0,0)    {Declined};
+  \node[st=accent]    (un)  at (5.0,-1.5) {\textbf{No answer}};
+
+  \foreach \t in {ok, no, un}{\draw[arr] (req) -- (\t);}
+
+  \node[note, text=greenhl] at (6.9,1.5)
+       {Capture, mark the order paid, dispatch.};
+  \node[note, text=neutral] at (6.9,0)
+       {Tell the customer, keep the order at status 0, let them retry.};
+  \node[note, text=accent] at (6.9,-1.5)
+       {\textbf{The money may or may not have left the customer's account,
+        and the shop has no way to know.} Everything hard about payments is
+        this one branch.};
+  \node[font=\scriptsize\itshape, text=accent, align=center, text width=9.0cm]
+       at (4.4,-3.1)
+       {Two branches need code. The third needs a policy, a reconciliation
+        process, and somebody's telephone number.};
+\end{tikzpicture}}%
+{The three outcomes of a payment request. Most integration tutorials cover the
+first two.}{paymentoutcomes}
+
+\begin{conceptbox}[What to do about the third branch]
+A timed-out request has an unknown outcome. The shop must choose, in advance,
+what it believes.
+
+\begin{tightnum}
+  \item \textbf{Never assume failure and never assume success.} Record it as
+        \emph{unknown}, which is a third state and needs a place to live ---
+        \chref{checkout}'s status 0 is where it goes.
+  \item \textbf{Ask the provider.} Every gateway offers a status query. Retry
+        it on a schedule, not in the customer's request.
+  \item \textbf{Make the customer's retry safe.} If they press the button
+        again, the same idempotency key must go with it, or you have charged
+        them twice for being impatient.
+  \item \textbf{Reconcile daily.} The provider's settlement report against your
+        orders. This is the only mechanism that catches everything the other
+        three miss, and it is the one small shops skip.
+\end{tightnum}
+\end{conceptbox}
+
+\section{Idempotency, Demonstrated}
+
+\begin{measured}[The same payment, sent twice]
+From \texttt{code/m14\_gateway.py --idempotency}.
+
+\smallskip
+\textbf{Without a key:}
+
+\smallskip
+\begin{tabular}{@{}L{3.0cm}L{5.0cm}L{2.6cm}L{3.0cm}@{}}
+first & transaction \texttt{f59594f7d23c4446} & approved & 125\,ms \\
+second & transaction \texttt{8171b6e85f9b4766} & approved & 2{,}644\,ms \\
+\end{tabular}
+
+\smallskip
+\textbf{Two transactions. The customer paid twice}, and both payments are
+valid --- there is nothing for the provider to detect, because two requests to
+charge the same amount are exactly what a customer buying two of something
+looks like.
+
+\smallskip
+\textbf{With a key:}
+
+\smallskip
+\begin{tabular}{@{}L{3.0cm}L{5.0cm}L{2.6cm}L{3.0cm}@{}}
+first & transaction \texttt{50f018abfd9243ec} & approved & 149\,ms \\
+second & transaction \texttt{50f018abfd9243ec} & \textbf{replayed} &
+\textbf{5\,ms} \\
+\end{tabular}
+
+\smallskip
+The second request returned \emph{the first request's answer}, in 5\,ms,
+without charging anything. The provider saw four requests and charged three
+times.
+
+\smallskip
+\textbf{Where the key must come from.} Not from the request --- a retry is a
+new request and would generate a new key, which defeats the entire mechanism.
+It must come from \emph{the order}: generated once when the order row is
+created, stored on it, and sent unchanged with every attempt to pay for that
+order. This is the second reason \chref{checkout}'s order row exists before the
+payment, and the better one.
+\end{measured}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Choosing a timeout from the median response time.} It rejected
+        one payment in eight here.
+  \item \textbf{Reporting a gateway's ``average'' latency.} The mean was twice
+        the median; the average describes no request that actually happened.
+  \item \textbf{Treating a timeout as a failure} and letting the customer
+        reorder.
+  \item \textbf{Generating the idempotency key in the request} rather than
+        storing it on the order.
+  \item \textbf{Retrying inside the customer's request.} They are waiting; the
+        retry belongs in a background job.
+  \item \textbf{Logging the full request body} while integrating. If the body
+        ever contains a card number, your log is now in PCI scope, and logs are
+        backed up, shipped and searched by people who are not you.
+  \item \textbf{Trusting a callback because it arrived.} Verify its signature;
+        anyone can post to a public URL.
+  \item \textbf{Skipping daily reconciliation} because the integration works.
+        The integration working is what reconciliation is for.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Integrate against a gateway that misbehaves]
+\begin{lstlisting}[language=bash]
+# --- 1. Start the provider and look at it ---------------------------
+cd code
+docker compose up -d gateway
+curl -s http://localhost:8092/health
+
+# --- 2. Read it. It is one file -------------------------------------
+# gateway/provider.py. Find the three properties it models, and the
+# environment variable that controls each.
+
+# --- 3. Measure before you decide -----------------------------------
+python m14_gateway.py --latency 200
+
+# --- 4. Predict your timeout, then check it -------------------------
+# Write down the timeout you would have chosen from the median ALONE.
+python m14_gateway.py --timeout
+
+# --- 5. Demonstrate the double charge -------------------------------
+python m14_gateway.py --idempotency
+
+# --- 6. Make the provider worse, and re-decide ----------------------
+# In docker-compose.yml set GATEWAY_TAIL_RATE to 0.35 and
+# GATEWAY_HANG_RATE to 0.10, then:
+docker compose up -d gateway
+python m14_gateway.py --latency 100
+# Does your timeout still hold? What changed, the median or the tail?
+
+# --- 7. Put it back -------------------------------------------------
+# Restore the defaults and restart the gateway.
+
+# --- 8. Write the integration policy --------------------------------
+# One page, four headings: timeout and why; what an unknown outcome
+# means for the order; where the idempotency key comes from; how
+# reconciliation happens and who does it.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 6 is the point. Most people's timeout is chosen
+once and never revisited, and a provider's tail is exactly the thing that
+changes without telling you --- at the end of the month, on sale days, whenever
+their own upstream is busy.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A gateway's median response is 321\,ms and its 95th percentile is
+        3{,}774\,ms. A colleague proposes a 1-second timeout, reasoning that it
+        is ``three times the median, which is generous''. Using the measured
+        table, say what that choice actually costs and what you would propose
+        instead, with your reason.
+  \item Explain why the measured timeout table barely improves between 1 second
+        and 3 seconds, and what that shape tells you about the gateway that a
+        single average could not.
+  \item Your shop charges a customer, the request times out, and the customer
+        presses Pay again. Describe exactly what happens with and without an
+        idempotency key, say where the key must be stored, and explain why
+        generating it when the button is pressed would not work.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A hosted page, a direct post and a server-to-server integration are the
+        three architectures, and they map onto SAQ-A, SAQ-A-EP and SAQ-D. The
+        design decision and the compliance decision are the same decision.
+  \item A gateway is three hard properties: it is slow and irregular, it
+        sometimes does not answer, and it tells you twice. The course ships a
+        provider that does all three on purpose.
+  \item Measured: median 321\,ms, mean 700\,ms, p95 3{,}774\,ms, slowest
+        4{,}998\,ms --- sixteen times the median --- and 2\% that never
+        answered at all. A mean twice the median is a tail, and an average is
+        the wrong statistic for it.
+  \item Measured: a 1-second timeout cuts off 11.7\% of payments and a
+        3-second timeout cuts off 10.7\%. The distribution is two groups with a
+        gap between them, so a timeout in the gap buys nothing.
+  \item A timed-out payment is not a failed payment. It is an unknown outcome,
+        it needs a state of its own, and it is resolved by querying the
+        provider and by daily reconciliation --- not by guessing.
+  \item Measured: without an idempotency key the same payment charged twice,
+        with two valid transaction identifiers. With one, the second request
+        returned the first answer in 5\,ms and charged nothing.
+  \item The key belongs to the order, not to the request. This is the better
+        reason why the order row exists before the payment.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A shop using a hosted payment page completes which
+        self-assessment questionnaire? (a)~SAQ-A; (b)~SAQ-A-EP; (c)~SAQ-D;
+        (d)~none is required.
+  \item \textbf{(MCQ)} In the measured distribution, the mean was 700\,ms and
+        the median 321\,ms. This indicates: (a)~a measurement error;
+        (b)~a long tail of slow requests; (c)~that half the requests failed;
+        (d)~that the gateway is overloaded.
+  \item \textbf{(Short)} Explain why a timed-out payment request has an unknown
+        outcome rather than a failed one, and give the consequence of assuming
+        either.
+  \item \textbf{(Short)} Give two things that would move a shop from SAQ-A to a
+        heavier questionnaire, each of which a developer might do without
+        realising.
+  \item \textbf{(Short)} Why must a callback's signature be verified, given
+        that the callback comes from the provider?
+  \item \textbf{(Applied)} You are integrating a provider whose published
+        median is 250\,ms. Describe the measurement you would run before
+        choosing a timeout, how many samples you would need and why, which
+        statistics you would report, and what you would do differently if the
+        distribution turned out to be a smooth bell curve instead of two
+        groups.
+  \item \textbf{(Applied)} Design the reconciliation process for a shop taking
+        200 orders a day. State what two records you compare, how you match
+        them, the three kinds of mismatch you expect to find, what each one
+        means, and who in the business acts on it.
+\end{reviewq}

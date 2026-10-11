@@ -1,0 +1,352 @@
+%=====================================================================
+\chapter{Administration: The Dashboard, and What to Watch}\label{ch:dashboard}
+%=====================================================================
+\locator{5}{Part V --- Running and Extending the Shop}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} what each dashboard widget counts, and \textbf{state}
+        the filter behind it.
+  \item \textbf{Explain} why the dashboard's numbers disagree, and
+        \textbf{reconcile} them against the underlying table.
+  \item \textbf{Distinguish} a figure that describes the shop from a figure
+        that would change a decision.
+  \item \textbf{Derive} three measurements this course has produced that the
+        dashboard does not show, and \textbf{write} the query for each.
+  \item \textbf{Design} a panel for a stated shop, and \textbf{justify} every
+        number on it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{checkout}: order statuses, and status 0. \chref{catalogue}: reading the
+query a screen actually runs. \chref{shipping} and \chref{payments}: the costs
+that make some numbers worth watching and others not.
+\end{prereq}
+
+\begin{keyterms}
+dashboard $\bullet$ widget $\bullet$ report $\bullet$ filter $\bullet$ vanity
+metric $\bullet$ actionable metric $\bullet$ reconciliation $\bullet$
+abandonment rate $\bullet$ conversion $\bullet$ leading and lagging indicator
+$\bullet$ denominator
+\end{keyterms}
+
+\section{Eight Widgets, and What Each One Counts}
+
+The administrator's first screen carries eight panels. They are extensions like
+any other, each switched on at \adminpath{Extensions, Extensions, Dashboard},
+each with a width and a sort order.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.4cm}L{5.6cm}L{6.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Widget} & \textbf{Shows} & \textbf{Worth knowing} \\
+\midrule
+\endhead
+\texttt{order} & Orders today, yesterday, in total & Counts every order above
+status 0 \\
+\texttt{sale} & Money, over the same periods & Same filter, different query \\
+\texttt{customer} & Registered customers & Not buyers --- registrations \\
+\texttt{online} & Visitors active now & \textbf{Empty unless you switch on
+tracking} \\
+\texttt{activity} & What customers have been doing & \textbf{Also empty by
+default} \\
+\texttt{chart} & Orders over time & \textbf{Counts only completed statuses} \\
+\texttt{map} & Where orders came from & By billing country \\
+\texttt{recent} & The last few orders & The most useful of the eight \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Two of the eight are permanently empty, and that is a setting]
+\texttt{config\_customer\_online} and \texttt{config\_customer\_activity} are
+both \textbf{0} in a fresh install, so the \texttt{online} and
+\texttt{activity} panels have nothing to show and never will until somebody
+changes them.
+
+\smallskip
+\textbf{Before switching them on, recall \chref{basket}.} Both work by writing
+a row for each visitor's activity --- so turning them on adds a database write
+to page views that previously had none, on a shop whose session table already
+accumulated 645 rows without a single customer. The panels are not free; they
+are paid for in writes on your busiest pages.
+
+\smallskip
+\textbf{Decide what you would do differently if you knew.} If the answer is
+``nothing'', leave them off. That question is the whole of this chapter.
+\end{alertbox}
+
+\section{The Numbers Disagree, and Nothing Says So}
+
+The four headline figures are produced by different queries. This is not a
+fault --- each filter is right for its own purpose --- but the screen presents
+them side by side with no indication that they are answering different
+questions.
+
+\begin{worked}
+\textbf{A known set of orders.} Produced by \texttt{code/m17\_dashboard.py}:
+five orders paid for through the checkout, two of which were then moved to
+\uiel{Complete}, plus one abandoned at the payment button.
+
+\smallskip
+\textbf{What is actually in \texttt{oc\_order}:}
+
+\smallskip
+\begin{tabular}{@{}L{3.0cm}L{2.6cm}L{3.4cm}L{4.4cm}@{}}
+\textbf{Status} & \textbf{Orders} & \textbf{Value} & \\
+0 & 1 & 854.40 & \emph{not a status at all} \\
+1 & 3 & 2{,}563.20 & Pending \\
+5 & 2 & 1{,}708.80 & Complete \\
+\end{tabular}
+
+\smallskip
+\textbf{What each part of the dashboard reports of exactly that data:}
+
+\smallskip
+\begin{tabular}{@{}L{5.1cm}L{2.4cm}L{3.0cm}L{2.8cm}@{}}
+& \textbf{Orders} & \textbf{Value} & \textbf{Filter} \\
+Orders widget & 5 & 4{,}272.00 & status $>0$ \\
+Sales widget & 5 & 4{,}272.00 & status $>0$ \\
+\textbf{The chart} & \textbf{2} & \textbf{1{,}708.80} & status in (5,\,3) \\
+The table itself & 6 & 5{,}126.40 & everything \\
+\end{tabular}
+
+\smallskip
+\textbf{Three different answers to ``how many orders'', all correct.} Six in
+the table, five on the widgets, two on the chart --- and a shopkeeper looking
+at the screen sees ``5'' above a chart whose bars add up to 2, with nothing
+explaining the difference.
+
+\smallskip
+\textbf{Both gaps are information, once you know they are there.}
+
+\smallskip
+\textbf{Six minus five is the abandonment.} One order in six reached the
+payment button and stopped. That is the single most useful number a small shop
+can compute, and it exists only as the difference between two figures the
+dashboard shows separately.
+
+\smallskip
+\textbf{Five minus two is the work not yet done.} Three orders are sitting at
+Pending: paid for, not shipped. On a Monday morning that is the day's job. On a
+Friday it is a problem.
+
+\smallskip
+\textbf{And the chart's filter is a \emph{setting}}, not a constant:
+\texttt{config\_complete\_status} is \texttt{["5","3"]} here, so Shipped counts
+as complete. Change it and every historical bar changes with it.
+\end{worked}
+
+\begin{conceptbox}[How to read any dashboard you did not build]
+\begin{tightnum}
+  \item \textbf{For each number, ask what it counts and what it excludes.} The
+        answer is in a query, and you now know how to find it.
+  \item \textbf{Reconcile against the table.} If the parts do not add up to the
+        whole, the difference has a name --- and the name is usually the
+        interesting number.
+  \item \textbf{Find which filters are settings.} Those can change under you
+        without any code changing.
+  \item \textbf{Check the denominator.} ``Conversion'' means nothing until you
+        know whether the bottom of the fraction is visitors, sessions, baskets
+        or people.
+\end{tightnum}
+\end{conceptbox}
+
+\section{What the Dashboard Does Not Show}
+
+Every measurement in this course that would change a decision is absent from
+the administrator's first screen. That is not an accident: the dashboard shows
+what is cheap to count, and those are not the same things.
+
+\begin{examplebox}[Three panels this course has already earned]
+\begin{tightnum}
+  \item \textbf{Abandonment rate.} From \chref{checkout}: orders at status 0
+        against orders above it, by day.
+        \smallskip
+        \texttt{SELECT DATE(date\_added) d,}\\
+        \texttt{\ \ SUM(order\_status\_id=0) abandoned,}\\
+        \texttt{\ \ SUM(order\_status\_id>0) placed}\\
+        \texttt{FROM oc\_order GROUP BY d ORDER BY d DESC;}
+        \smallskip
+        A shop with a rising ratio has a checkout problem, a payment problem or
+        a price problem, and knows to look before customers tell it.
+  \item \textbf{Products that cannot be delivered profitably.} From
+        \chref{shipping}: enabled products with a weight of zero, which under
+        weight-based shipping are quoted free delivery.
+        \smallskip
+        \texttt{SELECT COUNT(*) FROM oc\_product}\\
+        \texttt{WHERE status=1 AND weight=0;}
+        \smallskip
+        A number that should be zero and silently is not.
+  \item \textbf{Orders standing still.} From this chapter: how long orders have
+        been at Pending.
+        \smallskip
+        \texttt{SELECT order\_status\_id,}\\
+        \texttt{\ \ COUNT(*) n,}\\
+        \texttt{\ \ MIN(date\_added) oldest}\\
+        \texttt{FROM oc\_order WHERE order\_status\_id>0}\\
+        \texttt{GROUP BY order\_status\_id;}
+        \smallskip
+        The widgets say how many orders arrived. Nothing says how many are
+        waiting, or for how long --- which is the only one of the three a
+        shopkeeper can act on this morning.
+\end{tightnum}
+
+\smallskip
+All three are one query each, and all three are \chref{modules}'s subject: a
+dashboard widget is the smallest useful module you can write.
+\end{examplebox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  box/.style={rounded corners=3pt, draw=#1, line width=1.0pt, fill=#1!8,
+              text=#1!60!black, font=\bfseries\scriptsize, align=center,
+              text width=3.3cm, minimum height=1.4cm},
+  note/.style={font=\scriptsize, text=neutral, align=center, text width=3.6cm}
+]
+  \node[box=neutral]   (a) at (0,0)    {Describes the shop\\[2pt]
+       {\scriptsize\mdseries orders today, total customers, visitors now}};
+  \node[box=secondary] (b) at (4.3,0)  {Tracks a trend\\[2pt]
+       {\scriptsize\mdseries orders this week against last}};
+  \node[box=greenhl]   (c) at (8.6,0)  {Changes a decision\\[2pt]
+       {\scriptsize\mdseries orders waiting since Friday}};
+
+  \node[note] at (0,-1.5)   {Nice to see once. Nobody acts on it twice.};
+  \node[note] at (4.3,-1.5) {Worth watching. Acted on next month.};
+  \node[note, text=greenhl] at (8.6,-1.5)
+       {\textbf{Acted on today.} Put these at the top.};
+
+  \draw[-{Stealth[length=2.2mm]}, primary!50, line width=0.9pt]
+       (-1.9,-2.5) -- (10.5,-2.5);
+  \node[font=\scriptsize\itshape, text=primary] at (4.3,-2.9)
+       {increasing usefulness --- and decreasing likelihood of being on the
+        default dashboard};
+\end{tikzpicture}}%
+{A test for every number you are thinking of putting on a screen. All eight
+shipped widgets sit at the left-hand end.}{metricsladder}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Comparing two dashboard numbers that have different filters.}
+        Five orders and a chart showing two is not a bug report.
+  \item \textbf{Reporting revenue from a table count} without excluding status
+        0.
+  \item \textbf{Switching on the online and activity panels} without noticing
+        the write they add to every page view.
+  \item \textbf{Treating \texttt{config\_complete\_status} as a constant.} It
+        is a setting, and changing it rewrites history.
+  \item \textbf{Adding a number nobody would act on.} Every panel costs a query
+        on the busiest screen in the admin panel.
+  \item \textbf{Quoting a conversion rate without naming its denominator.}
+  \item \textbf{Watching totals rather than ages.} ``How many orders'' is a
+        report; ``how long has this one been waiting'' is a job.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Make the dashboard disagree with itself, then fix the gap]
+\begin{lstlisting}[language=bash]
+# --- 1. Build a known set of orders ---------------------------------
+cd code
+python m17_dashboard.py
+
+# --- 2. Now look at the admin dashboard -----------------------------
+# Admin: Dashboard. Write down the four headline numbers and what the
+# chart shows. Compare with what step 1 printed.
+
+# --- 3. Find the filter behind each number --------------------------
+docker compose exec shop sh -c \
+  'grep -n "order_status_id" admin/model/sale/order.php | head -3'
+# Then do the same for the chart's model. Three different filters.
+
+# --- 4. Account for both gaps ---------------------------------------
+# 6 in the table, 5 on the widgets, 2 on the chart. Name each gap.
+
+# --- 5. Change a setting and watch history move ---------------------
+# Admin: System > Settings > Edit > Option. Add "Processing" to the
+# complete order statuses. Reload the dashboard. Which numbers moved?
+
+# --- 6. Write the three queries the dashboard does not have ---------
+# Abandonment by day; enabled products with zero weight; orders by
+# status with the age of the oldest. Run each one.
+
+# --- 7. Decide what you would put on the screen ---------------------
+# Six panels, no more. For each: the number, the query, and one
+# sentence saying what you would DO if it moved.
+
+# --- 8. Clean up ----------------------------------------------------
+python m17_dashboard.py --clean
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 7 is harder than it looks. Most proposed panels
+fail the ``what would you do'' test, and the ones that survive are rarely the
+ones that were easiest to count.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item The table holds 6 orders worth 5{,}126.40; the widgets report 5 orders
+        worth 4{,}272.00; the chart shows 2. Explain each gap, say which of the
+        three figures you would put in front of the shop's owner, and what you
+        would label it.
+  \item A shop owner says ``our conversion rate is 3\%''. List the questions you
+        would ask before accepting that number, and explain why two shops both
+        reporting 3\% may not be comparable at all.
+  \item Propose a dashboard panel that would have caught \chref{checkout}'s
+        broken guest checkout --- where every page returned 200 and no order
+        could be placed. State the query, how often it runs, and the condition
+        that raises the alarm.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Eight widgets ship. Two of them --- online and activity --- are empty
+        until tracking is switched on, and that tracking costs a database write
+        on page views that previously had none.
+  \item Worked: the same six orders were reported as 6, 5 and 2 by the table,
+        the widgets and the chart. All three are correct; none is labelled with
+        its filter.
+  \item The gaps are the information. Table minus widgets is the abandonment
+        rate; widgets minus chart is the work not yet done.
+  \item The chart's filter is \texttt{config\_complete\_status}, a setting ---
+        so changing it rewrites every historical bar.
+  \item To read any dashboard: ask what each number excludes, reconcile against
+        the table, find which filters are settings, and check the denominator.
+  \item A number earns its place on a screen only if somebody would do
+        something differently on seeing it move. Most shipped widgets describe;
+        few change a decision.
+  \item Three panels this course has already earned, one query each:
+        abandonment by day, enabled products with zero weight, and orders by
+        status with the age of the oldest.
+  \item Totals are a report; ages are a job. Prefer the number that names
+        today's work.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The dashboard chart counts orders whose status is:
+        (a)~greater than zero; (b)~in \texttt{config\_complete\_status};
+        (c)~any status; (d)~Pending only.
+  \item \textbf{(MCQ)} The difference between the order count in the table and
+        the order count on the widgets is: (a)~a bug; (b)~refunded orders;
+        (c)~orders abandoned at the payment button; (d)~orders from other
+        stores.
+  \item \textbf{(Short)} Explain why switching on the ``customers online''
+        panel is not free, referring to a finding from \chref{basket}.
+  \item \textbf{(Short)} Give the test that decides whether a number belongs on
+        a dashboard, and apply it to ``total registered customers''.
+  \item \textbf{(Short)} Why does changing \texttt{config\_complete\_status}
+        alter charts of months that have already happened?
+  \item \textbf{(Applied)} A shop's orders widget has been flat for three weeks
+        while its sales widget has fallen 20\%. Give three distinct
+        explanations consistent with both, say what you would query to
+        distinguish them, and state which explanation you would investigate
+        first and why.
+  \item \textbf{(Applied)} Design the dashboard for a shop taking 40 orders a
+        day on cash on delivery. Give six panels, the query behind each, how
+        often it refreshes, and for every one a sentence beginning ``if this
+        moves, we will\dots''. Justify anything you left off that the shipped
+        dashboard includes.
+\end{reviewq}

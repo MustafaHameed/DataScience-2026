@@ -83,6 +83,32 @@ services:
     ports:
       - "${ADMINER_PORT:-8091}:8080"
 
+  # ------------------------------------------------------------------
+  # A payment provider that does not exist.  Chapter 14 has to measure a
+  # gateway, and a real sandbox needs a merchant account, a registered
+  # business and credentials that cannot go in a handout.  This one is
+  # fifty lines of standard library in a stock python image -- no build,
+  # no dependencies -- and it is slow, irregular and occasionally silent
+  # on purpose, because those are the three properties that make
+  # integrating with a real gateway hard.  See gateway/provider.py.
+  # ------------------------------------------------------------------
+  gateway:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    working_dir: /srv
+    command: ["python", "-u", "provider.py"]
+    volumes:
+      - ./gateway:/srv:ro
+    environment:
+      GATEWAY_DELAY_MS: ${GATEWAY_DELAY_MS:-300}
+      GATEWAY_JITTER_MS: ${GATEWAY_JITTER_MS:-200}
+      GATEWAY_TAIL_RATE: ${GATEWAY_TAIL_RATE:-0.10}
+      GATEWAY_TAIL_MS: ${GATEWAY_TAIL_MS:-2500}
+      GATEWAY_FAIL_RATE: ${GATEWAY_FAIL_RATE:-0.05}
+      GATEWAY_HANG_RATE: ${GATEWAY_HANG_RATE:-0.02}
+    ports:
+      - "${GATEWAY_PORT:-8092}:8092"
+
 volumes:
   dbdata:
   shopdata:

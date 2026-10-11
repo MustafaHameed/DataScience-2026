@@ -1,0 +1,456 @@
+%=====================================================================
+\chapter{Securing the Shop}\label{ch:security}
+%=====================================================================
+\locator{4}{Part IV --- Money and Identity}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} the legal boundary of security testing, and
+        \textbf{confine} your own work inside it.
+  \item \textbf{Measure} a shop's security posture as a set of yes/no
+        questions, and \textbf{repeat} the measurement after a change.
+  \item \textbf{Distinguish} faults the framework already prevents from faults
+        the deployment introduces, with evidence for each.
+  \item \textbf{Apply} a hardening configuration, and \textbf{quantify} what it
+        closed and what it did not.
+  \item \textbf{Judge} which remaining findings need a decision rather than a
+        setting, and \textbf{argue} for one.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{stack}: the container, Apache, and where configuration lives.
+\chref{variations}: the upload directory and what is served from it.
+\chref{accounts}: passwords, lockout, and that a defence can create a leak.
+\textbf{Appendix~A's scope statement, which you must read before the lab.}
+\end{prereq}
+
+\begin{keyterms}
+threat model $\bullet$ attack surface $\bullet$ security header $\bullet$
+content security policy $\bullet$ clickjacking $\bullet$ MIME sniffing
+$\bullet$ CORS $\bullet$ information disclosure $\bullet$ hardening $\bullet$
+defence in depth $\bullet$ SQL injection $\bullet$ cross-site scripting
+$\bullet$ CSRF token $\bullet$ PECA 2016
+\end{keyterms}
+
+\section{Where You May Point This Chapter}
+
+\begin{alertbox}[Read this before the laboratory. It is not a formality.]
+Every exercise in this chapter runs against \textbf{the container on your own
+machine}, reached at \texttt{localhost}, which you installed, which contains no
+real person's data, and which you can destroy and rebuild with one command.
+
+\smallskip
+\textbf{Running the same checks against any system you do not own and have not
+been authorised in writing to test is a criminal offence in Pakistan} under the
+\textbf{Prevention of Electronic Crimes Act 2016}, and under the equivalent law
+of almost every other country. Sections 3 and 4 of that Act cover unauthorised
+access to an information system and to data, with imprisonment and fine
+attached to each.
+
+\smallskip
+There is no educational exemption. ``I was learning'', ``I did no harm'', ``the
+site was insecure'' and ``I told them afterwards'' are not defences, and a
+university assignment is not authorisation. The authorisation that counts is a
+written scope agreement from the system's owner, naming what may be tested and
+when.
+
+\smallskip
+\textbf{What this means in practice:} the only address that appears in this
+chapter is \texttt{localhost:8090}. If you find yourself typing anything else,
+stop.
+\end{alertbox}
+
+\section{Measure First, and Measure the Right Thing}
+
+The temptation in a security chapter is to start with the famous attacks. It is
+worth resisting, because the famous attacks are the ones the framework already
+handles, and starting there teaches you to look in the wrong place.
+
+\begin{measured}[The two attacks everyone expects, against your own search box]
+From \texttt{code/m16\_security.py --injection}. Both probes are harmless: one
+is a quotation mark, the other is a script tag that would open an alert box in
+your own browser.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{5.2cm}L{2.2cm}L{2.4cm}L{2.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Probe} & \textbf{Bytes} & \textbf{Verbatim?} & \textbf{Escaped?} \\
+\midrule
+\endhead
+a normal search & 38{,}406 & yes & yes \\
+one quotation mark & 26{,}440 & no & no \\
+\texttt{ipod' OR '1'='1} & 26{,}508 & yes & yes \\
+\texttt{<script>alert(1)</script>} & 26{,}648 & \textbf{no} & yes \\
+\texttt{<img src=x onerror=\dots>} & 26{,}626 & \textbf{no} & yes \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{The SQL probe returns a \emph{shorter} page than the plain search}
+---~26{,}508 bytes against 38{,}406. It found nothing, because the whole string
+including the quotation marks was searched for literally. The query's meaning
+did not change, which is what a parameterised or properly escaped query means.
+
+\smallskip
+\textbf{The script probes never appear as markup}, only in their escaped form.
+Twig auto-escapes everything it prints unless explicitly told not to, so the
+tag becomes text.
+
+\smallskip
+\textbf{So both classic attacks are already handled.} That is the useful
+finding, and it redirects the rest of the chapter: whatever is wrong with this
+shop is not in its application code.
+\end{measured}
+
+\section{What Is Actually Wrong, and It Is All Deployment}
+
+\begin{measured}[Fifteen questions, asked of the shop as installed]
+From \texttt{code/m16\_security.py}. Each is a yes/no question you could check
+by hand with \texttt{curl}. ``Pass'' always means the safe answer.
+
+\textbf{Part one: what the shop says about itself in every response.}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{7.4cm}L{1.9cm}L{1.9cm}L{2.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Question} & \textbf{Before} & \textbf{After} & \textbf{Cost to fix} \\
+\midrule
+\endhead
+Server header hides the version & fail & pass & 1 line \\
+\texttt{X-Powered-By} absent & fail & pass & 1 line \\
+\texttt{X-Content-Type-Options: nosniff} & fail & pass & 1 line \\
+\texttt{X-Frame-Options} or frame-ancestors & fail & pass & 1 line \\
+Content-Security-Policy set & fail & pass & 1 block \\
+\texttt{Referrer-Policy} set & fail & pass & 1 line \\
+\texttt{Permissions-Policy} set & fail & pass & 1 line \\
+No wildcard CORS with credentials & fail & pass & 2 lines \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Part two: what the shop will hand over if you ask for it.}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{7.4cm}L{1.9cm}L{1.9cm}L{2.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Question} & \textbf{Before} & \textbf{After} & \textbf{Cost to fix} \\
+\midrule
+\endhead
+\textbf{Error log not readable over HTTP} & \textbf{fail} & \textbf{pass} &
+1 block \\
+Session cookie is HttpOnly & pass & pass & --- \\
+Session cookie has SameSite & pass & pass & --- \\
+\texttt{system/storage/} not browsable & pass & pass & --- \\
+\texttt{install/} removed & pass & pass & --- \\
+\texttt{config.php} not served as text & pass & pass & --- \\
+Admin not at the default path & fail & \textbf{fail} & a decision \\
+\midrule
+\textbf{Both parts together} & \textbf{5 of 15} & \textbf{14 of 15} & \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{One configuration file closed nine findings.} Not one of them required
+a change to the shop's code, and not one of them took more than a few lines.
+
+\smallskip
+\textbf{The serious one is the error log.} Before hardening, anybody at all who
+asked the shop for \texttt{system/storage/logs/error.log} was given it ---
+verified by writing a marker string into the file and then fetching it back
+over HTTP. A PHP error log contains file paths, SQL fragments, and often the
+contents of whatever request failed.
+\end{measured}
+
+\begin{alertbox}[Why the shipped protection does not work, in two parts]
+The platform knows about this. It ships a file called
+\texttt{.htaccess\textbf{.txt}} containing, among other things, exactly the rule
+that would have blocked the log. Every guide to securing this software says:
+rename it.
+
+\smallskip
+\textbf{First, nobody renames it.} The installer does not, the Docker image does
+not, and a fresh install therefore has no \texttt{.htaccess} at all.
+
+\smallskip
+\textbf{Second, and worse: renaming it would not help here.} Debian's
+\texttt{apache2.conf} sets \texttt{AllowOverride None} for the document root,
+so Apache never reads \texttt{.htaccess} files. You could rename it, confirm
+the file is in place, and have changed nothing --- with no error, no warning,
+and no way to tell.
+
+\smallskip
+\textbf{This is why the fix in \texttt{code/shop/security.conf} is a server
+configuration rather than a \texttt{.htaccess}.} It is also why the advice you
+will find online for this platform is worse than useless: it is confidently
+wrong, it has been repeated for fifteen years, and following it produces a
+shop that is exactly as exposed as before while its owner believes otherwise.
+
+\smallskip
+\textbf{Verify that a control works. Do not verify that you installed it.}
+\end{alertbox}
+
+\section{Three Mistakes Made While Writing This Chapter}
+
+The hardening file did not work the first time, or the second. The failures are
+kept because each one is a way a real control silently does nothing.
+
+\begin{examplebox}[What went wrong, and how the measurement found it]
+\begin{tightnum}
+  \item \textbf{\texttt{Header always unset} removed nothing.} The CORS headers
+        were still there after hardening. \texttt{mod\_headers} keeps two
+        tables: \texttt{always} applies to every response including errors, and
+        the default applies only to successful ones. A header PHP sets on a 200
+        lives in the second table. \textbf{Both forms are needed}, and using
+        only the one whose name sounds more thorough removes nothing.
+  \item \textbf{\texttt{ServerTokens} was ignored after a reload.} It is read
+        only when Apache \emph{starts}. A graceful reload applies every other
+        directive in the file and silently skips this one.
+  \item \textbf{The file was overridden by Debian's own.} Apache reads
+        \texttt{conf-enabled} in filename order, and the last setting of a
+        server-level directive wins. A file named
+        \texttt{security-ecad.conf} sorts \emph{before}
+        \texttt{security.conf} --- because \texttt{-} precedes \texttt{.} ---
+        so Debian's \texttt{ServerTokens OS} was applied after it. Renaming
+        the file to \texttt{zz-security-ecad.conf} fixed it.
+\end{tightnum}
+
+\smallskip
+\textbf{All three produced a valid configuration that Apache accepted without
+complaint, and in all three the header was simply absent.} A security control
+that fails open and fails quietly is the only kind worth being afraid of, and
+the only defence is to measure the result rather than the action. Each of these
+took one run of the harness to find and would have survived any amount of
+re-reading the file.
+\end{examplebox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  lyr/.style={rounded corners=3pt, draw=#1, line width=1.1pt, fill=#1!8,
+              text=#1!60!black, font=\bfseries\small, align=center,
+              text width=3.0cm, minimum height=1.05cm},
+  note/.style={font=\scriptsize, text=neutral, align=left, text width=7.6cm,
+               anchor=west},
+  tick/.style={font=\scriptsize\bfseries, text=greenhl},
+  cross/.style={font=\scriptsize\bfseries, text=accent}
+]
+  \node[lyr=greenhl]   (app) at (0,3.3) {Application\\{\scriptsize\mdseries
+       the shop's own code}};
+  \node[lyr=accent]    (svr) at (0,1.65) {Server\\{\scriptsize\mdseries
+       Apache configuration}};
+  \node[lyr=purplehl]  (dec) at (0,0)    {Decisions\\{\scriptsize\mdseries
+       how it is deployed}};
+
+  \node[note] at (2.0,3.3) {\textcolor{greenhl}{\faIcon{check}}~Escapes SQL.
+       \textcolor{greenhl}{\faIcon{check}}~Auto-escapes output.
+       \textcolor{greenhl}{\faIcon{check}}~CSRF tokens on forms.
+       \textcolor{greenhl}{\faIcon{check}}~bcrypt passwords.
+       \emph{Nothing to fix here.}};
+  \node[note] at (2.0,1.65) {\textcolor{accent}{\faIcon{times}}~Nine findings,
+       every one a line or two of configuration --- headers, version
+       disclosure, the readable error log. \emph{One file fixed all of them.}};
+  \node[note] at (2.0,0)   {\textcolor{accent}{\faIcon{times}}~Admin on the
+       default path; storage inside the web root; no HTTPS.
+       \emph{These need somebody to decide, not to type.}};
+\end{tikzpicture}}%
+{Where a stock shop's security problems actually live. The layer students
+expect to fix is the one that was already correct.}{securitylayers}
+
+\section{What a Header Cannot Fix}
+
+One finding survived the configuration file, and it is the honest one.
+
+\begin{conceptbox}[The three that need a decision]
+\begin{tightnum}
+  \item \textbf{The admin panel is at \texttt{/admin/}.} Renaming the directory
+        and the matching path in \texttt{admin/config.php} is not security ---
+        anyone who looks will find it --- but it removes the shop from every
+        automated scan that tries one path and moves on. It costs a
+        configuration change and a note for whoever maintains the shop next,
+        which is why it is a decision rather than a setting.
+  \item \textbf{\texttt{system/storage/} is inside the web root.} Blocking it
+        in the server config, as this chapter did, is the fix you can apply
+        today. \textbf{Moving it outside the web root is the fix that is still
+        correct after somebody edits the server config in two years.} Prefer
+        the control that does not depend on remembering.
+  \item \textbf{There is no HTTPS.} On \texttt{localhost} it does not matter.
+        On a real shop everything in this book --- the session cookie, the
+        password, the order --- travels in clear text without it, and
+        \texttt{Strict-Transport-Security} is deliberately left out of the
+        hardening file because switching it on without a certificate makes the
+        shop unreachable in your own browser for months.
+        \chref{deploy} turns it on where there is something to turn it on for.
+\end{tightnum}
+\end{conceptbox}
+
+\begin{alertbox}[The defaults this course has been using, and must not keep]
+The shop was installed with \texttt{admin}/\texttt{admin123}, a database user
+\texttt{shop}/\texttt{shoppw}, and a root password of \texttt{rootpw}. Those are
+in the handout, in the repository, and in this paragraph.
+
+\smallskip
+They are acceptable for exactly one thing: a container on your own machine,
+with no data in it, not reachable from your network. They are documented as
+teaching defaults rather than hidden, because a weak password nobody mentions
+is worse than a weak password everybody knows about.
+
+\smallskip
+\textbf{Any shop that leaves this machine changes all three before it does},
+along with the minimum password length of six characters noted in
+\chref{accounts}. \chref{deploy} makes that a checklist item with nothing
+optional about it.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Testing anything but your own container.} See the first page of
+        this chapter, and Appendix~A.
+  \item \textbf{Starting with SQL injection and cross-site scripting.} Both
+        were already handled; the time was better spent elsewhere.
+  \item \textbf{Renaming \texttt{.htaccess.txt} and believing you are done.}
+        \texttt{AllowOverride None} means the file is never read.
+  \item \textbf{Verifying that you applied a control rather than that it
+        works.} Three separate controls in this chapter were applied correctly
+        and did nothing.
+  \item \textbf{Using \texttt{Header always unset} alone} to remove a header
+        from a successful response.
+  \item \textbf{Reloading instead of restarting} after changing a directive
+        that is only read at startup.
+  \item \textbf{Setting \texttt{Strict-Transport-Security} without a
+        certificate}, which locks you out of your own shop.
+  \item \textbf{Writing a Content-Security-Policy that breaks the theme}, then
+        removing it entirely instead of narrowing it.
+  \item \textbf{Treating a passing checklist as a secure shop.} Fourteen of
+        fifteen is a measurement, not a guarantee.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Break into your own shop, then shut the door]
+\begin{lstlisting}[language=bash]
+# SCOPE: localhost only. Your container, your machine, no real data.
+# Re-read the first page of this chapter before you begin.
+
+# --- 1. Ask what it tells you, before changing anything -------------
+cd code
+curl -sI http://localhost:8090/ | head -20
+# List every header that names a version or a product.
+
+# --- 2. Read your own error log over HTTP ---------------------------
+docker compose exec shop sh -c \
+  'echo "SECRET-TEST-STRING" >> system/storage/logs/error.log'
+curl -s http://localhost:8090/system/storage/logs/error.log
+# If you see your string, so would anyone else.
+
+# --- 3. Run the battery ---------------------------------------------
+python m16_security.py --check
+
+# --- 4. Try the two attacks you came here for -----------------------
+python m16_security.py --injection
+# Predict the result first. Most people predict at least one works.
+
+# --- 5. Find out why the shipped protection does not ----------------
+docker compose exec shop sh -c 'ls -la .htaccess*'
+docker compose exec shop sh -c \
+  'grep -n AllowOverride /etc/apache2/apache2.conf'
+# Two separate reasons. Write both down.
+
+# --- 6. Harden, and measure the difference --------------------------
+python m16_security.py
+# Read shop/security.conf first and predict the score.
+
+# --- 7. Check the shop still works ----------------------------------
+python waitfor.py
+python m10_checkout.py --repeat 1
+python m10_checkout.py --clean
+# A hardening change that breaks checkout is not a hardening change.
+
+# --- 8. Close the last finding --------------------------------------
+# Rename the admin directory AND the path in admin/config.php. Then
+# re-run the battery. Say why this is weaker than the other fixes.
+
+# --- 9. Write the five lines you would hand to a client -------------
+# What you changed, what is still open, what each one would cost,
+# and which one you would do first.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 4 against step 3. The attacks you have heard of
+were already stopped; the shop was giving away its error log. Security attention
+goes where the stories are, and the stories are about the wrong layer.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A colleague renames \texttt{.htaccess.txt} to \texttt{.htaccess} on
+        this stack and reports the shop secured. Give the two independent
+        reasons that is wrong, say what you would run to demonstrate it in one
+        command, and state the general lesson about verifying controls.
+  \item The battery went from 5 of 15 to 14 of 15 with one configuration file.
+        Explain why none of the nine fixes touched the shop's code, what that
+        says about where to look when you inherit a shop, and which single
+        remaining finding you would address first and why.
+  \item Three controls in this chapter were written correctly, accepted by
+        Apache without complaint, and did nothing. Name the mechanism behind
+        any two, and describe a working habit that would catch all three
+        without knowing any of them in advance.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Every exercise is confined to your own container on \texttt{localhost}.
+        Testing anything else is a criminal offence under PECA 2016, with no
+        educational exemption.
+  \item Measured: SQL injection and cross-site scripting against the search box
+        were both already handled --- the injection string was searched for
+        literally and returned fewer results, and the script tag appeared only
+        escaped. The famous attacks were not the problem.
+  \item Measured: the shop as installed passed 5 of 15 checks. After one
+        configuration file it passed 14. Nothing in the shop's code changed.
+  \item The serious finding was the PHP error log, readable over HTTP ---
+        confirmed by writing a marker into it and fetching it back.
+  \item The shipped protection fails twice over: \texttt{.htaccess.txt} is
+        never renamed, and \texttt{AllowOverride None} means it would not be
+        read if it were. The advice repeated everywhere online for this
+        platform does nothing on a modern deployment.
+  \item Three controls were applied correctly and silently did nothing:
+        \texttt{Header always unset} on a successful response,
+        \texttt{ServerTokens} after a reload rather than a restart, and a file
+        that sorted before Debian's own. Verify the result, never the action.
+  \item What a header cannot fix needs a decision: move the admin path, move
+        storage out of the web root, and serve over HTTPS. Prefer the control
+        that does not depend on somebody remembering.
+  \item The default credentials used throughout this course are documented
+        rather than hidden, and are acceptable for a local container and
+        nothing else.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The stock shop passed how many of the fifteen checks?
+        (a)~0; (b)~5; (c)~11; (d)~14.
+  \item \textbf{(MCQ)} Renaming \texttt{.htaccess.txt} to \texttt{.htaccess}
+        on this stack achieves: (a)~full protection; (b)~partial protection;
+        (c)~nothing, because Apache does not read it; (d)~nothing, because the
+        file is empty.
+  \item \textbf{(Short)} Explain what \texttt{X-Content-Type-Options: nosniff}
+        prevents, and connect it to \chref{variations}'s upload findings.
+  \item \textbf{(Short)} Why is \texttt{Strict-Transport-Security} deliberately
+        absent from this chapter's hardening file?
+  \item \textbf{(Short)} Give one reason moving \texttt{system/storage/} out of
+        the web root is better than blocking it in the server configuration,
+        even though both work today.
+  \item \textbf{(Applied)} You inherit a shop you did not build. Write the
+        order in which you would investigate it, with the specific command or
+        observation at each step, and say at which point you would stop and
+        report rather than continue --- and why that point exists.
+  \item \textbf{(Applied)} Design a Content-Security-Policy for a shop whose
+        theme uses inline scripts, a payment provider's hosted field, and an
+        analytics service. State each directive, what it allows, what it
+        blocks, how you would roll it out without breaking the shop, and how
+        you would know it was working.
+\end{reviewq}

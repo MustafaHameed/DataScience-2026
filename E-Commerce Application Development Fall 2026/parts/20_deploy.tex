@@ -1,0 +1,371 @@
+%=====================================================================
+\chapter{Deployment, Maintenance and Performance}\label{ch:deploy}
+%=====================================================================
+\locator{5}{Part V --- Running and Extending the Shop}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Measure} a shop's throughput and latency together, and
+        \textbf{locate} its saturation point.
+  \item \textbf{Explain} why throughput can fall as concurrency rises, and
+        \textbf{say} what that means for a sale day.
+  \item \textbf{Quantify} what the compiler cache is worth, and
+        \textbf{order} optimisations by measured effect.
+  \item \textbf{Distinguish} the cost of a backup from the cost of a restore,
+        and \textbf{state} which one matters.
+  \item \textbf{Assemble} a deployment checklist from this course's findings,
+        with nothing on it that was not measured.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{stack}: images, containers, volumes and the Compose file.
+\chref{security}: the hardening file and what it closed. \chref{gateway}:
+reading a distribution rather than an average.
+\end{prereq}
+
+\begin{keyterms}
+throughput $\bullet$ latency $\bullet$ concurrency $\bullet$ saturation point
+$\bullet$ queueing $\bullet$ opcode cache $\bullet$ reverse proxy $\bullet$
+backup $\bullet$ restore $\bullet$ recovery time $\bullet$ rollback $\bullet$
+end of life $\bullet$ pinning $\bullet$ HSTS
+\end{keyterms}
+
+\section{Two Numbers, and Why One of Them Lies}
+
+``How fast is the shop'' has two answers that move in opposite directions, and
+quoting either alone is how capacity is mis-planned.
+
+\begin{definitionbox}[Throughput, Latency, Saturation]
+\term{Throughput} is requests served per second. It is a property of the
+server, and it is the number in the sales brochure.
+
+\smallskip
+\term{Latency} is how long one request took. It is what the customer
+experiences, and it is the number in the complaint.
+
+\smallskip
+The \term{saturation point} is the concurrency at which throughput stops
+rising. Below it, extra customers are served from spare capacity. Above it,
+extra customers join a queue --- so latency rises steeply while throughput
+stays flat or \emph{falls}.
+\end{definitionbox}
+
+\begin{measured}[The same page, requested by more people at once]
+From \texttt{code/m20\_deploy.py --load} against the stack in Appendix~A.
+Sixty requests at each level, spread across that many concurrent clients.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.0cm}L{2.1cm}L{2.2cm}L{2.0cm}L{2.2cm}L{1.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Clients} & \textbf{req/sec} & \textbf{Median} & \textbf{p95} &
+\textbf{Worst} & \textbf{Failed} \\
+\midrule
+\endhead
+1 & 11.0 & 81\,ms & 147\,ms & 158\,ms & 0 \\
+\textbf{5} & \textbf{42.1} & 95\,ms & 181\,ms & 258\,ms & 0 \\
+20 & \textbf{38.7} & \textbf{455\,ms} & 667\,ms & 814\,ms & 0 \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Throughput peaked at five clients and then fell.} Twenty concurrent
+customers were served at 38.7 requests per second --- \emph{fewer} than five
+were. More customers, less work done.
+
+\smallskip
+\textbf{And the median response grew 5.6 times}, from 81\,ms to 455\,ms. Every
+one of those twenty customers waited half a second for a page that one customer
+alone gets in a twelfth of that.
+
+\smallskip
+\textbf{Nothing failed.} No error, no timeout, no log entry. The shop was past
+its saturation point and the only observable was that it had become slow ---
+which is the same observable as a badly written query, a slow network or a
+customer's own machine. Load does not announce itself.
+
+\smallskip
+\textbf{The saturation point is the number to know before a sale day.} It is
+five here, on a laptop, serving an uncached home page. What matters is not the
+figure but that there \emph{is} one, that it is measurable in ten minutes, and
+that past it every additional visitor makes the shop worse for everybody
+already in it.
+\end{measured}
+
+\section{The Cheapest Optimisation Is Already a Setting}
+
+Before any caching layer, any reverse proxy and any rewriting of queries, there
+is one line of configuration worth measuring.
+
+\begin{measured}[The same load, with the compiler cache off and on]
+From \texttt{code/m20\_deploy.py --opcache}. PHP compiles source to bytecode;
+the opcode cache keeps the result, so the files are compiled once rather than
+on every request.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.0cm}L{2.8cm}L{2.8cm}L{2.2cm}L{3.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Clients} & \textbf{req/sec off} & \textbf{req/sec on} &
+\textbf{Gain} & \textbf{Median off $\to$ on} \\
+\midrule
+\endhead
+1 & 8.1 & 10.1 & 1.3$\times$ & 109 $\to$ 82\,ms \\
+\textbf{5} & \textbf{16.8} & \textbf{34.0} & \textbf{2.0$\times$} &
+245 $\to$ 131\,ms \\
+20 & 21.7 & 30.3 & 1.4$\times$ & 715 $\to$ 497\,ms \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Twice the throughput at five clients, for one line of configuration.}
+No code was changed, no caching layer added, no query rewritten.
+
+\smallskip
+\textbf{The gain is largest in the middle, and that is not a coincidence.} With
+one client there is spare processor to waste, so the compilation is almost
+free. At twenty, the queue dominates and the saving is diluted. At five --- the
+saturation point --- the processor is the constraint, and removing work from it
+is worth exactly what it costs.
+
+\smallskip
+\textbf{Check this before optimising anything else.} A shop running without it
+is being benchmarked as a compiler rather than as a shop, and every conclusion
+drawn from such a measurement is about the wrong program. \chref{stack}'s
+Dockerfile installs it for this reason, and said so at the time.
+\end{measured}
+
+\begin{conceptbox}[The order to work in, from this course's own measurements]
+\begin{tightnum}
+  \item \textbf{Confirm the compiler cache is on.} 2$\times$, one line.
+  \item \textbf{Minify the stylesheet} (\chref{ux}). 240\,KB off every page,
+        one file, no visible change.
+  \item \textbf{Index what the pages actually sort by} (\chref{catalogue}) ---
+        and re-measure, because at 50{,}000 products the indexes made it
+        \emph{slower}.
+  \item \textbf{Cache whole pages} for visitors who are not logged in. The
+        largest win available and the one that introduces staleness, so it
+        comes after the three that do not.
+  \item \textbf{Add servers.} Last, because everything above is cheaper, and
+        because \chref{basket} showed that file-based sessions stop working the
+        moment there are two.
+\end{tightnum}
+\end{conceptbox}
+
+\section{Backups, and the Number Nobody Measures}
+
+\begin{measured}[What a backup costs, and what a restore costs]
+From \texttt{code/m20\_deploy.py --backup}.
+
+\smallskip
+\begin{tabular}{@{}L{5.0cm}L{3.2cm}L{5.4cm}@{}}
+Database dump & \textbf{1.0\,s} & 572\,KB \\
+\textbf{Database restore} & \textbf{6.4\,s} & \\
+Shop files & 0.8\,s & 52\,MB in 4{,}024 files \\
+\end{tabular}
+
+\smallskip
+\textbf{The restore takes six times as long as the backup}, and it is the only
+one of the two numbers that matters --- because it is the one you will be
+timing while the shop is down and somebody is standing behind you.
+
+\smallskip
+Those figures are for a demonstration catalogue. At \chref{catalogue}'s 50{,}000
+products the dump was a different order of magnitude, and the restore grew with
+it. \textbf{Measure your own, on your own data, and write the number down}: it
+is your recovery time, and it is what you will be asked for.
+
+\smallskip
+\textbf{A backup nobody has restored is a file, not a backup.} The only way to
+know a backup works is to restore it somewhere and look at the shop. Do it on a
+schedule, not after an incident.
+\end{measured}
+
+\begin{alertbox}[Three things in the platform's own deployment advice that are
+wrong]
+Recorded because they are the first things a student will find, and all three
+are dated rather than debatable.
+
+\begin{tight}
+  \item \textbf{Its own \texttt{Dockerfile} does not build}, because the one
+        in the release contains the line
+        \texttt{docker-php-ext-install zip \&\& \&\& docker-php-ext-enable
+        zip} --- a shell syntax error. It has therefore never worked for
+        anybody.
+  \item \textbf{Its own compose file pins \texttt{mysql:5.7}}, which reached
+        end of life in October 2023 and takes no further security fixes. This
+        course's stack uses MariaDB 11 and \chref{stack} said why.
+  \item \textbf{Its security guidance says to rename \texttt{.htaccess.txt}},
+        which \chref{security} measured as doing nothing at all on a modern
+        Apache.
+\end{tight}
+
+\smallskip
+\textbf{Upstream artefacts are evidence, not authority.} Read them to learn what
+the authors intended, then check whether they work.
+\end{alertbox}
+
+\section{Going Live}
+
+\begin{examplebox}[The checklist, with a measurement behind every line]
+Nothing here is advice this handout has not demonstrated.
+
+\begin{tightnum}
+  \item \textbf{Change all three default passwords} --- admin, database user,
+        database root --- and raise the minimum password length from six
+        (\chref{accounts}, \chref{security}).
+  \item \textbf{Apply the hardening configuration} and re-run the battery. It
+        moved 5 of 15 to 14 of 15 (\chref{security}).
+  \item \textbf{Obtain a certificate, serve over HTTPS, and only then switch on
+        HSTS.} Before the certificate it locks you out of your own shop.
+  \item \textbf{Move \texttt{system/storage/} out of the web root}, rather than
+        relying on a configuration file somebody will edit
+        (\chref{security}).
+  \item \textbf{Rename the admin directory} and the matching path in
+        \texttt{admin/config.php}.
+  \item \textbf{Confirm the compiler cache is on} --- 2$\times$, measured
+        above.
+  \item \textbf{Fix \texttt{config\_checkout\_payment\_address}}, without which
+        no guest can complete a checkout (\chref{checkout}).
+  \item \textbf{Populate \texttt{oc\_api\_ip}}, without which the admin panel
+        cannot change an order (\chref{orders}).
+  \item \textbf{Take a backup, restore it somewhere else, and time the
+        restore.} Write the number down.
+  \item \textbf{Know your saturation point} before the first sale day.
+\end{tightnum}
+
+\smallskip
+\textbf{Four of those ten are faults in the shipped software} that every page
+of the shop will hide from you. That is the argument of the whole course in one
+list.
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Quoting throughput without latency.} At twenty clients this
+        shop served 38.7 requests a second and every customer waited half a
+        second.
+  \item \textbf{Assuming more concurrency means more work done.} Past
+        saturation it means less.
+  \item \textbf{Benchmarking with the compiler cache off} and drawing
+        conclusions about anything else.
+  \item \textbf{Adding a caching layer before checking the free settings.}
+  \item \textbf{Measuring the backup and never the restore.}
+  \item \textbf{Never restoring a backup at all.}
+  \item \textbf{Switching on HSTS before there is a certificate.}
+  \item \textbf{Copying upstream's own Dockerfile or compose file.} One does not
+        build and the other pins software that is out of support.
+  \item \textbf{Deploying with the course's teaching passwords.}
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Find where your shop falls over, then make it fall over later]
+\begin{lstlisting}[language=bash]
+# --- 1. Predict your saturation point -------------------------------
+# How many concurrent customers before throughput stops rising?
+# Write a number down before measuring.
+cd code
+python m20_deploy.py --load
+
+# --- 2. Read both columns together ----------------------------------
+# At the level where req/sec peaks, what is the median? And at
+# twice that concurrency? Write one sentence a shop owner would
+# understand.
+
+# --- 3. Measure the free optimisation -------------------------------
+python m20_deploy.py --opcache
+# Explain why the gain is biggest in the MIDDLE row.
+
+# --- 4. Apply Chapter 8's finding and re-measure --------------------
+# Minify bootstrap.css, then run --load again. Did req/sec move?
+# It should not, by much. Say why not, and what DID improve.
+
+# --- 5. Time a restore ----------------------------------------------
+python m20_deploy.py --backup
+
+# --- 6. Now do it for real ------------------------------------------
+# Seed 50,000 products (seed/catalogue.py), then time the dump and
+# the restore again. Record both. That is your recovery time.
+# Restore the demo catalogue afterwards.
+
+# --- 7. Prove the backup works --------------------------------------
+# docker compose down -v, up -d, restore your dump, and open the
+# shop. If the products are not there, you did not have a backup.
+
+# --- 8. Write the go-live checklist ---------------------------------
+# Ten lines, each with the measurement or chapter that justifies it.
+# Anything you cannot justify, take off the list.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 7 is the only step that proves anything. Everyone
+takes backups; the question that separates a professional from an amateur is
+when they last restored one.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item At 5 concurrent clients the shop served 42.1 requests per second; at 20
+        it served 38.7. Explain the mechanism, say what a shop owner should do
+        with that information before a sale day, and give one change that would
+        move the turning point.
+  \item The compiler cache doubled throughput at 5 clients but gave only
+        1.3$\times$ at 1 and 1.4$\times$ at 20. Explain both ends of that
+        pattern, and say what it implies about when to benchmark.
+  \item Your client's backup runs nightly and has never been restored. Write
+        the case for a restore test in terms your client will act on, state
+        exactly what you would do and how long it would take, and say what you
+        would measure and record.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Throughput and latency are different questions and move in opposite
+        directions. Quoting either alone mis-plans capacity.
+  \item Measured: throughput peaked at 5 concurrent clients (42.1 req/sec) and
+        \emph{fell} to 38.7 at 20, while the median response grew 5.6$\times$
+        from 81\,ms to 455\,ms. Nothing failed and nothing was logged.
+  \item The saturation point is measurable in ten minutes and is the number to
+        know before a sale day.
+  \item Measured: the opcode cache doubled throughput at the saturation point
+        for one line of configuration, and the gain was largest in the middle
+        --- spare capacity at one client, queueing at twenty.
+  \item Optimise in measured order: compiler cache, then assets, then indexes
+        (re-measuring, because at 50{,}000 products they hurt), then page
+        caching, then servers.
+  \item Measured: a 1.0\,s backup took 6.4\,s to restore. The restore is the
+        number that matters, and a backup nobody has restored is a file.
+  \item Upstream's own Dockerfile does not build, its compose file pins
+        software out of support, and its security advice does nothing on a
+        modern Apache. Artefacts are evidence, not authority.
+  \item Four of the ten go-live checklist items are faults in the shipped
+        software that every page of the shop hides from you.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Going from 5 to 20 concurrent clients changed throughput
+        from 42.1 to: (a)~168 req/sec; (b)~84 req/sec; (c)~38.7 req/sec;
+        (d)~it failed.
+  \item \textbf{(MCQ)} The opcode cache gave its largest gain at: (a)~1 client;
+        (b)~5 clients; (c)~20 clients; (d)~the same at all three.
+  \item \textbf{(Short)} Define the saturation point and explain why throughput
+        can fall beyond it.
+  \item \textbf{(Short)} Why is the restore time, rather than the backup time,
+        the figure a business should be given?
+  \item \textbf{(Short)} Explain why benchmarking a PHP application with the
+        opcode cache disabled produces conclusions about the wrong program.
+  \item \textbf{(Applied)} A shop expects 300 concurrent visitors for a
+        two-hour sale. Its measured saturation point is 5 and its median
+        response at 20 is 455\,ms. Set out what you would do, in order, with an
+        expected effect for each step and a statement of which steps you could
+        verify beforehand and which you could not.
+  \item \textbf{(Applied)} Design the backup and recovery procedure for a shop
+        taking 200 orders a day. State what is backed up, how often, where it
+        is kept, how long you may lose, how long a restore takes, who performs
+        it, how the procedure is tested, and how you would discover that a
+        night's backup had silently failed.
+\end{reviewq}

@@ -1,0 +1,435 @@
+%=====================================================================
+\chapter{Extending the Platform: Your First Module}\label{ch:modules}
+%=====================================================================
+\locator{5}{Part V --- Running and Extending the Shop}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what an extension is made of, and \textbf{state} why
+        each part exists.
+  \item \textbf{Write} a storefront module and a shipping method that add
+        behaviour without editing anything the platform ships.
+  \item \textbf{Install} an extension the way the marketplace installer does,
+        in three steps you can read.
+  \item \textbf{Measure} what a module costs a page, and \textbf{account} for
+        every query it adds.
+  \item \textbf{Judge} when to extend, when to configure, and when to refuse.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ux}: themes, templates and overrides. \chref{shipping}: the shipping
+quote interface and tax classes. \chref{catalogue}: counting the queries a page
+runs. Appendix~B for enough PHP and Twig to read the files.
+\end{prereq}
+
+\begin{keyterms}
+extension $\bullet$ module $\bullet$ extension point $\bullet$ namespace
+$\bullet$ autoloading $\bullet$ manifest $\bullet$ controller $\bullet$ model
+$\bullet$ language file $\bullet$ module instance $\bullet$ layout position
+$\bullet$ upgrade safety $\bullet$ permission check
+\end{keyterms}
+
+\section{Why Not Just Edit the File}
+
+Every feature in this chapter could be added faster by opening the shop's own
+code and changing it. The reason not to is one sentence long, and it arrives
+about eighteen months later: \textbf{the next upgrade overwrites your file, and
+nothing tells you which ones you changed.}
+
+\begin{conceptbox}[The three ways to change what a shop does, in order of
+preference]
+\begin{tightnum}
+  \item \textbf{Configure it.} If a setting exists, use it.
+        \chref{shipping}'s tax rules and \chref{dashboard}'s widgets are
+        settings, and a setting survives everything.
+  \item \textbf{Extend it.} Add a directory under \texttt{extension/} that the
+        platform loads. Nothing it ships is touched, the upgrade leaves your
+        directory alone, and \texttt{git status} tells you exactly what you
+        added.
+  \item \textbf{Edit it.} Only when the first two cannot reach, and then with
+        the change recorded somewhere an upgrade will make you re-read.
+\end{tightnum}
+
+\smallskip
+\textbf{Most commissioned work on this platform is the second.} That is what
+the department's title adds to HEC's bare ``E-Commerce'', and it is the
+difference between configuring a shop and developing one.
+\end{conceptbox}
+
+\section{What an Extension Is Made Of}
+
+\begin{definitionbox}[Extension, Module, Instance]
+An \term{extension} is a directory under \texttt{extension/} whose internal
+shape mirrors the shop's own --- an \texttt{admin/} half, a \texttt{catalog/}
+half, and a manifest. It may provide several things at once: this chapter's
+provides a module and a shipping method.
+
+\smallskip
+A \term{module} is a block of storefront output that a layout can place. It
+has two controllers: one that renders it for a customer, one that lets the
+shopkeeper configure it.
+
+\smallskip
+An \term{instance} is one placement of a module, with its own settings. The
+same module may appear three times on a page with three different
+configurations, which is why its render method is handed its settings rather
+than reading them from the global configuration.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  dir/.style={rounded corners=2pt, draw=#1, line width=0.9pt, fill=#1!8,
+              text=#1!60!black, font=\bfseries\scriptsize, align=left,
+              text width=7.0cm, minimum height=0.62cm, inner sep=3pt},
+  note/.style={font=\scriptsize, text=neutral, align=left, text width=5.2cm,
+               anchor=west}
+]
+  \node[dir=purplehl]  (m) at (0,3.0)  {extension/ecadmod/install.json};
+  \node[dir=secondary] (a) at (0,2.1)  {\ \ admin/controller/module/lowstock.php};
+  \node[dir=secondary] (t) at (0,1.2)  {\ \ admin/view/template/\dots};
+  \node[dir=greenhl]   (c) at (0,0.3)  {\ \ catalog/controller/module/lowstock.php};
+  \node[dir=greenhl]   (v) at (0,-0.6) {\ \ catalog/view/template/\dots};
+  \node[dir=neutral]   (l) at (0,-1.5) {\ \ catalog/language/en-gb/\dots};
+
+  \node[note, text=purplehl] at (7.3,3.0)
+       {Who wrote it, and what it is. Without this row the admin panel cannot
+        see the extension, however complete the files are.};
+  \node[note, text=secondary] at (7.3,1.65)
+       {The shopkeeper's half: a form, validation, and a save action that
+        checks a permission before it does anything.};
+  \node[note, text=greenhl] at (7.3,-0.15)
+       {The customer's half: one method, handed its settings, returning a
+        string.};
+  \node[note, text=neutral] at (7.3,-1.5)
+       {Every visible word. A shop translated later needs no code change.};
+\end{tikzpicture}}%
+{The twelve files of this chapter's extension. The namespace of every class is
+its path, which is how the loader finds it and the first thing to get wrong.}
+{extensionshape}
+
+\begin{alertbox}[The namespace is the path, and the error message is unhelpful]
+The class
+
+\smallskip
+\hspace*{1em}\texttt{Opencart\textbackslash Catalog\textbackslash
+Controller\textbackslash Extension\textbackslash Ecadmod\textbackslash
+Module}
+
+\smallskip
+\noindent lives in
+\texttt{extension/ecadmod/catalog/controller/module/}. Get a single segment
+wrong --- the wrong case, a missing \texttt{Extension}, the folder named
+differently from the namespace --- and the loader reports that the class does
+not exist.
+
+\smallskip
+Which is true, and tells you nothing about why. \textbf{When an extension does
+not load, check the namespace against the path before anything else}; it is
+the cause more often than every other possibility combined.
+\end{alertbox}
+
+\section{The Storefront Half, in Full}
+
+The whole customer-facing side of the module is one method. It is worth reading
+in full, because almost nothing in it is specific to this module.
+
+\begin{lstlisting}[language=php]
+namespace Opencart\Catalog\Controller\Extension\Ecadmod\Module;
+
+class LowStock extends \Opencart\System\Engine\Controller {
+    public function index(array $setting): string {
+        $this->load->language('extension/ecadmod/module/lowstock');
+
+        $data['heading_title'] = $this->language->get('heading_title');
+        $threshold = (int)($setting['threshold'] ?? 5);
+        $limit     = (int)($setting['limit'] ?? 4);
+
+        $query = $this->db->query("SELECT p.product_id,
+            p.quantity, pd.name FROM ...
+            WHERE p.status = '1' AND p.quantity > '0'
+              AND p.quantity <= '" . (int)$threshold . "'
+            ORDER BY p.quantity ASC LIMIT " . (int)$limit);
+\end{lstlisting}
+
+\noindent and then, in the same method, the rows become view data and the
+view becomes a string:
+
+\begin{lstlisting}[language=php]
+        $data['products'] = [];
+
+        foreach ($query->rows as $row) {
+            $data['products'][] = [
+                'name'     => $row['name'],
+                'quantity' => $row['quantity'],
+                'href'     => $this->url->link('product/product',
+                    'language=' . $this->config->get('config_language')
+                    . '&product_id=' . $row['product_id'])
+            ];
+        }
+
+        if (!$data['products']) { return ''; }
+
+        return $this->load->view(
+            'extension/ecadmod/module/lowstock', $data);
+    }
+}
+\end{lstlisting}
+
+\begin{conceptbox}[Four decisions in thirty lines]
+\begin{tightnum}
+  \item \textbf{It takes \texttt{\$setting} as an argument} rather than reading
+        \texttt{\$this->config}. That is what allows the module to be placed
+        twice with different thresholds.
+  \item \textbf{It returns a string and never prints.} The layout decides where
+        the string goes; a module that echoes has taken a decision that is not
+        its own.
+  \item \textbf{It returns \texttt{''} when there is nothing to say.} An empty
+        panel with a heading is worse than no panel.
+  \item \textbf{Every integer is cast.} \texttt{(int)\$threshold} inside a
+        query string is the difference between a parameter and an injection
+        --- and \chref{security} showed that the platform is careful about this
+        everywhere, which means your extension is now the weakest part.
+\end{tightnum}
+\end{conceptbox}
+
+\section{Installing It, in Three Steps You Can Read}
+
+The marketplace installer is a button. What it does is three things, and doing
+them by hand once is the fastest way to understand why an extension that looks
+installed sometimes is not.
+
+\begin{examplebox}[What \texttt{code/m19\_modules.py --install} performs]
+\begin{tightnum}
+  \item \textbf{Copy the files} to \texttt{extension/ecadmod/} and make them
+        readable by the web server. Twelve files.
+  \item \textbf{Insert the manifest row} into \texttt{oc\_extension\_install}
+        --- name, author, version, link. \textbf{Without this the admin panel
+        cannot see the extension at all}, however complete the files are. This
+        is the step people miss, and the symptom is an extension that is
+        plainly on disk and absent from every list.
+  \item \textbf{Insert one row per thing provided} into
+        \texttt{oc\_extension}: \texttt{(ecadmod, module, lowstock)} and
+        \texttt{(ecadmod, shipping, zonerate)}. This is what makes each appear
+        in its own list rather than all of them in one.
+\end{tightnum}
+
+\smallskip
+Uninstalling is the same three in reverse, and the script does that too ---
+because an extension you cannot remove cleanly is one you cannot test.
+\end{examplebox}
+
+\section{What a Module Costs}
+
+The objection to building features as modules is that they must be slow. It is
+worth measuring rather than assuming, in both directions.
+
+\begin{measured}[The same home page with 0, 1, 3 and 5 instances]
+From \texttt{code/m19\_modules.py --measure} against the stack in Appendix~A.
+Each instance is a separate placement of the same module on the home layout.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.4cm}L{2.4cm}L{2.4cm}L{3.0cm}L{3.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Instances} & \textbf{Page} & \textbf{Queries} & \textbf{ms each} &
+\textbf{queries each} \\
+\midrule
+\endhead
+0 & 76\,ms & 117 & --- & --- \\
+1 & 82\,ms & 121 & 5.8 & \textbf{4.0} \\
+3 & 90\,ms & 129 & 4.7 & \textbf{4.0} \\
+5 & 96\,ms & 137 & 4.0 & \textbf{4.0} \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{The cost is linear and small}: about 4\,ms and exactly four queries per
+instance. Five instances added 20\,ms to a 76\,ms page. A module is not
+expensive.
+
+\smallskip
+\textbf{But the module contains \emph{one} query.} The other three are the
+framework's, and reading them from the slow log names each one:
+
+\smallskip
+\begin{tabular}{@{}L{7.4cm}L{6.2cm}@{}}
+\texttt{SELECT * FROM oc\_module WHERE module\_id=16} & this instance's
+settings \\
+\texttt{SELECT * FROM oc\_translation WHERE route=\dots} & its translations \\
+\texttt{SELECT p.product\_id, p.quantity \dots} & \textbf{the one I wrote} \\
+\texttt{SELECT * FROM oc\_theme WHERE route=\dots} & its template override \\
+\end{tabular}
+
+\smallskip
+\textbf{Three quarters of what a module costs is the extension mechanism
+itself}, spent finding your settings, your words and your template. That is the
+price of the arrangement that lets you place the module twice, translate it
+without touching code, and override its template from a theme.
+
+\smallskip
+It is also the explanation for \chref{catalogue}'s 144 queries on a category
+page, which was never explained at the time: a page is mostly modules, and
+every one of them pays this toll.
+\end{measured}
+
+\begin{conceptbox}[When to extend, and when to refuse]
+\textbf{Extend when} the behaviour is yours, the platform offers a point for
+it, and you can state what the shop would do without it.
+
+\smallskip
+\textbf{Configure instead when} a setting already reaches. Rewriting a setting
+as a module is the commonest waste in commissioned work.
+
+\smallskip
+\textbf{Refuse when} the request is for something the platform deliberately does
+not do, and the reason it does not is a good one. ``Store the card number so
+customers do not have to retype it'' is a module somebody will ask you to
+write, and \chref{gateway} is the reason to say no --- in writing, with the
+consequence named.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Editing a shipped file} because it is faster today.
+  \item \textbf{A namespace that does not match the path.} The error says the
+        class does not exist, which is unhelpfully true.
+  \item \textbf{Forgetting the \texttt{oc\_extension\_install} row}, which
+        leaves an extension on disk and invisible.
+  \item \textbf{Reading \texttt{\$this->config} in a module's render method}
+        instead of its \texttt{\$setting} argument, so it cannot be placed
+        twice.
+  \item \textbf{Omitting the permission check in a save action.} The form is
+        only shown to an administrator; the action is a URL.
+  \item \textbf{Interpolating an uncast value into SQL.} The platform is
+        careful everywhere else, so your extension becomes the weakest part.
+  \item \textbf{Returning a tax-inclusive cost from a shipping quote}, which
+        the totals pipeline then taxes again (\chref{shipping}).
+  \item \textbf{Hard-coding visible text} in a controller or template rather
+        than a language file.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Write, install, measure, and then break it]
+\begin{lstlisting}[language=bash]
+# --- 1. Read the twelve files before running anything ---------------
+cd code
+find modules/ecadmod -type f | sort
+# Match each class's namespace to its path. Say the rule out loud.
+
+# --- 2. Install it the way the marketplace would --------------------
+python m19_modules.py --install
+
+# --- 3. Place it, and look --------------------------------------
+python m19_modules.py --place 1
+# Open the storefront. Nothing shows -- the demo products all have
+# high stock. Fix that by raising the threshold, and say why an
+# empty module returning '' is better than an empty panel.
+
+# --- 4. Predict the cost, then measure it ---------------------------
+# How many queries does ONE instance add? Commit to a number.
+python m19_modules.py --measure
+
+# --- 5. Account for all four ----------------------------------------
+docker compose exec db mariadb -uroot -prootpw -e \
+  "SELECT LEFT(CONVERT(sql_text USING utf8),80) FROM mysql.slow_log;"
+# One is yours. Name the other three and say what each is for.
+
+# --- 6. Break the namespace on purpose ------------------------------
+# Rename the class to Lowstock (small s) and reload. Read the error.
+# This is the error you will see most often; meet it deliberately now.
+
+# --- 7. Configure your shipping method -------------------------------
+# Admin: Extensions > Extensions > Shipping > Zone Rate > Edit.
+# Rates one per line as zone_id:cost. Place an order and check the
+# quote, then check oc_order_total for how the tax was applied.
+
+# --- 8. Add the free-delivery threshold and test both sides ---------
+# One order below it, one above. Verify from oc_order_total, not
+# from the screen.
+
+# --- 9. Remove it completely ----------------------------------------
+python m19_modules.py --remove
+# Then confirm the shop is exactly as it was: no files, no rows,
+# no settings. An extension you cannot remove is one you cannot test.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 5 is the chapter. Your module is one query; it
+costs four. Knowing which three are the mechanism's is what lets you judge
+whether a page with twenty modules is badly written or merely busy.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Five instances of a module added 20\,ms and 20 queries to a 76\,ms
+        page. A colleague concludes modules are expensive and proposes editing
+        the theme instead. Give your answer, with the per-instance breakdown,
+        and say what you would measure before agreeing to anything.
+  \item A module's render method reads its threshold from
+        \texttt{\$this->config->get('module\_lowstock\_threshold')} instead of
+        from its \texttt{\$setting} argument. The shop works. Describe exactly
+        when it stops working and what the shopkeeper will report.
+  \item You are asked to add a field to the checkout that the platform does not
+        offer. Set out how you would decide between configuring, extending and
+        editing, what you would need to know first, and what you would write
+        down whichever you chose.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Configure first, extend second, edit last. An extension is a directory
+        the upgrade leaves alone; an edit is a file the upgrade overwrites
+        without telling you.
+  \item An extension mirrors the shop's shape: an admin half, a catalog half, a
+        manifest, and language files for every visible word.
+  \item The namespace of every class is its path. A mismatch reports that the
+        class does not exist, and is the commonest cause by a wide margin.
+  \item A module's render method takes its settings as an argument, returns a
+        string, returns \texttt{''} when it has nothing to say, and casts every
+        value it puts in a query.
+  \item Installing is three steps: the files, a manifest row in
+        \texttt{oc\_extension\_install}, and one row per provided thing in
+        \texttt{oc\_extension}. Miss the second and the extension is on disk
+        and invisible.
+  \item Measured: 4\,ms and exactly 4 queries per module instance; five
+        instances added 20\,ms to a 76\,ms page. Modules are cheap.
+  \item Measured: of those four queries, \emph{one} is the module's. The other
+        three find its settings, its translations and its template --- the
+        price of being placeable, translatable and overridable, and the reason
+        a category page runs 144 queries.
+  \item A shipping method's whole interface is one method that is handed an
+        address and returns a quote without tax, or nothing at all.
+  \item Refusing is a professional act. ``Store the card number'' is a module
+        somebody will ask for; decline it in writing, with the consequence
+        named.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} One instance of the measured module added how many
+        database queries? (a)~1; (b)~2; (c)~4; (d)~it varies with the
+        catalogue.
+  \item \textbf{(MCQ)} An extension whose files are all present but which
+        appears in no admin list is most likely missing: (a)~a language file;
+        (b)~its \texttt{oc\_extension\_install} row; (c)~file permissions;
+        (d)~a template.
+  \item \textbf{(Short)} Explain why a module's render method is handed its
+        settings instead of reading the global configuration.
+  \item \textbf{(Short)} Give the rule relating a class's namespace to its file
+        path, and the symptom of breaking it.
+  \item \textbf{(Short)} Why must a shipping quote return a cost without tax?
+        Refer to \chref{shipping}'s totals pipeline.
+  \item \textbf{(Applied)} You are asked for a module showing ``customers who
+        bought this also bought''. Specify it: what it queries, where its
+        settings live, how many queries it will add per page, how you would
+        keep that number from growing with the catalogue, and what you would
+        measure before and after.
+  \item \textbf{(Applied)} A client wants a field on the product page that
+        their staff fill in and customers see. Compare doing this with a
+        product attribute (configuration), a module (extension) and a template
+        edit. Give the work, the upgrade risk and the maintenance burden of
+        each, and recommend one with your reasons.
+\end{reviewq}

@@ -1,0 +1,401 @@
+%=====================================================================
+\chapter{Managing Orders, Customers and Refunds}\label{ch:orders}
+%=====================================================================
+\locator{5}{Part V --- Running and Extending the Shop}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} how the admin panel changes an order, and \textbf{say}
+        why it does not do so directly.
+  \item \textbf{Predict} which status changes move stock, from the rule rather
+        than from the status names.
+  \item \textbf{Distinguish} the two things the platform calls a refund, and
+        \textbf{state} what each one actually does.
+  \item \textbf{Identify} the work a refund requires that no screen performs.
+  \item \textbf{Design} a back-office procedure that keeps money, stock and
+        records in agreement.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{checkout}: order statuses, the history table, and status 0.
+\chref{dashboard}: that the dashboard's figures are filtered differently.
+\chref{gateway}: reconciliation, and that the shop's record and the provider's
+must be made to agree.
+\end{prereq}
+
+\begin{keyterms}
+back office $\bullet$ order history $\bullet$ status transition $\bullet$ stock
+subtraction $\bullet$ return $\bullet$ return action $\bullet$ refund $\bullet$
+store credit $\bullet$ customer transaction $\bullet$ API signature $\bullet$
+allow-list $\bullet$ audit trail $\bullet$ reconciliation
+\end{keyterms}
+
+\section{The Admin Panel Does Not Edit Orders}
+
+The first surprise of the back office is architectural. When an administrator
+changes an order's status, the admin panel does not write to the database. It
+\textbf{signs a request and calls the storefront's own API over HTTP}, and the
+storefront makes the change.
+
+\begin{conceptbox}[Why that is the right design]
+Three things must happen when an order's status changes: stock must move,
+the customer may need an email, and a history row must be written. Those rules
+are not simple, and they must be identical whether the change comes from a
+human clicking a dropdown, from a payment provider's callback
+(\chref{gateway}), or from a script.
+
+\smallskip
+Writing them once, in the storefront, and having everything else call in is
+the only arrangement in which they cannot drift apart. The alternative ---
+the admin panel having its own copy --- is how a shop ends up with orders
+whose stock was never adjusted because they were edited from the wrong screen.
+
+\smallskip
+\textbf{The consequence nobody mentions: the admin panel cannot change an order
+unless the API accepts the call.} The back office is a client of the shop, and
+it can be locked out of it.
+\end{conceptbox}
+
+\begin{measured}[Out of the box, the API refuses every call]
+Produced by running \texttt{m18\_orders.py --api} in \texttt{code/}. The
+request is signed exactly as the startup controller verifies it: an HMAC-SHA1
+over
+the route, the call, the username, the host, the store, the language, the
+currency, an MD5 of the request body and a timestamp.
+
+\smallskip
+\begin{tabular}{@{}L{5.6cm}L{8.2cm}@{}}
+Rows in \texttt{oc\_api\_ip} & \textbf{0} \\
+A correctly signed call & \texttt{HTTP 403 --- You do not have permission} \\
+After adding one address & accepted \\
+\end{tabular}
+
+\smallskip
+\textbf{The API user ships enabled, and its address allow-list ships empty.} An
+empty allow-list permits nothing --- the check is ``is the caller's address in
+this list'', and the answer for an empty list is always no. So every signed
+call is refused, including the admin panel's own.
+
+\smallskip
+This is the third fault of this shape in the course, after \chref{checkout}'s
+missing setting and \chref{security}'s unread \texttt{.htaccess}: a feature
+that is present, configured, enabled, and inert. In each case the system
+answered, politely, and did nothing.
+\end{measured}
+
+\section{Stock Moves on Transitions, Not on Statuses}
+
+The rule that governs stock is not written on any screen, and it is not what
+the status names suggest.
+
+\begin{definitionbox}[The rule, from \texttt{catalog/model/checkout/order.php}]
+The statuses are partitioned into a set --- the union of
+\texttt{config\_processing\_status} and \texttt{config\_complete\_status} ---
+and everything else.
+
+\smallskip
+\textbf{Moving \emph{into} that set subtracts stock. Moving \emph{out of} it
+adds stock back. Moving within it does nothing.}
+
+\smallskip
+In this shop the set is $\{1, 2, 3, 5, 12\}$ --- Pending, Processing, Shipped,
+Complete and \emph{Reversed}. Everything else, including 0, Canceled, Denied,
+Failed and \emph{Refunded}, is outside it.
+\end{definitionbox}
+
+\begin{measured}[One order, seven status changes, and the stock after each]
+From \texttt{code/m18\_orders.py --stock}: one order for one unit of product~43
+and two of product~40, driven through the API.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.4cm}L{6.0cm}L{2.0cm}L{2.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Status} & \textbf{Where it sits} & \textbf{Stock 43} &
+\textbf{Stock 40} \\
+\midrule
+\endhead
+(before the order) & --- & 904 & 920 \\
+1 Pending & in the set & 903 & 918 \\
+3 Shipped & still in the set & 903 & 918 \\
+7 Canceled & \textbf{outside} & \textbf{904} & \textbf{920} \\
+1 Pending & back inside & 903 & 918 \\
+\textbf{11 Refunded} & \textbf{outside} & \textbf{904} & \textbf{920} \\
+1 Pending & back inside & 903 & 918 \\
+\textbf{12 Reversed} & \textbf{in the set} & \textbf{903} & \textbf{918} \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Shipped changed nothing}, although it is the status at which the goods
+physically leave. The stock left when the order was paid for.
+
+\smallskip
+\textbf{Refunded and Reversed behave oppositely.} Both names mean money went
+back to the customer. Status~11 returns the goods to stock; status~12 does not,
+because somebody put 12 in \texttt{config\_processing\_status}. Nothing on any
+screen says so, and the two statuses sit next to each other in the dropdown.
+
+\smallskip
+\textbf{This is a setting, so it is your problem.} Whoever configures a shop
+decides which statuses are ``processing'', and in doing so decides the stock
+behaviour of every status change the shop will ever make. It is one of the
+highest-consequence settings in the admin panel and it looks like a list of
+checkboxes.
+\end{measured}
+
+\section{Two Different Things Are Called a Refund}
+
+\begin{alertbox}[A return marked ``Refunded'' does nothing at all]
+The platform has a returns system: \adminpath{Sales, Returns}, with its own
+statuses (Pending, Awaiting Products, Complete), five reasons, and four
+actions --- \uiel{Waiting for return}, \uiel{Credit Issued},
+\uiel{Replacement Sent} and \uiel{Refunded}.
+
+\smallskip
+Reading \texttt{admin/model/sale/returns.php}, recording a return performs
+exactly two statements:
+
+\begin{tight}
+  \item \texttt{UPDATE oc\_return SET return\_status\_id = \dots}
+  \item \texttt{INSERT INTO oc\_return\_history \dots}
+\end{tight}
+
+\smallskip
+\textbf{And nothing else.} It does not change the order's status. It does not
+restore stock. It does not create a customer transaction or any store credit.
+It does not move a single rupee.
+
+\smallskip
+\textbf{A return marked ``Refunded'' is a note.} It records that somebody
+decided to refund. The money must be sent back by hand through the payment
+provider, the stock adjusted by hand, and the order's own status changed by
+hand --- and if none of that is done, the order still reads \uiel{Complete} to
+everyone who looks at it, including the dashboard and every report.
+\end{alertbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  act/.style={rounded corners=3pt, draw=#1, line width=1.0pt, fill=#1!8,
+              text=#1!60!black, font=\bfseries\scriptsize, align=center,
+              text width=2.9cm, minimum height=0.9cm},
+  done/.style={font=\scriptsize\bfseries, text=greenhl},
+  todo/.style={font=\scriptsize\bfseries, text=accent},
+  note/.style={font=\scriptsize, text=neutral, align=left, text width=5.8cm,
+               anchor=west}
+]
+  \node[act=secondary] (r) at (0,3.0) {Mark the return\\Refunded};
+  \node[act=accent]    (m) at (0,1.9) {Send the money back};
+  \node[act=accent]    (s) at (0,0.8) {Put the goods back};
+  \node[act=accent]    (o) at (0,-0.3) {Change the order's\\status};
+  \node[act=accent]    (c) at (0,-1.5) {Reverse the\\affiliate commission};
+
+  \node[note, text=greenhl] at (1.9,3.0)
+       {\faIcon{check}~The platform does this. Two SQL statements.};
+  \node[note, text=accent] at (1.9,1.9)
+       {\faIcon{times}~By hand, in the provider's own console.};
+  \node[note, text=accent] at (1.9,0.8)
+       {\faIcon{times}~By hand, or by moving the order to status 11 --- but
+        not 12.};
+  \node[note, text=accent] at (1.9,-0.3)
+       {\faIcon{times}~By hand, or every report still counts the sale.};
+  \node[note, text=accent] at (1.9,-1.5)
+       {\faIcon{times}~Never, unless you built it (\chref{discounts}).};
+\end{tikzpicture}}%
+{What a refund actually requires, and the one part of it the software performs.
+Four of the five are somebody's responsibility, and in most small shops nobody
+has been told which.}{refundwork}
+
+\begin{conceptbox}[The procedure a shop actually needs]
+Because the software performs one fifth of a refund, the other four fifths have
+to be a written procedure, in this order:
+
+\begin{tightnum}
+  \item \textbf{Send the money back first}, through the provider, and record
+        the provider's reference.
+  \item \textbf{Move the order to status 11}, not 12, which returns the goods
+        to stock --- and only if the goods actually came back.
+  \item \textbf{Record the return} with the provider's reference in the
+        comment, so that the shop's record and the provider's can be matched
+        later (\chref{gateway}).
+  \item \textbf{Reverse any commission}, which nothing will do for you.
+  \item \textbf{Check the dashboard agrees} the next morning. The gap between
+        what the shop thinks it sold and what the provider says it collected is
+        the only thing that catches a step somebody forgot.
+\end{tightnum}
+
+\smallskip
+\textbf{Steps 2 and 3 are in that order on purpose.} A return recorded before
+the order is moved leaves a window in which the shop's records say ``refunded''
+and its stock and totals say ``sold''. The window is usually a few minutes, and
+month-end is when somebody finds the one that lasted a year.
+\end{conceptbox}
+
+\section{Customers, and What You Are Keeping}
+
+The customer side of the back office is shorter but carries more risk, because
+the records are about people.
+
+\begin{examplebox}[What \adminpath{Customers, Customers} lets you do, and the
+question attached to each]
+\begin{tight}
+  \item \textbf{Edit a customer's details.} Who is allowed to, and is the change
+        recorded? An order copies its addresses (\chref{checkout}), so editing
+        the customer does not rewrite history --- which is correct, and worth
+        confirming rather than assuming.
+  \item \textbf{Reset a password.} The shop cannot show you the old one, and
+        anyone who offers to has stored it wrongly (\chref{accounts}).
+  \item \textbf{See everything they bought.} Convenient for support, and a
+        complete purchase history of a named person --- which
+        \chref{legal} treats as the regulated asset it is.
+  \item \textbf{Add store credit} (\texttt{oc\_customer\_transaction}). This is
+        real money the shop owes, and it is the one place in the back office
+        where an administrator can create a liability with no approval step.
+  \item \textbf{Delete a customer.} Their orders remain, because the orders are
+        the shop's accounting records and are not the customer's to delete. Be
+        able to explain that distinction before you are asked it.
+\end{tight}
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Assuming the admin panel writes to the database.} It calls the
+        storefront, and can be refused.
+  \item \textbf{Leaving \texttt{oc\_api\_ip} empty} and then reporting that
+        order editing is broken without knowing why.
+  \item \textbf{Reading the status names to predict stock.} Refunded returns
+        stock and Reversed does not.
+  \item \textbf{Putting a money-returned status into
+        \texttt{config\_processing\_status}}, which is how Reversed got there.
+  \item \textbf{Believing a return marked Refunded refunded anything.}
+  \item \textbf{Recording the return before moving the order}, leaving a window
+        where the two disagree.
+  \item \textbf{Refunding without reversing commission}, which
+        \chref{discounts} named as the commonest unreconciled figure in a small
+        shop.
+  \item \textbf{Editing an order to ``correct'' it} instead of changing its
+        status, which loses the history a dispute would be settled from.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Refund an order properly, then find what the shop still believes]
+\begin{lstlisting}[language=bash]
+# --- 1. Find out why order editing does not work --------------------
+cd code
+docker compose exec db mariadb -ushop -pshoppw opencart \
+  -e "SELECT * FROM oc_api; SELECT * FROM oc_api_ip;"
+# One table has a row and the other does not. Say what that means.
+
+# --- 2. Prove it from outside ---------------------------------------
+python m18_orders.py --api
+
+# --- 3. Predict the stock table, then watch it ----------------------
+# Which of these returns goods to stock: Shipped, Canceled, Refunded,
+# Reversed? Commit to an answer for each BEFORE running:
+python m18_orders.py --stock
+
+# --- 4. Explain the two that surprised you --------------------------
+docker compose exec db mariadb -ushop -pshoppw opencart \
+  -e "SELECT value FROM oc_setting \
+      WHERE \`key\` IN ('config_processing_status', \
+                       'config_complete_status');"
+
+# --- 5. Record a return in the admin panel --------------------------
+# Admin: Sales > Returns > Add New. Action: Refunded. Save.
+# Now check: did the order's status change? Did stock move? Did any
+# money move? Check all three in the database, not on the screen.
+python m18_orders.py --refund
+
+# --- 6. Do the refund properly --------------------------------------
+# Follow the five-step procedure in this chapter. Write down which
+# steps the software performed and which you performed.
+
+# --- 7. Find the disagreement ---------------------------------------
+# Admin: Reports > Sales > Orders. Does the total match what the shop
+# actually kept? Account for every difference.
+
+# --- 8. Write the procedure -----------------------------------------
+# One page a shop assistant could follow, with the order of steps
+# and a stated reason for that order.
+
+# --- 9. Clean up ----------------------------------------------------
+python m18_orders.py --clean
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 5 is the one students argue about. The screen says
+\uiel{Refunded}, the save succeeds, a confirmation appears --- and the database
+shows two rows written in a table nothing else reads.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item An order is moved from Pending to Shipped, then to Reversed. State what
+        happened to stock at each step and why, and say what you would change in
+        the shop's configuration if you wanted Reversed to behave like Refunded.
+  \item A shop records 40 returns a month, all marked \uiel{Refunded}, and its
+        stock figures drift steadily away from reality. Explain the mechanism
+        precisely, say what else is also drifting, and give the smallest change
+        that would stop it.
+  \item The admin panel reports that it cannot change an order. Describe how you
+        would diagnose this in four steps, naming what you would look at each
+        time, and explain why the fault is easy to misread as a permissions
+        problem with the administrator's account.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item The admin panel changes an order by signing a request and calling the
+        storefront's API, so that stock, notification and history follow one
+        code path whatever triggered the change.
+  \item Measured: the API user ships enabled with an \emph{empty} address
+        allow-list, which permits nothing --- so every signed call is refused,
+        including the admin panel's own. The third inert-feature fault in this
+        course.
+  \item Stock is decided by the transition between sets of statuses, not by the
+        status. Moving into the processing-or-complete set subtracts; moving
+        out of it adds back; moving within it does nothing.
+  \item Measured: Shipped moved no stock. Canceled and Refunded returned it.
+        \textbf{Reversed did not}, because 12 sits in
+        \texttt{config\_processing\_status} --- a setting, and therefore your
+        responsibility.
+  \item A return marked \uiel{Refunded} performs two SQL statements and nothing
+        else: no order status change, no stock, no credit, no money. It is a
+        note.
+  \item A refund is five jobs and the software does one. The other four need a
+        written procedure, in a stated order, because the order of steps decides
+        how long the records disagree.
+  \item Store credit is a liability an administrator can create with no approval
+        step. Deleting a customer does not delete their orders, and should not.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Moving an order to status 12 (Reversed) causes stock to:
+        (a)~be returned; (b)~be subtracted again; (c)~stay as it is;
+        (d)~depend on the payment method.
+  \item \textbf{(MCQ)} Recording a return with the action \uiel{Refunded}:
+        (a)~refunds the customer; (b)~restores stock; (c)~changes the order's
+        status; (d)~writes two rows and does nothing else.
+  \item \textbf{(Short)} Explain why the admin panel calls the storefront's API
+        instead of writing to the database, and give one problem that design
+        prevents.
+  \item \textbf{(Short)} Why does an empty \texttt{oc\_api\_ip} refuse every
+        call rather than allowing every call? Give the general lesson about
+        allow-lists.
+  \item \textbf{(Short)} An order's addresses are copied at checkout. Explain
+        what this means for editing a customer's address afterwards, and why it
+        is the correct behaviour.
+  \item \textbf{(Applied)} A shop's stock counts have drifted by several hundred
+        units over six months. Give four distinct mechanisms from this chapter
+        that could produce that, say how you would test for each in the
+        database, and state which you would expect to find first.
+  \item \textbf{(Applied)} Write the refund procedure for a shop taking 200
+        orders a day with a 6\% return rate, two staff in the back office and a
+        payment provider whose console is separate from the shop. State each
+        step, who performs it, what is recorded, the order and the reason for
+        the order, and the daily check that would catch a missed step.
+\end{reviewq}

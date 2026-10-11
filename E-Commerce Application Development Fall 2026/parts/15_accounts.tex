@@ -1,0 +1,416 @@
+%=====================================================================
+\chapter{User Account Management}\label{ch:accounts}
+%=====================================================================
+\locator{4}{Part IV --- Money and Identity}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} why a password is stored as a deliberately slow hash,
+        and \textbf{name} what the cost factor buys.
+  \item \textbf{Measure} the cost factor against throughput, and
+        \textbf{choose} one for a stated shop.
+  \item \textbf{Demonstrate} user enumeration by timing, and \textbf{explain}
+        why a stronger hash makes it worse.
+  \item \textbf{Evaluate} a lockout policy, and \textbf{identify} what it
+        enables as well as what it prevents.
+  \item \textbf{Design} a password reset flow that does not become the weakest
+        way in.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{basket}: sessions, cookies, and that the server decides what is true.
+\chref{gateway}: measuring a distribution rather than a single value. Appendix~A
+--- every exercise here runs against your own container.
+\end{prereq}
+
+\begin{keyterms}
+authentication $\bullet$ password hash $\bullet$ bcrypt $\bullet$ cost factor
+$\bullet$ salt $\bullet$ rainbow table $\bullet$ credential stuffing $\bullet$
+user enumeration $\bullet$ timing side channel $\bullet$ lockout $\bullet$
+rate limiting $\bullet$ password reset $\bullet$ account takeover
+\end{keyterms}
+
+\section{Why a Password Is Stored Slowly on Purpose}
+
+Every other piece of engineering in this course tries to make something faster.
+Password storage is the one place where the software is deliberately slowed
+down, and understanding why is the whole of the chapter.
+
+\begin{definitionbox}[Hash, Salt, Cost Factor]
+A \term{password hash} is a one-way function of the password. The shop stores
+the output and never the password, so that a stolen database does not hand the
+attacker the passwords.
+
+\smallskip
+A \term{salt} is a random value mixed in, different for every user, so that two
+customers with the same password get different hashes --- and so that an
+attacker cannot precompute a table of hashes once and look everybody up.
+
+\smallskip
+A \term{cost factor} says how much work the function does. Bcrypt's is a power
+of two: raising it by one \textbf{doubles} the time. That is a cost to your
+server once per login and a cost to the attacker once per \emph{guess}, and
+the attacker is making billions of them.
+\end{definitionbox}
+
+\begin{examplebox}[What this shop actually does]
+\begin{tight}
+  \item Passwords are stored with PHP's \texttt{password\_hash(\dots,
+        PASSWORD\_DEFAULT)}, which here produces a \texttt{\$2y\$10\$} hash ---
+        \textbf{bcrypt at cost 10}, PHP's default and unchanged since 2013.
+  \item The column is \texttt{varchar(255)}, which is correct: it leaves room
+        for whatever algorithm PHP's default becomes next.
+  \item Version 3 of this platform used SHA-1 with a salt, which is far too
+        fast to be a password hash at all. Version 4 moved to
+        \texttt{password\_hash}. \textbf{When you inherit a shop, check which
+        one it is before anything else.}
+  \item The minimum password length is \textbf{6 characters}, and none of the
+        complexity settings --- uppercase, lowercase, number, symbol --- is
+        set at all, so none is enforced.
+\end{tight}
+\end{examplebox}
+
+\begin{measured}[The cost factor against the clock]
+From \texttt{code/m15\_accounts.py --cost}, timed by PHP inside the shop
+container on the machine in Appendix~A. ``Logins per second'' is one core doing
+nothing else.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.2cm}L{2.4cm}L{2.6cm}L{3.0cm}L{3.2cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Cost} & \textbf{Hash} & \textbf{Verify} & \textbf{Logins/sec} &
+\textbf{Work vs cost 8} \\
+\midrule
+\endhead
+8 & 13.6\,ms & 13.7\,ms & 73 & 1$\times$ \\
+9 & 29.6\,ms & 26.8\,ms & 37 & 2$\times$ \\
+\textbf{10} & \textbf{52.8\,ms} & \textbf{60.3\,ms} & \textbf{17} &
+4$\times$ \\
+11 & 110.2\,ms & 103.0\,ms & 10 & 8$\times$ \\
+12 & 217.5\,ms & 218.9\,ms & 5 & 16$\times$ \\
+13 & 440.7\,ms & 448.2\,ms & 2 & 33$\times$ \\
+14 & 846.8\,ms & 873.8\,ms & 1 & 64$\times$ \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{The doubling is exact}, which is what a well-behaved cost factor looks
+like: 13.7, 26.8, 60.3, 103, 219, 448, 874. Nothing else in this course
+produces a table that clean, because nothing else in this course is a cost that
+somebody designed on purpose.
+
+\smallskip
+\textbf{The shop ships at cost 10: 60\,ms per login, 17 logins per second on
+one core.} A shop with 17 simultaneous login attempts is a shop in trouble for
+other reasons, so cost 10 is not a throughput problem --- but it is also
+twelve-year-old advice, and hardware has not stood still.
+
+\smallskip
+\textbf{Cost 12 is the usual current recommendation}: 219\,ms, 5 logins per
+second. For a shop taking a few hundred orders a day that is free, and it makes
+every stolen hash sixteen times more expensive to attack than cost 8.
+\textbf{Raising it is one line, and the next section is the reason to think
+first.}
+\end{measured}
+
+\section{What the Login Form Tells an Attacker Who Has No Password}
+
+An attacker with a list of email addresses and no passwords still wants
+something from your login form: \emph{which of these addresses have accounts
+here}. That list is worth money on its own, and it makes every later attack
+cheaper.
+
+\begin{measured}[A registered email answers more slowly, and measurably so]
+From \texttt{code/m15\_accounts.py --enumerate}: fifteen login attempts with a
+deliberately wrong password, against an address that exists and one that does
+not, timed from outside the container as an attacker would.
+
+\smallskip
+\begin{tabular}{@{}L{4.6cm}L{3.0cm}L{2.6cm}L{3.0cm}@{}}
+& \textbf{Median} & \textbf{Fastest} & \textbf{Slowest} \\
+\textbf{Registered email} & \textbf{88.6\,ms} & 70.9\,ms & 142.7\,ms \\
+\textbf{Unknown email} & \textbf{23.0\,ms} & 15.2\,ms & 94.8\,ms \\
+\end{tabular}
+
+\smallskip
+\textbf{A gap of 65.5\,ms --- 74\% of the slower time --- visible from
+outside, over the network, without a single correct password.}
+
+\smallskip
+\textbf{Where the 65\,ms comes from is the uncomfortable part.} It is almost
+exactly the cost of one bcrypt verify at cost 10, measured in the previous
+section as 60.3\,ms. A wrong password on a real account must be checked against
+the stored hash; a wrong \emph{email} matches no row, so there is nothing to
+check and the request returns early.
+
+\smallskip
+\textbf{So the leak is produced by the security measure.} Raise the cost factor
+to 12 for the excellent reasons above, and the gap grows from 65\,ms to roughly
+220\,ms --- four times louder, trivially measurable over any network. A change
+that makes stolen hashes sixteen times harder to crack makes your customer list
+four times easier to enumerate.
+
+\smallskip
+\textbf{The fix is one line and it is not obvious:} when the email matches no
+customer, verify the supplied password against a \emph{dummy hash} anyway and
+discard the result. The request then costs the same whether the account exists
+or not. It feels like wasted work because it is wasted work --- that is the
+point.
+\end{measured}
+
+\begin{conceptbox}[Timing is not the only way this leaks]
+Closing the timing channel is necessary and not sufficient. The same
+information escapes through:
+
+\begin{tight}
+  \item \textbf{Different messages.} ``No such account'' versus ``Wrong
+        password'' states it outright. Use one message for both.
+  \item \textbf{Registration.} ``That email is already registered'' is the same
+        disclosure through a different form, and it is harder to remove,
+        because the user genuinely needs to know. Send an email instead of
+        answering on the page.
+  \item \textbf{Password reset.} ``We have sent you a link'' must be shown
+        whether or not the address exists.
+  \item \textbf{The lockout itself.} See below --- a locked account answers
+        differently from one that was never there.
+\end{tight}
+
+\smallskip
+\textbf{Enumeration is rarely the attack. It is the reconnaissance that makes
+the attack affordable}, and that is why it is worth closing even though no
+single leak looks serious.
+\end{conceptbox}
+
+\section{Lockout: What It Prevents, and What It Enables}
+
+\begin{measured}[Five wrong guesses, then what?]
+From \texttt{code/m15\_accounts.py --lockout}. The shop's
+\texttt{config\_login\_attempts} is \textbf{5}.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.0cm}L{2.6cm}L{3.2cm}L{5.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Attempt} & \textbf{Time} & \textbf{Recorded} & \textbf{Result} \\
+\midrule
+\endhead
+1--5 & 70--81\,ms & 1, 2, 3, 4, 5 & rejected, hash verified each time \\
+6 & \textbf{16\,ms} & 5 & \textbf{locked} \\
+7 & \textbf{15\,ms} & 5 & locked \\
+\textbf{correct password} & \textbf{17\,ms} & 5 & \textbf{still refused} \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{It works.} After five failures the account stops answering, for an
+hour, keyed on the pair (email, IP address).
+
+\smallskip
+\textbf{Two things the table shows that the setting does not.}
+
+\smallskip
+\textbf{First, the correct password is refused too.} That is right --- a lock
+that the attacker's next guess could open would be no lock --- but it means
+\textbf{anyone who knows a customer's email address can lock them out of their
+own account at will}, with five wrong guesses, for an hour, repeatedly. Lockout
+converts a password-guessing attack into a denial-of-service one. It is the
+right trade for most shops and it is a trade, not a free win.
+
+\smallskip
+\textbf{Second, the locked response is four times faster}, because it never
+reaches the hash. The lockout is itself an enumeration channel: 16\,ms says
+``this account exists and is locked'', which is more than the 23\,ms of an
+unknown address was giving away.
+
+\smallskip
+\textbf{And the key is (email, IP).} An attacker with a few hundred addresses
+has effectively no limit, while a school or an office behind one NAT shares a
+single counter --- so the mechanism is weakest against the attacker it is for
+and strongest against the customers it is not.
+\end{measured}
+
+\begin{alertbox}[Where the real risk is, and it is not your password form]
+Customers reuse passwords. An attacker who has a list of email and password
+pairs stolen from somewhere else tries them on your shop --- \term{credential
+stuffing} --- and some of them work, because the passwords are genuinely
+correct. Nothing in this chapter prevents that: the hash is fine, the lockout
+counts five failures and these are not failures.
+
+\smallskip
+What helps is \textbf{not} another password rule. It is: checking new passwords
+against lists of known-breached ones; offering a second factor; rate limiting by
+IP and by address across the whole site rather than per account; and noticing
+the pattern --- many accounts, one address, high success rate --- which is a
+\chref{dashboard} problem rather than a login problem.
+
+\smallskip
+\textbf{Meanwhile this shop's minimum password length is six characters with no
+complexity requirement at all.} That is the setting to change first, and it is
+in \adminpath{System, Settings, Edit, Option}.
+\end{alertbox}
+
+\begin{conceptbox}[The reset flow is the other front door]
+An account is only as secure as the cheapest way to get into it, and that is
+usually the password reset.
+
+\begin{tightnum}
+  \item \textbf{The token must be unguessable and single-use}, and must expire
+        in minutes rather than days.
+  \item \textbf{It must not be in the URL of a page that loads third-party
+        scripts}, which leak it in the \texttt{Referer} header.
+  \item \textbf{Resetting must invalidate existing sessions}, or an attacker
+        who was already in stays in after the customer ``fixes'' it.
+  \item \textbf{The response must not reveal whether the address exists}, which
+        is the enumeration problem again, in its easiest-to-fix form.
+  \item \textbf{The email itself is now the weakest link.} You have delegated
+        your authentication to the customer's mail provider, and should know
+        that you have done so.
+\end{tightnum}
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Choosing a cost factor without measuring it on the machine that
+        will run it.} Cost 14 is one login per second.
+  \item \textbf{Raising the cost factor without closing the timing channel},
+        which makes enumeration four times easier while you congratulate
+        yourself.
+  \item \textbf{Different error messages for ``no account'' and ``wrong
+        password''.}
+  \item \textbf{Believing lockout is free.} It hands anyone a denial-of-service
+        tool against any customer whose email they know.
+  \item \textbf{Rate limiting only per account}, which does nothing against an
+        attacker trying one password across ten thousand accounts.
+  \item \textbf{Leaving the minimum password length at six with no complexity
+        rules}, which is this shop's shipped state.
+  \item \textbf{A reset token that does not expire}, or that survives being
+        used.
+  \item \textbf{Testing any of this against a shop that is not yours.} See
+        Appendix~A.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Measure your own login, then make it quieter]
+\begin{lstlisting}[language=bash]
+# Everything here runs against YOUR container on localhost. Read the
+# scope statement in Appendix A before you start.
+
+# --- 1. Find out what your shop stores ------------------------------
+cd code
+docker compose exec db mariadb -ushop -pshoppw opencart \
+  -e "SELECT email, LEFT(password,7) FROM oc_customer LIMIT 3;"
+# The first seven characters name the algorithm and the cost.
+
+# --- 2. Measure the cost factor -------------------------------------
+python m15_accounts.py --cost
+
+# --- 3. Choose one, and justify it in a sentence --------------------
+# How many logins per second does your shop actually need? Work it
+# out from orders per day, not from a feeling.
+
+# --- 4. Predict, then measure the timing leak -----------------------
+# Does a wrong password on a REAL account take longer than one on an
+# address that does not exist? Predict yes or no, and by how much.
+python m15_accounts.py --enumerate
+
+# --- 5. Explain the number you got ----------------------------------
+# Compare the gap with the verify time from step 2. They should
+# match. Say why.
+
+# --- 6. Watch the lockout, and find what it gives away --------------
+python m15_accounts.py --lockout
+# Two separate problems are visible in that table. Name both.
+
+# --- 7. Tighten the policy ------------------------------------------
+# Admin: System > Settings > Edit > Option. Raise the minimum
+# password length and turn on the complexity requirements. Then
+# register a new customer and confirm the rules are enforced.
+
+# --- 8. Write the fix you cannot make in the admin panel ------------
+# Three lines of pseudocode: how would you make a login to a
+# non-existent account take the same time as one to a real account?
+
+# --- 9. Clean up ----------------------------------------------------
+python m15_accounts.py --clean
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 5. The timing leak is not a bug somebody left in
+--- it is the direct, unavoidable consequence of doing the right thing with
+passwords. Security measures interact, and sometimes they interact badly.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Your shop runs bcrypt at cost 10 and takes 400 orders a day. Work out
+        whether cost 12 is affordable, stating your assumptions about logins
+        per order and peak concentration, and say what else you would have to
+        change at the same time and why.
+  \item A wrong password on a registered address took 88.6\,ms and on an
+        unknown one 23.0\,ms. Explain the cause, state what an attacker does
+        with that, and give the one-line fix together with the reason it feels
+        wrong to write.
+  \item A client asks you to remove the five-attempt lockout because customers
+        complain about being locked out. Give the risk you are accepting, the
+        risk you are removing, and a design that addresses both complaints
+        better than either keeping or removing it.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A password hash is slow on purpose. The salt defeats precomputation;
+        the cost factor sets how expensive each guess is, and each step doubles
+        it for you and for the attacker.
+  \item This shop uses \texttt{password\_hash} with bcrypt at cost 10, in a
+        \texttt{varchar(255)} column. Version 3 used salted SHA-1; check which
+        one any shop you inherit is using before anything else.
+  \item Measured: cost 8 to 14 ran 13.7, 26.8, 60.3, 103, 219, 448 and
+        874\,ms --- an exact doubling. Cost 10 gives 17 logins per second on
+        one core; cost 12, the usual current recommendation, gives 5.
+  \item Measured: a wrong password on a registered address took 88.6\,ms and on
+        an unknown address 23.0\,ms --- a 65\,ms gap, visible over the network,
+        and almost exactly one bcrypt verify.
+  \item The leak is caused by the defence. Raising the cost factor to 12 would
+        make the gap roughly 220\,ms. The fix is to verify against a dummy hash
+        when no account matches, so that both paths cost the same.
+  \item Enumeration also leaks through error messages, registration, password
+        reset and the lockout response. It is reconnaissance, not the attack.
+  \item Measured: five wrong guesses lock the account for an hour, keyed on
+        (email, IP). The correct password is refused too --- so lockout hands
+        an attacker a denial-of-service tool --- and the locked reply is four
+        times faster, which is itself a disclosure.
+  \item Credential stuffing defeats all of it, because the passwords are
+        correct. The answers are breach-list checks, a second factor, site-wide
+        rate limiting, and noticing the pattern.
+  \item The password reset is the other front door: single-use, short-lived
+        tokens; session invalidation; and the knowledge that you have delegated
+        authentication to a mail provider.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Raising bcrypt's cost factor from 10 to 12 multiplies
+        the work by: (a)~1.2; (b)~2; (c)~4; (d)~16.
+  \item \textbf{(MCQ)} The measured 65\,ms gap between a registered and an
+        unknown email is closest to: (a)~network latency; (b)~one bcrypt
+        verify; (c)~the database lookup; (d)~template rendering.
+  \item \textbf{(Short)} Explain what a salt prevents, and why it does not need
+        to be secret.
+  \item \textbf{(Short)} Give two ways a shop leaks which email addresses are
+        registered, other than by timing, and say how to close each.
+  \item \textbf{(Short)} Explain why account lockout is a trade rather than an
+        improvement, naming what it enables.
+  \item \textbf{(Applied)} A shop's database is stolen. All passwords are
+        bcrypt at cost 10. Explain what the attacker can and cannot do, what
+        the shop must tell its customers, and what it should change --- and
+        say why changing the cost factor now helps less than you might expect.
+  \item \textbf{(Applied)} Design rate limiting for a login form that must stop
+        credential stuffing without locking out legitimate customers. State
+        what you count, over what window, keyed on what, what happens at the
+        limit, and how a school computer lab with forty students behind one
+        address is not broken by your design.
+\end{reviewq}

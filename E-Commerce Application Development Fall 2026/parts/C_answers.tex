@@ -315,3 +315,762 @@ calls rather than facts, and they say so.
         healthy, with all of it gone. Uploaded images go with the
         \texttt{shopdata} volume at the same time.
 \end{ans}
+
+%---------------------------------------------------------------------
+\ansch{10 --- The Checkout and the Order State Machine}
+\begin{ans}
+  \item \textbf{Three things, in order.} (a)~\textbf{Drive the checkout
+        end to end from a script and read every reply}, not the rendered
+        pages. (b)~\textbf{Find the first step whose answer disagrees with the
+        step before it} --- here, an address accepted with
+        \texttt{success} and then reported missing. (c)~\textbf{Read the
+        source for that one step}, which the previous two have now identified
+        out of several thousand files. \textbf{What the measurement would have
+        told you:} that the shipping quote answered
+        \texttt{"Shipping address required!"} --- a fault, not a price
+        objection. The shipping charges were never the question, and a shop
+        that had lowered them would have changed nothing and concluded that
+        customers were simply difficult.
+  \item \textbf{Why the shares differ.} Time is spread across all eight
+        steps because every one of them loads the framework, starts a session,
+        rebuilds the basket and renders something --- fixed costs that have
+        nothing to do with what the step is for. Writes are not spread: seven
+        steps write almost nothing, because collecting an address changes a
+        session, while \texttt{confirm} commits the whole order ---
+        \texttt{oc\_order}, its products, its totals and its addresses --- in
+        one burst. \textbf{What it implies at ten times the traffic:} optimise
+        the \emph{fixed} cost, not \texttt{confirm}. Reads scale by caching
+        and by the work of \chref{catalogue}; writes do not cache, but 55
+        writes per order against 607 queries means the order itself is the
+        small part. The 271 queries spent before the customer has committed to
+        anything are the ones to attack.
+  \item \textbf{Two reasons to refuse.} (a)~\textbf{They are evidence.}
+        Each one is a customer who reached the payment button and stopped; the
+        ratio of status-0 rows to real orders \emph{is} the abandonment rate,
+        and deleting them destroys the only record of it the shop has.
+        (b)~\textbf{A payment provider may still be looking for one.} A
+        gateway's reply can arrive minutes or hours later, and it finds the
+        order by an identifier that must still exist (\chref{gateway});
+        deleting the row turns a late but successful payment into money
+        received against nothing. \textbf{What to build instead:} a report
+        that counts them by day and by last-reached step, and an archiving rule
+        that moves rows older than the gateway's longest callback window --- so
+        that nothing is destroyed and the live table stays small.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{11 --- Shipping, Tax and Zones}
+\begin{ans}
+  \item \textbf{Where the 141.40 comes from.} It is not 20\% of the
+        sub-total: $0.20 \times 702.00 = 140.40$, which is 1.00 short. The
+        missing 1.00 is 20\% of the 5.00 shipping charge, so the base is
+        $702.00 + 5.00 = 707.00$ and $0.20 \times 707.00 = 141.40$.
+        \textbf{The two rule decisions this reveals.} (a)~\textbf{Shipping is
+        taxable} in this configuration --- a jurisdictional choice, not
+        arithmetic, and one that differs between countries. (b)~\textbf{The
+        fixed eco tax is not itself taxed}: it contributed 6.00 to the total
+        but nothing to the VAT base, so the two tax lines are applied to the
+        same base in parallel rather than one on top of the other. Had they
+        compounded, the VAT would have been $0.20 \times 713.00 = 142.60$.
+  \item \textbf{What is wrong.} A base of \texttt{store} means every order is
+        taxed as though it were delivered to the shop's own address in Lahore.
+        \textbf{Which orders are affected:} only the UAE ones --- they are
+        charged Pakistani sales tax on an export that should not carry it, and
+        the shop is either over-collecting from the customer or absorbing the
+        amount itself, while the correct treatment is recorded nowhere. Every
+        domestic order is, by coincidence, correct. \textbf{Why nobody has
+        noticed:} the configuration is right for the overwhelming majority of
+        orders and for every order anyone has ever tested, because testing is
+        done from Pakistan. A fault that is correct in the common case and
+        wrong in the rare one does not announce itself. \textbf{What to
+        change:} set the rule's base to \texttt{shipping}, and confine the
+        rate's geo zone to Pakistan, so that a UAE delivery matches no rule
+        and attracts no Pakistani tax. Then place an order to each, because a
+        change made on reasoning alone has not been verified.
+  \item \textbf{The failure mode in money.} Weight-based shipping charges from
+        a band table keyed on total basket weight. A product with weight zero
+        contributes nothing, so a basket of only zero-weight products falls in
+        the lowest band --- usually free or near-free delivery --- and the shop
+        pays the courier out of its own margin. With 600 of 4000 products
+        affected, roughly one basket in seven will be understated, and the
+        worst cases are the heaviest products whose weight was never entered.
+        \textbf{Why no error appears:} zero is a valid weight. The band lookup
+        succeeds, a quote is returned, the order completes, and every page
+        returns 200 --- the same shape of silent failure as
+        \chref{checkout}'s missing setting. \textbf{One change that makes it
+        visible:} refuse to quote for a basket containing a zero-weight
+        product, or, less disruptively, add a dashboard panel
+        (\chref{dashboard}) counting enabled products with a weight of zero.
+        The first prevents the loss; the second reports it. Either is better
+        than an accurate method nobody maintains.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{12 --- Discounts, Vouchers and Referrals}
+\begin{ans}
+  \item \textbf{The setting} was the coupon total extension's \emph{sort
+        order}: 4 as shipped, which places it before the tax line at 5, versus
+        6, which places it after. \textbf{Why 14.04:} the discount is 70.20,
+        and the VAT rate is 20\%. With the coupon first, the VAT base is
+        $702.00 + 5.00 - 70.20 = 636.80$ and the VAT is 127.36; with it last,
+        the base is $702.00 + 5.00 = 707.00$ and the VAT is 141.40. The
+        difference $141.40 - 127.36 = 14.04$ is exactly $0.20 \times 70.20$ ---
+        tax on the discount. \textbf{Which is correct: 770.16}, the shipped
+        order. Tax is owed on \emph{consideration} --- what the customer
+        actually pays --- and the customer was never asked for the 70.20, so no
+        tax is due on it. Charging 784.20 collects 14.04 of tax on money that
+        changed hands with nobody.
+  \item \textbf{The break-even uplift.} With margin $m = 0.25$ and discount
+        $d = 0.15$, the multiple is $m/(m-d) = 0.25/0.10 = \mathbf{2.5}$ ---
+        the shop needs \textbf{150\% more orders}, two and a half times the
+        volume, to make the same profit. \textbf{Two reasons the real
+        requirement is higher.} (a)~\textbf{Cannibalisation}: a permanent code
+        for \emph{loyal} customers goes, by definition, to people who already
+        buy. Every one of them who would have bought anyway is pure loss, and
+        no new volume is created to offset it. (b)~\textbf{Variable costs scale
+        with volume}: 150\% more orders means 150\% more picking, packing,
+        delivery and support, so the gross-margin arithmetic above understates
+        the cost of getting there --- and a permanent code also resets the
+        reference price, so the 15\% is not recoverable later.
+        \textbf{A cheaper alternative:} store credit issued \emph{after} an
+        order --- say 5\% back, usable on the next purchase. It costs less (not
+        every credit is redeemed), it cannot be found by someone searching for
+        a code, it rewards repeat buying rather than discounting a single sale,
+        and it brings the customer back rather than merely letting them leave
+        cheaper.
+  \item \textbf{What to tell the client.} That the platform has no gift
+        vouchers at all --- no tables, no totals extension, only a leftover
+        demonstration image from the version that did --- and that the outline
+        naming them reflects a 2010 book rather than current software. Say it
+        before quoting, not after. \textbf{What the platform already provides:}
+        the \emph{spending} half. Store credit
+        (\texttt{oc\_customer\_transaction} and the \texttt{credit} total) is a
+        balance on an account that draws down across orders, handles partial
+        payment, and already sits in the totals pipeline.
+        \textbf{What must be built:} the \emph{buying} half --- selling a
+        voucher as a purchasable product; generating a code on order
+        completion; delivering it to a named recipient; and redeeming it into
+        \emph{a different customer's} credit, with the balance, expiry and
+        single-use guarantees that implies. That is a module
+        (\chref{modules}), and the hard parts are the two ways it can be spent
+        twice: two simultaneous redemptions of the same code, and a redemption
+        on an order that is later refunded.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{13 --- Web Payment Systems}
+\begin{ans}
+  \item \textbf{Two ways to ship goods you are never paid for.}
+        (a)~\textbf{Authorisation mistaken for capture.} The gateway reserved
+        the funds and answered ``success'', but nothing was ever claimed. The
+        reservation lapses after a few days and the money returns to the
+        customer, who has the goods. (b)~\textbf{Capture followed by a
+        chargeback.} The money arrived and was later taken back by the issuer
+        --- on a disputed or fraudulent card, this is the shop's loss, not the
+        acquirer's. \textbf{What to check in the documentation:} for the first,
+        whether the endpoint you call performs authorisation only or
+        authorisation-and-capture, and if the former, which call captures and
+        when it must happen. For the second, the provider's chargeback terms:
+        how long the window is, what evidence wins a dispute, and whether a
+        delivery signature is among it. Both questions have documented answers,
+        and neither is visible in the integration's happy path.
+  \item \textbf{Net margin at a 10\% refusal rate.} Per 100 orders: 90
+        delivered at $900 - 60 - 250 = $~Rs~590 each, so $90 \times 590 =
+        $~Rs~53{,}100; 10 refused at $-$Rs~500 each, so $-$Rs~5{,}000.
+        \textbf{Net Rs~48{,}100}, against Rs~37{,}200 at a 20\% refusal rate
+        --- an improvement of Rs~10{,}900, or \textbf{29\%}.
+        \textbf{Against removing the courier fee entirely:} the fee is Rs~60 on
+        each of 80 delivered orders, $80 \times 60 = $~Rs~4{,}800, which raises
+        the net to Rs~42{,}000 --- an improvement of \textbf{13\%}. So halving
+        the refusal rate is worth more than twice as much as winning a free COD
+        service, and the courier would never agree to the second while the
+        first is entirely within the shop's own control. \textbf{The lesson:}
+        negotiating hard over the thing you cannot change while ignoring the
+        thing you can is exactly backwards, and the arithmetic says so in one
+        line.
+  \item \textbf{Four things, in order.} (1)~\textbf{Can you legally receive the
+        money?} Foreign-currency receipts by a Pakistani merchant are subject
+        to State Bank rules, and the answer determines whether the project is
+        possible at all. (2)~\textbf{Will an acquirer accept this business?}
+        Cross-border card acceptance is underwritten against the risk that the
+        shop does not deliver, and a new shop with no trading history is often
+        declined. (3)~\textbf{What does it cost, including the dispute rate?}
+        International card-not-present carries both a higher discount rate and
+        a materially higher chargeback rate than domestic. (4)~\textbf{What
+        will you ship, and how will you prove you shipped it?} Winning a
+        dispute requires delivery evidence, and international delivery often
+        produces none. \textbf{Most likely to stop the project: the second.}
+        The technical integration is a week; acquirer onboarding for
+        cross-border acceptance by a small Pakistani merchant is the step that
+        fails --- and it fails after everything has been built, if you leave it
+        until last. That is why it belongs second on this list and not fourth.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{14 --- Taking Payment for Orders}
+\begin{ans}
+  \item \textbf{What a 1-second timeout actually costs.} From the measured
+        table it cuts off \textbf{23 of 196 answered requests, 11.7\%} --- not
+        a few stragglers but one payment in eight and a half, each with an
+        \emph{unknown} outcome rather than a failed one, so the customer may
+        already have been charged. The colleague's reasoning is sound for a
+        bell-shaped distribution, and this one is not bell-shaped: the median
+        is 321\,ms and the 95th percentile is 3{,}774\,ms, so ``three times the
+        median'' lands in the empty gap between the two groups.
+        \textbf{What to propose: 5 seconds}, which cut off nothing at all, and
+        the measurement to justify it. The customer waits longer in the rare
+        slow case, and the shop stops discarding good payments. If five seconds
+        is judged too long to make anyone wait, the answer is not a shorter
+        timeout but an asynchronous design --- accept, show a pending page, and
+        resolve from the provider's callback.
+  \item \textbf{Why the middle is flat.} Because the latency distribution is
+        \emph{bimodal}: one group answers in under about half a second and a
+        second group takes between two and five seconds, with very little in
+        between. A timeout placed in the gap therefore catches almost nothing
+        extra --- going from 1\,s to 3\,s rescued two requests in two hundred.
+        \textbf{What the shape tells you that an average could not:} that there
+        are two distinct code paths inside the provider rather than one
+        variable one --- a fast path, and something slower behind it such as a
+        risk check or an internal retry --- and that the only meaningful
+        choices are ``before the slow path'' and ``after it''. An average of
+        700\,ms invites tuning around 700\,ms, which is precisely the region
+        where no choice makes any difference at all.
+  \item \textbf{Without a key.} The second request is a new, valid
+        authorisation. The provider has no way to tell it from a customer
+        legitimately buying twice, so it charges again and returns a different
+        transaction identifier --- in the measurement
+        \texttt{f59594f7d23c4446} and \texttt{8171b6e85f9b4766}, both
+        approved. The customer has paid twice and the shop has one order.
+        \textbf{With a key.} The provider recognises it, returns the first
+        answer unchanged --- same transaction identifier, in 5\,ms --- and
+        charges nothing. \textbf{Where it is stored: on the order row},
+        generated once when the order is created. \textbf{Why generating it
+        when the button is pressed would not work:} the retry is a new request
+        and would generate a new key, which is a key the provider has never
+        seen, so it charges again. The key must identify \emph{the payment
+        attempt for this order}, not the HTTP request --- and the order is the
+        only thing that survives between the two.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{15 --- User Account Management}
+\begin{ans}
+  \item \textbf{Is cost 12 affordable?} Assumptions, stated: 400 orders a day;
+        perhaps three logins per order once failed attempts, repeat visits and
+        account pages are counted, so about 1{,}200 logins a day; and traffic
+        is not flat, so assume the busiest hour carries 20\% of the day's
+        logins --- 240 in an hour, about \textbf{0.07 logins per second} on
+        average and perhaps one per second in a burst. Cost 12 delivers
+        \textbf{5 logins per second} on one core. The headroom is more than
+        fiftyfold, so \textbf{yes, comfortably} --- and cost 13, at 2 per
+        second, would still be adequate. \textbf{What else must change at the
+        same time:} the timing leak. Cost 12 raises the enumeration gap from
+        about 65\,ms to about 220\,ms, four times louder, so the dummy-hash fix
+        must ship \emph{with} the cost change rather than after it. Existing
+        hashes also remain at cost 10 until each customer next logs in, so the
+        code must rehash on successful login or the change never reaches
+        anybody.
+  \item \textbf{The cause.} A wrong password on a registered address must be
+        checked against the stored hash, which costs one bcrypt verify ---
+        measured at 60.3\,ms at cost 10. An unknown address matches no row, so
+        there is nothing to verify and the request returns early. The 65.5\,ms
+        gap is that verify. \textbf{What an attacker does with it:} runs a list
+        of email addresses through the login form with any password at all, and
+        keeps the slow ones. That is a confirmed customer list --- saleable in
+        itself, and it makes credential stuffing and phishing against this
+        shop's customers far cheaper, because every address is known to be
+        live. \textbf{The one-line fix:} when no customer matches, verify the
+        supplied password against a fixed dummy hash and discard the result.
+        \textbf{Why it feels wrong to write:} it is deliberately wasted work in
+        the hot path of a login form, and every instinct a programmer has says
+        to delete it. A reviewer who does not know why it is there will delete
+        it, which is exactly why the reason belongs in a comment beside it.
+  \item \textbf{The risk you are accepting} by removing lockout: unlimited
+        online password guessing against any account. At 60\,ms per attempt a
+        single attacker can try tens of thousands of passwords an hour against
+        one account, which breaks any password a customer actually chooses.
+        \textbf{The risk you are removing:} anyone who knows a customer's email
+        address can lock that customer out at will --- five wrong guesses, an
+        hour at a time, repeatedly --- so the complaint is real, and the
+        customers complaining may be victims rather than the forgetful.
+        \textbf{A design that addresses both better than either:} replace the
+        hard count with \emph{progressive delay} keyed on the address being
+        guessed --- no delay for the first three attempts, then a delay that
+        doubles with each further failure and resets on success. A customer who
+        mistypes twice notices nothing; an attacker is throttled to a few
+        guesses an hour, and no account is ever locked, so there is nothing to
+        abuse. Add site-wide rate limiting by source address to catch the
+        attacker who spreads attempts across many accounts --- which neither
+        lockout nor per-account delay sees at all --- and offer a second factor
+        to the customers who want one.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{16 --- Securing the Shop}
+\begin{ans}
+  \item \textbf{Two independent reasons.} (a)~\textbf{Apache never reads the
+        file.} Debian's \texttt{apache2.conf} sets \texttt{AllowOverride None}
+        for the document root, so \texttt{.htaccess} files are ignored
+        entirely --- the rename is correct and has no effect. (b)~\textbf{Even
+        read, it would not be the whole fix.} The shipped file blocks
+        \texttt{system/storage} by rewrite and sets one header; it says nothing
+        about the content security policy, the referrer policy, the permissions
+        policy, the version banners or the wildcard CORS headers, which were
+        eight of the nine findings. \textbf{One command to demonstrate it:}
+        write a marker into the error log and fetch it ---
+        \texttt{docker compose exec shop sh -c 'echo MARKER >>
+        system/storage/logs/error.log'} then \texttt{curl -s
+        http://localhost:8090/system/storage/logs/error.log}. If the marker
+        comes back, the control is not working whatever the file is called.
+        \textbf{The general lesson:} a control that fails open and fails
+        silently is indistinguishable from a control that works, until
+        somebody measures the outcome. Verify the result, never the action ---
+        and the gap between ``I installed it'' and ``it does something'' is
+        where almost every real breach lives.
+  \item \textbf{Why none of them touched the shop's code.} Because none of them
+        was a programming fault. Every one was a property of how the software
+        was \emph{served}: which headers Apache attaches, what it will serve
+        from which directory, and what it volunteers about itself. The
+        application had already escaped its SQL, auto-escaped its output,
+        tokenised its forms and hashed its passwords properly. \textbf{What
+        that says about inheriting a shop:} look at the deployment first. The
+        framework's defences are written once by people who do this full time
+        and are the same in every installation; the deployment is different in
+        every installation and is usually nobody's job. \textbf{Which remaining
+        finding first: move \texttt{system/storage/} out of the web root.} The
+        admin path is the one still failing the battery, but renaming it only
+        defeats automated scanners, while the storage directory holds the error
+        log, the sessions and every upload --- and today it is protected only
+        by a block in a configuration file that the next administrator may
+        edit, replace or lose during an upgrade. Moving it removes the risk
+        instead of covering it, and is the control that survives being
+        forgotten.
+  \item \textbf{Two mechanisms, any two of the three.}
+        (a)~\textbf{\texttt{Header always unset} on a successful response.}
+        \texttt{mod\_headers} keeps two tables --- \texttt{always} for every
+        response including errors, and the default for successful ones only.
+        A header PHP sets on a 200 lives in the second, so the directive whose
+        name sounds more thorough touches nothing.
+        (b)~\textbf{\texttt{ServerTokens} after a reload.} It is consumed when
+        Apache starts and used to build the banner once; a graceful reload
+        applies every neighbouring directive and skips this one.
+        (c)~\textbf{Filename ordering in \texttt{conf-enabled}.} Apache reads
+        the directory in filename order and the last setting of a server-level
+        directive wins, so \texttt{security-ecad.conf} lost to
+        \texttt{security.conf} because \texttt{-} sorts before \texttt{.}.
+        \textbf{The habit that catches all three without knowing any of them:}
+        \emph{measure the observable outcome before and after every change, from
+        outside the system}. Not ``is the directive present'', not ``did Apache
+        accept the config'' --- all three of these produced a configuration
+        Apache accepted without a single warning --- but ``does the response
+        now contain the header, and does the URL now refuse to serve the
+        file''. One script, run twice, found all three in the time it would
+        have taken to re-read the file once. That is the entire argument for
+        the measured strand in this course, in its most concrete form.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{17 --- Administration: The Dashboard, and What to Watch}
+\begin{ans}
+  \item \textbf{Each gap.} \textbf{6 to 5:} the table counts every row,
+        including the one at status 0 --- an order created at
+        \texttt{confirm} whose customer never paid (\chref{checkout}). That
+        difference is the \emph{abandonment}. \textbf{5 to 2:} the widgets count
+        every status above 0, while the chart counts only those in
+        \texttt{config\_complete\_status}, here Complete and Shipped. The three
+        missing orders are paid for and not yet despatched --- the
+        \emph{work outstanding}. \textbf{Which figure to put in front of the
+        owner: 5, labelled ``orders to fulfil and bank''}, because it is the
+        number the shop will actually be paid for. But put it beside the other
+        two rather than instead of them, each with its filter named: ``5 paid,
+        3 still to despatch, 1 abandoned today''. One number with a label beats
+        three without, and the labels are the whole content.
+  \item \textbf{Questions to ask.} (a)~\textbf{What is the denominator?}
+        Sessions, unique visitors, people, or baskets created? Each gives a
+        different answer from the same shop, and \chref{basket} showed that
+        sessions are created by robots that never see a page. (b)~\textbf{What
+        counts as a conversion?} An order row, an order above status 0, or an
+        order that was actually paid and not refunded? (c)~\textbf{Over what
+        period, and does it include the campaign spike?} (d)~\textbf{Are bots
+        excluded, and how?} \textbf{Why two shops at 3\% may not be
+        comparable:} one may divide paid orders by human visitors and the other
+        all order rows by all sessions. With 645 session rows and no human
+        customers at all --- this shop's measured state --- the second
+        definition can report a rate that is pure arithmetic about crawlers.
+        Comparing the numbers without comparing the definitions compares
+        nothing.
+  \item \textbf{A panel that would have caught it.} \textbf{The query:} count
+        orders created in the last hour, split by whether they are above status
+        0:
+        \smallskip
+
+        \texttt{SELECT SUM(order\_status\_id=0) stalled,}\\
+        \texttt{\ \ SUM(order\_status\_id>0) completed}\\
+        \texttt{FROM oc\_order}\\
+        \texttt{WHERE date\_added > NOW() - INTERVAL 1 HOUR;}
+
+        \smallskip
+        \textbf{How often:} hourly during trading
+        hours. \textbf{The alarm condition:} \emph{completed} is zero while the
+        shop has had traffic. That is the exact signature of
+        \chref{checkout}'s fault --- customers arriving, baskets filling, no
+        order ever reaching status 1 --- and it is detectable without knowing
+        anything about the cause. Note what makes it work: it alarms on the
+        \emph{absence} of a thing. Every monitoring system in the course so far
+        watched for errors, and this fault produced none; the only observable
+        was that something which should happen had stopped happening.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{18 --- Managing Orders, Customers and Refunds}
+\begin{ans}
+  \item \textbf{Pending to Shipped.} Nothing happened to stock. Both statuses
+        are inside the processing-or-complete set, and the rule fires only on
+        entering or leaving it --- the goods had already been deducted when the
+        order reached Pending. \textbf{Shipped to Reversed.} Also nothing,
+        which is the surprise: 12 is in \texttt{config\_processing\_status} in
+        this shop, so the order never left the set. The customer's money has
+        gone back and the goods are still counted as sold. \textbf{What to
+        change:} remove 12 from \texttt{config\_processing\_status} at
+        \adminpath{System, Settings, Edit, Option}. Then moving to Reversed
+        leaves the set and returns the stock, exactly as Refunded does. Note
+        what this implies: the stock behaviour of every status in the shop is
+        decided by two checkbox lists, and nothing in the interface connects
+        them to the word ``stock''.
+  \item \textbf{The mechanism.} Marking a return \uiel{Refunded} writes two
+        rows --- one updating \texttt{oc\_return}, one appending to
+        \texttt{oc\_return\_history} --- and touches nothing else. The goods
+        physically come back to the shelf, but \texttt{oc\_product.quantity} was
+        never incremented, because the \emph{order} was never moved out of the
+        processing set. So after 40 returns a month the system believes it holds
+        40 fewer units than it does, every month, cumulatively.
+        \textbf{What else is drifting:} the revenue figures, because the orders
+        still read as sold and the dashboard counts them (\chref{dashboard});
+        any affiliate commission paid on them, which nothing reverses
+        (\chref{discounts}); and the shop's record against the payment
+        provider's, which is what \chref{gateway}'s reconciliation exists to
+        catch. \textbf{The smallest change that stops it:} make moving the
+        \emph{order} to status 11 a required step of recording a return. One
+        line in the procedure, and it fixes stock and revenue together, because
+        both follow from the same transition.
+  \item \textbf{Four steps.} (1)~\textbf{Reproduce it outside the browser} with
+        a signed API call, which separates ``the admin panel is broken'' from
+        ``the API refuses''. (2)~\textbf{Read the response}: a 403 with a
+        permission message, not a 500 and not a validation error.
+        (3)~\textbf{Check \texttt{oc\_api}} --- a user exists and is enabled, so
+        it is not a missing credential. (4)~\textbf{Check
+        \texttt{oc\_api\_ip}} --- empty, and an empty allow-list permits
+        nothing. \textbf{Why it reads as a user permissions problem:} the error
+        message is the generic ``You do not have permission to access this
+        page'', which is the same text an administrator sees when their own
+        user group lacks a privilege. So the natural first move is to inspect
+        the administrator's permissions at \adminpath{System, Users, User
+        Groups}, find them correct, grant more anyway, and still fail --- while
+        the refusal is happening in a different application, to a different
+        identity, over a connection the administrator never sees. The lesson is
+        the one from \chref{security}: an error message tells you what the
+        system decided, not where it decided it.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{19 --- Extending the Platform: Your First Module}
+\begin{ans}
+  \item \textbf{The answer.} Five instances cost 20\,ms on a 76\,ms page ---
+        about 4\,ms and exactly 4 queries each --- and of those four queries
+        \emph{one} is the module's own. The other three are the framework
+        finding the instance's settings, its translations and its template
+        override. So the measured cost of ``being a module'' is 3 queries, and
+        the cost of the feature is 1. \textbf{Editing the theme instead} would
+        remove those three and keep the one, saving roughly 3\,ms per instance
+        --- at the price of a change the next upgrade overwrites, that
+        \texttt{git status} will not distinguish from the vendor's code, and
+        that cannot be placed twice or disabled without another edit.
+        \textbf{What to measure before agreeing to anything:} whether the page
+        is actually too slow, and against what target. A 96\,ms page with five
+        modules is not a performance problem --- \chref{ux} measured 600\,KB of
+        assets after it and \chref{deploy} measured the saturation point at
+        five concurrent clients. Optimising 3\,ms while 600\,KB goes unexamined
+        is the error this whole course is written against.
+  \item \textbf{When it stops working.} The moment the module is placed a
+        \emph{second} time with a different threshold. Both instances will then
+        read the same global value, so both show the same products, and
+        whichever instance was configured last silently wins --- or, if no such
+        global setting exists at all, both read null and fall back to the
+        default, so neither reflects what was typed. \textbf{What the
+        shopkeeper will report:} ``I set the second panel to 20 and it still
+        shows the same four items as the first one.'' They will not report a
+        bug in the module; they will report that the admin panel does not save.
+        That is the characteristic shape of this fault --- the symptom points
+        at the form, and the cause is in the render method, which is the one
+        place nobody looks because it is visibly working.
+  \item \textbf{How to decide.} First ask whether a \emph{setting} reaches it:
+        a custom field on the customer or the address, or a product attribute,
+        covers more requests of this kind than people expect, and a setting
+        survives every upgrade. If not, ask whether the platform offers an
+        \emph{extension point} at the place you need --- for checkout there are
+        events on the controllers, and an event handler is an extension. Only
+        if neither reaches do you consider editing, and then the question is
+        whether the field is worth owning a merge conflict for ever.
+        \textbf{What I would need to know first:} who fills the field in and
+        who reads it; whether it must appear on the \emph{order} as well as in
+        the session, because an order copies its data at checkout
+        (\chref{checkout}) and a field that is not copied disappears from
+        history; and whether it is required, because a required field changes
+        the validation path and therefore the completion rate.
+        \textbf{What I would write down whichever I chose:} the decision, the
+        two options rejected and why, and --- if it was an edit --- the file,
+        the version it was made against, and what must be re-checked at the
+        next upgrade. The note is the deliverable; the code is the easy part.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{20 --- Deployment, Maintenance and Performance}
+\begin{ans}
+  \item \textbf{The mechanism.} At five concurrent clients the server's
+        processors are fully occupied and nothing is waiting. Past that point
+        the extra requests do not find spare capacity --- they join a queue. A
+        queued request still consumes memory, a connection and a worker slot,
+        and the context switching between twenty workers costs real time, so
+        the server does \emph{less} useful work while every request waits
+        longer. That is why throughput fell from 42.1 to 38.7 while the median
+        rose from 95\,ms to 455\,ms. \textbf{What the owner should do before a
+        sale day:} know the number, and decide what happens past it --- queue
+        politely with a wait page, or shed load --- rather than discovering it
+        at the busiest hour of the year. \textbf{One change that moves the
+        turning point:} cache whole pages for visitors who are not logged in.
+        It removes PHP and the database from the common path entirely, which is
+        where every millisecond in the measurement was spent; the saturation
+        point then becomes a property of the web server rather than of the
+        application, and that is a different order of magnitude.
+  \item \textbf{Both ends.} \textbf{At one client} the processor is mostly
+        idle: a request arrives, is compiled and served, and then nothing
+        happens until the next one. Removing compilation work from a processor
+        that has spare capacity buys little, so 1.3$\times$. \textbf{At twenty}
+        the bottleneck has moved from the processor to the \emph{queue}: every
+        request waits behind nineteen others, and shortening each one by a
+        third shortens the queue proportionally but does not change the fact
+        that there is one, so the benefit is diluted to 1.4$\times$. \textbf{In
+        the middle}, at the saturation point, the processor is the binding
+        constraint and nothing else is --- so work removed from it converts
+        almost one-for-one into throughput, hence 2.0$\times$. \textbf{What it
+        implies about when to benchmark:} measure at or near the saturation
+        point, because that is where an optimisation's effect is both largest
+        and most honestly represented. Benchmarking a single client flatters
+        nothing and shows nothing; benchmarking far past saturation measures
+        the queue and attributes it to your change.
+  \item \textbf{The case, in terms a client will act on.} Not ``your backups
+        might be corrupt'' --- that is a hypothetical and clients discount
+        hypotheticals. Instead: ``We do not know how long the shop would be
+        closed. I can find out this afternoon.'' Recovery time is a business
+        number, it belongs in the same sentence as a day's takings, and nobody
+        has ever been given it. \textbf{What I would do:} bring up a second
+        empty stack, restore last night's dump into it, open the shop, and
+        check that the catalogue, the orders and the settings are all there.
+        \textbf{How long:} under an hour for this shop, including writing it
+        down; the restore itself was 6.4 seconds on the demonstration
+        catalogue and will be minutes on a real one. \textbf{What I would
+        measure and record:} the restore time, the age of the newest data in
+        the dump --- which is how much the shop would lose, and is a different
+        number from how long it is down --- and anything that was \emph{not} in
+        the backup, which in this stack is the uploaded images in the
+        \texttt{shopdata} volume. That last item is the one such a test
+        usually finds, and finding it is the entire point.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{21 --- SEO and Digital Marketing}
+\begin{ans}
+  \item \textbf{What has happened.} The client switched on
+        \texttt{config\_seo\_url}, which is the \emph{application} half of
+        readable URLs: the shop now looks every link up in
+        \texttt{oc\_seo\_url} and writes \texttt{/en-gb/catalog/desktops} into
+        its HTML. The \emph{server} half --- the rewrite that turns that path
+        back into \texttt{index.php?\_route\_=en-gb/catalog/desktops} before
+        PHP sees it --- is absent, because it ships in \texttt{.htaccess} and
+        \chref{security} measured \texttt{AllowOverride None}, which means
+        Apache never reads \texttt{.htaccess} on this stack. \textbf{Which half
+        is absent: the server half.} \textbf{The command that demonstrates it:}
+        \texttt{curl -s -o /dev/null -w "\%\{http\_code\}"
+        http://the-shop/en-gb/catalog/desktops} returns 404, while the same
+        page via \texttt{index.php?\_route\_=...} returns 200 --- which proves
+        the application is right and the server was never told.
+        \textbf{Why nothing appeared in any log:} a 404 is an ordinary
+        response. It is not an error, not an exception, and not a failure of
+        anything; the server was asked for a path it has no rule for and said
+        so, correctly. The shop is working exactly as configured, and the
+        configuration is wrong.
+  \item \textbf{Which is luck and which is design.} The distinct titles are
+        \textbf{luck}: the title is the product's name, and the demonstration
+        products happen to have different names. A shop selling the same
+        garment in four sizes as four products would have four identical
+        titles and the same code would produce them. The missing descriptions
+        are \textbf{design} --- or rather, the absence of design: the field
+        exists in \texttt{oc\_product\_description}, the demonstration data
+        leaves it empty, and the platform writes nothing in its place.
+        \textbf{What happens on those pages:} the search engine composes its
+        own summary from whatever text it finds, which on a product page is
+        usually the navigation menu --- so the snippet a customer reads in the
+        results is a list of categories rather than a description of the
+        product. \textbf{For 50{,}000 products:} do not write them by hand.
+        Generate a reasonable default from data you already have --- name,
+        manufacturer, category and price --- as a module
+        (\chref{modules}), which gets every page off the floor; then write
+        proper descriptions by hand for the few hundred products that actually
+        sell, because those are the only ones where the difference between
+        adequate and good is worth an afternoon.
+  \item \textbf{What each absence costs.} \textbf{No sitemap} means a crawler
+        finds pages only by following links from the home page, so anything
+        several hops away is effectively invisible --- and depth grows with
+        catalogue size, since a 50{,}000-product shop paginates its categories
+        into hundreds of pages that \texttt{robots.txt} itself blocks.
+        \textbf{No canonical links} means the same product reached through two
+        categories, or with a sort parameter, is several URLs with identical
+        content competing with one another, and the engine picks one
+        arbitrarily. \textbf{For 19 products the canonical matters more:} every
+        page is one click from the home page so nothing is unfindable, but
+        nineteen products across several categories already generate duplicate
+        paths. \textbf{For 50{,}000 the sitemap matters more:} duplication is
+        still a problem, but it is a problem about pages that are at least
+        known to exist, and the greater loss by far is the tens of thousands
+        that are never reached at all. \textbf{The difference:} canonical links
+        are about which of the pages a crawler found should count; a sitemap is
+        about whether it found them. Being counted wrongly is a smaller harm
+        than not being counted.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{22 --- Social, Legal and Ethical Issues}
+\begin{ans}
+  \item \textbf{Is it a dark pattern?} \textbf{Yes} --- and the argument has to
+        be made carefully, because every individual element is honest. The
+        sub-total is right, the discount is right, the tax is arithmetically
+        right on the base it is applied to, and the total adds up. What makes
+        it a dark pattern is the \emph{arrangement}: the customer is shown a
+        discount of 70.20 and charged tax on money that discount means they
+        never paid, and no part of the screen shows them that this is what
+        happened. That is the definition --- leading someone to something they
+        would not have chosen, by how it is presented rather than by a false
+        statement. \textbf{What would change my answer:} if the tax authority's
+        own rule required tax on the undiscounted amount, the arrangement would
+        be compelled rather than chosen, and the shop would be a collector
+        rather than a beneficiary. The test is who keeps the 1.8\%.
+        \textbf{What I would do in an inherited shop:} assume it was an
+        accident, because \chref{discounts} showed it is one integer in an
+        unlabelled field and far more likely to be a mistake than a scheme. Fix
+        it, then say what was fixed, how long it had been that way, and
+        roughly what it came to --- because if the shop has been
+        over-collecting, somebody else's money is involved and that is now a
+        question about refunds rather than about configuration.
+  \item \textbf{The ranking: the 6 orders are higher risk than the 645
+        sessions}, by a wide margin, and the volume points the other way.
+        \textbf{Justification:} a session row holds an address, a timestamp
+        and a currency for an unidentified visitor who was probably a crawler
+        (\chref{basket}); leaked, it is noise. An order row holds a named
+        person's home address, telephone number, email address and a list of
+        what they bought, delivered to where they live; leaked, six of them
+        would do more harm than all 645 sessions together. Risk is harm per
+        record times records, and the first term dominates by orders of
+        magnitude. \textbf{Retention. Sessions: 24 hours}, which is already the
+        configured expiry --- they exist to make the next click work and have
+        no purpose after the visit, so the only argument for keeping them is
+        that nothing deletes them, which is not an argument.
+        \textbf{Orders: years}, because they are accounting records with a
+        statutory life and are the contract (\chref{legal}'s opening). The
+        \emph{personal} parts of an old order may be reducible --- a telephone
+        number is not needed to satisfy a tax inspector --- but that is a
+        decision to take advice on, not one to take alone.
+        \textbf{Which I would be more reluctant to delete: the orders}, and the
+        reason is the opposite of the risk ranking. They are the most dangerous
+        thing the shop holds \emph{and} the thing it is least free to discard,
+        which is exactly why they deserve the most protection rather than the
+        most deletion. The uncomfortable pairing of those two facts is the
+        whole of data governance in one example.
+  \item \textbf{The reply.}
+        \smallskip
+        ``No, and I want to be clear about why rather than just refusing.
+        Storing card numbers moves us from the shortest PCI DSS questionnaire
+        to the longest --- from a handful of questions about keeping our site
+        out of the way, to several hundred requirements and an external audit,
+        on us, annually. That is a real recurring cost and a real liability,
+        and it arrives the moment the first number is stored, not when
+        something goes wrong.
+        \smallskip
+        What our competitor is doing is almost certainly not what it looks
+        like. The convenience you are describing is \emph{tokenisation}: the
+        provider stores the card and gives us a meaningless reference, so the
+        customer does not retype anything and we never hold a number. Every
+        provider we would use offers it, it is usually a configuration change
+        rather than development, and it keeps the card where it is already
+        somebody else's full-time job to protect.
+        \smallskip
+        I can have that working this week.''
+        \smallskip
+        \textbf{If the client insisted:} say once more, in writing, what the
+        consequence is and who carries it --- the merchant, not the developer
+        and not the provider. Then decline to implement it. This is not a
+        matter of taste: it is a documented obligation the client would be
+        taking on unknowingly, and building it after explaining that would make
+        me a party to it rather than a contractor on it.
+\end{ans}
+
+%---------------------------------------------------------------------
+\ansch{23 --- The Semester Project}
+\begin{ans}
+  \item \textbf{Five likely causes, in order.} (1)~\textbf{A port already in
+        use} on their machine --- 8090 or 8091 is the commonest, and this
+        handout hit it in \chref{stack}. (2)~\textbf{A step that lives only in
+        your shell history}: a setting you changed once in the admin panel, a
+        SQL statement you ran by hand, a file you copied. It works for you
+        because you did it and forgot. (3)~\textbf{Data that is not in the
+        repository} --- product images, a database dump --- because the volume
+        held it and the volume is not the repository. (4)~\textbf{A line ending
+        or path assumption}: an entrypoint script saved with CRLF will not run
+        in the container, and the error is unhelpful. (5)~\textbf{A different
+        Docker version or no Docker at all.} \textbf{How to find out without
+        their machine:} ask for three things --- the exact command they ran,
+        the complete output, and \texttt{docker compose ps}. Those three
+        separate ``it never started'' from ``it started and the shop is not
+        installed'' from ``it is running and they are at the wrong address'',
+        which is the whole diagnostic tree. \textbf{What should have been done
+        in week 12:} build it from scratch on a machine that is not yours ---
+        \texttt{docker compose down -v} at minimum, a classmate's laptop
+        ideally --- because every one of the five causes is invisible on the
+        machine where the shop was built and obvious on any other.
+  \item \textbf{What goes in the report:} both numbers, the index definition,
+        the catalogue size, the machine, and the command that produces them ---
+        and then the honest sentence: the index made the page 8\% slower, and
+        here is what we think is happening. \textbf{What to investigate
+        first:} whether the query is using the index at all. \texttt{EXPLAIN}
+        before and after is one command and splits the result in two: if the
+        optimiser ignored it, the question is why (a function on the column, as
+        \chref{catalogue} found with \texttt{LCASE}, or a selectivity it did
+        not like); if it used it and was slower, the index is being read in a
+        different order from the table and the scattered reads cost more than
+        the sort it saved --- which is exactly what \chref{catalogue} measured
+        at 50{,}000 products, twice. \textbf{Why it is worth more marks:} 15\,ms
+        is within noise for a single run, so the first thing it tests is
+        whether you measured properly --- repeats, a median, a warm cache. And
+        if it survives that, it is a real result that contradicts the
+        textbook rule, which is the kind of thing this course exists to teach
+        you to notice. A result that went as expected demonstrates that you
+        can follow instructions; this one demonstrates that you can measure.
+  \item \textbf{Three things still wrong with the shop as this handout left
+        it.} (1)~\textbf{The admin panel is still at \texttt{/admin/}}
+        (\chref{security}, the one finding the hardening file could not close).
+        \emph{Cost:} an hour --- rename the directory and the matching path in
+        \texttt{admin/config.php}, then re-run the battery and tell whoever
+        maintains it next. (2)~\textbf{\texttt{system/storage/} is still inside
+        the web root} (\chref{security}), blocked by a configuration file that
+        any future administrator may replace during an upgrade. \emph{Cost:}
+        half a day --- move it out, change the two constants in
+        \texttt{config.php} and \texttt{admin/config.php}, and re-test uploads,
+        sessions and the error log. (3)~\textbf{There is no sitemap and no
+        canonical link on any page} (\chref{seo}). \emph{Cost:} two or three
+        days for a module following \chref{modules}'s structure, plus a
+        one-line template override for the canonical, which is an afternoon
+        and should be done first. \textbf{A fourth, if pressed:} the shop
+        serves plain HTTP, so everything in \chref{accounts} and
+        \chref{gateway} travels in clear --- which is free to fix with a
+        certificate and is the first thing to do before real customers, and is
+        on \chref{deploy}'s go-live list for that reason.
+\end{ans}

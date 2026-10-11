@@ -1,0 +1,399 @@
+%=====================================================================
+\chapter{Web Payment Systems}\label{ch:payments}
+%=====================================================================
+\locator{4}{Part IV --- Money and Identity}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Name} the parties to an online payment and \textbf{state} what
+        each one does and is paid for.
+  \item \textbf{Distinguish} the payment instruments available to a Pakistani
+        shop, and \textbf{compare} them on cost, settlement time and risk.
+  \item \textbf{Explain} who carries the loss when a payment goes wrong, for
+        each instrument.
+  \item \textbf{Compute} the true cost of cash on delivery, including the
+        returns it causes.
+  \item \textbf{Select} a payment mix for a stated shop, and \textbf{defend}
+        the choice against the alternatives.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{checkout}: the order state machine, and that an order exists before it
+is paid for. \chref{shipping}: order totals, so that percentages have something
+to be percentages of.
+\end{prereq}
+
+\begin{keyterms}
+payment instrument $\bullet$ card scheme $\bullet$ issuer $\bullet$ acquirer
+$\bullet$ payment gateway $\bullet$ payment service provider $\bullet$ merchant
+discount rate $\bullet$ settlement $\bullet$ chargeback $\bullet$ authorisation
+$\bullet$ capture $\bullet$ mobile wallet $\bullet$ cash on delivery $\bullet$
+return-to-origin $\bullet$ Raast $\bullet$ PayPak
+\end{keyterms}
+
+\section{What Happens When Somebody Pays}
+
+A customer clicking \uiel{Pay} starts a conversation between five parties, four
+of which the shop never sees. Knowing who they are is not trivia: it is how you
+work out who to telephone when money is missing, and who will be out of pocket
+if it stays missing.
+
+\begin{definitionbox}[The five parties]
+The \term{cardholder} or payer. Your customer.
+
+\smallskip
+The \term{issuer} --- the bank that gave them the card or holds their wallet.
+It decides whether to approve the payment, and it is the party the customer
+complains to.
+
+\smallskip
+The \term{scheme} --- Visa, Mastercard, PayPak --- which operates the rules and
+the network between banks. It writes the rulebook that decides disputes.
+
+\smallskip
+The \term{acquirer} --- the bank that holds the \emph{shop's} account and
+accepts the payment on its behalf. It carries the risk that the shop fails to
+deliver, which is why it asks about your business before accepting you.
+
+\smallskip
+The \term{gateway} or \term{payment service provider} --- the software company
+between the shop and the acquirer. It is the only one of the five you will
+integrate with, and the only one whose documentation you will read.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  pty/.style={rounded corners=3pt, draw=#1, line width=1.0pt, fill=#1!8,
+              text=#1!60!black, font=\bfseries\scriptsize, align=center,
+              text width=2.35cm, minimum height=0.95cm},
+  arr/.style={-{Stealth[length=2.0mm]}, primary!55, line width=0.9pt},
+  back/.style={-{Stealth[length=2.0mm]}, accent!60, line width=0.9pt,
+               dashed},
+  lbl/.style={font=\scriptsize, text=neutral, align=center, text width=2.9cm}
+]
+  \node[pty=secondary] (cu) at (0,1.6)    {Customer};
+  \node[pty=greenhl]   (sh) at (3.0,1.6)  {Your shop};
+  \node[pty=purplehl]  (gw) at (6.0,1.6)  {Gateway\\{\scriptsize\mdseries
+       PSP}};
+  \node[pty=neutral]   (ac) at (9.0,1.6)  {Acquirer};
+  \node[pty=neutral]   (is) at (12.0,1.6) {Issuer};
+
+  \foreach \a/\b in {cu/sh, sh/gw, gw/ac, ac/is}{\draw[arr] (\a) -- (\b);}
+  \draw[back] (is.south) -- ++(0,-0.75) -| (sh.south)
+       node[pos=0.25, below, font=\scriptsize, text=accent]
+       {chargeback: the money comes back out};
+
+  \node[lbl] at (1.5,2.75) {goods};
+  \node[lbl] at (6.0,2.85) {\textbf{the only one you integrate with}};
+  \node[lbl, text width=4.4cm] at (10.5,2.85)
+       {\textbf{where the money actually is}, for the days before it settles};
+  \node[font=\scriptsize\itshape, text=neutral, align=left, text width=12.0cm]
+       at (5.2,-1.35)
+       {You pay all four. The merchant discount rate is a single percentage
+        that is then divided between scheme, acquirer and gateway --- which is
+        why nobody will quote you its parts.};
+\end{tikzpicture}}%
+{The parties to a card payment, and the direction a chargeback travels. The
+shop sits at one end of a chain it cannot see into, which is the central fact
+about accepting cards.}{paymentparties}
+
+\begin{conceptbox}[Authorisation is not payment]
+Two separate events, and confusing them is how shops ship goods they are never
+paid for.
+
+\smallskip
+\textbf{Authorisation} asks the issuer ``would this payment succeed?'' and
+reserves the amount. It is instant, it is reversible, and it is not money.
+
+\smallskip
+\textbf{Capture} claims the reserved amount. Only now is the shop owed
+anything.
+
+\smallskip
+\textbf{Settlement} is the acquirer actually paying the shop, typically days
+later and net of fees.
+
+\smallskip
+A gateway that reports ``success'' may mean any of the three. Read its
+documentation for which, because \chref{gateway}'s entire difficulty is that
+your order status must mean the same thing as the gateway's.
+\end{conceptbox}
+
+\section{The Instruments a Pakistani Shop Can Actually Offer}
+
+\begin{alertbox}[The platform ships no online payment method at all]
+Checked rather than assumed. The payment extensions in the box are
+\texttt{bank\_transfer}, \texttt{cheque}, \texttt{cod} and
+\texttt{free\_checkout} --- \textbf{four methods, none of which takes money
+online}. Every one of them records an intention and leaves the shop to collect
+afterwards.
+
+\smallskip
+There is no card gateway, no wallet, nothing. Every real payment integration is
+a third-party extension, bought or written, and \chref{gateway} is the chapter
+that deals with that. A plan that assumed ``the platform handles payments'' has
+already failed, and it is better to discover that here than in week fourteen.
+\end{alertbox}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.9cm}L{2.5cm}L{2.4cm}L{3.0cm}L{3.1cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Instrument} & \textbf{Typical cost} & \textbf{Settles} &
+\textbf{Who loses if it goes wrong} & \textbf{Main difficulty} \\
+\midrule
+\endhead
+Card (Visa, Mastercard) & 2--3\% & days & \textbf{the shop}, via chargeback &
+disputes you cannot win \\
+PayPak card & lower & days & the shop & domestic acceptance only \\
+Mobile wallet (JazzCash, Easypaisa) & 1--2\% & days & mostly the shop &
+reconciliation \\
+Bank transfer / Raast & very low & near instant & effectively nobody &
+confirming which order was paid \\
+Cash on delivery & 1--3\% plus returns & on remittance & \textbf{the shop},
+heavily & refusal at the door \\
+\bottomrule
+\end{longtable}
+
+\smallskip
+\textbf{Rates are indicative and negotiated.} Any figure here is a starting
+point for a conversation with a provider, not a price. What does not change is
+the \emph{shape}: online card acceptance is the most expensive and carries the
+dispute risk; bank transfer is the cheapest and carries an operational burden
+instead; cash on delivery looks cheap and is not.
+
+\section{Cash on Delivery Is Not Free}
+
+Cash on delivery dominates Pakistani e-commerce for a reason that has nothing
+to do with technology: it asks the customer to trust nobody. They pay when the
+goods are in their hand. A shop that refuses COD is refusing most of its
+market.
+
+It is also the most expensive instrument on the list, and the cost is invisible
+because it does not arrive as a percentage.
+
+\begin{worked}
+A shop sells an item for \textbf{Rs~3{,}000} that costs it \textbf{Rs~2{,}100}
+--- a 30\% gross margin, Rs~900 per order.
+
+\smallskip
+\textbf{The visible cost.} The courier charges a COD service fee, say
+\textbf{2\%} of the collected amount: $0.02 \times 3{,}000 = Rs~60$.
+
+\smallskip
+\textbf{The invisible cost.} Some proportion of COD orders are refused at the
+door --- the customer is out, has changed their mind, or ordered on an impulse
+that has passed. Call it \textbf{20\%}, which is not a pessimistic figure for
+unverified COD orders. A refused parcel is \term{return-to-origin}: the shop
+pays delivery \emph{and} return, say \textbf{Rs~250} each way, and gets the
+item back with nothing to show.
+
+\smallskip
+\textbf{Per 100 orders:}
+\begin{tight}
+  \item 80 delivered: $80 \times (900 - 60 - 250) = 80 \times 590 =
+        Rs~47{,}200$
+  \item 20 refused: $20 \times (-250 - 250) = -Rs~10{,}000$
+  \item \textbf{Net: Rs~37{,}200}, against Rs~72{,}000 of gross margin on the
+        same 100 orders if they were prepaid and delivery were free.
+\end{tight}
+
+\smallskip
+\textbf{The effective cost of COD here is 48\% of gross margin} --- against
+2--3\% for a card. The refusal rate, not the service fee, is almost all of it:
+the 20 refused orders cost Rs~10{,}000 directly and also consumed the
+Rs~20{,}000 of margin they would have produced.
+
+\smallskip
+\textbf{The lever that matters} is therefore the refusal rate, not the fee.
+Dropping refusals from 20\% to 10\% is worth more than negotiating the courier
+fee to zero --- which is why shops that take COD invest in confirming orders by
+telephone before dispatch, and why an order confirmation step that feels like
+friction is, here, the single most profitable thing in the pipeline.
+\end{worked}
+
+\begin{conceptbox}[What this says about the ``frictionless checkout'' advice]
+Most writing about e-commerce checkout comes from markets where payment is
+taken before dispatch. There, every removed step is pure gain, and the advice
+is sound.
+
+\smallskip
+Where the shop is paid on delivery, an unverified order is a liability rather
+than an asset, and a checkout optimised purely for completion produces more of
+them. \textbf{Advice imported without its assumptions is how a shop loses money
+by following best practice.} \chref{ux} made the same point about page weight;
+this is the version that costs real money.
+\end{conceptbox}
+
+\section{The Local Rails}
+
+\begin{examplebox}[What a Pakistani shop is actually plugged into]
+\begin{tight}
+  \item \textbf{State Bank of Pakistan} authorises and supervises the operators
+        and providers. A gateway you integrate with should be an authorised
+        one, and asking for that authorisation is a reasonable first question.
+  \item \textbf{1LINK} operates the domestic switch connecting the banks, and
+        \textbf{PayPak} is the domestic card scheme that runs over it. A PayPak
+        card is cheaper to accept and works only in Pakistan.
+  \item \textbf{Raast}, the State Bank's instant payment system, settles bank
+        to bank in seconds at negligible cost. Its person-to-merchant use is
+        the development most likely to change the arithmetic in this chapter,
+        because it removes both the card fee and the COD refusal problem at
+        once.
+  \item \textbf{JazzCash} and \textbf{Easypaisa} are the mobile wallets, each
+        with a merchant gateway, and between them they reach customers who have
+        no card and no bank account --- which in this market is the majority.
+\end{tight}
+
+\smallskip
+\textbf{Two absences worth knowing.} PayPal does not operate for merchants in
+Pakistan, and Stripe does not support Pakistan-registered businesses. A great
+deal of the integration tutorial material you will find online assumes one or
+the other, and none of it applies. Students regularly lose a week to this.
+\end{examplebox}
+
+\begin{alertbox}[Dated facts, and how to treat them]
+Everything in this section is a fact about a particular year. Rates are
+negotiated, operators are authorised and de-authorised, and Raast's merchant
+rollout is still changing what is possible.
+
+\smallskip
+\textbf{The durable part is the set of questions:} who is authorised, what does
+it cost as a percentage and as a fixed fee, how long until the money is in the
+shop's account, who decides a dispute, and what proportion of customers can
+actually use it. Ask those five of any provider in any year and the answer will
+be current. Memorising this year's rates will not help you in 2029; knowing
+that settlement time and dispute liability are negotiable terms will.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Treating an authorisation as a payment} and dispatching goods
+        against it.
+  \item \textbf{Quoting a client a card fee without the chargeback risk.} The
+        2--3\% is the predictable part; the disputes are not.
+  \item \textbf{Costing cash on delivery at the courier's service fee.} The
+        refusal rate is most of the cost and appears in no invoice.
+  \item \textbf{Offering only cards in a market where most customers have
+        none.}
+  \item \textbf{Following a payment integration tutorial written for PayPal or
+        Stripe.} Neither is available to you here.
+  \item \textbf{Assuming the platform can take payments out of the box.} Its
+        four methods all collect later.
+  \item \textbf{Letting the customer choose the currency without deciding who
+        carries the exchange risk.}
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Cost your own shop's payment mix]
+\begin{lstlisting}[language=bash]
+# --- 1. See what you actually have ----------------------------------
+cd code
+docker compose exec shop sh -c \
+  'ls extension/opencart/admin/controller/payment/'
+# Four files. Which of them takes money online? Write the answer down.
+
+# --- 2. Enable bank transfer and read what it does ------------------
+# Admin: Extensions > Extensions > Payments > Bank Transfer > Install.
+# Place an order with it. What does the customer see, and what does
+# the order status become?
+
+# --- 3. Compare that with cash on delivery --------------------------
+# Place one of each and compare the two orders' status histories.
+
+# --- 4. Build the COD model for YOUR product ------------------------
+# Take one product in your shop. Find its price. Assume a cost of 70%
+# of price, Rs 250 each way for delivery, a 2% COD fee, and a 20%
+# refusal rate. Compute net margin per 100 orders.
+
+# --- 5. Find the break-even refusal rate ----------------------------
+# At what refusal rate does COD earn the shop nothing at all?
+# Solve it, do not guess.
+
+# --- 6. Price the alternative ---------------------------------------
+# Repeat step 4 for a 2.5% card fee, zero refusals, and the same
+# delivery cost one way only. Which is better, and by how much?
+
+# --- 7. Decide, and write the decision down -------------------------
+# One paragraph: which instruments your shop will offer, in what
+# order on the checkout page, and what you will measure to find out
+# whether you were right.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 5 surprises people. The break-even refusal rate
+is lower than most shops' actual refusal rate, which means a shop can run on
+COD for a year, grow its order count every month, and lose money on every
+single one.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A gateway reports ``success'' and your shop marks the order Processing
+        and dispatches it. Describe two distinct ways the shop can end up
+        having shipped goods it is never paid for, and say what you would check
+        in the gateway's documentation to rule each one out.
+  \item Using the worked model, compute the net margin per 100 orders if the
+        refusal rate falls from 20\% to 10\%. State the improvement as a
+        percentage, and compare it with what the shop would gain by
+        negotiating the courier's COD fee from 2\% to 0\%.
+  \item A client wants to accept international cards for customers abroad.
+        List, in order, the four things you would establish before writing any
+        code, and say which of them is most likely to stop the project.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Five parties: customer, issuer, scheme, acquirer, gateway. You
+        integrate with one and pay all of them through a single merchant
+        discount rate whose parts nobody will itemise.
+  \item Authorisation, capture and settlement are three different events. A
+        gateway's ``success'' means one of them, and your order status must
+        mean the same thing.
+  \item The platform ships \textbf{no online payment method} --- bank transfer,
+        cheque, cash on delivery and free checkout all collect later. Every
+        gateway is a third-party extension.
+  \item Instruments differ less in price than in who carries the loss. Cards
+        put the dispute risk on the shop; bank transfer puts an operational
+        burden on it instead.
+  \item Worked: cash on delivery at a 20\% refusal rate costs 48\% of gross
+        margin, almost all of it from refusals rather than from the service
+        fee. The refusal rate is the lever; the fee is not.
+  \item Checkout advice written for prepaid markets does not transfer. Where
+        payment is on delivery, an unverified order is a liability and
+        confirming it is the most profitable step in the pipeline.
+  \item Locally: SBP authorises, 1LINK switches, PayPak is the domestic
+        scheme, Raast settles instantly, and the wallets reach customers with
+        no card. PayPal and Stripe are not available to you.
+  \item Rates and operators date; the five questions --- authorised, cost,
+        settlement time, who decides disputes, who can use it --- do not.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which party carries the loss when a card payment is
+        successfully disputed? (a)~the issuer; (b)~the scheme; (c)~the
+        acquirer; (d)~the shop.
+  \item \textbf{(MCQ)} How many of the payment extensions shipped with the
+        platform take money online? (a)~none; (b)~one; (c)~two; (d)~all four.
+  \item \textbf{(Short)} Distinguish authorisation, capture and settlement, and
+        say which one a shop should require before dispatching goods.
+  \item \textbf{(Short)} Explain why a 2\% COD service fee understates the cost
+        of cash on delivery, using one number from the worked model.
+  \item \textbf{(Short)} Give two reasons a Pakistani shop might prefer PayPak
+        acceptance to Visa and Mastercard, and one reason it cannot rely on it
+        alone.
+  \item \textbf{(Applied)} A shop takes 600 orders a month at an average value
+        of Rs~4{,}000 and a 28\% gross margin, all on cash on delivery with an
+        18\% refusal rate and Rs~300 of delivery cost each way. Model the
+        effect of introducing prepayment with a 2.5\% fee that 35\% of
+        customers adopt, and state the monthly difference, showing every step.
+  \item \textbf{(Applied)} You are asked to decide whether to add a mobile
+        wallet to a shop that currently takes only COD. Set out what you would
+        need from the provider, what you would change in the shop, what you
+        would measure for how long, and what result would make you remove it
+        again.
+\end{reviewq}

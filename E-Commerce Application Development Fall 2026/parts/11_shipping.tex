@@ -1,0 +1,455 @@
+%=====================================================================
+\chapter{Shipping, Tax and Zones}\label{ch:shipping}
+%=====================================================================
+\locator{3}{Part III --- From Basket to Order}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} a geo zone, and \textbf{explain} why both shipping and
+        tax are expressed in terms of one.
+  \item \textbf{Distinguish} a tax rate, a tax class and a tax rule, and
+        \textbf{state} what each one decides.
+  \item \textbf{Compute} an order total by hand, including tax on shipping,
+        and \textbf{reconcile} it against what the shop recorded.
+  \item \textbf{Choose} a shipping method for a given shop, and
+        \textbf{justify} the choice against what it costs to operate.
+  \item \textbf{Apply} Pakistani sales tax to an online sale, and
+        \textbf{identify} what you would have to verify before relying on it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{checkout}: the checkout sequence, and that an order copies its totals
+rather than recomputing them. A working checkout --- the setting repaired in
+\chref{checkout} must be in place or no order can be completed.
+\end{prereq}
+
+\begin{keyterms}
+geo zone $\bullet$ zone $\bullet$ tax rate $\bullet$ tax class $\bullet$ tax
+rule $\bullet$ tax base $\bullet$ destination principle $\bullet$ flat rate
+$\bullet$ weight-based shipping $\bullet$ handling fee $\bullet$ order total
+line $\bullet$ sort order $\bullet$ GST $\bullet$ inclusive and exclusive
+pricing
+\end{keyterms}
+
+\section{Everything Here Depends on Where the Customer Is}
+
+A shop quotes one price for a product and then has to answer two questions that
+the price does not settle: \emph{what does it cost to get this to you}, and
+\emph{what tax is due on this sale}. Both answers depend on where ``you'' are,
+and neither can be stored on the product.
+
+So the platform needs a way to talk about places. That is a \term{geo zone}.
+
+\begin{definitionbox}[Zone, Geo Zone]
+A \term{zone} is an administrative subdivision of a country --- a province, a
+state, a county. Pakistan's zones are Punjab, Sindh, Khyber Pakhtunkhwa,
+Balochistan, and the territories. The platform ships a list of them for every
+country and you do not maintain it.
+
+\smallskip
+A \term{geo zone} is a \emph{named set} of (country, zone) pairs that you do
+maintain, created because you want to treat those places alike. ``Punjab and
+Islamabad'', ``everywhere except Gilgit-Baltistan'', ``the whole of Pakistan''
+are each a geo zone if a rule of yours applies to exactly that set.
+
+\smallskip
+The important property: a geo zone has no meaning of its own. It is a label you
+attach rules to. The same shop may have one geo zone for shipping and a
+different one for tax, overlapping in any way, because the places where
+delivery costs the same are not the places where tax is the same.
+\end{definitionbox}
+
+\begin{examplebox}[The two geo zones the demonstration shop ships with]
+\adminpath{System, Localisation, Geo Zones} shows them, and they are a good
+illustration precisely because they are different shapes.
+
+\smallskip
+\begin{tabular}{@{}L{4.0cm}L{9.0cm}@{}}
+\textbf{UK Shipping} & One row: country 222, zone 0. Zone 0 means
+\emph{every} zone --- the whole country in a single entry. \\[3pt]
+\textbf{UK VAT Zone} & Many rows: country 222 and one zone each. The same
+country, enumerated region by region. \\
+\end{tabular}
+
+\smallskip
+Why the difference? Because delivery is priced for the country as a whole,
+while the tax zone was built to allow regions to be excluded one at a time.
+\textbf{Reading a geo zone's shape tells you what its author expected to
+change.}
+\end{examplebox}
+
+\section{Tax: Three Things, Not One}
+
+Most people arrive expecting a tax setting. There are three, they sit in a
+hierarchy, and conflating them is the commonest source of a wrong total.
+
+\dsfig{%
+\begin{tikzpicture}[
+  lvl/.style={rounded corners=3pt, draw=#1, line width=1.1pt, fill=#1!8,
+              text=#1!60!black, font=\bfseries\small, align=center,
+              text width=3.0cm, minimum height=1.25cm},
+  note/.style={font=\scriptsize, text=neutral, align=left, text width=5.1cm,
+               anchor=west},
+  arr/.style={-{Stealth[length=2.2mm]}, primary!55, line width=0.9pt}
+]
+  \node[lvl=purplehl]  (rate) at (0,3.3) {Tax rate\\{\scriptsize\mdseries
+       ``VAT (20\%)''}};
+  \node[lvl=secondary] (cls)  at (0,1.65) {Tax class\\{\scriptsize\mdseries
+       ``Taxable Goods''}};
+  \node[lvl=greenhl]   (rule) at (0,0)    {Tax rule\\{\scriptsize\mdseries
+       class + rate + base}};
+
+  \node[note] at (2.0,3.3)  {\textbf{A number, and where it applies.} 20\% of
+       the value, or a flat 2.00 per unit, within one geo zone. Knows nothing
+       about products.};
+  \node[note] at (2.0,1.65) {\textbf{A kind of thing.} Set on the product.
+       ``Taxable Goods'' and ``Downloadable Products'' are taxed differently
+       because the law treats them differently.};
+  \node[note] at (2.0,0)    {\textbf{The join, and the hard part.} Which rates
+       apply to this class, in which order, and --- the question everything
+       turns on --- \emph{based on whose address}.};
+
+  \draw[arr] (rate) -- (cls);
+  \draw[arr] (cls) -- (rule);
+  \node[font=\scriptsize\itshape, text=accent, align=center] at (4.4,-1.3)
+       {Change the rate and every future order changes. Change the rule and
+        you may change who is taxed at all.};
+\end{tikzpicture}}%
+{Tax in three layers. A rate is a number in a place; a class is a kind of
+product; a rule says which rates a class attracts, in what order, and which of
+the three addresses on the order decides.}{taxlayers}
+
+\begin{conceptbox}[The \texttt{based} column, which is the whole of
+cross-border tax]
+Every tax rule carries a \term{tax base}: \texttt{store}, \texttt{payment} or
+\texttt{shipping}. It names which address decides whether the rule applies.
+
+\begin{tight}
+  \item \textbf{\texttt{store}} --- the shop's own address. Tax is the same for
+        everyone. Simple, and correct only for a shop that sells domestically.
+  \item \textbf{\texttt{payment}} --- the billing address. Used where the law
+        follows the buyer's financial residence.
+  \item \textbf{\texttt{shipping}} --- the delivery address. The
+        \term{destination principle}: tax belongs where the goods are consumed.
+        This is the usual answer for physical goods, and it is what the
+        demonstration shop uses for its \texttt{Taxable Goods} rules.
+\end{tight}
+
+\smallskip
+One setting, three answers, and a shop that picks the wrong one is not slightly
+wrong --- it is collecting the wrong tax from the wrong people and remitting it
+to the wrong authority. \adminpath{System, Localisation, Taxes, Tax Rules} is
+where it is chosen, and it is the single most consequential dropdown in the
+admin panel.
+\end{conceptbox}
+
+\section{An Order Total, Computed by Hand}
+
+The reliable way to understand a totals engine is to take one real order apart.
+This is the order placed by \chref{checkout}'s harness: one MacBook at
+\$500.00 and two iPhones at \$101.00, delivered within the shop's own country.
+
+\begin{worked}
+\textbf{What the shop recorded.} The rows of \texttt{oc\_order\_total}, in
+their own sort order:
+
+\smallskip
+\begin{tabular}{@{}L{5.0cm}L{3.2cm}L{4.4cm}@{}}
+Sub-Total & 702.00 & \texttt{sort\_order} 1 \\
+Flat Shipping Rate & 5.00 & \texttt{sort\_order} 3 \\
+Eco Tax (-2.00) & 6.00 & \texttt{sort\_order} 5 \\
+VAT (20\%) & 141.40 & \texttt{sort\_order} 5 \\
+\textbf{Total} & \textbf{854.40} & \texttt{sort\_order} 9 \\
+\end{tabular}
+
+\smallskip
+\textbf{Step 1 --- the sub-total.} $500.00 + (2 \times 101.00) = 702.00$. Goods
+only; nothing else has been decided yet.
+
+\smallskip
+\textbf{Step 2 --- shipping.} The flat rate is 5.00 regardless of what is in
+the basket. It is added as its own line, \emph{before} tax, which matters for
+step 4.
+
+\smallskip
+\textbf{Step 3 --- the fixed-amount tax.} ``Eco Tax'' is of type \texttt{F}:
+a flat 2.00 per unit, not a percentage. Three units were bought, so
+$3 \times 2.00 = 6.00$.
+
+\smallskip
+\textbf{Step 4 --- the percentage tax, and the part everyone gets wrong.}
+20\% of \emph{what}? Not of the sub-total:
+
+\[ 0.20 \times 702.00 = 140.40 \neq 141.40 \]
+
+The difference is exactly 1.00, which is 20\% of the 5.00 shipping charge:
+
+\[ 0.20 \times (702.00 + 5.00) = 0.20 \times 707.00 = \mathbf{141.40} \]
+
+\textbf{Shipping is taxable, and the eco tax is not taxed again.} Both of those
+are rule decisions, not arithmetic, and both would be different in another
+jurisdiction.
+
+\smallskip
+\textbf{Step 5 --- the total.}
+\[ 702.00 + 5.00 + 6.00 + 141.40 = \mathbf{854.40} \]
+which is what the shop stored.
+\end{worked}
+
+\begin{alertbox}[Two traps inside that one order]
+\textbf{The \texttt{tax} column on an order line is \emph{per unit}.}
+\texttt{oc\_order\_product} recorded the iPhone line as quantity 2, total
+202.00, tax \textbf{22.20}. That 22.20 is not the tax on the line; it is the
+tax on \emph{one} iPhone --- 20.20 of VAT plus 2.00 of eco tax. The line's tax
+is 44.40. A report that sums the \texttt{tax} column next to the
+\texttt{total} column adds a per-unit figure to a per-line figure and is wrong
+by a factor that changes with every basket.
+
+\smallskip
+\textbf{The demonstration data is misleadingly named.} ``Eco Tax (-2.00)''
+reads as a two-unit \emph{discount}. It is stored as rate $+2.0000$ and it
+\textbf{adds} 6.00 to this order. The name is the only thing negative about it.
+When you inherit a shop, the names in its tax table are the previous
+administrator's notes, not evidence.
+\end{alertbox}
+
+\section{Choosing How to Charge for Delivery}
+
+Five shipping methods ship with the platform. The choice is less about pricing
+than about what each one obliges you to maintain.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{2.4cm}L{5.4cm}L{6.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Method} & \textbf{Charges} & \textbf{What it obliges you to keep
+true} \\
+\midrule
+\endhead
+\texttt{flat} & One amount per order & Nothing. The cheapest to operate and
+the easiest to lose money on. \\
+\texttt{item} & An amount per item & Nothing, but it punishes multi-item
+baskets, which is the opposite of what a shop wants. \\
+\texttt{weight} & By total basket weight, in bands & \textbf{A weight on every
+product}, forever, including every product anyone adds later. \\
+\texttt{free} & Nothing, above a threshold & A threshold chosen from your
+margin rather than from a competitor's. \\
+\texttt{pickup} & Nothing; the customer collects & A real address and real
+opening hours. \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[How to choose, in one question]
+Ask: \emph{what will this method be wrong about, and how often?}
+
+\smallskip
+A flat rate is wrong about every unusually heavy or distant order, and if those
+are 5\% of your orders it is a rounding error you absorb. Weight-based shipping
+is right about every order and wrong whenever somebody adds a product and
+leaves the weight at zero --- which is a defect that produces free delivery
+silently, and which \chref{dashboard} will not show you unless you ask it to.
+
+\smallskip
+\textbf{The accurate method with a maintenance burden is worse than the
+approximate method with none, until the shop is big enough to carry the
+burden.} That is the same argument \chref{planning} made about building versus
+extending, applied one level down.
+\end{conceptbox}
+
+\section{Sales Tax on an Online Sale in Pakistan}
+
+Everything above is machinery. What a graduate working here will actually have
+to configure is Pakistani sales tax, and the machinery maps onto it directly.
+
+\begin{examplebox}[Configuring a Pakistani shop]
+\begin{tightnum}
+  \item \textbf{Geo zone.} Create one named \uiel{Pakistan}, containing country
+        Pakistan with zone~0 --- every province. Sales tax on goods does not
+        vary by province, so a single entry is correct and a list of provinces
+        would be four more things to maintain.
+  \item \textbf{Tax rate.} One rate, type \texttt{P} (percentage), at the
+        standard rate of \textbf{sales tax on goods} in force for the tax year.
+        At the time of writing that standard rate is \textbf{18\%}, but it has
+        moved twice in recent years and moves with each Finance Act.
+  \item \textbf{Tax class.} \uiel{Taxable Goods}, applied to every physical
+        product. Items on the Sixth Schedule are exempt and need a class of
+        their own rather than a rate of zero, so that the exemption is visible
+        in the data.
+  \item \textbf{Tax rule.} Base it on the \textbf{shipping} address. Goods are
+        consumed where they are delivered.
+  \item \textbf{Display.} Decide whether displayed prices include tax. In
+        Pakistan retail prices are customarily quoted inclusive, which means
+        \adminpath{System, Settings, Edit, Option} must be set to display
+        prices with tax, or every product page will understate the price a
+        customer pays.
+\end{tightnum}
+\end{examplebox}
+
+\begin{alertbox}[What this section is not]
+It is a mapping from the platform's concepts to Pakistani tax concepts. It is
+\textbf{not} tax advice, and three things about it will go out of date:
+
+\begin{tight}
+  \item \textbf{The rate.} Verify the standard rate against the current Finance
+        Act before configuring any shop. A handout printed in 2026 cannot be
+        the authority for a rate set annually.
+  \item \textbf{Services.} Sales tax on \emph{services} is provincial --- Sindh,
+        Punjab, Khyber Pakhtunkhwa and Balochistan each levy their own at
+        their own rate. A shop that sells only goods can ignore this; a shop
+        that sells a service alongside goods cannot, and then the single geo
+        zone above is no longer enough.
+  \item \textbf{Marketplace obligations.} Where a shop sells through an online
+        marketplace, the marketplace may carry withholding and reporting duties
+        that a self-hosted shop does not. \chref{legal} returns to this with
+        the E-Commerce Policy and FBR's registration requirements.
+\end{tight}
+
+\textbf{The professional habit this chapter is really teaching:} configure the
+machinery so that a rate change is one field, and record where the number came
+from. A shop whose tax rate is hard-coded in three templates is a shop that
+will be wrong for a year after the next budget.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Assuming tax applies to goods only.} It applied to shipping in
+        the worked example, and 1.00 of the 141.40 was nobody's product.
+  \item \textbf{Summing \texttt{oc\_order\_product.tax} as a line total.} It is
+        per unit.
+  \item \textbf{Trusting the names in an inherited tax table.} ``Eco Tax
+        (-2.00)'' adds money.
+  \item \textbf{Picking \texttt{store} as the tax base because it is first in
+        the list.} It is correct only for a shop that never delivers anywhere
+        else, and it is wrong silently.
+  \item \textbf{Choosing weight-based shipping without an operational rule for
+        entering weights.} The failure is free delivery, and it is invisible.
+  \item \textbf{Changing a tax rate and expecting old orders to change.} They
+        will not --- an order copied its totals (\chref{checkout}), and that is
+        the correct behaviour, not a bug.
+  \item \textbf{Testing tax with the shop's own address.} Many rules only
+        differ for a destination you have never tried.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Make your shop charge Pakistani tax, and prove the total]
+\begin{lstlisting}[language=bash]
+# --- 1. Look at what you have before changing it --------------------
+cd code
+docker compose exec db mariadb -ushop -pshoppw opencart -e \
+  "SELECT * FROM oc_geo_zone; SELECT * FROM oc_tax_rate;"
+
+# --- 2. Place one order and take its total apart --------------------
+python m10_checkout.py --repeat 1
+docker compose exec db mariadb -ushop -pshoppw opencart -e \
+  "SELECT code,title,value FROM oc_order_total \
+   WHERE order_id=(SELECT MAX(order_id) FROM oc_order) \
+   ORDER BY sort_order;"
+# Reproduce every line with a calculator before reading on.
+
+# --- 3. Find the 1.00 -----------------------------------------------
+# The VAT line is not 20% of the sub-total. Account for the difference
+# exactly, and say which rule decision caused it.
+
+# --- 4. Build a Pakistan geo zone -----------------------------------
+# Admin: System > Localisation > Geo Zones > Add New.
+# Pakistan, zone 0. One row.
+
+# --- 5. Add the rate, the class and the rule ------------------------
+# System > Localisation > Taxes > Tax Rates: percentage, current rate.
+# System > Localisation > Taxes > Tax Classes: Taxable Goods.
+# Base the rule on the SHIPPING address, and say why.
+
+# --- 6. Disable the UK rules and order again ------------------------
+python m10_checkout.py --repeat 1
+# Predict the new total first. Then check the stored rows.
+
+# --- 7. Break it deliberately ---------------------------------------
+# Change the rule's base to "store" and order to the same address.
+# Then order to a different country. Which one reveals the mistake?
+
+# --- 8. Write the operating note ------------------------------------
+# Five lines: where the rate came from, who changes it, when it is
+# checked, and what else must change when it does.
+
+# --- 9. Clean up ----------------------------------------------------
+python m10_checkout.py --clean
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 7 is the lesson. A wrong tax base is invisible
+for every order delivered to the place you tested from, which is every order
+you will place while developing.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item An order shows a sub-total of 702.00, shipping of 5.00 and a 20\% VAT
+        line of 141.40. Show where the 141.40 comes from, and state the two
+        rule decisions the arithmetic reveals.
+  \item A shop in Lahore sells to customers across Pakistan and occasionally to
+        the UAE. Its tax rule is based on \texttt{store}. Describe precisely
+        what is wrong, which orders are affected, why nobody has noticed, and
+        what you would change.
+  \item A colleague proposes weight-based shipping for a shop with 4{,}000
+        products, 600 of which have a weight of zero. Give the failure mode in
+        terms of money, say why no error appears anywhere, and give one change
+        that would make the failure visible.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A geo zone is a named set of (country, zone) pairs. It has no meaning
+        of its own; it is a label that shipping methods and tax rules attach
+        to, and a shop's shipping zones need not match its tax zones.
+  \item Tax is three things: a \emph{rate} is a number in a place, a
+        \emph{class} is a kind of product, and a \emph{rule} joins them and
+        chooses which address decides.
+  \item The \texttt{based} column --- store, payment or shipping --- is the
+        single most consequential setting in the tax machinery. For physical
+        goods the destination principle makes \texttt{shipping} the usual
+        answer.
+  \item Worked: $702.00$ of goods $+\,5.00$ shipping $+\,6.00$ fixed eco tax
+        $+\,141.40$ VAT $=854.40$, where the VAT is 20\% of goods
+        \emph{plus shipping}, and the 1.00 difference is the whole lesson.
+  \item \texttt{oc\_order\_product.tax} is per unit, not per line. Summing it
+        beside \texttt{total} is wrong by the quantity.
+  \item Shipping methods differ less in what they charge than in what they
+        oblige you to keep true. Weight-based shipping requires a weight on
+        every product forever, and fails as silent free delivery.
+  \item For a Pakistani shop: one geo zone with zone~0, one percentage rate
+        verified against the current Finance Act, a Taxable Goods class, and a
+        rule based on the shipping address.
+  \item Changing a rate changes future orders only. Orders copy their totals,
+        and that is correct.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A tax rule's \texttt{based} column set to
+        \texttt{shipping} means tax is decided by: (a)~the shop's address;
+        (b)~the billing address; (c)~the delivery address; (d)~the shipping
+        method chosen.
+  \item \textbf{(MCQ)} In the worked order, the VAT line exceeded 20\% of the
+        sub-total by exactly 1.00 because: (a)~rounding; (b)~shipping is
+        taxable; (c)~the eco tax was taxed; (d)~there were three units.
+  \item \textbf{(Short)} Explain the difference between a tax rate and a tax
+        class, with one example of two products that share a rate but not a
+        class.
+  \item \textbf{(Short)} Why does a shop ever need more than one geo zone? Give
+        a concrete case where the shipping zone and the tax zone must differ.
+  \item \textbf{(Short)} Explain why exempt products should be given their own
+        tax class rather than a tax rate of zero.
+  \item \textbf{(Applied)} A shop quotes prices inclusive of tax and then
+        changes the tax rate from 17\% to 18\%. Say exactly what must change in
+        the configuration, what happens to existing orders, what happens to
+        displayed prices, and what the shop must decide about who absorbs the
+        1\%.
+  \item \textbf{(Applied)} Design the shipping configuration for a Bahawalpur
+        shop selling 200 products weighing between 50\,g and 12\,kg, delivering
+        nationwide, with free delivery intended above Rs~5{,}000. State your
+        methods, your zones, your thresholds, what each one obliges somebody to
+        maintain, and how you would detect the day it starts losing money.
+\end{reviewq}
