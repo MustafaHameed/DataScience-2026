@@ -340,10 +340,14 @@ class Deck:
         cp.author = author
         cp.title = (f"Chapter {ch.number}: {ch.title}" if ch
                     else "Database Systems — Course Overview")
-        cp.subject = "Database Systems — Building, Running and Securing an Online Shop" \
-                     " · BSIT · Fall 2026"
-        cp.keywords = ("artificial intelligence; lecture slides; BSIT;"
-                       " HEC; Fall 2026")
+        cp.subject = ("Database Systems — Designing, Querying and Trusting"
+                      " a Relational Database · BSIT · Fall 2026")
+        # These keywords said "artificial intelligence" until this course was
+        # forked -- through TWO intervening courses, neither of which noticed,
+        # because nothing reads deck metadata and no gate looked at it. The
+        # prose scanner looks at it now.
+        cp.keywords = ("database systems; SQL; SQLite; relational model;"
+                       " normalisation; lecture slides; BSIT; HEC; Fall 2026")
         cp.category = "Lecture slides"
 
     # -- plumbing ------------------------------------------------------------
@@ -1042,7 +1046,7 @@ class Deck:
                    size=self.fit_size([T.Run(ch.title)], 9.3, 2.1, 46, 32,
                                       HEAD))
         self.text(s, ML, 4.72, 9.3, 0.36,
-                  "Building, Running and Securing an Online Shop",
+                  "Designing, Querying and Trusting a Relational Database",
                   16, mix(self.ground, WHITE, 0.80), name="!!tsub")
         # bottom band: the person on the left, the institution on the right
         self.rect(s, 0, 5.78, W, H - 5.78, self.deep, name="!!band")

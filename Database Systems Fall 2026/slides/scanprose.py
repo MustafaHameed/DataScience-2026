@@ -18,6 +18,7 @@ names, in every string literal long enough to be prose.
 
     python scanprose.py          0 suspicious literals, or a list and exit 1
 """
+import argparse
 import ast
 import io
 import os
@@ -54,7 +55,10 @@ OTHER = re.compile(
     # Added when Database Systems was forked from it, for the same reason
     # the Algorithms list was added when E-Commerce was forked from that:
     # the retarget replaces names, never descriptions.
-    r"storefront|shopping (?:basket|cart)|checkout|opencart|"
+    # "shop" bare, not just "storefront": the leak this gate was extended for
+    # was the single word "shop" in a sentence about a college, and a
+    # vocabulary that misses the thing that prompted it is decoration.
+    r"shops?\b|storefront|shopping (?:basket|cart)|checkout|opencart|"
     r"admin panel|click path|breadcrumb|coupon|voucher|"
     r"payment gateway|merchant|chargeback|PCI[- ]DSS|"
     r"catalogue page|product variant|geo zone|SEO|sitemap|"
@@ -91,7 +95,30 @@ def literals(src: str):
                 yield node.lineno, node.value
 
 
+def tex_lines(path: str):
+    """(line, text) for the prose of a .tex file, comments removed.
+
+    The slide pipeline is not the only place a fork leaks. The FIRST draft of
+    this course's Chapter 1 described a college's three CSV files and then
+    said "the SHOP now holds two different answers" -- E-Commerce vocabulary,
+    in the handout, where the Python gate could not see it. One sentence, and
+    nothing else in the build would ever have reported it.
+
+    A % that is not \\% starts a comment; the rest of the line is the author
+    talking to the next author and is exempt, exactly as a Python comment is.
+    """
+    for i, raw in enumerate(io.open(path, encoding="utf-8"), 1):
+        line = re.sub(r"(?<!\\)%.*$", "", raw).strip()
+        if len(line) >= 12:
+            yield i, line
+
+
 def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--tex", action="store_true",
+                    help="also scan the handout's own prose in parts/")
+    a = ap.parse_args()
+
     hits = 0
     for rel in FILES:
         path = os.path.join(HERE, rel)
@@ -103,6 +130,17 @@ def main() -> int:
                 flat = " ".join(lit.split())
                 print(f"  {rel}:{line}: {flat[:84]}")
                 hits += 1
+
+    if a.tex:
+        parts = os.path.join(os.path.dirname(HERE), "parts")
+        for name in sorted(os.listdir(parts)) if os.path.isdir(parts) else []:
+            if not name.endswith(".tex"):
+                continue
+            for line, text in tex_lines(os.path.join(parts, name)):
+                if OTHER.search(text) and not ALLOW.search(text):
+                    print(f"  parts/{name}:{line}: {text[:84]}")
+                    hits += 1
+
     print(f"\n  {hits} suspicious literal(s)")
     return 1 if hits else 0
 

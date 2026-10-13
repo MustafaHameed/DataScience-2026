@@ -1585,7 +1585,15 @@ def all_figures() -> list[tuple[str, FigureE]]:
 
 @lru_cache(maxsize=1)
 def _answers() -> dict[int, list[Para]]:
-    raw = open(os.path.join(PARTS, "C_answers.tex"), encoding="utf-8").read()
+    # The answers appendix is written after the chapters it answers, so for
+    # most of the build it does not exist yet.  Crashing here would mean the
+    # chapter parser could not be run at all until the last phase, which is
+    # exactly when its output stops being useful.  Absent file, no answers --
+    # audit() prints the shortfall either way.
+    path = os.path.join(PARTS, "C_answers.tex")
+    if not os.path.exists(path):
+        return {}
+    raw = open(path, encoding="utf-8").read()
     src, listings = _protect_listings(raw)
     src = strip_comments(src)
     ctx = _Ctx(listings)

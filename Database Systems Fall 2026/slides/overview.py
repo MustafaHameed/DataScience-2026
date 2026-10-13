@@ -63,7 +63,7 @@ def build(chapters, deps, figman, verbose=True):
     deck.title(s, "Database Systems", color=D.WHITE, x=ML,
                y=2.1, w=11.9, h=1.3, size=46)
     deck.text(s, ML, 3.5, 9.3, 0.5,
-              "Building, Running and Securing an Online Shop", 26,
+              "Designing, Querying and Trusting a Relational Database", 26,
               D.mix(deck.ground, D.WHITE, 0.86), family=D.HEAD,
               name="!!tsub")
     deck.text(s, ML, 4.55, 9.3, 0.36,
@@ -89,17 +89,17 @@ def build(chapters, deps, figman, verbose=True):
         deck.figure_slide(fig, T.ref_num("fig:coursemap"),
                           T.ref_page("fig:coursemap"), "The whole course",
                           "Twenty-three chapters in six parts, all of them "
-                          "spent on one shop. Chapter 19 is the hinge: the "
-                          "first time configuring the platform is not "
+                          "spent on one database. Chapter 18 is the hinge: "
+                          "the first time the design you built turns out "
                           "enough.", "Handout front matter")
 
     # -- what the course actually builds ------------------------------------
     # This course has no four-lens device (see ../README.md). Its organising
     # idea is the one the front matter names: one storefront, installed in
     # Chapter 5 and added to every week until it is the project. The six
-    # cards below are the six questions a shop has to answer.
+    # cards below are the six questions a database has to answer.
     s = deck.new("cards")
-    deck.chrome(s, "Six questions every shop has to answer",
+    deck.chrome(s, "Six questions every database has to answer",
                 "The spine of the course",
                 STYLES["conceptbox"], "Handout front matter")
     layers = [
@@ -135,8 +135,8 @@ def build(chapters, deps, figman, verbose=True):
               D.MUTED, name="!!laynote")
     D.FX.transition(s, "fade")
     deck.notes(s, "The organising idea of the whole course. Every one of "
-                  "these is answered against the same running shop, which is "
-                  "installed in week 3 and defended in week 16.")
+                  "these is answered against the same running database, "
+                  "designed in week 4 and defended in week 16.")
 
     # -- the six parts ------------------------------------------------------
     for p in range(1, 7):
@@ -211,9 +211,9 @@ def build(chapters, deps, figman, verbose=True):
     cards = [("FIRST SESSION",
               "Chapter 1 — What E-Commerce Is, and What It Changed"),
              ("BRING",
-              "A laptop with a container runtime (Appendix A)"),
+              "A laptop with Python on it -- nothing to install (Appendix A)"),
              ("FIRST LAB",
-              "Read four real shops, and say what each one is"),
+              "Four questions a file cannot answer, asked of a file"),
              ("READ BEFORE WEEK 2", "Chapters 1 and 2")]
     cw_ = (CW - 0.3) / 2
     for i, (lab, val) in enumerate(cards):

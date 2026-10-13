@@ -140,6 +140,22 @@
 \setlength{\RaggedRightRightskip}{0pt plus 4em}
 \newcolumntype{L}[1]{>{\RaggedRight\arraybackslash\hyphenpenalty=2000\relax}p{#1}}
 
+% R{<width>} is L's companion for the numbers. This course measures bytes, page
+% counts and milliseconds, and a column of figures only reads as a column when
+% the digits line up on the right. r would do it, but r cannot be given a width,
+% so a table mixing prose and figures could not be made to total the 14.3 cm a
+% conceptbox allows. This is a fixed-width right-aligned paragraph column:
+% the width is yours to budget, and the digits still align.
+%
+% \raggedleft, not ragged2e's \RaggedLeft. ragged2e caps the stretch at 2 em on
+% purpose, which is right for prose and wrong here: "25.27 ms" in a 2.4 cm
+% column leaves far more than 2 em of slack, so every such cell was reported as
+% an underfull hbox -- fourteen of them from one measured box. A numeric column
+% never wants its words spread out, so it wants the unlimited fil that plain
+% LaTeX gives. Hyphenation is barred for the same reason: a figure that has
+% been split across two lines is not a figure any more.
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash\hyphenpenalty=10000\relax}p{#1}}
+
 % \rowcolors is global, so the stripes set up for the last longtable also
 % paint every later array -- including the arrays inside cases and matrix
 % environments in displayed maths. Switch the stripes off inside those.
@@ -517,10 +533,44 @@
 % terminal) and from \term (a concept being defined).  A relation schema
 % is neither; it is a statement about the shape of the data.
 %---------------------------------------------------------------------
-\newcommand{\relkey}[1]{\underline{#1}}
+% \normalfont before \scshape, in both macros below and in \sqlkw.
+%
+% Latin Modern Roman has no bold small-caps shape -- T1/lmr/bx/sc simply does
+% not exist -- so \textbf{... \sqlkw{GRANT} ...} asks for a font that is not
+% there, LaTeX substitutes bold upright, and THE SMALL CAPS SILENTLY VANISH.
+% The handout's own build gate counts font warnings, so this surfaces; the
+% first draft of Appendix A tripped it on "no \sqlkw{GRANT}, no \sqlkw{REVOKE}"
+% inside a bold run.
+%
+% Forcing medium weight is the right fix rather than avoiding bold at the use
+% sites: a keyword or a relation name is a distinct KIND of thing, not
+% emphasis, and it should look the same whether the sentence around it is bold
+% or not.  The .sty header makes the same choice for the part and chapter
+% kickers, for the same reason.
+% \relkey underlines, but not with \underline.  \underline sets its rule at a
+% fixed depth below the baseline, ignoring what is in the box, and almost every
+% key in this course is a name like roll_no, course_code or section_id.  The
+% underscore of such a name sits at exactly that depth, so the rule and the
+% underscore merge and \relkey{roll\_no} prints as roll__no -- which a student
+% reading a schema will copy, and which is wrong.  Lowering the rule past the
+% box's own depth separates the two, and also clears the descenders of p, g and
+% y, which \underline does not.
+\newlength{\dsklen}
+\newcommand{\relkey}[1]{%
+  \leavevmode
+  \sbox0{#1}%
+  \setlength{\dsklen}{\dp0}%
+  \ifdim\dsklen<0.9ex\setlength{\dsklen}{0.9ex}\fi
+  \hbox{\usebox0\kern-\wd0
+        \raisebox{-\dimexpr\dsklen+1.3pt\relax}[0pt][0pt]{%
+          \rule{\wd0}{0.4pt}}}}
+
+% No padding inside the brackets.  The first draft wrote (\,...\,), and at
+% \small the thin space reads as a typing error -- "programme )" -- rather than
+% as typography.  Standard notation has none.
 \newcommand{\relation}[2]{%
-  {\textsc{\color{primary!85!black}#1}}\allowbreak
-  {\small(\,\ignorespaces#2\unskip\,)}}
+  {\normalfont\scshape\color{primary!85!black}#1}\allowbreak
+  {\small(\ignorespaces#2\unskip)}}
 
 %---------------------------------------------------------------------
 % \fd{sid, code}{grade} -- a functional dependency.
@@ -545,7 +595,7 @@
 % paragraph that discusses SQL look like a listing.  Small caps, which
 % is how every one of HEC's four reference books sets them.
 %---------------------------------------------------------------------
-\newcommand{\sqlkw}[1]{{\textsc{\MakeLowercase{#1}}}}
+\newcommand{\sqlkw}[1]{{\normalfont\scshape\MakeLowercase{#1}}}
 
 %---------------------------------------------------------------------
 % The measured box.

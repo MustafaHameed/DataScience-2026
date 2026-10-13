@@ -1,0 +1,444 @@
+%=====================================================================
+\chapter{Your First Database, in One Command}\label{ch:firstdatabase}
+%=====================================================================
+\locator{1}{Part I --- What a Database Is}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Create} a database, a table and a row, and \textbf{read} the
+        row back, without installing anything.
+  \item \textbf{Read} a relation schema written in the standard notation and
+        \textbf{write} the \sqlkw{CREATE TABLE} that implements it.
+  \item \textbf{State} what a database costs on disk, and \textbf{explain} why
+        the cost goes up in jumps rather than smoothly.
+  \item \textbf{Use} the eight dot-commands you will need every week.
+  \item \textbf{Account for} the gap between an empty database at 0 bytes and
+        one table at 8{,}192 bytes.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{whodoeswhat}: the components, and the data dictionary. Appendix~A for
+the toolkit --- if \texttt{sqlite3} does not start, read that first and then
+come back.
+\end{prereq}
+
+\begin{keyterms}
+\sqlkw{CREATE TABLE} $\bullet$ \sqlkw{INSERT} $\bullet$ \sqlkw{SELECT}
+$\bullet$ relation schema $\bullet$ column type $\bullet$ \sqlkw{PRIMARY KEY}
+$\bullet$ \sqlkw{NOT NULL} $\bullet$ dot-command $\bullet$ page $\bullet$ page
+size $\bullet$ \sqlkw{VACUUM} $\bullet$ database file
+\end{keyterms}
+
+\section{Three Statements and a File}
+
+Everything in \chref{whynotfiles} through \chref{whodoeswhat} was description.
+This is the chapter where you have a database.
+
+\begin{lstlisting}[language=bash]
+sqlite3 university.db
+\end{lstlisting}
+
+That is the installation, the server start-up, the account creation and the
+connection, all of it. There was no download. Then:
+
+\begin{lstlisting}[language=sql]
+CREATE TABLE student (
+  roll_no   TEXT    PRIMARY KEY,
+  name      TEXT    NOT NULL,
+  programme TEXT    NOT NULL,
+  semester  INTEGER NOT NULL
+);
+
+INSERT INTO student VALUES ('2021-IT-001','Ayesha Khan','BSIT',2);
+
+SELECT name FROM student WHERE roll_no = '2021-IT-001';
+\end{lstlisting}
+
+\begin{lstlisting}
+Ayesha Khan
+\end{lstlisting}
+
+You have now used all three levels of \chref{architecture} --- you wrote the
+conceptual schema, SQLite built the internal one, and the \sqlkw{SELECT} was an
+external view of one column of one row --- and all six components of
+\chref{whodoeswhat} ran. It took under a tenth of a second, and the rest of
+this chapter is about what that tenth of a second and that file actually cost.
+
+\section{Writing the Schema Down Before You Type It}
+
+The \sqlkw{CREATE TABLE} above is SQL. The thing it implements has a shorter
+notation, used in every textbook and in the rest of this handout:
+
+\begin{definitionbox}[Relation schema notation]
+A \term{relation schema} is written as the relation name followed by its
+attributes in brackets, with the primary key underlined:
+
+\medskip
+\centerline{\relation{student}{\relkey{roll\_no}, name, programme, semester}}
+
+\medskip
+It records the \emph{names} and the \emph{key} and nothing else --- no types,
+no lengths, no storage. It is the conceptual level in one line, and it is what
+you write on paper while designing, before any SQL exists.
+\end{definitionbox}
+
+\begin{examplebox}[From notation to SQL, and the three things the notation loses]
+\relation{student}{\relkey{roll\_no}, name, programme, semester} becomes the
+\sqlkw{CREATE TABLE} on the previous page. Going in that direction you must
+\emph{add} three decisions the notation does not carry:
+
+\begin{tight}
+  \item \textbf{A type for each attribute.} \texttt{roll\_no} is
+        \texttt{TEXT}, not \texttt{INTEGER}, because \texttt{2021-IT-001} is
+        not a number --- it has hyphens and leading zeros, and you will never
+        do arithmetic on it. Choosing \texttt{INTEGER} here is the single most
+        common first-week mistake.
+  \item \textbf{Which attributes may be absent.} \sqlkw{NOT NULL} on three of
+        them. \chref{select} is about how much trouble the fourth kind ---
+        the ones that may be missing --- causes.
+  \item \textbf{The key, enforced.} The underline is a claim; \sqlkw{PRIMARY
+        KEY} is the enforcement. \chref{constraints} is about the difference
+        between those two, and about how often the gap between them is where
+        the bugs are.
+\end{tight}
+\end{examplebox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  tbl/.style={rounded corners=3pt, draw=primary, line width=1.1pt,
+              fill=primary!6, align=left, inner sep=0pt, text width=5.0cm},
+  hdr/.style={font=\scriptsize\bfseries, text=white},
+  row/.style={font=\scriptsize\ttfamily, text=primary!60!black},
+  note/.style={font=\scriptsize\itshape, text=neutral, align=left}
+]
+  % header bar
+  \fill[primary, rounded corners=3pt] (0,0) rectangle (5.0,0.52);
+  \node[hdr, anchor=west] at (0.14,0.26) {student};
+  \draw[primary, line width=1.1pt, rounded corners=3pt]
+       (0,-3.0) rectangle (5.0,0.52);
+
+  \node[row, anchor=west, text=primary, font=\scriptsize\bfseries\ttfamily]
+       at (0.14,-0.22) {roll\_no \ \ TEXT \ \ PK};
+  \node[row, anchor=west] at (0.14,-0.66) {name \ \ \ \ \ TEXT \ \ NOT NULL};
+  \node[row, anchor=west] at (0.14,-1.10) {programme \ TEXT \ \ NOT NULL};
+  \node[row, anchor=west] at (0.14,-1.54) {semester \ \ INT \ \ NOT NULL};
+  \draw[primary!25, line width=0.6pt] (0.1,-1.80) -- (4.9,-1.80);
+  \node[row, anchor=west, text=neutral] at (0.14,-2.10)
+       {2021-IT-001 Ayesha Khan};
+  \node[row, anchor=west, text=neutral] at (0.14,-2.50)
+       {\ \ \ \ \ \ ... one row ...};
+
+  \node[note, text width=4.9cm, anchor=west] at (5.75,-0.75)
+       {\textbf{The schema.} Written once, changes rarely. This is what
+        \texttt{.schema} prints and what the data dictionary stores.};
+  \node[note, text width=4.9cm, anchor=west] at (5.75,-2.30)
+       {\textbf{The instance.} One row today, 4{,}000 next month. The file
+        grows; none of the four lines above change.};
+
+  \draw[-{Stealth[length=2mm]}, primary!50, line width=0.8pt]
+       (5.65,-0.75) -- (5.15,-0.75);
+  \draw[-{Stealth[length=2mm]}, neutral!60, line width=0.8pt]
+       (5.65,-2.30) -- (5.15,-2.30);
+\end{tikzpicture}}%
+{One table, with \chref{architecture}'s schema/instance distinction drawn on
+it. The box above the rule is the schema and is four lines long whether the
+table holds one row or a million.}{firsttable}
+
+\section{What It Actually Cost}
+
+A claim that a tool is lightweight is worth nothing unless somebody weighs it.
+The harness \texttt{code/m04\_firstdatabase.py} does the three statements above
+and measures them.
+
+\begin{measured}[From nothing to a row, and what the file weighs]
+\textsf{\footnotesize SQLite 3.51.2, Python 3.13.13, Intel i5-6600 (4 cores,
+3.30\,GHz), 16\,GB RAM, Windows 11, mechanical disk.}
+
+\medskip
+\textbf{1. Time from no database at all to a row read back}
+
+\begin{tabular}{@{}L{4.6cm}R{2.4cm}L{6.5cm}@{}}
+\texttt{connect}  & 0.52\,ms  & the file does not exist yet \\
+\texttt{create}   & 25.27\,ms & one \sqlkw{CREATE TABLE} \\
+\texttt{insert}   & 23.80\,ms & one row \\
+\texttt{select}   & 0.16\,ms  & read it back \\
+\textbf{TOTAL}    & \textbf{49.75\,ms} & $\rightarrow$ \texttt{'Ayesha Khan'} \\
+\end{tabular}
+
+\smallskip
+No server was started, no port opened, no password set, nothing installed.
+
+\medskip
+\textbf{2. Bytes on disk}
+
+\begin{tabular}{@{}L{8.2cm}R{2.6cm}@{}}
+an empty database, just connected & 0 \\
+after one \sqlkw{CREATE TABLE}, no rows & 8{,}192 \\
+1 row & 8{,}192 \\
+100 rows & 8{,}192 \\
+1{,}000 rows & 32{,}768 \\
+10{,}000 rows & 262{,}144 \\
+the same 10{,}000 rows after \sqlkw{VACUUM} & 262{,}144 \\
+\end{tabular}
+
+\medskip
+\textbf{3. Where the growth happens} (page size 4{,}096 bytes)
+
+\begin{tabular}{@{}R{2.0cm}R{2.4cm}R{1.8cm}R{3.4cm}@{}}
+\textbf{at row} & \textbf{bytes} & \textbf{pages} & \textbf{bytes/row so far} \\
+1   & 8{,}192  & 2 & 8192 \\
+181 & 16{,}384 & 4 & 91 \\
+351 & 20{,}480 & 5 & 58 \\
+\end{tabular}
+
+\medskip
+\textbf{Read the three results, in order.}
+
+\begin{tight}
+  \item \textbf{An empty database is 0 bytes.} Connecting does not write
+        anything. The file appears when the first statement that changes
+        something commits --- which is already \chref{transactions}'s subject
+        showing through.
+  \item \textbf{The first table costs 8{,}192 bytes, and so does the hundredth
+        row.} Two pages: one for SQLite's own header and
+        \texttt{sqlite\_master} --- the data dictionary from
+        \chref{whodoeswhat}, which has to live somewhere --- and one for your
+        table. That second page then holds about 180 of these rows for nothing.
+  \item \textbf{The file grows in jumps of exactly 4{,}096 bytes}, at rows 1,
+        181 and 351. It does not creep up per row. The cost of storage is
+        quantised, and the unit is the page.
+  \item \textbf{\sqlkw{VACUUM} recovered nothing}, because nothing had been
+        deleted. It is not a compressor; it reclaims space that deletions
+        freed. Students run it hopefully and it is worth knowing now that
+        hope is not the mechanism.
+\end{tight}
+
+\smallskip
+\textbf{On re-running this.} The total time varies: repeated runs on this
+machine gave 49.75\,ms and 70.38\,ms. Nothing changed but the operating
+system's disk cache --- which is the buffer manager's neighbour from
+\chref{whodoeswhat} making itself felt in week four. \textbf{The bytes do not
+vary at all.} When you report a measurement, say which kind you have: the
+timings are a range, the page counts are a fact.
+\end{measured}
+
+\begin{conceptbox}[Why 8{,}192 bytes for an empty table is the right answer]
+It looks like waste --- 8\,KB to store nothing. It is the price of being a
+database rather than a file, and it buys exactly two things:
+
+\begin{tight}
+  \item \textbf{The dictionary.} Page 1 holds the schema. Because of it, any
+        program can open \texttt{university.db} and discover what is in it.
+        The three CSV files in \chref{whynotfiles} had no such page, which is
+        precisely why a program could not tell what they meant.
+  \item \textbf{Room to grow in place.} Page 2 is mostly empty on purpose.
+        Rows 2 through 180 cost nothing because the space is already there,
+        and this is why inserting is fast.
+\end{tight}
+
+\smallskip
+At 10{,}000 rows the overhead has stopped mattering: 262{,}144 bytes is about
+26 bytes a row, and the rows themselves are about that size. \textbf{The fixed
+cost is paid once and the marginal cost is the data.} That is the shape you
+want from a storage system, and \chref{indexes} is the chapter where you
+deliberately pay the fixed cost a second time to make reads fast.
+\end{conceptbox}
+
+\begin{alertbox}[The comparison that makes ``lightweight'' mean something]
+``Lightweight'' is only a claim about something else. Counting what each
+arrangement requires before the first row exists:
+
+\begin{tabular}{@{}L{4.9cm}R{2.0cm}R{2.0cm}L{4.3cm}@{}}
+& \textbf{SQLite} & \textbf{a server} & \\
+installation steps     & 0 & several & download, install, configure \\
+background processes   & 0 & $\geq 1$ & a service that must be running \\
+network ports open     & 0 & $\geq 1$ & 3306, 5432, 1433 \dots \\
+accounts to create     & 0 & $\geq 1$ & starting with the superuser \\
+config files to edit   & 0 & $\geq 1$ & before anything is tuned \\
+things that can be \textbf{misconfigured} & \textbf{0} & \textbf{all of the above} & \\
+\end{tabular}
+
+\smallskip
+Every zero in the left column is a thing that cannot go wrong in week one ---
+and also \textbf{a thing you will not learn to do this term}. That is the
+trade, stated plainly: you get sixteen weeks on data and none on
+administration. \chref{project} is where the right-hand column is taught by
+contrast, and where you write the \sqlkw{GRANT} statements that SQLite will
+not run.
+\end{alertbox}
+
+\section{The Eight Dot-Commands}
+
+Dot-commands are instructions to the \texttt{sqlite3} shell, not SQL. They take
+no semicolon. There are about sixty; you will use these eight all term.
+
+\begin{examplebox}[The working set]
+\begin{tabular}{@{}L{4.3cm}L{9.7cm}@{}}
+\texttt{.open university.db} & open a database from inside the shell \\
+\texttt{.tables}             & list the tables \\
+\texttt{.schema student}     & print the \sqlkw{CREATE TABLE} text, exactly as stored \\
+\texttt{.headers on}         & put column names above the output --- \textbf{set this first, always} \\
+\texttt{.mode box}           & draw results as a table instead of pipe-separated text \\
+\texttt{.read v1\_create.sql}& run a file of SQL \\
+\texttt{.once out.txt}       & send the next result to a file \\
+\texttt{.quit}               & leave \\
+\end{tabular}
+
+\smallskip
+\texttt{.headers on} and \texttt{.mode box} together are the difference
+between output you can read and output you cannot. Appendix~A has the full
+list and the two-line reset procedure for when a lab database gets into a
+state you do not want to debug.
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{A semicolon after a dot-command.} \texttt{.tables;} is an
+        error. SQL takes a semicolon; dot-commands do not.
+  \item \textbf{Forgetting the semicolon after SQL.} The shell prints
+        \texttt{...>} and waits. It is not frozen --- it wants the rest of your
+        statement.
+  \item \textbf{Making \texttt{roll\_no} an \texttt{INTEGER}.}
+        \texttt{2021-IT-001} is text. This one costs a schema rewrite in week
+        six.
+  \item \textbf{Expecting \sqlkw{VACUUM} to shrink a database.} It reclaims
+        deleted space only. With no deletions it recovers nothing, as measured
+        above.
+  \item \textbf{Running \texttt{sqlite3} with no filename.} You get a database
+        in memory, you can work in it happily for an hour, and it vanishes on
+        \texttt{.quit} with no warning.
+  \item \textbf{Judging a database's size by the file alone.} 8{,}192 bytes
+        held 100 rows and also 1. The file size tells you how many pages were
+        allocated, not how much data there is.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Build the first table of the database you will keep all term]
+This is the beginning of the semester project. Keep
+\texttt{university.db} --- every lab from here adds to this one file, and
+\chref{project} submits it.
+
+\begin{lstlisting}[language=bash]
+# --- 1. Create it, in the folder you will keep all term --------------
+sqlite3 university.db
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. Make the output readable before anything else -----------
+.headers on
+.mode box
+
+-- --- 3. The first table -----------------------------------------
+CREATE TABLE student (
+  roll_no   TEXT    PRIMARY KEY,
+  name      TEXT    NOT NULL,
+  programme TEXT    NOT NULL,
+  semester  INTEGER NOT NULL
+);
+
+-- --- 4. Four rows -----------------------------------------------
+INSERT INTO student VALUES
+  ('2021-IT-001','Ayesha Khan','BSIT',2),
+  ('2021-IT-002','Bilal Ahmed','BSIT',2),
+  ('2021-CS-007','Hira Nadeem','BSCS',4),
+  ('2021-SE-013','Usman Tariq','BSSE',2);
+
+-- --- 5. Read them back ------------------------------------------
+SELECT * FROM student;
+SELECT name, programme FROM student WHERE semester = 2;
+
+-- --- 6. Prove the key is enforced -------------------------------
+INSERT INTO student VALUES ('2021-IT-001','Someone Else','BSIT',2);
+-- Write down the exact error message. This is Chapter 8 arriving early.
+
+-- --- 7. Leave the shell ----------------------------------------
+.quit
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 8. Measure your own machine ------------------------------------
+# the file size, and the pages it is made of
+ls -l university.db
+sqlite3 university.db "PRAGMA page_size; PRAGMA page_count;"
+python code/m04_firstdatabase.py
+\end{lstlisting}
+
+\smallskip
+\textbf{Record and keep.} Your own total milliseconds, your own page size, and
+your own three growth points. They will not match the measured box exactly ---
+different disk, different cache --- and \textbf{the ones that should match
+exactly are the byte counts}. If your page size is not 4{,}096, say so when
+you hand in, because every size figure in this handout scales by it.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item An empty database is 0 bytes and one empty table is 8{,}192. Account
+        for every one of those bytes --- what is in them, and why could it not
+        be fewer?
+  \item The file was 8{,}192 bytes at 100 rows and 32{,}768 at 1{,}000. Predict
+        the size at 2{,}000 rows, show the arithmetic, then run it and explain
+        any difference between your prediction and the result.
+  \item Write \relation{instructor}{\relkey{emp\_id}, name, department,
+        designation} as a \sqlkw{CREATE TABLE}, choosing a type for each
+        attribute, deciding which may be \sqlkw{NULL}, and justifying both
+        choices for \texttt{emp\_id} in one sentence each.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item \texttt{sqlite3 university.db} is the whole of installation,
+        start-up and connection. Three statements --- \sqlkw{CREATE TABLE},
+        \sqlkw{INSERT}, \sqlkw{SELECT} --- are a working database.
+  \item A \textbf{relation schema} is written \relation{student}{\relkey{roll\_no},
+        name, programme, semester}: name, attributes, key underlined. Turning
+        it into SQL means adding types, nullability and real key enforcement.
+  \item Measured: \textbf{49.75\,ms} from nothing to a row read back; an
+        \textbf{empty database is 0 bytes}; one \sqlkw{CREATE TABLE} costs
+        \textbf{8{,}192 bytes} and then holds about 180 rows free; 10{,}000
+        rows is \textbf{262{,}144 bytes}, about 26 bytes a row.
+  \item The file grows in \textbf{4{,}096-byte page jumps}, at rows 1, 181 and
+        351 --- not smoothly. Storage is quantised and the unit is the page.
+  \item The 8\,KB fixed cost buys the data dictionary and room to grow in
+        place. It is paid once; after that the marginal cost is the data.
+  \item \sqlkw{VACUUM} reclaims space freed by deletions. With no deletions it
+        recovers nothing.
+  \item Timings vary with the OS disk cache (49.75 vs 70.38\,ms on the same
+        machine); byte counts do not vary. Report which kind of number you
+        have.
+  \item ``Lightweight'' means zero installation steps, processes, ports,
+        accounts and config files --- and therefore zero of those to
+        misconfigure, and zero of them learned this term.
+  \item Eight dot-commands cover the course. Set \texttt{.headers on} and
+        \texttt{.mode box} first, every session.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A newly connected, empty SQLite database occupies:
+        (a)~0 bytes; (b)~4{,}096 bytes; (c)~8{,}192 bytes; (d)~one page per
+        table.
+  \item \textbf{(MCQ)} \sqlkw{VACUUM} on a database from which nothing has been
+        deleted: (a)~halves the file; (b)~compresses the rows;
+        (c)~recovers nothing; (d)~rebuilds the indexes only.
+  \item \textbf{(Short)} Why is \texttt{roll\_no} declared \texttt{TEXT} and
+        not \texttt{INTEGER}? Give two reasons, one about correctness and one
+        about what you would eventually want to do with the value.
+  \item \textbf{(Short)} Explain why the file size jumped at row 181 and not at
+        row 150 or row 200.
+  \item \textbf{(Short)} The same harness gave 49.75\,ms and 70.38\,ms on the
+        same machine with the same data. Is one of them wrong? Answer in two
+        sentences, saying what you would report.
+  \item \textbf{(Applied)} Write the \sqlkw{CREATE TABLE} for
+        \relation{course}{\relkey{course\_code}, title, credit\_hours,
+        department}, then predict its empty size in bytes and the row count at
+        which it will first grow. Run it, record both, and explain any
+        difference between prediction and measurement.
+  \item \textbf{(Applied)} A colleague proposes storing the university's data
+        in one table of 40 columns ``to avoid joins''. Using the page
+        measurements in this chapter, estimate what that costs in bytes at
+        10{,}000 students compared with the four-column table above, and then
+        give the argument against it that is \emph{not} about bytes ---
+        \chref{normalforms} will measure both halves of this answer.
+\end{reviewq}

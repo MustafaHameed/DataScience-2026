@@ -8,6 +8,7 @@ runs inside a tool that shows you everything it emits.
 
     python checklog.py          the report
     python checklog.py -v       the report, then the first errors in full
+    python checklog.py probe_master.log    any other log (the scratch master)
 """
 from __future__ import annotations
 
@@ -17,19 +18,34 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LOG = os.path.join(HERE, "DBS_Fall2026_Handout.log")
+DEFAULT_LOG = os.path.join(HERE, "DBS_Fall2026_Handout.log")
 
-# A longtable that breaks across a page reports infinite glue shrinkage once per
-# break.  It is upstream behaviour, not a fault in this document; build.ps1
+
+def chosen_log() -> str:
+    """The master log, or a log named on the command line.
+
+    Chapters are drafted against probe_master.tex, which has its own log,
+    and gating the draft against the master's stale log reports whatever
+    the last full build happened to say.
+    """
+    for a in sys.argv[1:]:
+        if a.endswith(".log"):
+            return a if os.path.isabs(a) else os.path.join(HERE, a)
+    return DEFAULT_LOG
+
+
+# A longtable that breaks across a page reports infinite glue shrinkage once
+# per break.  It is upstream behaviour, not a fault in this document; build.ps1
 # filters it and so does this.
 BENIGN = re.compile(r"Infinite glue shrinkage")
 
 
 def main() -> int:
-    if not os.path.exists(LOG):
-        print("no log -- run .\\build.ps1 first")
+    log = chosen_log()
+    if not os.path.exists(log):
+        print(f"no {os.path.basename(log)} -- run .\\build.ps1 first")
         return 1
-    txt = io.open(LOG, encoding="utf-8", errors="replace").read()
+    txt = io.open(log, encoding="utf-8", errors="replace").read()
     lines = txt.splitlines()
 
     errors = [l for l in lines
@@ -49,7 +65,7 @@ def main() -> int:
             ("Undefined refs", len(undef)), ("Overfull hboxes", len(ovh)),
             ("Overfull vboxes", len(ovv)), ("Underfull boxes", len(under)),
             ("Font warnings", len(fonts)), ("PDF-string warns", len(pdfstr))]
-    print("--- Build report ---")
+    print(f"--- Build report ({os.path.basename(log)}) ---")
     for k, v in rows:
         print(f"{k:<22}{v}")
 

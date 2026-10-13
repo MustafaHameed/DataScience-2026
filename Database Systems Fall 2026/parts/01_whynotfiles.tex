@@ -1,0 +1,380 @@
+%=====================================================================
+\chapter{Why Not Just Files?}\label{ch:whynotfiles}
+%=====================================================================
+\locator{1}{Part I --- What a Database Is}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Describe} how a file-based application stores and finds data,
+        and \textbf{state} what it costs to add one field.
+  \item \textbf{Name} the six problems a file-based approach has, and
+        \textbf{give} a concrete example of each.
+  \item \textbf{Explain} what a database and a database management system are,
+        and \textbf{distinguish} the two.
+  \item \textbf{Judge} when a file is the right answer, which is more often
+        than this chapter's title suggests.
+  \item \textbf{Predict} which of the six problems a given scenario will hit
+        first.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+One semester of programming: reading and writing a file, loops, and what a
+record looks like when it is a line of comma-separated text. Nothing else.
+Appendix~A if you have not checked that SQLite is on your machine.
+\end{prereq}
+
+\begin{keyterms}
+data $\bullet$ information $\bullet$ file-based system $\bullet$ database
+$\bullet$ database management system (DBMS) $\bullet$ data redundancy
+$\bullet$ data inconsistency $\bullet$ data isolation $\bullet$ integrity
+constraint $\bullet$ atomicity $\bullet$ concurrent access $\bullet$ lost
+update $\bullet$ data security $\bullet$ application program
+\end{keyterms}
+
+\section{The Program You Have Already Written}
+
+Somewhere in your first semester you wrote a program that kept a list of
+things in a file. It probably looked like this, and there is nothing wrong
+with it:
+
+\begin{lstlisting}[language=python]
+# students.csv
+# 2021-IT-001,Ayesha Khan,BSIT,3
+# 2021-IT-002,Bilal Ahmed,BSIT,3
+
+def find(roll_no):
+    for line in open("students.csv"):
+        fields = line.strip().split(",")
+        if fields[0] == roll_no:
+            return fields
+    return None
+\end{lstlisting}
+
+It works. It is twelve lines. For a list of your own books, or a configuration
+file, or the output of a program that nobody else reads, it is the right
+answer and this chapter is not an argument against it.
+
+This chapter is about the afternoon it stops being the right answer --- and
+about the fact that it does not stop gradually. A file-based approach works,
+and works, and works, and then the department asks for one more thing and
+suddenly nothing works.
+
+\begin{definitionbox}[Data, Information, and the difference]
+\term{Data} are raw recorded facts: the characters \texttt{2021-IT-001} in a
+file.
+
+\smallskip
+\term{Information} is data in a context that makes it answer a question:
+\emph{the roll number of the student who scored highest in Database Systems
+last term}.
+
+\smallskip
+A \term{file-based system} stores data and leaves every question to the
+application program. A \term{database} stores data \emph{together with a
+description of what it means and what must be true of it}, so that some of the
+questions --- and all of the guarantees --- can be answered by the store
+itself.
+
+\smallskip
+That last sentence is the whole subject. Everything in the remaining
+twenty-two chapters is a particular case of it.
+\end{definitionbox}
+
+\section{Six Things That Go Wrong}
+
+These are not six opinions. Each is a specific failure with a name, and you
+will meet all six in a working life.
+
+\dsfig{%
+\begin{tikzpicture}[
+  app/.style={rounded corners=3pt, draw=#1, line width=1.0pt, fill=#1!8,
+              text=#1!60!black, font=\bfseries\scriptsize, align=center,
+              text width=2.5cm, minimum height=0.9cm},
+  fil/.style={draw=neutral, line width=0.9pt, fill=neutral!8,
+              text=neutral, font=\scriptsize, align=center,
+              text width=2.3cm, minimum height=0.8cm},
+  arr/.style={-{Stealth[length=2.0mm]}, neutral!70, line width=0.8pt},
+  note/.style={font=\scriptsize\itshape, text=accent, align=center,
+               text width=5.0cm}
+]
+  % --- file-based, on the left
+  \node[font=\bfseries\small, text=accent] at (3.0,3.5) {File-based};
+  \node[app=accent] (a1) at (0.6,2.5) {Enrolment\\program};
+  \node[app=accent] (a2) at (3.0,2.5) {Results\\program};
+  \node[app=accent] (a3) at (5.4,2.5) {Fees\\program};
+  \node[fil] (f1) at (0.6,0.9) {students.csv};
+  \node[fil] (f2) at (3.0,0.9) {marks.csv};
+  \node[fil] (f3) at (5.4,0.9) {fees.csv};
+  \draw[arr] (a1) -- (f1);
+  \draw[arr] (a2) -- (f2);
+  \draw[arr] (a3) -- (f3);
+  \node[note] at (3.0,-0.3)
+       {Each program owns its own file and its own idea of what a student is.
+        The name is stored three times.};
+
+  % --- database, on the right
+  \node[font=\bfseries\small, text=greenhl] at (11.4,3.5) {Database};
+  \node[app=greenhl] (b1) at (9.0,2.5) {Enrolment\\program};
+  \node[app=greenhl] (b2) at (11.4,2.5) {Results\\program};
+  \node[app=greenhl] (b3) at (13.8,2.5) {Fees\\program};
+  \node[rounded corners=3pt, draw=greenhl, line width=1.2pt, fill=greenhl!14,
+        text=greenhl!60!black, font=\bfseries\scriptsize, align=center,
+        text width=5.6cm, minimum height=0.9cm] (dbms) at (11.4,1.3) {DBMS};
+  \node[fil, text width=5.6cm, draw=greenhl] (db) at (11.4,0.1)
+       {one database};
+  \foreach \b in {b1,b2,b3}{\draw[arr] (\b) -- (dbms);}
+  \draw[arr] (dbms) -- (db);
+  \node[note, text=greenhl!60!black] at (11.4,-1.1)
+       {One store, one description of what a student is, and one place the
+        rules are kept.};
+\end{tikzpicture}}%
+{The same three programs, two ways. The difference is not that the right-hand
+side has fewer files --- it is that the rules about what a student is have
+moved out of the programs and into one place.}{filesvsdb}
+
+\begin{alertbox}[The six, with a case for each]
+\begin{tightnum}
+  \item \textbf{Data redundancy.} The student's name is in
+        \texttt{students.csv}, in \texttt{marks.csv} so the results sheet can
+        print it, and in \texttt{fees.csv} so the receipt can. Three copies,
+        and disk space is the least of it.
+  \item \textbf{Data inconsistency.} A student marries and changes her name.
+        Two of the three files are updated. The college now holds two different
+        answers to one question, and \emph{nothing in the system is wrong} ---
+        each file is internally fine. This is redundancy's actual cost.
+  \item \textbf{Data isolation.} The question ``which students owe fees and
+        are enrolled in a course that has already started?'' needs two files in
+        different formats. There is no way to ask it; there is only a program
+        somebody has to write.
+  \item \textbf{Integrity problems.} ``A student's semester is between 1 and
+        8.'' Where does that rule live? In the enrolment program. And in the
+        results program, where somebody wrote $1$ to $10$. The rule is a
+        comment in three places and enforced in none.
+  \item \textbf{Atomicity problems.} Transferring a student between sections
+        means removing a line from one file and adding it to another. The
+        machine loses power in between. The student is now in no section at
+        all, and nothing can tell you that happened.
+  \item \textbf{Concurrent access and security.} Two clerks open the file, both
+        edit, both save; the second overwrites the first and neither is told
+        --- a \term{lost update}. And the fees clerk, who needs one column, has
+        the whole file including every home address.
+\end{tightnum}
+\end{alertbox}
+
+\begin{conceptbox}[Which one bites first, and why it is never the one you
+expect]
+Students asked to rank these almost always put redundancy first, because it is
+the one that is visible --- you can \emph{see} the duplicated column.
+
+\smallskip
+In practice the order is almost exactly reversed. Redundancy costs disk, which
+is cheap. \textbf{Inconsistency} is what gets noticed, because somebody
+receives a letter addressed to a name they no longer use. \textbf{Isolation}
+is what gets the department to pay for a new system, because the question they
+want answered cannot be answered at all. And \textbf{atomicity} is the one
+nobody finds until the day it matters, because a half-finished transfer looks
+exactly like a student who was never enrolled.
+
+\smallskip
+Keep this ranking in mind in \chref{project}, when you have to justify your
+design to somebody who will ask what problem it solves.
+\end{conceptbox}
+
+\section{What a Database Management System Is}
+
+\begin{definitionbox}[Database, DBMS, Database System]
+A \term{database} is a shared, organised collection of data, together with a
+description of that data --- what it is called, what type it is, what must be
+true of it, and how its parts relate.
+
+\smallskip
+A \term{database management system} (DBMS) is the \emph{software} that creates,
+maintains and controls access to a database. SQLite is a DBMS; so are Oracle,
+PostgreSQL, MySQL and SQL Server.
+
+\smallskip
+A \term{database system} is the whole arrangement: the data, the DBMS, the
+application programs that use it, and the people.
+
+\smallskip
+These three are routinely used as if they meant the same thing, including by
+people who should know better. In an examination they do not, and the
+distinction is CLO-1's business.
+\end{definitionbox}
+
+The DBMS is what the right-hand side of Figure~\ref{fig:filesvsdb} adds. It is
+a single piece of software that every program goes through, and because
+everything goes through it, it is the one place where a rule can be stated once
+and be true for everybody.
+
+\begin{examplebox}[What moves into the DBMS, problem by problem]
+\begin{tabular}{@{}L{4.6cm}L{9.6cm}@{}}
+\textbf{Redundancy} & One copy of each fact, and other tables refer to it
+(\chref{mapping}) \\
+\textbf{Inconsistency} & Follows from the above --- there is nothing to
+disagree with \\
+\textbf{Isolation} & One query language over all the data (\chref{algebra}
+onward) \\
+\textbf{Integrity} & Constraints declared once, in the schema
+(\chref{constraints}) \\
+\textbf{Atomicity} & Transactions: all of it or none of it
+(\chref{transactions}) \\
+\textbf{Concurrency, security} & Locking, and authorisation
+(\chref{transactions}, \chref{project}) \\
+\end{tabular}
+
+\smallskip
+That table is this book's table of contents, rearranged. Every chapter from
+here is one row of it, done properly.
+\end{examplebox}
+
+\section{When a File Is Still the Right Answer}
+
+A course called Database Systems has an obvious bias, and you should know
+about it.
+
+\begin{conceptbox}[Use a file when every one of these is true]
+\begin{tight}
+  \item \textbf{One program reads it, and one writes it.} No concurrency, so
+        no lost updates.
+  \item \textbf{It is small enough to read entirely.} If you always want all of
+        it, an index buys nothing.
+  \item \textbf{The questions never change.} Isolation only hurts when somebody
+        asks something new.
+  \item \textbf{Losing it is survivable}, or it can be regenerated.
+\end{tight}
+
+\smallskip
+Configuration files, log files, a cache, the output of a nightly job --- all
+files, all correctly so. \textbf{The failure is not using a file; it is using a
+file after the fourth condition stopped holding and not noticing.}
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Treating redundancy as the main problem.} It is the cheapest of
+        the six and the easiest to see, which is why it gets the attention.
+  \item \textbf{Saying ``database'' when you mean ``DBMS''.} The data is not
+        the software.
+  \item \textbf{Believing a DBMS removes the need to think about integrity.}
+        It gives you somewhere to put the rules. It does not write them, and
+        \chref{constraints} measures what happens when you declare one and it
+        is not enforced.
+  \item \textbf{Assuming a database is always better.} Four conditions above
+        say otherwise.
+  \item \textbf{Calling a spreadsheet a database.} It has rows and columns and
+        none of the six guarantees.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Break a file-based system on purpose]
+No database yet. This laboratory is about earning the next twenty-two
+chapters.
+
+\begin{lstlisting}[language=bash]
+# --- 1. Make the files -----------------------------------------------
+# Three CSV files, by hand, in a text editor. Five students each.
+#   students.csv   roll_no,name,programme,semester
+#   marks.csv      roll_no,name,course,marks
+#   fees.csv       roll_no,name,amount,paid
+
+# --- 2. Count the redundancy -----------------------------------------
+# How many times does one student's NAME appear across the three files?
+# Multiply by 4,000 students. Write the number down.
+
+# --- 3. Create an inconsistency --------------------------------------
+# Change one student's name in students.csv and marks.csv but NOT in
+# fees.csv. Now answer: what is that student's name? Justify it.
+
+# --- 4. Hit data isolation -------------------------------------------
+# Write the program that answers: "which students owe fees AND are
+# enrolled in a course where they scored below 50?"
+# Time yourself. Do not finish it if it takes more than twenty minutes
+# -- stopping is the result.
+
+# --- 5. Break atomicity ----------------------------------------------
+# Write a script that moves a student from one file to another, with a
+# deliberate crash between the two writes. Run it. Describe the state.
+
+# --- 6. Simulate a lost update ---------------------------------------
+# Open students.csv in two editors. Change a different row in each.
+# Save both. Report what survived.
+
+# --- 7. Write the memo ------------------------------------------------
+# One page to a head of department who has asked why the existing
+# system should be replaced. Use YOUR numbers from steps 2 and 4.
+# No jargon: the reader has not taken this course.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 4 is the one that convinces people. Redundancy is
+an argument; a question that cannot be answered at all is a business problem,
+and it is the one that gets a project funded.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A college keeps student records in one file and library loans in
+        another, each maintained by one clerk who never touches the other.
+        Which of the six problems does this arrangement have, and which does it
+        genuinely escape? Say what would have to change for your answer to
+        change.
+  \item Distinguish a database from a database management system, and explain
+        why ``we bought a database'' is a sentence that needs clarifying before
+        you can act on it.
+  \item Your colleague argues that redundancy is harmless because disk is
+        cheap. Give the argument you would make in reply, name the problem
+        redundancy actually causes, and give an example in which no single file
+        is wrong and the system still is.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Data are recorded facts; information is data in a context that answers
+        a question. A database stores data \emph{with a description of what it
+        means and what must be true of it}, which is the whole subject.
+  \item A file-based system works until it does not, and the change is abrupt
+        rather than gradual.
+  \item The six problems are redundancy, inconsistency, isolation, integrity,
+        atomicity, and concurrent access with security.
+  \item Redundancy is the visible one and the cheapest. Inconsistency is what
+        gets noticed, isolation is what gets a project funded, and atomicity is
+        the one nobody finds until it matters.
+  \item A \emph{database} is the data; a \emph{DBMS} is the software; a
+        \emph{database system} is the whole arrangement including the people.
+  \item Everything goes through the DBMS, which is why it is the one place a
+        rule can be stated once and be true for everybody.
+  \item A file is still right when there is one reader, one writer, a fixed set
+        of questions and nothing irreplaceable. The failure is not noticing
+        when that stops being true.
+  \item The table in Section 1.3 is this book's contents rearranged: each of
+        the six problems is solved by a named later chapter.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Two files hold a student's name and only one is updated.
+        This is an example of: (a)~redundancy; (b)~inconsistency; (c)~isolation;
+        (d)~an integrity constraint.
+  \item \textbf{(MCQ)} The software that creates and controls access to a
+        database is called: (a)~the database; (b)~the database system; (c)~the
+        DBMS; (d)~the schema.
+  \item \textbf{(Short)} Give a question about a university that cannot be
+        answered from two separate CSV files, and say which of the six problems
+        that is.
+  \item \textbf{(Short)} Explain atomicity using an example that is not a bank
+        transfer.
+  \item \textbf{(Short)} State two conditions under which a plain file is a
+        better choice than a database, and give a real example of each.
+  \item \textbf{(Applied)} A clinic keeps appointments in a spreadsheet shared
+        on a network drive, edited by three receptionists. Identify every one of
+        the six problems it has, rank them by which will cause a complaint
+        first, and justify your ranking.
+  \item \textbf{(Applied)} You are asked to justify replacing a working
+        file-based system. Write the three strongest arguments in order, say
+        what evidence you would gather for each before the meeting, and state
+        which argument you would drop if you only had five minutes.
+\end{reviewq}

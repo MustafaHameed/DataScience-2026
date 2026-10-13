@@ -1,0 +1,428 @@
+%=====================================================================
+\chapter{What Is Inside a DBMS, and Who Does What}\label{ch:whodoeswhat}
+%=====================================================================
+\locator{1}{Part I --- What a Database Is}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Name} the major components of a DBMS and \textbf{state} what
+        each one is responsible for.
+  \item \textbf{Trace} a single \sqlkw{SELECT} statement through those
+        components, in order, from text to answer.
+  \item \textbf{Explain} what the data dictionary is, and \textbf{query} it.
+  \item \textbf{Distinguish} the four database roles --- administrator,
+        designer, application programmer, end user --- by what each one
+        decides.
+  \item \textbf{Identify} which components SQLite has, which it lacks, and
+        which role has to cover for the missing ones.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{architecture}: the three levels and the two mappings. This chapter is
+largely about \emph{who performs} those mappings.
+\end{prereq}
+
+\begin{keyterms}
+query processor $\bullet$ parser $\bullet$ query optimiser $\bullet$ execution
+engine $\bullet$ storage manager $\bullet$ buffer manager $\bullet$ file
+manager $\bullet$ transaction manager $\bullet$ lock manager $\bullet$ recovery
+manager $\bullet$ authorisation manager $\bullet$ data dictionary $\bullet$
+system catalog $\bullet$ metadata $\bullet$ DBA $\bullet$ database designer
+$\bullet$ application programmer $\bullet$ end user
+\end{keyterms}
+
+\section{A DBMS Is Not One Program}
+
+You type eleven words:
+
+\begin{lstlisting}[language=sql]
+SELECT name FROM student WHERE programme = 'BSIT' ORDER BY name;
+\end{lstlisting}
+
+and rows come back. Between those two events, six or seven distinct pieces of
+software run, each with one job. It is worth knowing them by name, because for
+the rest of the course every topic is really a chapter about one of them:
+\chref{indexes} is about the optimiser and the storage manager arguing,
+\chref{transactions} is about the transaction and recovery managers, and
+\chref{project} is about the one component SQLite does not have at all.
+
+\begin{definitionbox}[The components of a DBMS]
+The \term{query processor} turns your statement into an answer. It contains a
+\term{parser} (is this valid SQL, and what does it refer to?), a
+\term{query optimiser} (of the many ways to compute this, which is cheapest?)
+and an \term{execution engine} (do it).
+
+\smallskip
+The \term{storage manager} stands between the query processor and the disk. It
+contains a \term{file manager} (where on disk is this?) and a
+\term{buffer manager} (which pages are in memory, and which do I evict?).
+
+\smallskip
+The \term{transaction manager} makes groups of operations behave as one, with
+a \term{lock manager} to keep concurrent users from corrupting each other's
+work and a \term{recovery manager} to put the database back together after a
+crash.
+
+\smallskip
+The \term{authorisation manager} decides whether this user is allowed to do
+this at all.
+
+\smallskip
+The \term{data dictionary} --- also called the \term{system catalog} --- is
+where the DBMS keeps the schema itself. It is a database about the database.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  comp/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!7,
+               text=#1!60!black, font=\scriptsize\bfseries, align=center,
+               text width=2.7cm, minimum height=0.8cm},
+  grp/.style={rounded corners=4pt, draw=#1!40, line width=0.8pt, dashed,
+              inner sep=6pt},
+  ttl/.style={font=\scriptsize\bfseries, text=#1, anchor=west},
+  arr/.style={-{Stealth[length=2mm]}, primary!55, line width=0.9pt},
+  thin/.style={-{Stealth[length=1.6mm]}, neutral!70, line width=0.6pt}
+]
+  % users
+  \node[comp=secondary] (u) at (0,5.0) {SQL from a user\\or a program};
+
+  % query processor
+  \node[comp=primary] (p)  at (0,3.7) {Parser};
+  \node[comp=primary] (o)  at (0,2.7) {Optimiser};
+  \node[comp=primary] (x)  at (0,1.7) {Execution engine};
+  \node[grp=primary, fit=(p)(o)(x)] (qp) {};
+  \node[ttl=primary] at ([xshift=2pt]qp.north east) {Query processor};
+
+  % storage manager
+  \node[comp=purplehl] (b) at (0,0.3) {Buffer manager};
+  \node[comp=purplehl] (f) at (0,-0.7) {File manager};
+  \node[grp=purplehl, fit=(b)(f)] (sm) {};
+  \node[ttl=purplehl] at ([xshift=2pt]sm.north east) {Storage manager};
+
+  \node[comp=neutral] (disk) at (0,-2.1) {the database file};
+
+  % side services
+  \node[comp=tealhl]  (t) at (-4.3,2.2) {Transaction\\manager};
+  \node[comp=tealhl]  (l) at (-4.3,0.9) {Lock manager};
+  \node[comp=tealhl]  (r) at (-4.3,-0.4) {Recovery\\manager};
+  \node[comp=accent]  (a) at (-4.3,3.9) {Authorisation\\manager};
+  \node[comp=goldhl]  (d) at (4.3,1.7) {Data dictionary\\{\scriptsize\mdseries
+        the schema, stored}};
+
+  \draw[arr] (u) -- (p);
+  \draw[arr] (p) -- (o);
+  \draw[arr] (o) -- (x);
+  \draw[arr] (x) -- (b);
+  \draw[arr] (b) -- (f);
+  \draw[arr] (f) -- (disk);
+
+  \draw[thin] (a) -- (p);
+  \draw[thin] (t) -- (x);
+  \draw[thin] (l) -- (b);
+  \draw[thin] (r) -- (f);
+  \draw[thin, {Stealth[length=1.6mm]}-{Stealth[length=1.6mm]}] (d) -- (o);
+  \draw[thin, {Stealth[length=1.6mm]}-{Stealth[length=1.6mm]}] (d) -- (p);
+\end{tikzpicture}}%
+{The components of a DBMS, and the path a statement takes down through them.
+The optimiser and the parser both consult the data dictionary --- the parser
+to check that \texttt{student} exists and has a \texttt{name}, the optimiser to
+find out how big it is and what indexes it has.}{dbmscomponents}
+
+\section{Following One Statement Down}
+
+\begin{worked}[Eleven words, six components]
+\texttt{SELECT name FROM student WHERE programme = 'BSIT' ORDER BY name;}
+
+\begin{tightnum}
+  \item \textbf{Authorisation manager.} May this user read
+        \texttt{student}? In a server DBMS this is checked first and can stop
+        everything here. \emph{In SQLite there is no such check} ---
+        if you can open the file, you can read all of it.
+  \item \textbf{Parser.} Is the syntax legal? Does \texttt{student} exist?
+        Does it have columns \texttt{name} and \texttt{programme}? Is
+        \texttt{'BSIT'} comparable with \texttt{programme}? The answers come
+        from the \textbf{data dictionary}, not from the data.
+  \item \textbf{Optimiser.} Two plans at least. Read all 4{,}000 rows and
+        discard the non-BSIT ones, then sort; or, if an index on
+        \texttt{programme} exists, use it to fetch only the BSIT rows. And if
+        an index on \texttt{name} exists, the \sqlkw{ORDER BY} may be free ---
+        indexes are already in order. The optimiser picks by \emph{estimated}
+        cost, using statistics from the dictionary. \chref{indexes} measures
+        how good those estimates are.
+  \item \textbf{Execution engine.} Runs the chosen plan, asking the storage
+        manager for pages as it goes.
+  \item \textbf{Buffer manager.} Page 7 is already in memory --- no disk read.
+        Page 112 is not, so fetch it, and evict something to make room. This
+        is the single biggest determinant of how fast the query is, and you
+        never see it.
+  \item \textbf{File manager.} Page 112 is at byte offset $111 \times 4096$ of
+        \texttt{university.db}. Read 4{,}096 bytes.
+\end{tightnum}
+
+\smallskip
+\textbf{The point of the exercise.} You wrote \emph{what} you wanted. Nothing in
+your statement said how. Steps 3 to 6 were chosen for you, and the only way to
+influence them is to change the schema --- which is why design, and not
+cleverness in query writing, is most of this course.
+\end{worked}
+
+\section{The Data Dictionary Is Just More Tables}
+
+The claim that a DBMS stores the schema in the database is easier to believe
+once you have queried it.
+
+\begin{examplebox}[The dictionary, in SQLite]
+Every SQLite database has a table called \texttt{sqlite\_master}, and you can
+select from it like any other:
+
+\begin{lstlisting}[language=sql]
+SELECT type, name, tbl_name FROM sqlite_master;
+\end{lstlisting}
+
+\begin{lstlisting}
+type   name          tbl_name
+-----  ------------  ----------
+table  student       student
+index  idx_name      student
+view   fees_view     student
+\end{lstlisting}
+
+The \texttt{sql} column holds the exact text of the \sqlkw{CREATE} statement
+that made each object --- which is why \texttt{.schema} is instant: it is a
+\sqlkw{SELECT}, not a reconstruction.
+
+\smallskip
+Other systems do the same thing under other names:
+\texttt{information\_schema} in MySQL and PostgreSQL,
+\texttt{ALL\_TABLES} in Oracle. The idea is universal; the spelling is not.
+\end{examplebox}
+
+\begin{conceptbox}[Why this is more than a curiosity]
+Because the schema is data, every tool that works on data works on the schema.
+Three consequences you will use:
+
+\begin{tight}
+  \item \textbf{A program can discover a database it has never seen.} Anything
+        that shows you a list of tables --- a GUI browser, an admin page, a
+        reporting tool --- is selecting from the dictionary.
+  \item \textbf{The schema can be backed up with the data}, because it is in
+        the same file.
+  \item \textbf{A dictionary query can audit a schema.} In \chref{constraints}
+        you will use one to find every table that declares a foreign key, and
+        the point of that exercise is that the declarations are all there and
+        none of them are being enforced.
+\end{tight}
+\end{conceptbox}
+
+\section{The Four Roles}
+
+The components are software. These are people, and the distinction that
+matters is not job title --- in a small organisation one person is all four ---
+but \emph{which decisions belong to which hat}.
+
+\begin{definitionbox}[Who decides what]
+The \term{database administrator} (DBA) owns the running system: installation,
+users and privileges, backups, recovery, performance, storage. The DBA decides
+\emph{how it runs}.
+
+\smallskip
+The \term{database designer} owns the schema: entities, relationships,
+constraints, normalisation. The designer decides \emph{what is true}.
+
+\smallskip
+The \term{application programmer} owns the programs that use the database.
+They decide \emph{how it is reached}.
+
+\smallskip
+The \term{end user} owns the questions. They decide \emph{what it is for}, and
+they are the only role in the list who need not know that any of the others
+exist.
+\end{definitionbox}
+
+\begin{examplebox}[One request, four reactions]
+\emph{``Students should be able to see their own marks on the portal, but not
+anybody else's.''}
+
+\begin{tabular}{@{}L{3.1cm}L{10.9cm}@{}}
+\textbf{End user} & States the requirement, including the half of it that is a
+prohibition. Notices first when it is wrong. \\
+\textbf{Designer} & Is there a reliable way to tell whose marks these are?
+Does \relation{enrolment}{\relkey{roll\_no}, \relkey{section\_id}, grade} tie
+every mark to exactly one student? If not, the requirement cannot be met at
+any price. \\
+\textbf{DBA} & Creates the portal's database user and grants it the minimum:
+read on a view, and nothing on the base table. \\
+\textbf{Programmer} & Writes the query with the logged-in roll number as a
+\emph{parameter}, never as pasted-in text --- the difference between those
+two is the whole of SQL injection. \\
+\end{tabular}
+
+\smallskip
+\textbf{Where it breaks.} If the designer gets it wrong, nobody downstream can
+fix it: a mark not tied to one student cannot be shown to one student. This is
+why design comes before everything else in this course, and why
+\chref{ermodel} through \chref{constraints} are four chapters in which you
+write almost no SQL.
+\end{examplebox}
+
+\begin{alertbox}[In this course you are three of the four, because SQLite has no DBA]
+SQLite has no users, no privileges, no server to administer and no process to
+tune. Several things on the DBA's list simply do not exist, and the rest move
+onto somebody else's:
+
+\begin{tight}
+  \item \textbf{Users and privileges:} nobody's. The capability is absent. File
+        permissions are the only access control there is, and
+        \chref{project} is about what you get back when you move to a server.
+  \item \textbf{Backup:} yours, and it is \texttt{copy university.db} --- which
+        is genuinely all it takes, and is \chref{transactions}'s subject once
+        you ask what happens if you copy it mid-write.
+  \item \textbf{Performance:} yours. \texttt{ANALYZE} and
+        \texttt{EXPLAIN QUERY PLAN} are the whole toolkit, and
+        \chref{indexes} uses both.
+  \item \textbf{Schema design, and writing the programs:} yours, which is the
+        point --- you will hold the designer's hat and the programmer's hat at
+        the same time, and the labs are arranged so you can feel the conflict.
+\end{tight}
+
+\smallskip
+So: when this handout says ``the DBA would'', read it as ``on a real system
+somebody else would, and this term it is you, with one hand tied''.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Thinking the optimiser can be instructed.} In SQL you say what,
+        never how. If the plan is bad, change the schema or the statistics ---
+        not your tone of voice.
+  \item \textbf{Confusing the data dictionary with the data.} The dictionary
+        holds the schema. \texttt{SELECT COUNT(*) FROM sqlite\_master} counts
+        tables, not students.
+  \item \textbf{Assuming the roles are four people.} They are four sets of
+        decisions. In this course they are all you.
+  \item \textbf{Believing ``the application will check it''} is equivalent to a
+        constraint in the schema. It is not, and \chref{constraints} is eight
+        pages on why.
+  \item \textbf{Expecting an authorisation manager in SQLite.} There is none.
+        Open the file and you have everything.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Query the dictionary, and watch the optimiser change its mind]
+\begin{lstlisting}[language=sql]
+-- --- 1. Build something for the optimiser to think about -------
+sqlite3 inside.db
+CREATE TABLE student (
+  roll_no   TEXT PRIMARY KEY,
+  name      TEXT NOT NULL,
+  programme TEXT NOT NULL
+);
+-- 300 rows, generated by a recursive CTE (explained in Ch 15):
+INSERT INTO student
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<300)
+SELECT printf('2021-IT-%03d', i),
+       printf('Student %03d', i),
+       CASE i%3 WHEN 0 THEN 'BSIT' WHEN 1 THEN 'BSCS' ELSE 'BSSE' END
+FROM n;
+
+-- --- 2. Read the dictionary ------------------------------------
+SELECT type, name FROM sqlite_master;
+SELECT sql FROM sqlite_master WHERE name = 'student';
+
+-- --- 3. Ask the optimiser what it intends to do ----------------
+EXPLAIN QUERY PLAN
+  SELECT name FROM student WHERE programme = 'BSIT' ORDER BY name;
+-- Write the plan down exactly. Note the words SCAN and ORDER BY.
+
+-- --- 4. Give it an index and ask again -------------------------
+CREATE INDEX idx_prog ON student(programme);
+EXPLAIN QUERY PLAN
+  SELECT name FROM student WHERE programme = 'BSIT' ORDER BY name;
+-- The plan changed and you did not touch the query.
+
+-- --- 5. Make the sort free too ---------------------------------
+CREATE INDEX idx_name ON student(name);
+EXPLAIN QUERY PLAN SELECT name FROM student ORDER BY name;
+-- Does "USE TEMP B-TREE FOR ORDER BY" still appear?
+
+-- --- 6. Look at what you have added to the dictionary ----------
+SELECT type, name, tbl_name FROM sqlite_master;
+-- Three new rows you never inserted.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} In steps 3 to 5 the statement was identical and the
+plan was not. Everything that changed, changed in the schema. Keep the three
+plans --- \chref{indexes} asks you to compare them against measured times, and
+one of them will turn out to be a worse idea than it looks.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A query runs in 40 milliseconds on Monday and 4 seconds on Friday, on
+        the same data and with no change to the statement or the schema. Name
+        two components that could be responsible and say how you would tell
+        them apart.
+  \item The data dictionary is stored as tables in the database it describes.
+        Give one real advantage of that and one problem it creates.
+  \item For each of the four roles, state one decision that is theirs alone,
+        and then say what happens to that decision in this course --- where
+        SQLite provides no DBA at all.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A DBMS is several cooperating components: a \textbf{query processor}
+        (parser, optimiser, execution engine), a \textbf{storage manager}
+        (buffer manager, file manager), a \textbf{transaction manager} with
+        lock and recovery managers, an \textbf{authorisation manager}, and the
+        \textbf{data dictionary}.
+  \item A statement travels down through them. You specify \emph{what}; steps
+        3 onward --- plan, pages, bytes --- are chosen for you.
+  \item The parser consults the dictionary to check names and types; the
+        optimiser consults it for sizes and indexes.
+  \item The \textbf{data dictionary} is ordinary tables. In SQLite it is
+        \texttt{sqlite\_master}, and \texttt{.schema} is a \sqlkw{SELECT} over
+        it.
+  \item Because the schema is data, programs can discover a database they have
+        never seen, and a query can audit a schema.
+  \item Four roles, defined by their decisions: the \textbf{DBA} decides how it
+        runs, the \textbf{designer} decides what is true, the
+        \textbf{programmer} decides how it is reached, the \textbf{end user}
+        decides what it is for.
+  \item A designer's error cannot be repaired downstream, which is why design
+        precedes SQL in this course.
+  \item SQLite has no authorisation manager and no DBA role. Backup,
+        performance and design all land on you, and \chref{project} is the
+        chapter about what a server gives back.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which component decides whether to use an index?
+        (a)~the parser; (b)~the buffer manager; (c)~the query optimiser;
+        (d)~the application programmer.
+  \item \textbf{(MCQ)} \texttt{sqlite\_master} contains: (a)~the rows of every
+        table; (b)~the schema of the database; (c)~the query log;
+        (d)~the list of users.
+  \item \textbf{(Short)} Explain why the parser needs the data dictionary, with
+        a specific example of a statement it would reject because of
+        something it found there.
+  \item \textbf{(Short)} What does the buffer manager do, and why can it make
+        the same query take very different times on identical data?
+  \item \textbf{(Short)} Which of the four roles is responsible when a database
+        permits two students to have the same roll number? Justify your answer
+        in two sentences.
+  \item \textbf{(Applied)} Take the statement \texttt{SELECT s.name, e.grade
+        FROM student s JOIN enrolment e ON s.roll\_no = e.roll\_no WHERE
+        e.grade = 'A';} and walk it through all six components, saying at each
+        step what information that component needs and where it gets it.
+  \item \textbf{(Applied)} A college wants one database used by the
+        examinations office, the fees office and 4{,}000 students. Divide the
+        work among the four roles: list what each must do before the system
+        opens, then mark each item that SQLite cannot support and say what you
+        would do about it.
+\end{reviewq}
