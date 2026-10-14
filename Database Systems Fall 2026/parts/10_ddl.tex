@@ -1,0 +1,460 @@
+%=====================================================================
+\chapter{SQL: Creating the Schema}\label{ch:ddl}
+%=====================================================================
+\locator{3}{Part III --- From Diagram to Schema}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Write} a complete \sqlkw{CREATE TABLE} statement with column
+        types, key, nullability, defaults and \sqlkw{CHECK} constraints.
+  \item \textbf{Explain} what type affinity is, and \textbf{predict} what
+        SQLite stores for a given value in a given declared type.
+  \item \textbf{Demonstrate} that an \texttt{INTEGER} column will hold text,
+        and that \sqlkw{STRICT} stops it.
+  \item \textbf{Trace} a wrong query result back to a value of the wrong type.
+  \item \textbf{Choose} between a column constraint and a table constraint, and
+        \textbf{name} a case where only the second will do.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{mapping}: the tables and keys you are now declaring.
+\chref{constraints} for \sqlkw{PRAGMA} \texttt{foreign\_keys} and \sqlkw{NOT
+NULL}, both of which appear again here for a second reason. You need
+\texttt{code/m10\_ddl.py}.
+\end{prereq}
+
+\begin{keyterms}
+DDL $\bullet$ \sqlkw{CREATE TABLE} $\bullet$
+storage class $\bullet$ type affinity $\bullet$ declared type $\bullet$
+\sqlkw{STRICT} $\bullet$ \texttt{typeof()} $\bullet$ column constraint
+$\bullet$ table constraint $\bullet$ \sqlkw{CHECK} $\bullet$ \sqlkw{DEFAULT}
+$\bullet$ \sqlkw{UNIQUE} $\bullet$ \sqlkw{AUTOINCREMENT} $\bullet$ rowid
+$\bullet$ generated column
+\end{keyterms}
+
+\section{The Statement, in Full}
+
+\sqlkw{CREATE TABLE} is the whole of data definition that this course needs.
+Everything in it is a promise, and the order of the clauses is fixed.
+
+\begin{definitionbox}[The anatomy of a \sqlkw{CREATE TABLE}]
+\begin{lstlisting}[language=sql]
+CREATE TABLE student (
+  roll_no   TEXT    PRIMARY KEY NOT NULL,     -- column constraints
+  name      TEXT    NOT NULL,
+  programme TEXT    NOT NULL DEFAULT 'BSIT',
+  semester  INTEGER NOT NULL CHECK (semester BETWEEN 1 AND 8),
+  cnic      TEXT    UNIQUE,
+  CHECK (length(roll_no) = 11)                -- a table constraint
+) STRICT;
+\end{lstlisting}
+
+\smallskip
+A \term{column constraint} follows its column and can mention only that
+column. A \term{table constraint} is listed after all the columns and may
+mention several. \sqlkw{PRIMARY KEY} on more than one column, and any
+\sqlkw{CHECK} comparing two columns, must be table constraints --- there is no
+other way to write them.
+\end{definitionbox}
+
+\begin{examplebox}[The five clauses, and what each one is for]
+\begin{tabular}{@{}L{3.0cm}L{4.5cm}L{6.5cm}@{}}
+\textbf{Clause} & \textbf{Promises} & \textbf{Comes from} \\
+\sqlkw{PRIMARY KEY} & these values identify a row & the key chosen in
+  \chref{ermodel} \\
+\sqlkw{NOT NULL} & a value is always present & total participation
+  (\chref{cardinality}), or entity integrity \\
+\sqlkw{UNIQUE} & no two rows agree here & an \emph{alternate} key \\
+\sqlkw{CHECK} & every value satisfies this & the attribute's domain
+  (\chref{constraints}) \\
+\sqlkw{DEFAULT} & what to use if none given & a university policy, not a
+  guess \\
+\end{tabular}
+
+\smallskip
+\textbf{\sqlkw{DEFAULT} is the one to be careful with.} It turns a missing
+value into a real one, so a row that \emph{should} have been rejected is
+accepted with a plausible value instead. Use it where the university genuinely
+has a default --- \texttt{semester} is 1 for a new admission --- and not to
+avoid thinking about nulls.
+\end{examplebox}
+
+\section{Type Affinity, and What It Costs}
+
+Every other relational system treats a declared type as a rule. SQLite treats
+it as a \emph{preference}, and the difference is the subject of this chapter.
+
+\begin{definitionbox}[Storage class, declared type, affinity]
+A \term{storage class} is what a value actually \emph{is} in the file: null,
+integer, real, text or blob. Every value has one, and \texttt{typeof()} reports
+it.
+
+\smallskip
+A \term{declared type} is what you wrote in \sqlkw{CREATE TABLE}.
+
+\smallskip
+\term{Type affinity} is the rule connecting them: on insert, SQLite
+\emph{tries} to convert the value to the column's declared type. If it can, it
+does. \textbf{If it cannot, it stores the value unchanged.} No error.
+
+\smallskip
+\sqlkw{STRICT}, added to SQLite in 2021, changes the last sentence: the value
+is refused. A \sqlkw{STRICT} table may only use the types \texttt{INT},
+\texttt{INTEGER}, \texttt{REAL}, \texttt{TEXT}, \texttt{BLOB} and
+\texttt{ANY}.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  val/.style={rounded corners=2pt, draw=secondary, line width=0.9pt,
+              fill=secondary!8, text=secondary!60!black,
+              font=\scriptsize\ttfamily, minimum width=1.7cm,
+              minimum height=0.6cm},
+  dec/.style={draw=primary, line width=1pt, fill=primary!7,
+              text=primary!60!black, font=\scriptsize\bfseries,
+              align=center, text width=3.1cm, minimum height=1.0cm,
+              rounded corners=3pt},
+  good/.style={rounded corners=2pt, draw=greenhl, line width=0.9pt,
+               fill=greenhl!8, text=greenhl!55!black,
+               font=\scriptsize\bfseries, align=center, text width=3.0cm,
+               minimum height=0.75cm},
+  bad/.style={good, draw=accent, fill=accent!8, text=accent!75!black},
+  strict/.style={good, draw=purplehl, fill=purplehl!8,
+                 text=purplehl!65!black},
+  arr/.style={-{Stealth[length=2.2mm]}, primary!55, line width=0.9pt},
+  tag/.style={font=\scriptsize\bfseries, text=primary!70!black},
+  nt/.style={font=\scriptsize\itshape, text=neutral, align=left}
+]
+  \node[val] (v) at (-6.0,0) {'hello'};
+  \node[nt, anchor=south, text width=2.6cm, align=center]
+       at (-6.0,0.45) {a value, on its way into\\\texttt{c INTEGER}};
+
+  \node[dec] (d) at (-2.4,0) {can it be converted\\to the column's\\declared type?};
+  \draw[arr] (v) -- (d);
+
+  \node[good]   (yes) at ( 2.0, 1.5) {converted\\{\scriptsize\mdseries
+       \texttt{'42'} $\rightarrow$ integer 42}};
+  \node[bad]    (no)  at ( 2.0, 0.0) {\textbf{stored unchanged}\\{\scriptsize
+       \mdseries \texttt{'hello'} stays text}};
+  \node[strict] (st)  at ( 2.0,-1.6) {refused\\{\scriptsize\mdseries
+       \texttt{cannot store TEXT}}};
+
+  \draw[arr] (d) -- node[tag, above, pos=0.6] {yes} (yes);
+  \draw[arr] (d) -- node[tag, above, pos=0.62] {no} (no);
+  % pos=0.33, not 0.6: further along the line the label landed on the box it
+  % points at, and the arrowhead disappeared behind its own caption.
+  \draw[arr, purplehl!60] (d) -- node[tag, below, pos=0.33,
+       text=purplehl!70!black] {no, and \sqlkw{STRICT}} (st);
+
+  \node[nt, anchor=west, text width=4.2cm, text=greenhl!55!black]
+       at (3.9, 1.5) {silently succeeds};
+  \node[nt, anchor=west, text width=4.4cm, text=accent!75!black]
+       at (3.9, 0.0) {\textbf{silently fails.} No error, and the column
+        looks the same as the row above it};
+  \node[nt, anchor=west, text width=4.2cm, text=purplehl!65!black]
+       at (3.9,-1.6) {the only outcome you can reason about};
+\end{tikzpicture}}%
+{Type affinity in one decision. The middle branch is the whole problem: it is
+not an error, it is not reported, and a column containing both of the top two
+outcomes looks exactly like a column containing only the first.}{affinity}
+
+\begin{measured}[A column declared \texttt{INTEGER} that holds the word ``absent'']
+\textsf{\footnotesize \texttt{code/m10\_ddl.py}, SQLite 3.51.2, Intel i5-6600,
+16\,GB, Windows 11.}
+
+\medskip
+\textbf{1. One value, five declared types --- what is actually stored}
+
+\begin{tabular}{@{}L{2.8cm}L{2.0cm}L{1.8cm}L{1.8cm}L{2.2cm}L{2.2cm}@{}}
+\textbf{inserted} & \texttt{INTEGER} & \texttt{TEXT} & \texttt{REAL} &
+\texttt{NUMERIC} & \textbf{(no type)} \\
+\texttt{42} & integer & text & real & integer & integer \\
+\texttt{'42'} & \textbf{integer} & text & real & integer & text \\
+\texttt{'hello'} & \textbf{text} & text & \textbf{text} & \textbf{text} & text \\
+\texttt{3.7} & \textbf{real} & text & real & real & real \\
+\sqlkw{NULL} & null & null & null & null & null \\
+\end{tabular}
+
+\smallskip
+Read the \texttt{'hello'} row. Five columns, five different declared types,
+and every one of them stored the string.
+
+\medskip
+\textbf{2. The same column, one keyword different}
+
+\begin{tabular}{@{}L{3.4cm}L{4.4cm}L{6.0cm}@{}}
+\textbf{inserted into \texttt{c INTEGER}} & \textbf{plain} & \textbf{\sqlkw{STRICT}} \\
+\texttt{42}      & stored as integer & stored as integer \\
+\texttt{'42'}    & stored as integer & stored as integer \\
+\texttt{'hello'} & \textbf{stored as text} & refused: \texttt{cannot store TEXT value in INT} \\
+\texttt{3.7}     & \textbf{stored as real} & refused: \texttt{cannot store REAL value in INT} \\
+\sqlkw{NULL}     & stored as null & stored as null \\
+\end{tabular}
+
+\medskip
+\textbf{3. What it does to the answers}
+
+Marks entered as \texttt{A=95, B=72, C='absent', D=88, E='100'}:
+
+\begin{tabular}{@{}L{5.6cm}R{3.2cm}L{5.4cm}@{}}
+\sqlkw{ORDER BY} \texttt{score} & \texttt{absent} last &
+  text sorts \emph{above} every number \\
+\sqlkw{MAX}(\texttt{score}) & \texttt{'absent'} &
+  so C is top of the class \\
+\sqlkw{AVG}(\texttt{score}) as written & \textbf{71.00} &
+  \texttt{'absent'} read as 0, still divided by 5 \\
+\sqlkw{AVG} over the numeric rows & 88.75 & the honest figure \\
+\textbf{the reported average is} & \textbf{20\% out} & and nothing says so \\
+\end{tabular}
+
+\smallskip
+Note also that \texttt{'100'} \emph{was} converted, to the integer 100.
+Affinity succeeded silently there and failed silently on \texttt{'absent'},
+and the column looks identical either way.
+
+\medskip
+\textbf{4. What \sqlkw{STRICT} costs} (50{,}000 rows, 5 runs)
+
+\begin{tabular}{@{}L{5.0cm}R{2.6cm}R{2.4cm}R{2.4cm}@{}}
+& \textbf{median} & \textbf{min} & \textbf{max} \\
+plain          & 67.9\,ms & 66.2 & 78.5 \\
+\sqlkw{STRICT} & 67.9\,ms & 66.8 & 72.8 \\
+\textbf{difference} & \textbf{0.0\,ms} & \multicolumn{2}{l}{\textbf{(+0\%)}} \\
+\end{tabular}
+
+\smallskip
+\textbf{The two ranges overlap}, so the difference is noise rather than a
+cost --- which is the opposite of \chref{constraints}'s foreign-key figure,
+where they did not overlap and the 24\% was real. \sqlkw{STRICT} is free: it
+is checking a type it already knows.
+
+\smallskip
+\textbf{So the whole argument is one-sided.} The protection costs nothing
+measurable and the absence of it silently moved a class average by twenty per
+cent. Every table in this course is \sqlkw{STRICT}.
+\end{measured}
+
+\begin{alertbox}[Why SQLite is like this, and why that does not help you]
+This is not a bug and it will not be fixed. SQLite was designed to be
+embedded, tolerant and backward-compatible for decades; rejecting a value that
+an older version accepted would break databases in the field. Affinity is the
+documented, deliberate behaviour, and \sqlkw{STRICT} was added as an opt-in
+twenty-one years later.
+
+\smallskip
+Knowing the reason does not change what you must do:
+
+\begin{tight}
+  \item \textbf{Write \sqlkw{STRICT} on every table.} There is no measured
+        reason not to.
+  \item \textbf{Use \texttt{typeof()} when a result looks wrong.} It is the
+        first diagnostic, and the one nobody reaches for.
+  \item \textbf{Be most suspicious of data you imported.} Values typed by hand
+        into \sqlkw{INSERT} statements are usually the right type; values read
+        from a CSV are all text until something converts them, and
+        \chref{evolution} is where that bites.
+  \item \textbf{Do not assume other systems behave this way.} PostgreSQL and
+        MySQL reject \texttt{'hello'} in an integer column outright. This
+        chapter's behaviour is SQLite's, and \chref{project} is where the
+        comparison is drawn properly.
+\end{tight}
+\end{alertbox}
+
+\section{Three Smaller Things That Matter}
+
+\begin{conceptbox}[Rowid, \sqlkw{AUTOINCREMENT}, and generated columns]
+\textbf{Every ordinary SQLite table has a hidden \texttt{rowid}} --- a 64-bit
+integer key the system maintains. Declaring a column \texttt{INTEGER PRIMARY
+KEY} makes that column \emph{be} the rowid rather than sit beside it, which is
+why \chref{constraints} measured it substituting an integer for a null.
+
+\smallskip
+\textbf{\sqlkw{AUTOINCREMENT} is almost never what you want.} Without it,
+SQLite reuses the largest rowid when rows are deleted; with it, it never does,
+at the cost of an extra table and a write per insert. Use it only when a
+reused identifier would be a real problem --- an invoice number, not a
+\texttt{section\_id}.
+
+\smallskip
+\textbf{A generated column} is computed from the others and never stored
+wrongly, which makes it the right home for \chref{ermodel}'s derived
+attributes:
+
+\begin{lstlisting}[language=sql]
+  date_of_birth TEXT NOT NULL,
+  age INTEGER GENERATED ALWAYS AS
+      (CAST((julianday('now') - julianday(date_of_birth)) / 365.25
+            AS INTEGER)) VIRTUAL
+\end{lstlisting}
+
+\sqlkw{VIRTUAL} computes it on every read and stores nothing;
+\sqlkw{STORED} writes it to disk. For \texttt{age}, \sqlkw{VIRTUAL} is the
+only correct choice: a stored one would be wrong by morning, which was exactly
+\chref{ermodel}'s objection to storing it at all.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Trusting a declared type.} Without \sqlkw{STRICT} it is a
+        preference. Measured above.
+  \item \textbf{Using \texttt{VARCHAR(50)}.} SQLite accepts the words and
+        ignores the 50 entirely. Write \texttt{TEXT}, and enforce a length
+        with \sqlkw{CHECK} if you mean one.
+  \item \textbf{Declaring a composite primary key as two column
+        constraints.} \texttt{a INTEGER PRIMARY KEY, b TEXT PRIMARY KEY} is an
+        error; it must be one table constraint.
+  \item \textbf{Using \sqlkw{DEFAULT} to dodge a null.} It replaces a
+        rejection with a plausible wrong value.
+  \item \textbf{Reaching for \sqlkw{AUTOINCREMENT} by habit.} It costs a write
+        per insert and solves a problem you probably do not have.
+  \item \textbf{Storing a derived value.} Use a \sqlkw{VIRTUAL} generated
+        column.
+  \item \textbf{Forgetting that \sqlkw{CHECK} is not re-run on existing rows.}
+        \chref{evolution} is about exactly that.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Store the wrong type on purpose, then make it impossible]
+\begin{lstlisting}[language=bash]
+# --- 1. A scratch database; keep university.db clean ----------------
+sqlite3 types.db
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. A table that looks completely ordinary ------------------
+.headers on
+.mode box
+CREATE TABLE marks (roll TEXT PRIMARY KEY, score INTEGER NOT NULL);
+
+-- --- 3. Put four marks in, one of them the word 'absent' --------
+INSERT INTO marks VALUES ('A',95),('B',72),('C','absent'),('D',88);
+SELECT roll, score, typeof(score) FROM marks;
+-- One row is text. Nothing warned you. The column says INTEGER.
+
+-- --- 4. Ask three ordinary questions ----------------------------
+SELECT roll, score FROM marks ORDER BY score DESC;
+SELECT MAX(score) FROM marks;
+SELECT AVG(score) FROM marks;
+-- Write all three answers down. Then work out, by hand, what each
+-- one SHOULD be. Two of the three are wrong.
+
+-- --- 5. Find the bad row, which is the real skill ---------------
+SELECT roll, score FROM marks
+ WHERE typeof(score) NOT IN ('integer','real');
+-- Learn this query. It is how you audit a column you inherited.
+
+-- --- 6. The honest average --------------------------------------
+SELECT AVG(score) FROM marks
+ WHERE typeof(score) IN ('integer','real');
+-- Compare with step 4. How far out was it, as a percentage?
+
+-- --- 7. Make it impossible --------------------------------------
+CREATE TABLE marks2 (
+  roll  TEXT    PRIMARY KEY NOT NULL,
+  score INTEGER NOT NULL CHECK (score BETWEEN 0 AND 100)
+) STRICT;
+INSERT INTO marks2 VALUES ('A',95);
+INSERT INTO marks2 VALUES ('C','absent');
+INSERT INTO marks2 VALUES ('E',150);
+-- Two refusals, two different messages. Record both, and say
+-- which constraint produced each.
+
+-- --- 8. Prove VARCHAR(50) is not a length limit -----------------
+CREATE TABLE v (s VARCHAR(5));
+INSERT INTO v VALUES ('this string is far longer than five');
+SELECT length(s) FROM v;
+-- Say in one sentence what VARCHAR(5) accomplished.
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 9. The measured version ----------------------------------------
+python code/m10_ddl.py
+
+# --- 10. Apply it to your own schema ---------------------------------
+# Every table in code/schema/v1_create.sql must end in STRICT.
+# Check, and then prove it:
+sqlite3 university.db "SELECT name, sql FROM sqlite_master
+  WHERE type='table' AND sql NOT LIKE '%STRICT%';"
+# That query should return nothing.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 4 is the point of the chapter: three ordinary
+questions, no errors, two wrong answers. Step 5 is the skill --- a
+\texttt{typeof()} audit is the only way to find this in a database you did not
+build, and it is worth running on any data you import. Step 10 is the
+protection, and it costs nothing measurable.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A column is declared \texttt{INTEGER} and \sqlkw{AVG} over it returns
+        71 when the true average of the real marks is 88.75. Explain exactly
+        how the database arrived at 71, and give the two queries you would run
+        to prove your explanation.
+  \item State the difference between a column constraint and a table
+        constraint, and give two constraints from your own
+        \texttt{v1\_create.sql} that \emph{must} be table constraints, saying
+        why each one cannot be written as a column constraint.
+  \item \sqlkw{STRICT} costs nothing measurable and prevents a class of silent
+        error. Give the one argument somebody could still make against putting
+        it on every table, and say whether you accept it.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item \sqlkw{CREATE TABLE} carries five kinds of promise: \sqlkw{PRIMARY
+        KEY}, \sqlkw{NOT NULL}, \sqlkw{UNIQUE}, \sqlkw{CHECK} and
+        \sqlkw{DEFAULT}, each traceable to a decision in Part~II.
+  \item A \textbf{column constraint} mentions one column; a \textbf{table
+        constraint} may mention several. Composite keys and cross-column
+        \sqlkw{CHECK}s must be table constraints.
+  \item A \textbf{storage class} is what a value is; a \textbf{declared type}
+        is what you asked for; \textbf{affinity} converts if it can and
+        \textbf{stores the value unchanged if it cannot}.
+  \item \textbf{Measured:} \texttt{'hello'} went into columns declared
+        \texttt{INTEGER}, \texttt{REAL} and \texttt{NUMERIC}, unchanged and
+        without an error.
+  \item \textbf{Measured:} on a mixed column, \sqlkw{ORDER BY} sorts text above
+        every number, \sqlkw{MAX} returns \texttt{'absent'}, and \sqlkw{AVG}
+        reads it as 0 while still dividing by the full count --- a class
+        average reported \textbf{20\% low}, silently.
+  \item \texttt{'100'} \emph{was} converted to 100. Affinity succeeds and fails
+        silently, and the column looks the same either way.
+  \item \textbf{Measured: \sqlkw{STRICT} costs nothing} --- the two timing
+        ranges overlap, unlike \chref{constraints}'s foreign-key figure. The
+        argument for it is one-sided.
+  \item \texttt{typeof()} is the first diagnostic when a result looks wrong,
+        and the one nobody reaches for. Be most suspicious of imported data.
+  \item \texttt{VARCHAR(50)} has no length limit in SQLite. Use \texttt{TEXT}
+        plus a \sqlkw{CHECK}.
+  \item A \textbf{\sqlkw{VIRTUAL} generated column} is the right home for a
+        derived attribute: computed on read, never stale.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Inserting \texttt{'hello'} into a column declared
+        \texttt{INTEGER} in a non-\sqlkw{STRICT} table: (a)~raises an error;
+        (b)~stores 0; (c)~stores the text unchanged; (d)~stores null.
+  \item \textbf{(MCQ)} \texttt{VARCHAR(5)} in SQLite limits the column to:
+        (a)~5 characters; (b)~5 bytes; (c)~nothing; (d)~5 characters only in
+        \sqlkw{STRICT} tables.
+  \item \textbf{(Short)} Why does \texttt{'42'} become an integer while
+        \texttt{'hello'} stays text? State the rule in one sentence.
+  \item \textbf{(Short)} Give a constraint that can only be written as a table
+        constraint, and say why.
+  \item \textbf{(Short)} \sqlkw{STRICT} showed no measurable cost while foreign
+        key enforcement showed 24\%. Explain why the two results differ.
+  \item \textbf{(Applied)} You are given a table of 50{,}000 imported rows with
+        columns \texttt{roll\_no}, \texttt{score} and \texttt{date\_sat}.
+        Write the queries that would tell you whether any value is of the wrong
+        type, decide which results you would report as faults, and describe
+        how you would repair the table without losing a row.
+  \item \textbf{(Applied)} Rewrite one table of your \texttt{v1\_create.sql} to
+        add a \sqlkw{DEFAULT}, a cross-column \sqlkw{CHECK} and a
+        \sqlkw{VIRTUAL} generated column. For each, say what fact about the
+        university it records and what would go wrong if it were omitted ---
+        and for the \sqlkw{DEFAULT}, say what it would wrongly accept.
+\end{reviewq}

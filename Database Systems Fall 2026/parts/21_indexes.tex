@@ -1,0 +1,423 @@
+%=====================================================================
+\chapter{Indexes, and Where They Stop Helping}\label{ch:indexes}
+%=====================================================================
+\locator{6}{Part VI --- Making It Work, and What Comes Next}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} what an index is, using the B-tree, without
+        assuming any course in data structures.
+  \item \textbf{Predict} whether a query can use a given index, including a
+        composite one, from the order of its columns.
+  \item \textbf{Find} the share of a table above which an index is slower than
+        reading everything, by measurement.
+  \item \textbf{Explain} why SQLite's optimiser chose a twenty-times slower
+        plan, and \textbf{override} it.
+  \item \textbf{State} what an index costs, and \textbf{decide} whether a
+        proposed one is worth it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{whodoeswhat}: the optimiser and the buffer manager. \chref{firstdatabase}:
+the database is a file of 4{,}096-byte pages. \chref{joins},
+\chref{subqueries} and \chref{grouping}, each of which ended with an index
+making something faster --- this chapter is about why, and about where it
+stops. \textbf{No data-structures course is assumed.} You need
+\texttt{code/m21\_indexes.py}.
+\end{prereq}
+
+\begin{keyterms}
+index $\bullet$ B-tree $\bullet$ node $\bullet$ fan-out $\bullet$ depth
+$\bullet$ leaf $\bullet$ rowid $\bullet$ covering index $\bullet$ composite
+index $\bullet$ leftmost prefix $\bullet$ selectivity $\bullet$ crossover
+$\bullet$ sequential read $\bullet$ random read $\bullet$ \sqlkw{ANALYZE}
+$\bullet$ \texttt{sqlite\_stat1} $\bullet$ STAT4 $\bullet$ \sqlkw{INDEXED BY}
+$\bullet$ \sqlkw{NOT INDEXED}
+\end{keyterms}
+
+\section{What an Index Is}
+
+A table in SQLite is stored in order of its rowid. To find the student with
+roll number \texttt{2024-IT-00317} in a table with no index on roll number,
+the only method is to look at every row --- a \sqlkw{SCAN}. Four chapters have
+shown plans that said \sqlkw{SEARCH} instead, and every one of them was using
+the same idea.
+
+\begin{definitionbox}[Index]
+An \term{index} on a column is a separate structure, kept in the same file,
+that holds every value of that column \textbf{in sorted order}, each paired
+with the rowid of the row it came from.
+
+\smallskip
+Because it is sorted, a value can be found without looking at most of them ---
+exactly as a word is found in a dictionary without reading the dictionary.
+Because each entry carries a rowid, the full row can then be fetched directly.
+
+\smallskip
+SQLite keeps every index as a \term{B-tree}. You do not need to know how one is
+built to use it; you need to know one number about it, below.
+\end{definitionbox}
+
+\begin{conceptbox}[The B-tree, in one paragraph and one number]
+A B-tree is a tree of pages --- its \term{nodes}. The top page holds a few hundred keys that divide
+the whole range of values into a few hundred parts, each with a pointer to a
+page below; that page divides its part into a few hundred more, and so on,
+until the bottom pages --- the \term{leaves} --- hold the actual entries.
+
+\smallskip
+The number that matters is the \term{fan-out}: how many children each page
+points to. A 4{,}096-byte page holding short integer keys has a fan-out of a
+few hundred. So:
+
+\begin{tabular}{@{}L{3.6cm}L{10.2cm}@{}}
+1 level   & a few hundred entries \\
+2 levels  & tens of thousands \\
+3 levels  & millions \\
+4 levels  & hundreds of millions \\
+\end{tabular}
+
+\smallskip
+\textbf{Finding any value means reading one page per level} --- three or four
+reads, whether the table has a thousand rows or a million. That is the whole
+reason part~1 of the measurement below shows a lookup costing the same at every
+size.
+\end{conceptbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  pg/.style={rounded corners=2pt, draw=#1, line width=0.9pt, fill=#1!8,
+             text=#1!60!black, font=\scriptsize\ttfamily, minimum height=0.55cm,
+             inner sep=3pt},
+  lf/.style={pg=greenhl, minimum width=1.9cm},
+  ln/.style={draw=neutral!60, line width=0.7pt},
+  hot/.style={draw=accent, line width=1.4pt, -{Stealth[length=2.2mm]}},
+  lv/.style={font=\scriptsize\itshape, text=neutral, anchor=east},
+  nt/.style={font=\scriptsize\itshape, text=neutral, align=left}
+]
+  \node[pg=primary, minimum width=4.6cm] (r) at (0,2.4)
+       {\textbar\ 250k \textbar\ 500k \textbar\ 750k \textbar};
+  \node[pg=secondary, minimum width=3.0cm] (i1) at (-4.5,1.1)
+       {\textbar\ 60k \textbar\ 120k \textbar\ \dots};
+  \node[pg=secondary, minimum width=3.0cm] (i2) at (-0.9,1.1)
+       {\textbar\ 310k \textbar\ 370k \textbar\ \dots};
+  \node[font=\scriptsize, text=neutral] at (2.1,1.1) {\dots};
+  \node[pg=secondary, minimum width=3.0cm] (i4) at (4.6,1.1)
+       {\textbar\ 810k \textbar\ 870k \textbar\ \dots};
+  \foreach \c in {i1,i2,i4}{\draw[ln] (r.south) -- (\c.north);}
+
+  \node[lf] (l1) at (-2.6,-0.25) {317 512 $\rightarrow$ rowid};
+  \node[lf] (l2) at (-0.4,-0.25) {317 513 $\rightarrow$ rowid};
+  \node[font=\scriptsize, text=neutral] at (1.4,-0.25) {\dots};
+  \draw[ln] (i2.south) -- (l1.north);
+  \draw[ln] (i2.south) -- (l2.north);
+
+  \node[pg=neutral, minimum width=3.6cm] (row) at (-1.5,-1.55)
+       {the row itself, in the table};
+
+  \draw[hot] ([xshift=2mm]r.south west) ++(1.3,0) -- (i2.north);
+  \draw[hot] (i2.south) -- (l1.north);
+  \draw[hot] (l1.south) -- (row.north);
+
+  \node[lv] at (-6.1,2.4) {root};
+  \node[lv] at (-6.1,1.1) {interior};
+  \node[lv] at (-6.1,-0.25) {leaves};
+  \node[lv] at (-6.1,-1.55) {table};
+  \node[nt, text width=4.0cm, anchor=west] at (2.4,-0.95)
+       {\textcolor{accent}{\textbf{finding k = 317\,512}}: one page at each
+        level, then one jump to the row --- four reads among a million rows};
+\end{tikzpicture}}%
+{An index on \textit{k} over a million rows, three levels deep. Each page
+divides its range among a few hundred children, so the path from the root to
+any key is three pages long, and one more read fetches the row. The scan it
+replaces reads every page of the table.}{btree}
+
+\section{Measured: Where an Index Wins, and Where It Loses}
+
+\begin{measured}[A 3{,}501$\times$ win, a 21$\times$ loss, and an optimiser that could not tell the difference]
+\textsf{\footnotesize \texttt{code/m21\_indexes.py}, a table of up to
+1{,}000{,}000 rows of about 80 bytes, column \textit{k} a random permutation
+(so index order and table order are unrelated). SQLite 3.51.2, Intel i5-6600,
+16\,GB, Windows 11, mechanical disk. Best of three.}
+
+\medskip
+\textbf{1. A point lookup} --- \texttt{SELECT v FROM t WHERE k = ?}
+
+\begin{tabular}{@{}R{2.6cm}R{2.6cm}R{2.6cm}R{2.6cm}@{}}
+\textbf{rows} & \textbf{scan} & \textbf{index} & \textbf{speed-up} \\
+10{,}000    & 1.37\,ms   & 0.053\,ms & 26$\times$ \\
+100{,}000   & 19.03\,ms  & 0.053\,ms & 360$\times$ \\
+1{,}000{,}000 & 199.90\,ms & 0.057\,ms & \textbf{3{,}501$\times$} \\
+\end{tabular}
+
+\smallskip
+The scan grows in proportion to the table. The index barely moves: a hundred
+times the rows added one level, at most, to a three-level tree.
+
+\medskip
+\textbf{2. The crossover} --- \texttt{SUM(length(v)) WHERE k BETWEEN 0 AND
+}$x$, each plan forced, over a growing share of a million rows
+
+\begin{tabular}{@{}R{1.6cm}R{2.2cm}R{2.4cm}R{2.4cm}L{1.6cm}L{2.6cm}@{}}
+\textbf{share} & \textbf{rows} & \textbf{via index} & \textbf{full scan}
+& \textbf{faster} & \textbf{optimiser chose} \\
+0.1\% & 1{,}000    & 7.1\,ms    & 178.1\,ms & index & index \\
+1\%   & 10{,}000   & 90.6\,ms   & 207.0\,ms & index & index \\
+2\%   & 20{,}000   & 182.0\,ms  & 210.0\,ms & index & index \\
+5\%   & 50{,}000   & 436.4\,ms  & 190.3\,ms & scan  & \textbf{index} \\
+10\%  & 100{,}000  & 784.3\,ms  & 202.5\,ms & scan  & \textbf{index} \\
+20\%  & 200{,}000  & 1{,}549.9\,ms & 220.1\,ms & scan & \textbf{index} \\
+50\%  & 500{,}000  & 3{,}955.3\,ms & 287.5\,ms & scan & \textbf{index} \\
+100\% & 1{,}000{,}000 & 7{,}934.8\,ms & 381.0\,ms & scan & \textbf{index} \\
+\end{tabular}
+
+\smallskip
+\textbf{The index stops winning at about 2\% of the table.} Below that it reads
+only the rows it needs. Above it, every matching row is a separate jump to a
+different page of the table, a \term{random read} --- and a scan, which
+reads each page once and in order, a \term{sequential read}, wins by more
+as more rows are wanted. At the whole table the index plan
+was \textbf{21$\times$ slower}.
+
+\medskip
+\textbf{3. Why the optimiser chose the index every time}
+
+\begin{tabular}{@{}L{7.8cm}L{6.0cm}@{}}
+STAT4 histograms compiled into this SQLite & \textbf{no} \\
+what \sqlkw{ANALYZE} recorded in \texttt{sqlite\_stat1} & \texttt{'1000000 1'} \\
+the whole table, as written & 7{,}952.4\,ms (\texttt{SEARCH \dots\ ik}) \\
+the whole table, with \texttt{+k} & 407.2\,ms (\texttt{SCAN t}) \\
+\end{tabular}
+
+\smallskip
+\texttt{'1000000 1'} is everything the optimiser knew: a million rows, one row
+per value of \textit{k}. It knew \textit{k} was unique. It did \emph{not} know
+how the values were spread, so it could not tell \texttt{BETWEEN 0 AND 999}
+from \texttt{BETWEEN 0 AND 999999}, and treated every range on an indexed
+column as selective. The histograms that would have told it --- STAT4 --- are
+not compiled into the SQLite that Python ships.
+
+\medskip
+\textbf{4. What indexes cost} --- 100{,}000 rows; insert 10{,}000 more; median
+of 3
+
+\begin{tabular}{@{}L{3.2cm}R{3.0cm}R{3.0cm}R{3.2cm}@{}}
+& \textbf{file bytes} & \textbf{insert} & \textbf{(range)} \\
+0 indexes & 8{,}232{,}960  & 71.5\,ms  & 47.6--79.0 \\
+1 on \textit{k} & 9{,}383{,}936 & 64.8\,ms & 62.0--69.2 \\
++ 1 on \textit{v} (68-byte text) & 17{,}272{,}832 & 137.9\,ms & 123.8--150.2 \\
++ 1 on (\textit{k}, \textit{v}) & 25{,}485{,}312 & 141.5\,ms & 135.2--168.9 \\
+\end{tabular}
+
+\smallskip
+\textbf{Read the ranges first.} Zero and one index overlap: the new rows arrived
+in key order, so each new entry went on the right-hand end of the index --- the
+cheapest case, as for roll numbers issued in sequence. The index on the wide
+text column is the one that cost: it doubled the insert time and added more
+bytes than the table had.
+\end{measured}
+
+\begin{alertbox}[What the crossover means in practice]
+\begin{tight}
+  \item \textbf{An index is for finding a few rows, and ``a few'' must be
+        measured.} About 2\% for this million-row table. On the seeded
+        \textit{enrolment} table --- 60{,}037 narrower rows --- an index on
+        \textit{grade} selecting 21\% ran in 8.94\,ms against a scan's
+        9.40\,ms: a tie, so the crossover there sits near a fifth. The share
+        moves with table size, row width and cache; the shape --- a share past
+        which the index loses --- does not.
+  \item \textbf{The optimiser can be wrong, and here it was wrong every time
+        past 2\%} --- not through a bug, but because it was never told how the
+        data was spread. ``The database will choose the best plan'' assumes it
+        has the information to.
+  \item \textbf{Two ways to overrule it.} Write \texttt{+k} instead of
+        \texttt{k} in the condition, which hides the column from the index for
+        that one query; or name the table \texttt{t NOT INDEXED}. The opposite,
+        \texttt{t INDEXED BY ik}, insists on a named index --- the harness
+        used both to measure each plan at every share. Use them only on a
+        query you have measured.
+  \item \textbf{Low-selectivity columns rarely deserve an index.} An index on
+        \textit{programme} (four values) or \textit{grade} (six) selects a
+        quarter or a fifth of the table for every value --- at or past the
+        crossover. Measured above, the grade index only tied a scan: it bought
+        nothing, and it still costs bytes and a write on every change.
+\end{tight}
+\end{alertbox}
+
+\section{Using an Index Well}
+
+\begin{definitionbox}[Composite index, leftmost prefix, covering index]
+A \term{composite index} on $(a, b)$ is sorted by $a$, and by $b$ within each
+$a$ --- like a telephone directory sorted by surname, then first name.
+
+\smallskip
+It can serve a condition on $a$, or on $a$ and $b$ together, but \textbf{not
+on $b$ alone}: the $b$ values are scattered through every $a$. This is the
+\term{leftmost-prefix} rule, and \chref{subqueries}'s measurement turned on it
+--- \textit{enrolment}'s primary key is (roll\_no, course\_code, \dots), so it
+could find a student's enrolments and could not find a course's.
+
+\smallskip
+A \term{covering index} contains every column a query needs, so the table
+itself is never read. \texttt{USING COVERING INDEX} in a plan means exactly
+that, and it removes the per-row jump that loses past the crossover.
+\end{definitionbox}
+
+\begin{examplebox}[Ordering: what an index gives for free, and what it cannot]
+From part~3 of the measurement, on 100{,}000 rows with an index on \textit{k}:
+
+\medskip
+\begin{tabular}{@{}L{6.4cm}R{2.0cm}L{5.4cm}@{}}
+\texttt{ORDER BY k LIMIT 10} & 0.08\,ms & reads in index order, stops at 10 \\
+\texttt{ORDER BY v LIMIT 10} & 23.87\,ms & \texttt{TEMP B-TREE}: sorts every row \\
+\texttt{ORDER BY k \% 7, k LIMIT 10} & 24.74\,ms & an expression: sorts too \\
+\end{tabular}
+
+\smallskip
+An index is a sorted copy of \emph{one} ordering. A query that wants that
+order gets it for nothing --- and, with \sqlkw{LIMIT}, stops after ten rows
+instead of reading a hundred thousand. Any other order, \textbf{including an
+expression of the indexed column itself}, means sorting everything first. The
+third row is the one people do not expect.
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Indexing every column.} Each is another B-tree kept in step
+        on every write. Measured: the text index doubled insert time.
+  \item \textbf{Indexing a column with few values.} Every lookup selects a
+        large share --- past the crossover.
+  \item \textbf{Expecting an index on $(a, b)$ to serve a condition on $b$.}
+        Leftmost prefix only.
+  \item \textbf{Wrapping the indexed column in an expression.}
+        \texttt{WHERE lower(name) = 'ali'} cannot use an index on
+        \textit{name}. (SQLite allows an index on the expression itself.)
+  \item \textbf{Trusting the optimiser's choice without measuring.} It picked
+        a 21$\times$ slower plan here, after \sqlkw{ANALYZE}.
+  \item \textbf{Measuring an index on a table whose order matches the
+        column.} Then ``random'' lookups are sequential and the crossover
+        vanishes. The harness shuffles \textit{k} for exactly this reason.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Find the crossover on your own machine]
+\begin{lstlisting}[language=bash]
+# --- 1. The measured version first: it builds a million rows --------
+python code/m21_indexes.py --quick
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. On the university database, the indexes you already have -
+.open university.db
+SELECT name, tbl_name, sql FROM sqlite_master WHERE type = 'index';
+-- Some have no sql: they were made by PRIMARY KEY and UNIQUE.
+
+-- --- 3. Leftmost prefix, seen in a plan --------------------------
+EXPLAIN QUERY PLAN SELECT * FROM enrolment WHERE roll_no = 'x';
+EXPLAIN QUERY PLAN SELECT * FROM enrolment WHERE course_code = 'x';
+-- Same primary-key index. One SEARCH, one SCAN. Why?
+
+-- --- 4. A covering index ----------------------------------------
+CREATE INDEX idx_enr_cg ON enrolment(course_code, grade);
+EXPLAIN QUERY PLAN
+SELECT grade, COUNT(*) FROM enrolment WHERE course_code = 'CS-101'
+ GROUP BY grade;
+-- Find COVERING. Which table was never read?
+
+-- --- 5. An index on a column with six values --------------------
+CREATE INDEX idx_enr_grade ON enrolment(grade);
+.timer on
+SELECT COUNT(*), AVG(section_no) FROM enrolment WHERE grade = 'B';
+SELECT COUNT(*), AVG(section_no) FROM enrolment WHERE +grade = 'B';
+-- Which was faster? What share of the table did 'B' select?
+
+-- --- 6. What ANALYZE knows --------------------------------------
+ANALYZE;
+SELECT * FROM sqlite_stat1;
+-- Read each stat string: rows, then rows per key value.
+
+-- --- 7. An order the index cannot give --------------------------
+EXPLAIN QUERY PLAN SELECT * FROM student ORDER BY name LIMIT 10;
+CREATE INDEX idx_student_name ON student(name);
+EXPLAIN QUERY PLAN SELECT * FROM student ORDER BY name LIMIT 10;
+EXPLAIN QUERY PLAN SELECT * FROM student ORDER BY lower(name) LIMIT 10;
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 8. The full version, a million rows (about a minute) -----------
+python code/m21_indexes.py
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 5 is the crossover in your own schema. Grade B
+selects 21\% of enrolments, and on the seeded table the two forms come out
+level --- 8.94 against 9.40\,ms on the measuring machine --- while the
+optimiser chooses the index without hesitation. Compare that with the 2\% the
+million-row table gave: the same index, the same optimiser, a crossover ten
+times further out, because a small table is cheap to scan. \textbf{The rule is
+not ``2\%''. The rule is that the share exists and has to be measured.}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A lookup took 0.053\,ms at 10{,}000 rows and 0.057\,ms at a million,
+        while a scan went from 1.37 to 199.90\,ms. Explain both using the
+        fan-out and depth of a B-tree, without assuming any data-structures
+        course.
+  \item The optimiser chose the index for a query that selected the whole
+        table, after \sqlkw{ANALYZE}, and it was 21$\times$ slower. Explain
+        what information it lacked, where that information would have come
+        from, and two ways to make it scan instead.
+  \item An index on \textit{enrolment}(roll\_no, course\_code) exists. For each
+        of \texttt{WHERE roll\_no = ?}, \texttt{WHERE course\_code = ?} and
+        \texttt{WHERE roll\_no = ? AND course\_code = ?}, say whether it can be
+        used and why.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item An \textbf{index} is every value of a column, in sorted order, each
+        with the rowid of its row --- kept by SQLite as a \textbf{B-tree}.
+  \item A B-tree's \textbf{fan-out} is a few hundred, so a million entries fit
+        in three levels and a lookup reads one page per level.
+  \item \textbf{Measured:} a point lookup was \textbf{3{,}501$\times$} faster
+        with an index at a million rows, and cost the same at every size.
+  \item \textbf{Measured: the index stopped winning at about 2\%} of the table.
+        Past that, a jump per row loses to reading every page once, in order;
+        at the whole table the index was \textbf{21$\times$ slower}.
+  \item \textbf{Measured: the optimiser chose the index at every share}, after
+        \sqlkw{ANALYZE}, because \texttt{sqlite\_stat1} records only row counts
+        and STAT4 histograms are not compiled into Python's SQLite.
+  \item Override a bad plan with \texttt{+column} or \sqlkw{NOT INDEXED} ---
+        on a query you have measured.
+  \item A \textbf{composite} index serves only its \textbf{leftmost prefix}; a
+        \textbf{covering} index means the table is never read.
+  \item An index gives its own order free, including for \sqlkw{LIMIT}; any
+        other order, even an expression of the indexed column, costs a sort.
+  \item \textbf{Measured:} indexes cost bytes and writes; a wide text index
+        doubled insert time, while an integer index on in-order keys cost
+        nothing measurable.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} An index on $(a, b)$ can be used for a condition on:
+        (a)~$b$ alone; (b)~$a$ alone; (c)~either; (d)~neither.
+  \item \textbf{(MCQ)} \texttt{USING COVERING INDEX} in a plan means:
+        (a)~the index is unique; (b)~the table was not read; (c)~the index
+        covers the whole table; (d)~a temporary index was built.
+  \item \textbf{(Short)} Why does a query that wants half a table run faster as
+        a scan than through an index?
+  \item \textbf{(Short)} What does \texttt{sqlite\_stat1}'s string
+        \texttt{'1000000 1'} tell the optimiser, and what does it not?
+  \item \textbf{(Short)} Why is an index on \textit{grade} unlikely to help?
+  \item \textbf{(Applied)} For the university schema, propose the three indexes
+        you would add, justify each with a query from Part~IV that it serves
+        and the plan it would change, and name one index you would refuse to
+        add, with the reason.
+  \item \textbf{(Applied)} Re-run part~2 of the harness with \textit{k} in the
+        same order as the rowid instead of shuffled (change one line), and
+        report what happens to the crossover. Explain the result in terms of
+        sequential and random reads, and say why the shuffled version is the
+        honest measurement.
+\end{reviewq}

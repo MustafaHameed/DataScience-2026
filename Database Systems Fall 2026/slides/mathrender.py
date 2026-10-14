@@ -64,12 +64,24 @@ PREAMBLE = r"""\documentclass[border=0pt,multi=snip,varwidth=false]{standalone}
 %
 % This course's own inline macros, so that a paragraph heavy enough to be
 % re-rendered by LuaLaTeX does not lose a control name or a click path.
-\newcommand{\uiel}[1]{\textsf{\textbf{#1}}}
-\newcommand{\adminpath}[1]{\textsf{\textbf{#1}}}
+% This course's inline macros, so that a snippet re-rendered by LuaLaTeX
+% keeps them. (The E-Commerce fork's \uiel and \adminpath were here.)
+\newcommand{\relkey}[1]{\underline{#1}}
+\newcommand{\ent}[1]{{\normalfont\scshape#1}}
+\newcommand{\unk}{{\normalfont\scshape unknown}}
+\newcommand{\sqlkw}[1]{{\normalfont\scshape\MakeLowercase{#1}}}
+\newcommand{\fd}[2]{\ensuremath{#1\rightarrow#2}}
+\newcommand{\relation}[2]{{\scshape#1}(#2)}
 % amsthm is not loaded here, and a QED square has no meaning on a slide --
 % the proof it closes reaches the deck as speaker notes. Swallow it.
 \providecommand{\qedhere}{}
-\renewcommand{\_}{\textunderscore}
+% \_ must work in BOTH modes. It was \renewcommand{\_}{\textunderscore},
+% which is text-only, and the first chapter to put \_ inside mathematics --
+% Chapter 12's $\mathit{student.roll\_no}$ -- made LaTeX's "invalid in math
+% mode" warning re-expand itself about a million times, until LuaTeX's token
+% memory ran out. That took long enough to look like a hang, and the slide
+% build stalled at Chapter 12 twice before the 204 MB log gave it away.
+\DeclareRobustCommand{\_}{\ifmmode\text{\textunderscore}\else\textunderscore\fi}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0pt}
 \begin{document}
@@ -152,10 +164,21 @@ class MathRenderer:
         tex = os.path.join(BUILD, name + ".tex")
         with open(tex, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(src)
-        r = subprocess.run(["lualatex", "-interaction=nonstopmode",
-                            "-halt-on-error", name + ".tex"],
-                           cwd=BUILD, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace")
+        # A timeout, because a runaway expansion does not fail -- it fills
+        # memory slowly and the build simply stops moving. A whole chapter's
+        # maths compiles in well under a minute; five means something is
+        # looping, and the error should say so rather than wait for ever.
+        try:
+            r = subprocess.run(["lualatex", "-interaction=nonstopmode",
+                                "-halt-on-error", name + ".tex"],
+                               cwd=BUILD, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace",
+                               timeout=300)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                "maths batch: lualatex ran for 5 minutes and was stopped -- "
+                "probably a macro looping; see " +
+                os.path.join(BUILD, name + ".log"))
         pdf = os.path.join(BUILD, name + ".pdf")
         if r.returncode != 0 or not os.path.exists(pdf):
             log = open(os.path.join(BUILD, name + ".log"), encoding="utf-8",

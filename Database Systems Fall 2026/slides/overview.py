@@ -2,9 +2,17 @@
 """The course-overview deck: the handout's front matter and Appendix G.
 
 One deck for the first session of the semester, and for anyone who needs to see
-the shape of the course without reading 263 pages. Everything on it is parsed
+the shape of the course without reading 213 pages. Everything on it is parsed
 from the handout: the course map and the six part openers, the sixteen-week
-schedule, the assessment weights and the dependency map.
+schedule, the assessment weights and the laboratory's terms.
+
+This file was forked from the E-Commerce course's overview, and its first
+version here still carried that course's six cards -- catalogue, basket,
+gateway -- a closing card naming "What E-Commerce Is", and references to three
+figures and a box this handout never had, which the deck would have skipped
+without a word. scanprose.py missed the prose because its vocabulary matched
+phrases ("payment gateway") and this file used the bare words; the gate was
+widened when this was found.
 
     python overview.py          # or: python build_slides.py --overview
 """
@@ -62,8 +70,10 @@ def build(chapters, deps, figman, verbose=True):
               D.mix(deck.ground, D.WHITE, 0.72), True, spc=180, name="!!tk")
     deck.title(s, "Database Systems", color=D.WHITE, x=ML,
                y=2.1, w=11.9, h=1.3, size=46)
-    deck.text(s, ML, 3.5, 9.3, 0.5,
-              "Designing, Querying and Trusting a Relational Database", 26,
+    # 11.9 in and 22 pt: this course's subtitle is longer than the fork's, and
+    # at 9.3 in / 26 pt it wrapped to a second line in a one-line box (173%).
+    deck.text(s, ML, 3.5, 11.9, 0.5,
+              "Designing, Querying and Trusting a Relational Database", 22,
               D.mix(deck.ground, D.WHITE, 0.86), family=D.HEAD,
               name="!!tsub")
     deck.text(s, ML, 4.55, 9.3, 0.36,
@@ -89,32 +99,32 @@ def build(chapters, deps, figman, verbose=True):
         deck.figure_slide(fig, T.ref_num("fig:coursemap"),
                           T.ref_page("fig:coursemap"), "The whole course",
                           "Twenty-three chapters in six parts, all of them "
-                          "spent on one database. Chapter 18 is the hinge: "
-                          "the first time the design you built turns out "
-                          "enough.", "Handout front matter")
+                          "spent on one database file that exists from "
+                          "Week 2 and is submitted in Week 16.",
+                          "Handout front matter")
+    else:
+        raise SystemExit("overview: front matter figure 'coursemap' not "
+                         "found")
 
     # -- what the course actually builds ------------------------------------
-    # This course has no four-lens device (see ../README.md). Its organising
-    # idea is the one the front matter names: one storefront, installed in
-    # Chapter 5 and added to every week until it is the project. The six
-    # cards below are the six questions a database has to answer.
+    # One card per part: the question that part answers about the database.
     s = deck.new("cards")
     deck.chrome(s, "Six questions every database has to answer",
                 "The spine of the course",
                 STYLES["conceptbox"], "Handout front matter")
     layers = [
-        (D.PRIMARY,   "WHAT IS FOR SALE?",
-         "A catalogue, and the tables under it.\nChapters 6--8."),
-        (D.SECONDARY, "WHAT DID THEY CHOOSE?",
-         "A basket, and where its state lives.\nChapters 9, 10."),
-        (D.GREENHL,   "WHAT DOES IT REALLY COST?",
-         "Shipping, tax and discounts.\nChapters 11, 12."),
-        (D.PURPLEHL,  "HOW DOES THE MONEY MOVE?",
-         "A gateway, and what happens when it fails.\nChapters 13--15."),
-        (D.TEALHL,    "WHO ELSE CAN GET IN?",
-         "Measured before and after hardening.\nChapter 16."),
-        (D.GOLDHL,    "AND WHO RUNS IT ON MONDAY?",
-         "Orders, refunds, deployment, backups.\nChapters 17--21."),
+        (D.PRIMARY,   "WHY NOT JUST FILES?",
+         "Six ways files fail, and a first table.\nChapters 1--4."),
+        (D.SECONDARY, "WHAT IS TRUE?",
+         "Entities, keys and the rules they keep.\nChapters 5--8."),
+        (D.GREENHL,   "WHICH TABLES HOLD IT?",
+         "A diagram, mapped, created and migrated.\nChapters 9--11."),
+        (D.PURPLEHL,  "WHAT CAN WE ASK?",
+         "Algebra, joins, NULL and grouping.\nChapters 12--16."),
+        (D.TEALHL,    "IS THE DESIGN RIGHT?",
+         "Dependencies, normal forms, views.\nChapters 17--20."),
+        (D.GOLDHL,    "WILL IT HOLD UP?",
+         "Indexes, transactions, security.\nChapters 21--23."),
     ]
     gx, gy = 0.24, 0.20
     cw2 = (CW - 2 * gx) / 3
@@ -130,13 +140,13 @@ def build(chapters, deps, figman, verbose=True):
         deck.text(s, x + 0.28, y + 0.52, cw2 - 0.5, ch2 - 0.7, blurb, 14,
                   D.INK, name=f"!!layv{i}")
     deck.text(s, ML, BODY_B - 0.5, CW, 0.42,
-              "The first three are what a customer sees. The last three are "
-              "the half of the job nobody demonstrates.", 15,
-              D.MUTED, name="!!laynote")
+              "The first three are decided on paper. The last three are "
+              "measured -- and eleven measurements found what textbooks omit.",
+              15, D.MUTED, name="!!laynote")
     D.FX.transition(s, "fade")
     deck.notes(s, "The organising idea of the whole course. Every one of "
-                  "these is answered against the same running database, "
-                  "designed in week 4 and defended in week 16.")
+                  "these is answered against the same database file, "
+                  "university.db, created in week 2 and defended in week 16.")
 
     # -- the six parts ------------------------------------------------------
     for p in range(1, 7):
@@ -162,8 +172,10 @@ def build(chapters, deps, figman, verbose=True):
                    w=D.W - panel - 1.5, h=1.1, size=34, color=D.INK)
         if paras:
             txt = paras[0].runs
-            sz = deck.fit_size(txt, D.W - panel - 1.5, 2.6, 20, 15)
-            deck.write(s, panel + 0.75, 3.15, D.W - panel - 1.5, 2.6,
+            # 3.2 in tall and down to 13 pt: two of this course's part
+            # openers ran 9% over the 2.6 in the fork allowed.
+            sz = deck.fit_size(txt, D.W - panel - 1.5, 3.2, 20, 13)
+            deck.write(s, panel + 0.75, 3.15, D.W - panel - 1.5, 3.2,
                        [PSpec(txt, sz, D.MUTED, spacing=1.06)],
                        name="!!dquote")
         deck.footer(s, f"Handout part opener")
@@ -185,17 +197,17 @@ def build(chapters, deps, figman, verbose=True):
     if len(tabs) > 1:
         deck.table_slides(tabs[1], "How the marks are earned", "",
                           "Handout Appendix G", kicker="Assessment")
-    dep = _figure("G_schedule", "dependency-map")
-    if dep:
-        deck.figure_slide(dep, T.ref_num("fig:dependency-map"),
-                          T.ref_page("fig:dependency-map"),
-                          "What depends on what", "", "Handout Appendix G")
-    # The students' alertbox, not the lecturer's "if you must cut something".
-    exam = _first_box("G_schedule", "alertbox", "examinations")
-    if exam:
-        deck.card_slides(STYLES["alertbox"], exam.title_text or
-                         "What the examinations actually ask", exam.body, "",
+    # Appendix G's one alertbox: the laboratory is credited, and marked.
+    labbox = _first_box("G_schedule", "alertbox", "laboratory")
+    if labbox:
+        deck.card_slides(STYLES["alertbox"], labbox.title_text or
+                         "The laboratory", labbox.body, "",
                          "Handout Appendix G")
+    else:
+        # Never skip silently: a missing slide here was how three slides
+        # vanished from this deck's first version without anyone noticing.
+        raise SystemExit("overview: Appendix G's laboratory alertbox not "
+                         "found -- its title must contain 'laboratory'")
 
     # -- close --------------------------------------------------------------
     deck.group = "Wrap-up"
@@ -208,12 +220,10 @@ def build(chapters, deps, figman, verbose=True):
     deck.rect(s, ML, 1.12, 0.9, 0.07, D.WHITE, name="!!tbar")
     deck.title(s, "We start with Chapter 1", color=D.WHITE, x=ML, y=1.36,
                w=9.0, h=0.9, size=40)
-    cards = [("FIRST SESSION",
-              "Chapter 1 — What E-Commerce Is, and What It Changed"),
+    cards = [("FIRST SESSION", "Chapter 1 — Why Not Just Files?"),
              ("BRING",
-              "A laptop with Python on it -- nothing to install (Appendix A)"),
-             ("FIRST LAB",
-              "Four questions a file cannot answer, asked of a file"),
+              "A laptop with Python 3 -- SQLite comes with it (Appendix A)"),
+             ("FIRST LAB", "Break a file-based system on purpose"),
              ("READ BEFORE WEEK 2", "Chapters 1 and 2")]
     cw_ = (CW - 0.3) / 2
     for i, (lab, val) in enumerate(cards):

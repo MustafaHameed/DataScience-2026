@@ -62,7 +62,14 @@ OTHER = re.compile(
     r"admin panel|click path|breadcrumb|coupon|voucher|"
     r"payment gateway|merchant|chargeback|PCI[- ]DSS|"
     r"catalogue page|product variant|geo zone|SEO|sitemap|"
-    r"docker compose|container\w* image"
+    r"docker compose|container\w* image|"
+    # Bare words, added when overview.py was found carrying six E-Commerce
+    # cards -- "A catalogue, and the tables under it", "A basket, and where
+    # its state lives", "A gateway, and what happens when it fails" -- and a
+    # closing card naming "What E-Commerce Is". The phrases above did not
+    # match any of them, because the fork used the words alone.
+    r"e-commerce|baskets?|gateways?|catalogues?|refunds?|shipping|"
+    r"sales tax"
     r")\b")
 
 # Literals that may mention one of those anyway, because they are this
@@ -78,7 +85,17 @@ ALLOW = re.compile(
     # happened to name the course it leaked from -- i.e. most of them. An
     # allow-list entry must be narrower than the thing it excuses.
     r"algorithms course|e-commerce course|e-commerce build|"
-    r"the siblings|sibling course")
+    r"the siblings|sibling course|"
+    # This handout names the E-Commerce course as a downstream dependant;
+    # these are the exact places it does so, and the ordinary English uses
+    # of two flagged words.
+    r"E-Commerce Application Development|catalogue or a bookshop|"
+    r"proofs are written|Proof: ")
+
+# A file whose whole subject is the other courses. Its lines are expected to
+# use their vocabulary; flagging all of them would train readers to ignore
+# the gate, which is the one outcome a gate cannot survive.
+EXEMPT_TEX = {"F_boundary.tex"}
 
 
 def literals(src: str):
@@ -134,7 +151,7 @@ def main() -> int:
     if a.tex:
         parts = os.path.join(os.path.dirname(HERE), "parts")
         for name in sorted(os.listdir(parts)) if os.path.isdir(parts) else []:
-            if not name.endswith(".tex"):
+            if not name.endswith(".tex") or name in EXEMPT_TEX:
                 continue
             for line, text in tex_lines(os.path.join(parts, name)):
                 if OTHER.search(text) and not ALLOW.search(text):

@@ -1,0 +1,210 @@
+%=====================================================================
+\chapter{The Toolkit: Setting It Up and Keeping It}\label{app:toolkit}
+%=====================================================================
+\normalfigures
+
+This appendix is the whole of the course's setup. It is short, and that is the
+point: the longest-running complaint about database courses is that the first
+fortnight goes on installing something. Here there is nothing to install.
+
+\section{What You Need}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.4cm}L{4.2cm}L{6.8cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Thing} & \textbf{Version used here} & \textbf{How to get it} \\
+\midrule
+\endhead
+\textbf{SQLite} & 3.51.2 & \textbf{You already have it.} It ships inside
+Python, inside most operating systems, and inside a great deal of software you
+already run \\
+A terminal & any & Already present \\
+Python & 3.13 & Only for the measurement harnesses in \texttt{code/}. No
+chapter's \emph{content} needs it \\
+A text editor & any & For writing \texttt{.sql} files \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Check, in one line, before you read any further]
+\begin{lstlisting}[language=bash]
+python -c "import sqlite3; print(sqlite3.sqlite_version)"
+\end{lstlisting}
+
+If that prints a version number --- any version from 3.37 onwards --- you have
+everything this course needs. If you also have the \texttt{sqlite3} command on
+your path, so much the better; if not, every lab works through Python's
+built-in shell instead, and \chref{firstdatabase} shows both.
+\end{conceptbox}
+
+\section{Why SQLite, and What It Costs You}
+
+\begin{alertbox}[This is a curriculum decision, not a shortcut]
+\textbf{HEC names no database product in any edition of this curriculum.} The
+2017 and 2023 outlines say a student should use SQL ``in any DBMS''; the 2025
+outcomes say ``popular database management systems''. There is no edition in
+which choosing SQLite departs from the published syllabus.
+
+\smallskip
+What it buys is the first fortnight. There is no server to start, no port, no
+password, no user account, no configuration file and nothing to go wrong
+before the subject begins. A database is one file. You can copy it, email it,
+put it in version control, delete it and start again --- and in \chref{normalforms}
+you will do exactly that.
+
+\smallskip
+\textbf{What it costs is stated here and again in \chref{project}}, because a
+tool's limits are part of what you are learning:
+
+\begin{tight}
+  \item \textbf{No users, no \sqlkw{GRANT}, no \sqlkw{REVOKE}.} SQLite has no
+        access control of any kind: whoever can open the file can do anything
+        to it. \chref{project} writes the SQL a server DBMS would use and runs
+        it nowhere.
+  \item \textbf{No stored procedures.} Triggers (\chref{views}) carry the
+        argument about putting logic in the database.
+  \item \textbf{No row-level locking and no isolation levels.} SQLite lets one
+        writer at a time and makes the others wait. \chref{transactions} can
+        therefore show you a lost update prevented, a busy timeout and a failed
+        upgrade from a deferred transaction --- but a genuine two-row deadlock
+        is drawn rather than run.
+\end{tight}
+
+\smallskip
+Every one of those three is a thing a \emph{server} adds, and knowing which
+three they are is more useful than having had them switched on all semester
+without noticing.
+\end{alertbox}
+
+\section{The Ten Commands You Will Actually Use}
+
+SQLite's shell has two kinds of input: SQL, which ends with a semicolon, and
+\emph{dot-commands}, which do not and which are the shell's own.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.6cm}L{10.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Command} & \textbf{What it does} \\
+\midrule
+\endhead
+\texttt{sqlite3 university.db} & Open (or create) a database and enter the
+shell \\
+\texttt{.tables} & List the tables \\
+\texttt{.schema student} & Show the \texttt{CREATE} statement for one table ---
+the fastest way to find out what a table actually promises \\
+\texttt{.headers on} & Print column names above results. Turn this on first,
+every time \\
+\texttt{.mode box} & Draw results as a table instead of pipe-separated text \\
+\texttt{.read setup.sql} & Run a file of SQL. How every lab in this book starts \\
+\texttt{.output results.txt} & Send what follows to a file \\
+\texttt{.import data.csv student} & Load a CSV into a table \\
+\texttt{.backup backup.db} & Take a consistent copy \emph{while the database is
+open} --- \chref{transactions} explains why that is not the same as copying the
+file \\
+\texttt{.quit} & Leave \\
+\bottomrule
+\end{longtable}
+
+\begin{examplebox}[The two lines to type at the start of every session]
+\begin{lstlisting}[language=bash]
+sqlite3 university.db
+\end{lstlisting}
+then, inside the shell:
+\begin{lstlisting}[language=sql]
+.headers on
+.mode box
+PRAGMA foreign_keys = ON;
+\end{lstlisting}
+
+\smallskip
+The first two make results readable. \textbf{The third is not cosmetic.}
+SQLite does not enforce foreign keys unless you ask it to, \emph{every time you
+connect}, and \chref{constraints} is largely about what happens when you
+forget. Put all three in a file called \texttt{init.sql} and start every
+session with \texttt{.read init.sql} until it is a habit.
+\end{examplebox}
+
+\section{Resetting to a Known State}
+
+A database is one file, which makes this the simplest reset in the series:
+
+\begin{lstlisting}[language=bash]
+# --- 1. Keep a copy before anything risky -------------------------
+cp university.db university.db.bak
+
+# --- 2. Start again from nothing ----------------------------------
+rm university.db
+sqlite3 university.db ".read code/schema/v1_create.sql"
+
+# --- 3. And refill it ----------------------------------------------
+python code/schema/seed.py 1000
+\end{lstlisting}
+
+\begin{conceptbox}[Do this deliberately once, in Week 2]
+Delete your database on purpose, rebuild it from the script, and confirm it is
+the same. A student who has done that once is a student who will keep their
+schema in a file rather than in the shell's history --- which is the single
+habit that decides whether the Week~16 project can be handed to somebody else
+and run.
+\end{conceptbox}
+
+\section{The Machine Every Timing Was Taken On}
+
+Eleven chapters quote a measured figure. Every one was produced by running the
+named file in \texttt{code/} on this machine:
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.6cm}L{11.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Component} & \textbf{Specification} \\
+\midrule
+\endhead
+Processor & Intel Core i5-6600, 4 cores, 3.30\,GHz \\
+Memory & 16\,GB \\
+Operating system & Windows 11, 64-bit \\
+SQLite & 3.51.2 \\
+Python & 3.13.13 \\
+Storage & Mechanical disk, not a solid-state drive --- which matters for
+\chref{indexes} and is the reason its figures are larger than yours may be \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Your numbers will differ, and the ratios should not]
+A measurement is a fact about the machine it ran on. If your laptop has a
+solid-state disk it will beat these figures, perhaps by a factor of ten on the
+chapters that touch storage.
+
+\smallskip
+\textbf{What should survive the move is the shape:} the row count at which an
+index starts to pay (\chref{indexes}), the direction normalisation moves query
+time (\chref{normalforms}), the fact that one writer blocks another
+(\chref{transactions}). If a \emph{ratio} in this book does not reproduce on
+your machine, that is worth investigating and worth telling your lecturer
+about. If an absolute number does not, that is expected.
+\end{alertbox}
+
+\section{Scope: What You May Point Any of This At}
+
+\begin{alertbox}[Read this before Chapter 23's laboratory]
+Everything in this course runs against \textbf{a database file you created, on
+a machine you own}. \chref{project} discusses SQL injection and shows what a
+badly built query permits --- against your own university database, with
+invented data, in a file you can delete.
+
+\smallskip
+\textbf{Running the same thing against any system you do not own and have not
+been authorised in writing to test is a criminal offence in Pakistan} under the
+\textbf{Prevention of Electronic Crimes Act 2016}, sections~3 and~4, which
+cover unauthorised access to an information system and to data.
+
+\smallskip
+There is no educational exemption, and a university assignment is not
+authorisation. ``I was learning'', ``I did no harm'' and ``the site was
+insecure'' are not defences.
+
+\smallskip
+In practice this is an easy rule to follow, because the only file named
+anywhere in this book is \texttt{university.db} and it is yours.
+\end{alertbox}

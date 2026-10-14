@@ -1,0 +1,419 @@
+%=====================================================================
+\chapter{Selecting Rows, and the Trouble with NULL}\label{ch:select}
+%=====================================================================
+\locator{4}{Part IV --- Asking Questions}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Write} a \sqlkw{SELECT} with \sqlkw{WHERE}, \sqlkw{ORDER BY}
+        and \sqlkw{LIMIT}, and \textbf{state} the order in which its clauses
+        run.
+  \item \textbf{Use} \sqlkw{LIKE}, \sqlkw{IN}, \sqlkw{BETWEEN} and
+        \sqlkw{CASE} correctly, including at their boundaries.
+  \item \textbf{Evaluate} a condition in three-valued logic, and
+        \textbf{predict} which rows a condition involving null will return.
+  \item \textbf{Explain} why \sqlkw{NOT IN} can return nothing, and
+        \textbf{replace} it with a form that cannot.
+  \item \textbf{Account for} every row of a table when a condition and its
+        negation together do not cover it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{relational}: what a null is. \chref{joins} for the 73 sections a null
+foreign key dropped. A seeded \texttt{university.db}; every number in this
+chapter is reproduced by its laboratory.
+\end{prereq}
+
+\begin{keyterms}
+\sqlkw{SELECT} $\bullet$ \sqlkw{WHERE} $\bullet$ \sqlkw{ORDER BY} $\bullet$
+\sqlkw{LIMIT} $\bullet$ \sqlkw{OFFSET} $\bullet$
+\sqlkw{LIKE} $\bullet$ wildcard $\bullet$ \sqlkw{IN} $\bullet$
+\sqlkw{BETWEEN} $\bullet$ \sqlkw{CASE} $\bullet$ three-valued logic $\bullet$
+\unk{} $\bullet$ \sqlkw{IS NULL} $\bullet$ \sqlkw{COALESCE}
+$\bullet$ \sqlkw{NULLIF} $\bullet$ \sqlkw{NOT IN} $\bullet$ \sqlkw{NOT EXISTS}
+\end{keyterms}
+
+\section{The Statement, and the Order It Runs In}
+
+\begin{definitionbox}[\sqlkw{SELECT}, in execution order]
+\begin{lstlisting}[language=sql]
+SELECT   name, semester          -- 4. keep these columns
+FROM     student                 -- 1. start from this relation
+WHERE    programme = 'BSIT'      -- 2. keep these rows
+ORDER BY semester DESC, name     -- 5. sort what is left
+LIMIT    10 OFFSET 20;           -- 6. then take a slice
+\end{lstlisting}
+
+\smallskip
+Step 3, between \sqlkw{WHERE} and \sqlkw{SELECT}, is \sqlkw{GROUP BY}, and
+\chref{grouping} adds it. The order matters in one practical way: a name given
+in the \sqlkw{SELECT} list with \sqlkw{AS} \emph{does not exist yet} when
+\sqlkw{WHERE} runs, so it cannot be used there --- but it can be used in
+\sqlkw{ORDER BY}, which runs after.
+\end{definitionbox}
+
+\begin{examplebox}[The four predicates, and where each one surprises]
+\begin{tabular}{@{}L{4.6cm}L{9.4cm}@{}}
+\texttt{name LIKE 'A\%'} & the \term{wildcards}: \texttt{\%} is any run of characters,
+  \texttt{\_} exactly one. In SQLite \sqlkw{LIKE} is \textbf{case-insensitive}
+  for ASCII letters, so this also matches \texttt{'ayesha'}. \\
+\texttt{programme IN ('BSIT','BSCS')} & shorthand for two \sqlkw{OR}s. Fine
+  --- until the list contains a null, below. \\
+\texttt{semester BETWEEN 2 AND 4} & \textbf{inclusive at both ends}: 2, 3 and
+  4. \\
+\texttt{CASE WHEN g='A' THEN 4 \dots\ END} & evaluated top to bottom; the
+  first true branch wins; with no \sqlkw{ELSE}, the result is null. \\
+\end{tabular}
+
+\smallskip
+\textbf{And one that is not a predicate at all.} \texttt{LIMIT 10} without
+\sqlkw{ORDER BY} returns \emph{some} ten rows. Which ten depends on the plan,
+and \chref{relational} said the plan is allowed to change. A ``top ten'' with
+no \sqlkw{ORDER BY} is ten rows chosen by the optimiser.
+\end{examplebox}
+
+\section{Three-Valued Logic}
+
+Every condition so far has been true or false. As soon as a null is involved
+there is a third answer, and it is the source of most quietly wrong results in
+SQL.
+
+\begin{definitionbox}[\unk{}]
+Any comparison with a null --- \texttt{=}, \texttt{<>}, \texttt{<},
+\texttt{>}, even \texttt{NULL = NULL} --- evaluates to \unk{}, not to
+true or false. It means ``the value is missing, so I cannot say''.
+
+\smallskip
+\sqlkw{WHERE} keeps a row \textbf{only if its condition is true}. False and
+\unk{} are both discarded.
+
+\smallskip
+\sqlkw{IS NULL} and \sqlkw{IS NOT NULL} are the only tests that return true
+or false for a null. They exist because \texttt{= NULL} cannot work.
+\end{definitionbox}
+
+\begin{conceptbox}[The truth tables, and the one row to remember]
+\begin{tabular}{@{}L{1.9cm}L{1.9cm}|L{1.9cm}L{1.9cm}|L{2.2cm}L{2.4cm}@{}}
+\textbf{\sqlkw{AND}} & & \textbf{\sqlkw{OR}} & & \textbf{\sqlkw{NOT}} & \\
+T \sqlkw{AND} U & = U & T \sqlkw{OR} U & = \textbf{T} & \sqlkw{NOT} T & = F \\
+F \sqlkw{AND} U & = \textbf{F} & F \sqlkw{OR} U & = U & \sqlkw{NOT} F & = T \\
+U \sqlkw{AND} U & = U & U \sqlkw{OR} U & = U & \sqlkw{NOT} U & = \textbf{U} \\
+\end{tabular}
+
+\smallskip
+Read the bold entries. \sqlkw{AND} with a false is false whatever the other
+side; \sqlkw{OR} with a true is true whatever the other side --- those are the
+cases where a missing value genuinely does not matter.
+
+\smallskip
+\textbf{The row to remember is the last one: \sqlkw{NOT} \unk{} is
+\unk{}.} Negating a condition does \emph{not} give you the other
+rows. It gives you the other rows \emph{that are not null}. A condition and its
+negation together do not cover a table that contains nulls --- and the next box
+counts exactly how many rows fall through the gap.
+\end{conceptbox}
+
+\begin{worked}[Grade A, not grade A, and the 19{,}992 rows that are neither]
+The seeded \textit{enrolment} table has 60{,}037 rows. Three queries:
+
+\medskip
+\begin{tabular}{@{}L{7.2cm}R{2.6cm}@{}}
+\texttt{WHERE grade = 'A'}       & 7{,}268 \\
+\texttt{WHERE grade <> 'A'}      & 32{,}777 \\
+\texttt{WHERE NOT (grade = 'A')} & 32{,}777 \\
+\end{tabular}
+
+\medskip
+\textbf{Step 1 --- the sum.} $7{,}268 + 32{,}777 = 40{,}045$. The table has
+60{,}037. \textbf{19{,}992 rows are in neither answer.}
+
+\medskip
+\textbf{Step 2 --- which rows.} The FALL2026 enrolments, whose semester is not
+over: \texttt{grade} is null. For those rows \texttt{grade = 'A'} is
+\unk{}, so is \texttt{grade <> 'A'}, and so --- by the last row of
+the truth table --- is \sqlkw{NOT} \texttt{(grade = 'A')}. Every one of the
+three conditions discards them.
+
+\medskip
+\textbf{Step 3 --- the check.}
+\begin{lstlisting}[language=sql]
+SELECT COUNT(*) FROM enrolment WHERE grade IS NULL;    -- 19992
+\end{lstlisting}
+$7{,}268 + 32{,}777 + 19{,}992 = 60{,}037$. Every row accounted for.
+
+\medskip
+\textbf{Step 4 --- what goes wrong in practice.} A report of ``students who
+did not get an A'' built on \texttt{grade <> 'A'} omits a third of all
+enrolments without a word. Whether it \emph{should} include them is a question
+for the examinations office --- an ungraded course is not a failure --- but
+the query decided it silently, and decided it the way most people would not.
+
+\medskip
+\textbf{The rule.} When a column can be null, write the null case
+explicitly, whichever way you want it:
+\begin{lstlisting}[language=sql]
+WHERE grade <> 'A' OR grade IS NULL     -- include ungraded
+WHERE grade <> 'A'                      -- exclude them, and say so
+\end{lstlisting}
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[
+  seg/.style={draw=white, line width=1pt, minimum height=0.9cm,
+              font=\scriptsize\bfseries, text=white, inner sep=0pt},
+  br/.style={draw=#1, line width=0.9pt,
+             decorate, decoration={brace, amplitude=5pt}},
+  lb/.style={font=\scriptsize, align=center, text=#1}
+]
+  % 60,037 rows drawn to scale across 13 cm. The widths are computed
+  % here, not with pgfmath: the first draft used macros named a, b and c
+  % -- which shadow TeX's own accent commands -- and a 13/60037 scale
+  % factor, and three 'Dimension too large' errors followed.
+  %   13 x 7268/60037 = 1.5738    13 x 32777/60037 = 7.0973
+  %   13 x 19992/60037 = 4.3289
+  \def\wA{1.5738}\def\wN{7.0973}\def\wU{4.3289}
+  \node[seg, fill=greenhl, minimum width=\wA cm, anchor=west]
+       (A) at (0,0) {A};
+  \node[seg, fill=secondary, minimum width=\wN cm, anchor=west]
+       (N) at (\wA,0) {B, C, D, F};
+  \node[seg, fill=neutral!70, minimum width=\wU cm, anchor=west]
+       (U) at (\wA+\wN,0) {NULL --- not yet graded};
+
+  \draw[br=greenhl] (0,0.55) -- (\wA,0.55);
+  \node[lb=greenhl!60!black] at (\wA/2,1.05)
+       {\texttt{grade = 'A'}\\7{,}268};
+  \draw[br=secondary] (\wA,0.55) -- (\wA+\wN,0.55);
+  \node[lb=secondary!70!black] at (\wA+\wN/2,1.05)
+       {\texttt{grade <> 'A'} \ and \ \texttt{NOT (grade = 'A')}\\32{,}777};
+  \draw[br=accent] (\wA+\wN+\wU,-0.55) -- (\wA+\wN,-0.55);
+  \node[lb=accent] at (\wA+\wN+\wU/2,-1.15)
+       {\textbf{caught by neither}\\19{,}992 --- \sqlkw{IS NULL} only};
+  \node[lb=neutral, anchor=east] at (-0.15,0) {60{,}037\\rows};
+\end{tikzpicture}}%
+{The seeded \textit{enrolment} table, drawn to scale. A condition and its
+negation cover the green and the blue. The grey third is \unk{} to
+both, and \sqlkw{WHERE} discards it either way.}{nullgap}
+
+\section{\sqlkw{NOT IN}, Which Can Return Nothing}
+
+\begin{alertbox}[Three new instructors, and a query that cannot find them]
+Hire three instructors who are not yet teaching anything. Then ask which
+instructors teach no section --- the obvious way:
+
+\begin{lstlisting}[language=sql]
+SELECT COUNT(*) FROM instructor
+ WHERE emp_id NOT IN (SELECT emp_id FROM section);
+\end{lstlisting}
+
+On the seeded database, with the three added, this returns \textbf{0}.
+
+\begin{lstlisting}[language=sql]
+SELECT COUNT(*) FROM instructor i
+ WHERE NOT EXISTS (SELECT 1 FROM section s WHERE s.emp_id = i.emp_id);
+\end{lstlisting}
+
+This returns \textbf{3}.
+
+\medskip
+\textbf{Why.} \texttt{x NOT IN (a, b, c)} means \texttt{x <> a AND x <> b AND
+x <> c}. The sub-query's list contains the 73 nulls from the unassigned
+sections, so the expansion contains \texttt{x <> NULL} --- which is
+\unk{}. By the truth table, \texttt{T AND U = U}. For every
+instructor, including the three new ones, the whole condition is at best
+\unk{}, and \sqlkw{WHERE} discards \unk{}. \textbf{One null
+in the list empties the result.}
+
+\medskip
+\textbf{The fix is either of these:}
+\begin{tight}
+  \item use \sqlkw{NOT EXISTS}, which tests for the \emph{existence} of a row
+        rather than comparing with a value, and is unaffected by nulls; or
+  \item filter the nulls out of the list:
+        \texttt{\dots\ NOT IN (SELECT emp\_id FROM section WHERE emp\_id IS NOT
+        NULL)}, which also returns 3.
+\end{tight}
+
+\smallskip
+\textbf{This course uses \sqlkw{NOT EXISTS}.} The second fix works, but it has
+to be remembered every time, and it will be forgotten the first time the
+column becomes nullable --- which is a schema change somebody else will make.
+\chref{subqueries} measures the two forms against each other.
+\end{alertbox}
+
+\begin{examplebox}[\sqlkw{COALESCE} and \sqlkw{NULLIF}: deciding what null means]
+\sqlkw{COALESCE}(a, b, c) returns the first argument that is not null. It is
+how you \emph{decide}, in one place, what a null should be treated as:
+
+\begin{lstlisting}[language=sql]
+SELECT roll_no, COALESCE(cnic, 'not on file') AS cnic FROM student;
+SELECT COALESCE(grade, 'in progress') AS grade FROM enrolment;
+\end{lstlisting}
+
+\sqlkw{NULLIF}(a, b) is the reverse: it returns null if $a = b$, otherwise
+$a$. Its main use is cleaning up \chref{relational}'s magic values ---
+\texttt{NULLIF(cnic, 'N/A')} turns an invented marker back into the null it
+should have been.
+
+\smallskip
+\textbf{Use \sqlkw{COALESCE} for display, not for arithmetic.} Writing
+\texttt{AVG(COALESCE(score, 0))} decides that a missing mark is a zero, which
+is \chref{ddl}'s 20\% error made on purpose.
+\end{examplebox}
+
+\begin{conceptbox}[Where nulls go in \sqlkw{ORDER BY}]
+SQLite sorts nulls \textbf{first} in ascending order and last in descending,
+treating null as smaller than every value. Other systems differ: PostgreSQL
+puts them last in ascending order. SQLite since 3.30 accepts the standard
+clause that makes it explicit:
+
+\begin{lstlisting}[language=sql]
+SELECT roll_no, grade FROM enrolment ORDER BY grade NULLS LAST;
+\end{lstlisting}
+
+Write \sqlkw{NULLS FIRST} or \sqlkw{NULLS LAST} whenever the column can be
+null and the order matters, because ``what this database happens to do'' is
+not the same on the next one.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{\texttt{WHERE x = NULL}.} Always \unk{}, so always
+        empty. Use \sqlkw{IS NULL}.
+  \item \textbf{Assuming a condition and its negation cover the table.} They
+        miss the nulls --- 19{,}992 of 60{,}037 enrolments.
+  \item \textbf{\sqlkw{NOT IN} against a nullable column.} One null in the
+        list and the result is empty. Use \sqlkw{NOT EXISTS}.
+  \item \textbf{Using a column alias in \sqlkw{WHERE}.} It does not exist yet.
+  \item \textbf{\sqlkw{LIMIT} without \sqlkw{ORDER BY}.} Some rows, chosen by
+        the plan.
+  \item \textbf{Forgetting \sqlkw{BETWEEN} is inclusive.} Both ends.
+  \item \textbf{Expecting \sqlkw{LIKE} to be case-sensitive.} In SQLite it is
+        not, for ASCII.
+  \item \textbf{\sqlkw{COALESCE} to zero inside an average.} A decision that a
+        missing mark is a fail, made silently.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Lose 19{,}992 rows and three instructors, and find them all]
+\begin{lstlisting}[language=bash]
+# --- 1. A fresh seeded database --------------------------------------
+python code/schema/seed.py university.db
+sqlite3 university.db
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. A condition and its negation ----------------------------
+.headers on
+.mode box
+SELECT COUNT(*) FROM enrolment WHERE grade = 'A';
+SELECT COUNT(*) FROM enrolment WHERE grade <> 'A';
+SELECT COUNT(*) FROM enrolment;
+-- Add the first two. Compare with the third. Explain the gap.
+
+-- --- 3. Account for every row -----------------------------------
+SELECT COUNT(*) FROM enrolment WHERE grade IS NULL;
+SELECT COUNT(*) FROM enrolment WHERE grade = NULL;
+-- Two queries that look alike. One finds the gap; one finds nothing.
+
+-- --- 4. Hire three people who teach nothing yet -----------------
+PRAGMA foreign_keys = ON;
+INSERT INTO instructor VALUES
+  ('E-9001','New Hire One','Lecturer','CS'),
+  ('E-9002','New Hire Two','Lecturer','IT'),
+  ('E-9003','New Hire Three','Lecturer','SE');
+
+-- --- 5. Look for them with NOT IN -------------------------------
+SELECT COUNT(*) FROM instructor
+ WHERE emp_id NOT IN (SELECT emp_id FROM section);
+-- There are three. How many did it find?
+
+-- --- 6. Look for them with NOT EXISTS ---------------------------
+SELECT name FROM instructor i
+ WHERE NOT EXISTS (SELECT 1 FROM section s WHERE s.emp_id = i.emp_id);
+
+-- --- 7. Prove the nulls are to blame ----------------------------
+SELECT COUNT(*) FROM section WHERE emp_id IS NULL;
+SELECT COUNT(*) FROM instructor
+ WHERE emp_id NOT IN (SELECT emp_id FROM section
+                       WHERE emp_id IS NOT NULL);
+
+-- --- 8. Decide what null means, once ----------------------------
+SELECT COALESCE(grade, 'in progress') AS g, COUNT(*)
+  FROM enrolment GROUP BY g ORDER BY g;
+SELECT roll_no, grade FROM enrolment ORDER BY grade NULLS LAST LIMIT 3;
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 5 against step 6 is the chapter in one
+comparison: the same question, two spellings, 0 against 3. Neither raised an
+error, and the wrong one is the one most people write first. If you remember
+one rule from Part~IV, make it this: \textbf{never \sqlkw{NOT IN} a column
+that can be null.}
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item \texttt{grade = 'A'} returns 7{,}268 rows and \texttt{grade <> 'A'}
+        returns 32{,}777, on a table of 60{,}037. Account for the remaining
+        rows using the truth table, and write the single query that returns
+        every row that is \emph{not} an A, including the ungraded ones.
+  \item Explain, step by step from the expansion of \sqlkw{NOT IN} into
+        \sqlkw{AND}s, why one null in the sub-query's result makes the outer
+        query return no rows at all.
+  \item A colleague writes \texttt{AVG(COALESCE(score, 0))} ``so that the
+        average includes everybody''. Say what decision this makes about
+        missing marks, show with a three-row example how it changes the
+        average, and say what you would write instead and why.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item \sqlkw{SELECT} runs \sqlkw{FROM}, \sqlkw{WHERE}, \sqlkw{GROUP BY},
+        \sqlkw{SELECT}, \sqlkw{ORDER BY}, \sqlkw{LIMIT}. An alias does not
+        exist in \sqlkw{WHERE}; it does in \sqlkw{ORDER BY}.
+  \item \sqlkw{BETWEEN} is inclusive; SQLite's \sqlkw{LIKE} is
+        case-insensitive for ASCII; \sqlkw{LIMIT} without \sqlkw{ORDER BY}
+        returns rows the plan chose.
+  \item Any comparison with a null is \textbf{\unk{}}.
+        \sqlkw{WHERE} keeps only \emph{true}, so \unk{} rows vanish.
+  \item \textbf{\sqlkw{NOT} \unk{} is \unk{}}: a condition
+        and its negation do not cover a table with nulls.
+  \item \textbf{On the seeded data:} \texttt{= 'A'} found 7{,}268,
+        \texttt{<> 'A'} found 32{,}777, and \textbf{19{,}992 ungraded rows were
+        in neither}.
+  \item \texttt{= NULL} is always empty. \sqlkw{IS NULL} is the only test.
+  \item \textbf{\sqlkw{NOT IN} returned 0 where \sqlkw{NOT EXISTS} returned 3},
+        because one null in the list makes every comparison \unk{}.
+        Never \sqlkw{NOT IN} a nullable column.
+  \item \sqlkw{COALESCE} decides what null means; use it for display, never to
+        turn a missing mark into a zero.
+  \item SQLite sorts nulls first ascending; say \sqlkw{NULLS LAST} when it
+        matters, because other systems differ.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} \texttt{NULL = NULL} evaluates to: (a)~true;
+        (b)~false; (c)~\unk{}; (d)~an error.
+  \item \textbf{(MCQ)} \texttt{semester BETWEEN 2 AND 4} includes:
+        (a)~3 only; (b)~2 and 3; (c)~3 and 4; (d)~2, 3 and 4.
+  \item \textbf{(Short)} Why can a column alias be used in \sqlkw{ORDER BY}
+        but not in \sqlkw{WHERE}?
+  \item \textbf{(Short)} Evaluate \texttt{F OR U}, \texttt{T AND U} and
+        \sqlkw{NOT} \texttt{U}, and say which one causes the most errors in
+        practice.
+  \item \textbf{(Short)} Give the two fixes for a \sqlkw{NOT IN} against a
+        nullable column, and say why this course prefers one of them.
+  \item \textbf{(Applied)} Write a query listing every student with a label
+        computed by \sqlkw{CASE}: \texttt{'senior'} for semesters 7--8,
+        \texttt{'mid'} for 3--6, \texttt{'new'} for 1--2. Then say what your
+        query does with a null semester, and change it so that a null is
+        labelled \texttt{'unknown'} explicitly.
+  \item \textbf{(Applied)} You are asked for ``students who have never failed
+        a course''. Write it three ways --- with \sqlkw{NOT IN}, with
+        \sqlkw{NOT EXISTS}, and with \sqlkw{EXCEPT} --- run all three on the
+        seeded database, and explain any difference between their counts in
+        terms of the null grades of FALL2026.
+\end{reviewq}

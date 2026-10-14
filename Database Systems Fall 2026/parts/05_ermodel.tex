@@ -1,0 +1,546 @@
+%=====================================================================
+\chapter{The Entity-Relationship Model}\label{ch:ermodel}
+%=====================================================================
+\locator{2}{Part II --- Designing It}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Distinguish} an entity, an entity type and an entity set, and
+        \textbf{say} which of the three a table corresponds to.
+  \item \textbf{Classify} an attribute as simple or composite, single- or
+        multi-valued, stored or derived, and \textbf{explain} why each
+        distinction changes what you build.
+  \item \textbf{Identify} superkeys, candidate keys and the primary key of an
+        entity type, and \textbf{justify} the choice between candidates.
+  \item \textbf{Read and draw} a Chen ER diagram, and \textbf{state} the degree
+        of a relationship.
+  \item \textbf{Decide}, for a given noun in a requirements statement, whether
+        it is an entity, an attribute or a relationship.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{whodoeswhat}: the designer's job --- deciding \emph{what is true}.
+\chref{firstdatabase} for the \relation{}{} notation. No SQL is written in
+this chapter; you will not touch \texttt{university.db} until
+\chref{mapping}.
+\end{prereq}
+
+\begin{keyterms}
+entity $\bullet$ entity type $\bullet$ entity set $\bullet$ attribute
+$\bullet$ simple attribute $\bullet$ composite attribute $\bullet$
+single-valued $\bullet$ multi-valued $\bullet$ stored attribute $\bullet$
+derived attribute $\bullet$ null value $\bullet$ key attribute $\bullet$
+superkey $\bullet$ candidate key $\bullet$ primary key $\bullet$ composite key
+$\bullet$ surrogate key $\bullet$ relationship $\bullet$ relationship type
+$\bullet$ degree $\bullet$ binary $\bullet$ ternary $\bullet$ recursive
+relationship $\bullet$ role name $\bullet$ ER diagram $\bullet$ Chen notation
+\end{keyterms}
+
+\section{Design Happens on Paper}
+
+You can create a table in eleven milliseconds (\chref{firstdatabase}). That is
+exactly the problem: it is so cheap to make a table that people make the wrong
+ones, and a wrong table is discovered in week fourteen when four programs
+already read it.
+
+The entity-relationship model is a way of arguing about a design before any of
+it is expensive. It was proposed by Peter Chen in 1976 and it has outlived
+every database product of that decade, for one reason: it is about the
+\emph{university}, not about the database. Everything in this chapter could be
+checked by the examinations officer, who has never heard of SQL.
+
+\begin{alertbox}[HEC's outline puts this chapter after normalisation. This handout does not.]
+The published course content lists \emph{normalization, functional
+dependencies, normal forms} before \emph{entity relationship model, entity
+sets, \dots, entity-relationship diagrams}. Taken literally, that normalises a
+schema before designing one, which cannot be done --- normalisation
+(\chref{normalforms}) takes an existing set of tables as its input.
+
+\smallskip
+All four of HEC's own recommended textbooks order it the other way. So does
+this handout: design first (Part~II), map it to tables (Part~III), and only
+then check the result for faults (Part~V). Every clause is still covered; the
+Course Specification records the reordering and this is the one place it is
+visible.
+\end{alertbox}
+
+\section{Entities: the Things}
+
+\begin{definitionbox}[Entity, entity type, entity set]
+An \term{entity} is one thing in the world that can be told apart from other
+things: the student Ayesha Khan, the course CS-103, Tuesday's section of it.
+
+\smallskip
+An \term{entity type} is the \emph{description} of a kind of thing --- the
+name \ent{student} together with the attributes every student has.
+
+\smallskip
+An \term{entity set} is all the entities of that type at one moment --- the
+4{,}000 students enrolled today.
+
+\smallskip
+This is \chref{architecture}'s schema/instance distinction wearing different
+words. The entity type is schema; the entity set is instance. A table
+corresponds to the \textbf{entity type}; its rows are the entity set.
+\end{definitionbox}
+
+\begin{examplebox}[Three words people use for one thing, and when it matters]
+\begin{tabular}{@{}L{3.6cm}L{5.0cm}L{5.4cm}@{}}
+\textbf{Term} & \textbf{Example} & \textbf{Changes how often} \\
+Entity        & Ayesha Khan, roll 2021-IT-001 & constantly \\
+Entity set    & today's 4{,}000 students      & every admission and graduation \\
+Entity type   & \ent{student}(roll\_no, name, programme, semester)
+                                              & once a year, by argument \\
+\end{tabular}
+
+\smallskip
+In conversation ``student'' means all three and no harm is done. In an
+examination answer it must be the right one, and in a design meeting the
+confusion is expensive: ``students change all the time'' is true of the set
+and false of the type, and the two sentences lead to different databases.
+\end{examplebox}
+
+\section{Attributes, and the Four Distinctions That Matter}
+
+An \term{attribute} is a property of an entity type. Students have a name and
+a roll number. That much is obvious; the four ways attributes differ are not,
+and each one changes what you have to build.
+
+\begin{definitionbox}[Four distinctions]
+\textbf{Simple or composite.} A \term{simple} (atomic) attribute cannot
+usefully be divided: \texttt{semester}. A \term{composite} attribute has
+meaningful parts: \texttt{address} = house, street, city, postcode.
+
+\smallskip
+\textbf{Single-valued or multi-valued.} \texttt{date\_of\_birth} has exactly
+one value per student. \texttt{phone} may have several. A \term{multi-valued}
+attribute is drawn with a double ellipse --- and it is the one kind that
+\emph{cannot become a column}, which is \chref{mapping}'s problem.
+
+\smallskip
+\textbf{Stored or derived.} \texttt{date\_of\_birth} is \term{stored};
+\texttt{age} is \term{derived} from it and today's date. A derived attribute
+is drawn with a dashed ellipse and is normally \emph{not} stored at all.
+
+\smallskip
+\textbf{Key or non-key.} A \term{key attribute} has a different value for
+every entity in the set. It is underlined.
+
+\smallskip
+A fifth property cuts across all four: an attribute may have no value for some
+entity, which is the \term{null} of \chref{select} and a much deeper problem
+than it looks.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  ent/.style={draw=primary, line width=1.1pt, fill=primary!8,
+              text=primary!60!black, font=\small\bfseries,
+              minimum width=2.4cm, minimum height=0.85cm},
+  att/.style={draw=secondary, line width=0.8pt, fill=white,
+              text=secondary!60!black, font=\scriptsize, ellipse,
+              inner sep=1.6pt, minimum width=1.5cm},
+  keyatt/.style={att, text=primary, font=\scriptsize\bfseries},
+  multi/.style={att, double, double distance=1.3pt, draw=purplehl,
+                text=purplehl!70!black},
+  deriv/.style={att, dashed, draw=neutral, text=neutral},
+  lnk/.style={draw=secondary!50, line width=0.7pt},
+  note/.style={font=\scriptsize\itshape, text=neutral}
+]
+  \node[ent] (s) at (0,0) {STUDENT};
+
+  \node[keyatt] (k)  at (-3.9, 1.5) {\relkey{roll\_no}};
+  \node[att]    (n)  at (-1.6, 2.1) {name};
+  \node[att]    (pr) at ( 0.9, 2.1) {programme};
+  \node[att]    (dob) at ( 3.3, 1.5) {date\_of\_birth};
+  \node[deriv]  (ag) at ( 4.6, 0.1) {age};
+  \node[multi]  (ph) at ( 3.1,-1.5) {phone};
+  \node[att]    (ad) at (-1.4,-1.7) {address};
+  \node[att]    (h)  at (-4.2,-0.8) {house};
+  \node[att]    (st) at (-4.3,-1.8) {street};
+  \node[att]    (ci) at (-3.4,-2.7) {city};
+
+  \foreach \a in {k,n,pr,dob,ag,ph,ad}{\draw[lnk] (s) -- (\a);}
+  \foreach \a in {h,st,ci}{\draw[lnk] (ad) -- (\a);}
+
+  \node[note, anchor=west, text=purplehl] at (4.1,-2.2)
+       {double = multi-valued};
+  \node[note, anchor=west, text=neutral]  at (5.0,-0.5) {dashed = derived};
+  \node[note, anchor=east, text=secondary!70!black] at (-4.6,-3.3)
+       {composite: parts hang off the whole};
+  \node[note, anchor=east, text=primary] at (-4.6,2.1) {underlined = key};
+\end{tikzpicture}}%
+{\ent{student} in Chen notation. Four of the five attribute kinds are
+present. \texttt{phone} and \texttt{age} are the two that will not survive
+contact with a table, and \chref{mapping} says what happens to each.}{erstudent}
+
+\begin{conceptbox}[Why the distinctions are not decoration]
+Each one has a consequence you will meet within three chapters.
+
+\begin{tight}
+  \item \textbf{Composite.} Store the parts, not the whole. A system that
+        stores \texttt{address} as one text field can never answer ``how many
+        students live in Bahawalpur'', and finding out costs a schema change
+        after the data exists --- which is \chref{evolution}.
+  \item \textbf{Multi-valued.} A column cannot hold three phone numbers. Not
+        ``should not'': \emph{cannot}, if you want to search them. It becomes
+        its own table, and that is a rule in \chref{mapping}.
+  \item \textbf{Derived.} Storing \texttt{age} means storing a fact that
+        becomes wrong overnight, silently, for about a quarter of the rows
+        each year. Store the birth date and compute.
+  \item \textbf{Key.} Everything else in the design hangs off this choice, and
+        the next section is about how to make it.
+\end{tight}
+\end{conceptbox}
+
+\section{Keys: Three Words, One Choice}
+
+\begin{definitionbox}[Superkey, candidate key, primary key]
+A \term{superkey} is any set of attributes whose values are different for
+every entity. $\{$\texttt{roll\_no}$\}$ is one; so is
+$\{$\texttt{roll\_no}, \texttt{name}$\}$, which is a superkey carrying a
+passenger.
+
+\smallskip
+A \term{candidate key} is a superkey with no attribute to spare: remove any one
+attribute and it stops being unique. $\{$\texttt{roll\_no}$\}$ is a candidate
+key; $\{$\texttt{roll\_no}, \texttt{name}$\}$ is not.
+
+\smallskip
+The \term{primary key} is the one candidate key the designer picks to identify
+entities throughout the database. The others are \term{alternate keys}.
+
+\smallskip
+A key made of more than one attribute is \term{composite}. A key invented by
+the designer with no meaning in the world --- an auto-numbered id --- is a
+\term{surrogate key}.
+\end{definitionbox}
+
+\begin{worked}[Finding every key of \ent{student}, and choosing one]
+Attributes: \texttt{roll\_no}, \texttt{cnic}, \texttt{name},
+\texttt{programme}, \texttt{semester}, \texttt{email}.
+
+\medskip
+\textbf{Step 1 --- what the university guarantees.} Not what today's data
+happens to show. Ask, and write the answers down:
+\begin{tight}
+  \item Roll numbers are unique and never reissued. \emph{Guaranteed.}
+  \item CNICs are unique. \emph{Guaranteed} --- but a first-semester student
+        may not have one yet.
+  \item Email addresses are issued one per student. \emph{Guaranteed} while
+        enrolled; reused after five years.
+  \item Names are not unique. Two students called Muhammad Ali is normal.
+\end{tight}
+
+\textbf{Step 2 --- candidate keys.} Three:
+$\{$\texttt{roll\_no}$\}$, $\{$\texttt{cnic}$\}$, $\{$\texttt{email}$\}$.
+$\{$\texttt{name}, \texttt{programme}, \texttt{semester}$\}$ is \emph{not} one
+--- two BSIT second-semester students can share a name, and ``it has not
+happened yet'' is not a guarantee.
+
+\medskip
+\textbf{Step 3 --- choose, on four grounds.}
+
+\smallskip
+\begin{tabular}{@{}L{2.2cm}L{2.4cm}L{2.4cm}L{2.2cm}L{3.0cm}@{}}
+& \textbf{always present?} & \textbf{never changes?} & \textbf{short?}
+& \textbf{verdict} \\
+\texttt{roll\_no} & yes & yes & yes & \textbf{primary key} \\
+\texttt{cnic}     & \textbf{no} & yes & yes & alternate, and nullable \\
+\texttt{email}    & yes & \textbf{no} & no & alternate at best \\
+\end{tabular}
+
+\medskip
+\textbf{The answer.} \relation{student}{\relkey{roll\_no}, cnic, name,
+programme, semester, email}, with \texttt{cnic} and \texttt{email} declared
+unique but not primary.
+
+\smallskip
+\textbf{What decided it.} Not uniqueness --- all three are unique. The primary
+key must also be \emph{always present} and \emph{never changing}, because
+every other table will refer to it (\chref{constraints}). \texttt{cnic} fails
+the first test and \texttt{email} fails the second, and a primary key that can
+change is a repair job spread across every table that referenced it.
+\end{worked}
+
+\begin{alertbox}[Three things students believe about keys, and what is wrong with each]
+\begin{tight}
+  \item \textbf{``The data is unique, so it is a key.''} A key is a
+        \emph{constraint on all future data}, not an observation about today's.
+        Check the current data by all means --- a duplicate proves it is not a
+        key --- but no duplicate proves nothing.
+  \item \textbf{``Add an auto-number id to every table and the problem goes
+        away.''} The surrogate makes rows addressable; it does not make them
+        \emph{distinguishable}. With an id and no other constraint you can
+        insert the same student twice and the database is content. Surrogates
+        are useful --- and whenever you use one, the real candidate key still
+        has to be declared unique beside it.
+  \item \textbf{``A composite key means bad design.''} It usually means the
+        entity genuinely is identified by a combination. An enrolment is
+        identified by \emph{which student} and \emph{which section}, and the
+        pair is the honest key --- \chref{cardinality} and \chref{mapping}
+        both rely on it.
+\end{tight}
+\end{alertbox}
+
+\section{Relationships, and Degree}
+
+\begin{definitionbox}[Relationship, relationship type, degree]
+A \term{relationship} is an association among entities: Ayesha is enrolled in
+Tuesday's section of CS-103.
+
+\smallskip
+A \term{relationship type} is the kind of association --- \ent{enrols},
+between \ent{student} and \ent{section}. It is drawn as a diamond.
+
+\smallskip
+The \term{degree} of a relationship type is how many entity types take part:
+\term{unary} (1), \term{binary} (2), \term{ternary} (3). Almost everything is
+binary.
+
+\smallskip
+A \term{recursive} relationship is a unary one --- an entity type related to
+itself, like a course being a prerequisite for another course. The two ends
+need \term{role names} to tell them apart, because ``course'' appears twice.
+
+\smallskip
+A relationship type may have attributes of its own. \texttt{grade} belongs to
+the \emph{enrolment}, not to the student and not to the section.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  ent/.style={draw=primary, line width=1.1pt, fill=primary!8,
+              text=primary!60!black, font=\scriptsize\bfseries,
+              minimum width=2.0cm, minimum height=0.72cm},
+  rel/.style={draw=greenhl, line width=1pt, fill=greenhl!8,
+              text=greenhl!55!black, font=\scriptsize\bfseries,
+              diamond, aspect=2.1, inner sep=1pt},
+  att/.style={draw=secondary, line width=0.7pt, fill=white,
+              text=secondary!60!black, font=\scriptsize, ellipse,
+              inner sep=1.4pt},
+  lnk/.style={draw=neutral!55, line width=0.7pt},
+  rl/.style={font=\scriptsize\itshape, text=neutral},
+  hdr/.style={font=\scriptsize\bfseries, text=primary!70!black}
+]
+  % --- binary
+  \node[hdr] at (-4.6,1.9) {Binary};
+  \node[ent] (st) at (-6.3,0.6) {STUDENT};
+  \node[rel] (en) at (-4.0,0.6) {ENROLS};
+  \node[ent] (se) at (-1.7,0.6) {SECTION};
+  \node[att] (gr) at (-4.0,-0.9) {grade};
+  \draw[lnk] (st) -- (en);  \draw[lnk] (en) -- (se);
+  \draw[lnk] (en) -- (gr);
+  \node[rl, text width=3.4cm, align=center] at (-4.0,-1.9)
+       {the grade belongs to the \emph{relationship}, not to either end};
+
+  % --- recursive
+  \node[hdr] at (2.6,1.9) {Unary (recursive)};
+  \node[ent] (co) at (2.6,0.6) {COURSE};
+  \node[rel] (pr) at (2.6,-1.2) {REQUIRES};
+  \draw[lnk] (co.west) .. controls (0.7,0.4) and (0.7,-1.1) .. (pr.west);
+  \draw[lnk] (co.east) .. controls (4.5,0.4) and (4.5,-1.1) .. (pr.east);
+  \node[rl, anchor=east] at (1.0,-0.3) {\emph{is prerequisite for}};
+  \node[rl, anchor=west] at (4.2,-0.3) {\emph{depends on}};
+  \node[rl, text width=3.8cm, align=center] at (2.6,-2.3)
+       {one entity type, two ends: the role names are what tell them apart};
+\end{tikzpicture}}%
+{Two of the three degrees. \ent{enrols} carries an attribute of its own;
+\ent{requires} joins \ent{course} to itself and is unreadable without
+role names. The university database you are building contains both.}{erdegree}
+
+\begin{examplebox}[Entity, attribute or relationship? The question that decides a design]
+Every noun in a requirements document is one of the three, and getting it wrong
+is the most common design error there is. Three tests, applied in order:
+
+\begin{tight}
+  \item \textbf{Does it have properties of its own?} If you can list two or
+        three facts \emph{about} it, it is an entity.
+  \item \textbf{Is there more than one of it per owner?} If yes, it is not an
+        attribute.
+  \item \textbf{Does it only exist because two other things met?} Then it is a
+        relationship.
+\end{tight}
+
+\medskip
+\begin{tabular}{@{}L{3.3cm}L{2.5cm}L{8.1cm}@{}}
+\textbf{Noun} & \textbf{Verdict} & \textbf{Why} \\
+roll number   & attribute    & no properties of its own \\
+department    & \textbf{entity} & it has a name, a head, a building --- and
+                                 fifty courses point at it \\
+grade         & \textbf{relationship attribute} & exists only because a
+                                 student met a section \\
+prerequisite  & \textbf{relationship} & joins course to course \\
+semester      & it depends  & an attribute of \ent{student} if it means
+                              ``which year they are in''; an \emph{entity} if
+                              the university runs Fall 2026 and Spring 2027 as
+                              distinct things with dates \\
+\end{tabular}
+
+\smallskip
+The last row is the honest one. The same word is an attribute in one
+university and an entity in another, and no rule decides it --- the
+\emph{requirement} does. That is why design is a conversation with the
+examinations officer and not a procedure.
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Making an entity out of every noun.} ``Name'' is not an
+        entity. Apply the three tests.
+  \item \textbf{Hanging a relationship's attribute on an entity.} Putting
+        \texttt{grade} on \ent{student} gives each student one grade for
+        the whole degree. It belongs on \ent{enrols}.
+  \item \textbf{Choosing a primary key that can change.} Email, phone, name.
+        Every table that referenced it has to be repaired with it.
+  \item \textbf{Treating today's data as a guarantee.} No duplicate names today
+        does not make \texttt{name} a key.
+  \item \textbf{Drawing a recursive relationship without role names.} The
+        diagram is then genuinely ambiguous --- nobody can tell which end is
+        the prerequisite.
+  \item \textbf{Storing a derived attribute because it is convenient.}
+        \texttt{age} is wrong for a quarter of your rows within a year, and
+        nothing reports it.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Turn a page of English into an ER diagram]
+No database this week. Paper, and one argument.
+
+\begin{lstlisting}
+# --- 1. The requirement, as the examinations officer states it -------
+
+"Every student has a roll number, a name, a CNIC, one or more phone
+ numbers, a postal address, and a date of birth. Students belong to
+ one programme. A course has a code, a title and a number of credit
+ hours, and belongs to a department. A course may require other
+ courses as prerequisites. Each semester a course runs as one or
+ more sections; a section has a number, a room and a timetable slot,
+ and is taught by one instructor. Students enrol in sections and
+ receive a grade. We need to know each student's age, and how many
+ students are in each section."
+\end{lstlisting}
+
+\begin{lstlisting}
+# --- 2. List every noun --------------------------------------------
+    Write them in one column. There are about twenty.
+
+# --- 3. Classify each one ------------------------------------------
+    entity / attribute / relationship, using the three tests.
+    Write ONE SENTENCE of justification for each. The sentence is
+    the exercise; the label is not.
+
+# --- 4. Mark the attribute kinds -----------------------------------
+    composite, multi-valued, derived, key. There is at least one
+    of each in the paragraph above.
+
+# --- 5. Find the candidate keys ------------------------------------
+    For STUDENT, COURSE and SECTION. For each, say what the
+    university guarantees -- not what sample data shows.
+
+# --- 6. Draw it, Chen notation -------------------------------------
+    Rectangles, ellipses, diamonds. Role names on the recursive
+    relationship. Do NOT draw cardinalities yet; that is Chapter 6.
+
+# --- 7. Find the two traps -----------------------------------------
+    Two things in the paragraph must NOT become columns, and one
+    must not be stored at all. Name all three and say why.
+
+# --- 8. Hand it to somebody else -----------------------------------
+    Give your diagram, without the paragraph, to another student.
+    Ask them to read it back as English. Every sentence they get
+    wrong is a defect in your diagram, not in their reading.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 8 is the one that matters and the one people
+skip. An ER diagram's whole purpose is to be checked by somebody who cannot
+read SQL. If it cannot be read back, it has failed at the only job it has ---
+and it is still cheap to fix, which it will not be in \chref{mapping}.
+
+\smallskip
+\textbf{Keep this diagram.} Chapter~6 adds cardinalities to it, \chref{mapping}
+turns it into tables, and it is part of your project submission.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A colleague proposes \texttt{phone} as a column of \ent{student},
+        because ``almost every student has one number''. Give the argument
+        against in three sentences, and say what you would do instead and what
+        it costs.
+  \item \ent{instructor} has \texttt{emp\_id}, \texttt{cnic}, \texttt{name},
+        \texttt{email}, \texttt{department}, \texttt{office\_no}. List every
+        candidate key you can justify, state the guarantee each one rests on,
+        choose a primary key and defend the choice on all four grounds in the
+        worked example.
+  \item Explain, to somebody who has written programs but never designed a
+        database, why \texttt{grade} belongs to the \emph{relationship} between
+        a student and a section rather than to either of them. Then say what
+        goes wrong if it is put on \ent{student}, and what goes wrong if it
+        is put on \ent{section}.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item An \textbf{entity} is one thing; an \textbf{entity type} describes a
+        kind of thing; an \textbf{entity set} is all of them today. Type is
+        schema, set is instance, and a table corresponds to the type.
+  \item Attributes differ in four ways: simple/\textbf{composite},
+        single-/\textbf{multi-valued}, stored/\textbf{derived}, key/non-key ---
+        and each distinction has a consequence in Part~III.
+  \item A \textbf{multi-valued} attribute cannot become a column; a
+        \textbf{derived} one should not be stored; a \textbf{composite} one is
+        stored as its parts.
+  \item A \textbf{superkey} is unique; a \textbf{candidate key} is unique with
+        nothing to spare; the \textbf{primary key} is the candidate the
+        designer picks, and the others are alternate keys.
+  \item Choose a primary key on four grounds: unique, \textbf{always present},
+        \textbf{never changing}, short. Uniqueness alone decides nothing when
+        there are three candidates.
+  \item A key is a constraint on \emph{all future data}. A duplicate disproves
+        a key; the absence of one proves nothing.
+  \item A \textbf{relationship} associates entities; its \textbf{degree} is how
+        many entity types take part. A \textbf{recursive} relationship joins a
+        type to itself and needs \textbf{role names} to be readable.
+  \item A relationship can carry attributes of its own. \texttt{grade} belongs
+        to the enrolment, not to the student and not to the section.
+  \item Every noun is an entity, an attribute or a relationship. The same word
+        can be different things in different universities; the requirement
+        decides, not a rule.
+  \item HEC's clause list puts normalisation before the ER model. This handout
+        reverses the two, because normalisation takes tables as its input and
+        there are none until Part~III.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A double ellipse in Chen notation marks an attribute
+        that is: (a)~derived; (b)~composite; (c)~multi-valued; (d)~a key.
+  \item \textbf{(MCQ)} $\{$\texttt{roll\_no}, \texttt{name}$\}$, where
+        \texttt{roll\_no} is unique, is: (a)~a candidate key; (b)~a superkey
+        but not a candidate key; (c)~neither; (d)~the primary key.
+  \item \textbf{(Short)} Give an example of a derived attribute other than age,
+        and say what goes wrong if it is stored.
+  \item \textbf{(Short)} What is the degree of the \ent{requires}
+        relationship between courses, and why does it need role names when a
+        binary relationship usually does not?
+  \item \textbf{(Short)} A surrogate key is added to a table that already has a
+        natural candidate key. What must still be declared, and what breaks if
+        it is not?
+  \item \textbf{(Applied)} A library wants to record books, copies of books,
+        members and loans. Decide which of the four are entity types, identify
+        the relationships and their degrees, choose a primary key for each
+        entity type with its justification, and say which attributes of a loan
+        belong to the relationship rather than to either end.
+  \item \textbf{(Applied)} Take the \ent{student} diagram in
+        Figure~\ref{fig:erstudent} and the requirement ``we must be able to
+        list every student in a given city, and ring any of a student's
+        numbers''. State precisely which parts of the diagram now cannot be
+        implemented as columns, what you would build instead, and what the
+        design would have cost if this requirement had arrived after the
+        database was full.
+\end{reviewq}

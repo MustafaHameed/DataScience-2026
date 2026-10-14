@@ -1,0 +1,536 @@
+%=====================================================================
+\chapter{Cardinality, Participation and Weak Entities}\label{ch:cardinality}
+%=====================================================================
+\locator{2}{Part II --- Designing It}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Determine} the cardinality ratio of a relationship --- 1:1,
+        1:N or M:N --- by asking two questions in a fixed order.
+  \item \textbf{Distinguish} total from partial participation, and
+        \textbf{state} what each one forbids.
+  \item \textbf{Write} a relationship's constraints in $(\min,\max)$ notation
+        and \textbf{convert} between that and the ratio-plus-participation
+        form.
+  \item \textbf{Recognise} a weak entity type, and \textbf{identify} its owner,
+        its identifying relationship and its partial key.
+  \item \textbf{Read} the same diagram in Chen and crow's-foot notation.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ermodel}: entities, attributes, keys, relationships and degree. You
+will extend the diagram you drew in that chapter's laboratory, so have it with
+you.
+\end{prereq}
+
+\begin{keyterms}
+cardinality ratio $\bullet$ one-to-one $\bullet$ one-to-many $\bullet$
+many-to-many $\bullet$ participation constraint $\bullet$ total participation
+$\bullet$ partial participation $\bullet$ existence dependency $\bullet$
+structural constraint $\bullet$ $(\min,\max)$ notation $\bullet$ weak entity
+type $\bullet$ strong entity type $\bullet$ owner entity $\bullet$ identifying
+relationship $\bullet$ partial key $\bullet$ discriminator $\bullet$
+crow's-foot notation
+\end{keyterms}
+
+\section{A Diagram Without Cardinalities Says Almost Nothing}
+
+The diagram from \chref{ermodel} says students enrol in sections. It does not
+say whether a student may take two sections of the same course, whether a
+section can run with nobody in it, or whether an instructor must be teaching
+something. Those are the facts an examinations officer actually argues about,
+and all three are cardinality or participation.
+
+The two constraints answer different questions and are routinely confused, so
+they are worth separating before either is defined.
+
+\begin{definitionbox}[Two different questions]
+The \term{cardinality ratio} answers \emph{how many}: given one entity on this
+side, how many on the other side may it be related to --- one, or more than
+one?
+
+\smallskip
+The \term{participation constraint} answers \emph{must it at all}: can an
+entity on this side exist without taking part in the relationship?
+
+\smallskip
+They are independent. Every combination occurs, and a relationship is not
+specified until both have been answered for \emph{both} ends --- four answers
+in all.
+\end{definitionbox}
+
+\section{Cardinality, by Asking Two Questions}
+
+\begin{definitionbox}[The three ratios]
+\term{One-to-one (1:1)}: each entity on either side relates to at most one on
+the other. A department has one head; a person heads at most one department.
+
+\smallskip
+\term{One-to-many (1:N)}: one entity on the ``one'' side relates to many on
+the ``many'' side, but each of those relates back to at most one. A department
+offers many courses; each course belongs to one department.
+
+\smallskip
+\term{Many-to-many (M:N)}: entities on both sides may relate to many. A student
+enrols in many sections; a section holds many students.
+\end{definitionbox}
+
+\begin{conceptbox}[The procedure, and it is only two questions]
+Never guess the ratio. Ask these, in this order, out loud, with a concrete
+entity in each:
+
+\begin{tight}
+  \item \textbf{``One \emph{student} --- how many \emph{sections}?''}
+        \quad One, or many?
+  \item \textbf{``One \emph{section} --- how many \emph{students}?''}
+        \quad One, or many?
+\end{tight}
+
+\smallskip
+Two answers, four combinations, three ratios:
+
+\medskip
+\begin{tabular}{@{}L{3.3cm}L{3.3cm}L{3.0cm}L{4.1cm}@{}}
+\textbf{Q1} & \textbf{Q2} & \textbf{Ratio} & \textbf{Example} \\
+one  & one  & 1:1 & department --- head \\
+many & one  & 1:N & department --- course \\
+one  & many & 1:N & \emph{the same, read backwards} \\
+many & many & M:N & student --- section \\
+\end{tabular}
+
+\smallskip
+\textbf{Rows 2 and 3 are the same relationship.} ``1:N'' is meaningless until
+you say which end is the one. Always write it as \ent{department}
+1---N \ent{course}, never as a bare ``1:N''.
+\end{conceptbox}
+
+\begin{examplebox}[The question that catches everybody]
+\emph{``A student enrols in many sections. A section has many students.
+Therefore M:N.''} --- correct. Now:
+
+\medskip
+\emph{``A student enrols in many \textbf{courses}. A course has many students.
+Therefore M:N.''} --- also correct, and \textbf{it is the wrong relationship}.
+
+\smallskip
+A student does not enrol in a course. They enrol in a \emph{section} of a
+course, in a particular semester, taught by a particular instructor, in a
+particular room. Model the relationship to \ent{course} and you can never
+record which section somebody attended, which instructor taught them, or that
+they failed in Fall and passed in Spring.
+
+\smallskip
+\textbf{The lesson is not about cardinality.} It is that a cardinality
+question asked about the wrong pair of entity types gives a confident,
+well-formed, useless answer. Settle what the entities are
+(\chref{ermodel}) before asking how many.
+\end{examplebox}
+
+\section{Participation: Must It Take Part at All?}
+
+\begin{definitionbox}[Total and partial participation]
+\term{Total participation} of an entity type in a relationship means
+\emph{every} entity of that type must take part. It is drawn as a double line
+and is also called an \term{existence dependency}: a section cannot exist
+without a course.
+
+\smallskip
+\term{Partial participation} means some entities may take part and others need
+not. A single line. A student may be enrolled in nothing --- newly admitted,
+on leave --- and is still a student.
+
+\smallskip
+Total participation is the stronger claim, and therefore the one to be
+sceptical about: it forbids something, and somebody will eventually need the
+thing it forbids.
+\end{definitionbox}
+
+\begin{alertbox}[Total participation is a promise about Tuesday afternoon]
+``Every section must be taught by an instructor'' sounds obviously true, and it
+is how timetables are published. Then:
+
+\begin{tight}
+  \item A section is created in June and the instructor is appointed in August.
+        For two months it has none.
+  \item An instructor resigns mid-semester. For a week the section has none.
+  \item A section is cancelled but its enrolment records must be kept.
+\end{tight}
+
+\smallskip
+If participation is total, the database \emph{forbids} all three, and the clerk
+who meets them invents a fake instructor called ``TBA'' --- which now appears
+in the staff list, the workload report and the payroll query. A constraint
+that gets worked around is worse than one that was never there, because the
+data now lies and nothing says so.
+
+\smallskip
+\textbf{The decision rule.} Make participation total when the entity is
+genuinely meaningless without the relationship --- a section without a course
+is not a thing at all. Make it partial when the relationship is merely
+\emph{usual}. ``Always'' and ``usually'' are different words and the database
+can tell.
+\end{alertbox}
+
+\begin{definitionbox}[$(\min,\max)$ notation]
+Chen's two constraints can be written as one pair on each side. Against each
+entity type's line, $(\min,\max)$ gives the smallest and largest number of
+relationship instances \emph{one entity of that type} may take part in.
+
+\smallskip
+$\min = 0$ is partial participation; $\min \ge 1$ is total. $\max = 1$ is the
+``one'' side; $\max = N$ is the ``many'' side.
+
+\smallskip
+\textbf{The notation is read against the entity it is nearest}, which is the
+opposite of where the 1 and N labels go in classic Chen notation. This single
+difference is responsible for most misread diagrams, and is why many
+examiners insist on one or the other but not both.
+\end{definitionbox}
+
+\begin{worked}[The university's four relationships, specified completely]
+Four answers each: ratio from both sides, participation from both sides.
+
+\medskip
+\textbf{1. \ent{department} offers \ent{course}}
+\begin{tight}
+  \item One department --- many courses. One course --- one department.
+        \textbf{1:N.}
+  \item Must every department offer a course? A new department may not yet.
+        \textbf{Partial} (0,N).
+  \item Must every course belong to a department? Yes; it is how it is
+        numbered. \textbf{Total} (1,1).
+\end{tight}
+$\Rightarrow$ \ent{department}~(0,N)~---~\ent{offers}~---~(1,1)~\ent{course}
+
+\medskip
+\textbf{2. \ent{instructor} teaches \ent{section}}
+\begin{tight}
+  \item One instructor --- many sections. One section --- one instructor
+        (this university's rule; some allow co-teaching, and then it is M:N).
+        \textbf{1:N.}
+  \item Must every instructor teach? On sabbatical, no. \textbf{Partial} (0,N).
+  \item Must every section have an instructor? See the alert box above:
+        \textbf{partial} (0,1), deliberately.
+\end{tight}
+
+\medskip
+\textbf{3. \ent{student} enrols in \ent{section}}
+\begin{tight}
+  \item Many each way. \textbf{M:N}, and it carries \texttt{grade}.
+  \item Must every student be enrolled in something? No. \textbf{Partial} (0,N).
+  \item Must every section have students? A section with nobody in it is
+        cancelled, not impossible. \textbf{Partial} (0,N).
+\end{tight}
+
+\medskip
+\textbf{4. \ent{course} requires \ent{course}} (recursive)
+\begin{tight}
+  \item A course may require several; a course may be required by several.
+        \textbf{M:N}, both ends partial (0,N) --- most courses have no
+        prerequisites and are a prerequisite for nothing.
+\end{tight}
+
+\medskip
+\textbf{What the four tell you.} Three of the four are partial on both ends.
+Beginners' diagrams are covered in double lines, because every relationship
+\emph{sounds} compulsory when you describe the normal case. The normal case is
+not the constraint.
+\end{worked}
+
+\section{Weak Entities}
+
+\begin{definitionbox}[Weak entity type, owner, identifying relationship, partial key]
+A \term{weak entity type} has no key of its own. Its entities are
+distinguishable only in combination with the entity that owns them.
+
+\smallskip
+The \term{owner} (or identifying) entity type is the strong one it depends on.
+The \term{identifying relationship} joins them, drawn as a double diamond, and
+the weak entity's participation in it is always \emph{total}.
+
+\smallskip
+The \term{partial key} (or \term{discriminator}) is the attribute that tells
+one weak entity from another \emph{belonging to the same owner}. It is
+underlined with a dashed line.
+
+\smallskip
+The full key of a weak entity is \textbf{the owner's primary key plus the
+partial key}.
+\end{definitionbox}
+
+\begin{examplebox}[\ent{section} is weak, and this is why]
+Sections are numbered 1, 2, 3 within a course. Section 1 of CS-103 and section
+1 of CS-201 are different sections with the same number.
+
+\begin{tight}
+  \item \texttt{section\_no} alone is not a key --- dozens of sections are
+        numbered 1.
+  \item \texttt{section\_no} \emph{within one course} is unique. That makes it
+        a \textbf{partial key}.
+  \item A section cannot exist without a course. \textbf{Total participation}
+        in the identifying relationship.
+  \item Its real key is $\{$\texttt{course\_code}, \texttt{semester},
+        \texttt{section\_no}$\}$ --- the owner's key, plus the semester,
+        plus the discriminator.
+\end{tight}
+
+\smallskip
+\relation{section}{\relkey{course\_code}, \relkey{semester},
+\relkey{section\_no}, room, slot, emp\_id}
+
+\smallskip
+\textbf{The alternative, and why it is not better.} You could give
+\ent{section} a surrogate \texttt{section\_id} and make it strong. Many real
+systems do, and \chref{mapping} shows the mechanics. It does not make the
+entity any less dependent --- it only hides the dependency from the key, and
+the uniqueness of (course, semester, number) must still be declared or the
+same section can be created twice.
+\end{examplebox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  ent/.style={draw=primary, line width=1.1pt, fill=primary!8,
+              text=primary!60!black, font=\scriptsize\bfseries,
+              minimum width=1.9cm, minimum height=0.68cm},
+  weak/.style={ent, draw=purplehl, fill=purplehl!8, text=purplehl!65!black,
+               double, double distance=1.2pt},
+  rel/.style={draw=greenhl, line width=0.9pt, fill=greenhl!8,
+              text=greenhl!55!black, font=\scriptsize\bfseries,
+              diamond, aspect=2.2, inner sep=0.5pt},
+  irel/.style={rel, draw=purplehl, fill=purplehl!8, text=purplehl!65!black,
+               double, double distance=1.2pt},
+  one/.style={draw=neutral!60, line width=0.7pt},
+  two/.style={draw=neutral!60, line width=0.7pt, double,
+              double distance=1.1pt},
+  mm/.style={font=\scriptsize\bfseries, text=accent, inner sep=1.2pt},
+  lbl/.style={font=\scriptsize, text=neutral}
+]
+  % Centres 3.2 apart on both rows. The first draft used 2.3 and the TEACHES
+  % diamond printed on top of the INSTRUCTOR box -- a diamond of aspect 2.2 is
+  % wider than it looks, and three of the (min,max) labels landed on boxes for
+  % the same reason. The labels now sit at pos=0.22, which also puts each one
+  % nearest the entity it is read against, as the definition requires.
+  \node[ent]  (dep) at (-7.6, 1.7) {DEPARTMENT};
+  \node[rel]  (off) at (-3.8, 1.7) {OFFERS};
+  \node[ent]  (crs) at ( 0.0, 1.7) {COURSE};
+  \node[rel]  (req) at ( 0.0, 3.9) {REQUIRES};
+  \node[irel] (has) at ( 0.0, 0.0) {HAS};
+  \node[weak] (sec) at ( 0.0,-1.9) {SECTION};
+  \node[ent]  (stu) at (-7.6,-1.9) {STUDENT};
+  \node[rel]  (enr) at (-3.8,-1.9) {ENROLS};
+  \node[rel]  (tch) at ( 3.8,-1.9) {TEACHES};
+  \node[ent]  (ins) at ( 7.6,-1.9) {INSTRUCTOR};
+
+  \draw[one] (dep) -- node[mm, above=1pt, pos=0.35] {(0,N)} (off);
+  \draw[two] (off) -- node[mm, above=1pt, pos=0.65] {(1,1)} (crs);
+  \draw[one] (crs) -- node[mm, right=1pt, pos=0.3] {(0,N)} (has);
+  \draw[two] (has) -- node[mm, right=1pt, pos=0.7] {(1,1)} (sec);
+  \draw[one] (stu) -- node[mm, above=1pt, pos=0.35] {(0,N)} (enr);
+  \draw[one] (enr) -- node[mm, above=1pt, pos=0.65] {(0,N)} (sec);
+  \draw[one] (sec) -- node[mm, above=1pt, pos=0.35] {(0,1)} (tch);
+  \draw[one] (tch) -- node[mm, above=1pt, pos=0.65] {(0,N)} (ins);
+
+  % The recursive relationship, as a loop above COURSE so that both of its
+  % ends are visible and can carry role names. Drawn flat on the right of the
+  % course box it read as a line passing over the top to nothing.
+  \draw[one] (crs.north west) .. controls (-1.9,2.6) and (-1.9,3.9)
+             .. (req.west);
+  \draw[one] (crs.north east) .. controls ( 1.9,2.6) and ( 1.9,3.9)
+             .. (req.east);
+  \node[lbl, anchor=east, font=\scriptsize\itshape] at (-1.25,3.15)
+       {is prerequisite for};
+  \node[lbl, anchor=west, font=\scriptsize\itshape] at ( 1.25,3.15)
+       {depends on};
+  \node[mm, anchor=south east] at (-0.35,2.15) {(0,N)};
+  \node[mm, anchor=south west] at ( 0.35,2.15) {(0,N)};
+
+  \node[lbl, text=purplehl!70!black, text width=4.2cm, align=left,
+        anchor=west] at (0.95,0.0)
+       {double diamond and double line: identifying, and always total};
+  \node[lbl, text=purplehl!70!black, anchor=north, text width=3.4cm,
+        align=center] at (0.0,-2.45)
+       {weak: no key of its own};
+  % No explicit \\ here. An align=right node whose forced line does not fill
+  % its text width is reported as an underfull hbox, twice, once per line.
+  % Letting it wrap on its own costs nothing and the gate stays clean.
+  \node[lbl, text=accent, anchor=east, align=right, text width=3.8cm]
+       at (-4.6,0.3) {$(\min,\max)$ is read against the entity it touches};
+\end{tikzpicture}}%
+{The university database, fully constrained. Only two lines in the whole
+diagram are double --- a course must belong to a department and a section must
+belong to a course. Everything else is partial, which is the usual
+proportion.}{ercomplete}
+
+\begin{conceptbox}[Chen or crow's foot? Both, and here is the translation]
+Textbooks and examination papers use Chen. Every tool you will meet at work
+uses crow's foot, because it fits on a screen. They say the same things.
+
+\medskip
+\begin{tabular}{@{}L{4.4cm}L{4.6cm}L{4.7cm}@{}}
+\textbf{Meaning} & \textbf{Chen} & \textbf{Crow's foot} \\
+relationship & a diamond between boxes & a line between boxes \\
+``many'' end & N on the line & the three-pronged foot \\
+``one'' end & 1 on the line & a single cross-stroke \\
+total participation & double line & a cross-stroke nearest the box \\
+partial participation & single line & a circle nearest the box \\
+attributes & ellipses around the box & listed inside the box \\
+weak entity & double rectangle & usually not distinguished \\
+M:N relationship & one diamond & \textbf{cannot be drawn} --- it is
+resolved into two 1:N at once \\
+\end{tabular}
+
+\smallskip
+\textbf{The last row is the real difference.} Crow's-foot notation has no way
+to draw a many-to-many relationship, so a tool forces you to resolve it into a
+third box before you have decided to. Chen lets you keep the design honest
+until \chref{mapping}, where the resolution is a rule with a reason rather
+than something the drawing program did to you.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Writing ``1:N'' without saying which end is the one.} The
+        label alone is ambiguous; name the entity types.
+  \item \textbf{Confusing cardinality with participation.} ``Every section has
+        one instructor'' states both --- one is the ratio, every is the
+        participation --- and people hear only the first.
+  \item \textbf{Double lines everywhere.} Every relationship sounds compulsory
+        when the normal case is described. Three of this database's four are
+        partial on both ends.
+  \item \textbf{Reading $(\min,\max)$ against the far entity.} It is read
+        against the entity it touches, which is the opposite of the 1/N labels.
+  \item \textbf{Asking the cardinality of the wrong pair.} Student-to-course is
+        M:N and is the wrong relationship; student-to-section is the right one.
+  \item \textbf{Giving a weak entity a surrogate key and calling it strong.}
+        The dependency does not go away; it just stops being visible, and the
+        uniqueness of the real key must still be declared.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Constrain your diagram, then try to break it]
+Take the diagram from \chref{ermodel}'s laboratory. Still no database.
+
+\begin{lstlisting}
+# --- 1. Four answers per relationship -------------------------------
+    For EVERY relationship, write all four:
+        one <A> -- how many <B>?        one <B> -- how many <A>?
+        must every <A> take part?       must every <B> take part?
+    Four answers. Not three.
+
+# --- 2. Mark the ratio ----------------------------------------------
+    1:1, 1:N or M:N, naming the entity types -- not a bare "1:N".
+
+# --- 3. Mark participation ------------------------------------------
+    Double line for total, single for partial.
+
+# --- 4. Rewrite it in (min,max) -------------------------------------
+    Every line gets a pair at each end. Check each against step 1;
+    they must agree, and if they do not, step 1 was guessed.
+
+# --- 5. Find the weak entity ----------------------------------------
+    There is at least one. Name its owner, its identifying
+    relationship, its partial key and its full key.
+
+# --- 6. Attack every double line ------------------------------------
+    For EACH total participation, invent a real Tuesday on which the
+    university needs to break it. If you can, make it partial.
+    Write the Tuesday down next to the line; it is the evidence.
+
+# --- 7. Attack every "one" ------------------------------------------
+    For each 1 end, ask what happens if the university someday allows
+    two. Co-teaching. Joint degrees. Two heads of department.
+    Which of these would cost a schema change, and which would not?
+
+# --- 8. Read it back ------------------------------------------------
+    Turn the finished diagram into ten English sentences, one per
+    constraint. Give them to the person who has the paragraph from
+    Chapter 5's lab. Every disagreement is a decision you had not
+    actually made.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Steps 6 and 7 usually remove more constraints than
+they confirm, and that is the expected result rather than a sign you did it
+wrong. A design is not improved by forbidding more; it is improved by
+forbidding exactly what the university actually forbids.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A relationship is drawn with a double line at the \ent{section} end
+        of \ent{teaches}. State in one sentence what the database will
+        refuse to do, and give a realistic situation in which somebody needs it
+        to do exactly that.
+  \item \ent{enrolment} has $(0,N)$ at the \ent{student} end and $(0,N)$
+        at the \ent{section} end. Rewrite this as a cardinality ratio plus
+        two participation constraints, and say what would change if the
+        \ent{section} end became $(1,N)$.
+  \item Explain why \ent{section} is a weak entity type, name its partial
+        key and its full key, and then say what you would have to declare
+        instead if you chose to give it a surrogate \texttt{section\_id} ---
+        and what breaks if you forget.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A relationship needs \textbf{four} answers: the ratio from each side
+        and the participation from each side. Fewer than four is an
+        unspecified relationship.
+  \item The \textbf{cardinality ratio} is found by two questions --- ``one A,
+        how many B?'' and ``one B, how many A?'' --- giving 1:1, 1:N or M:N.
+        Always name which end is the one.
+  \item \textbf{Total participation} (double line) means every entity must take
+        part; \textbf{partial} means it need not. Total is the stronger claim
+        and deserves the scepticism.
+  \item A constraint that gets worked around is worse than no constraint: the
+        data then contains a fake row and nothing marks it as fake.
+  \item $(\min,\max)$ carries both facts at once: $\min=0$ is partial,
+        $\min\ge 1$ is total, $\max=1$ is the one side. \textbf{It is read
+        against the entity it touches}, unlike the 1/N labels.
+  \item A \textbf{weak entity type} has no key of its own. It has an
+        \textbf{owner}, an \textbf{identifying relationship} (double diamond,
+        always total) and a \textbf{partial key}; its full key is the owner's
+        key plus the partial key.
+  \item \ent{section} is weak: section 1 exists in every course, and only
+        (course, semester, number) identifies one.
+  \item Crow's-foot notation says the same things more compactly but
+        \textbf{cannot draw an M:N relationship}, so a tool resolves it for you
+        before you have decided to.
+  \item Asking a cardinality question about the wrong pair of entity types
+        gives a confident and useless answer. Student-to-\emph{course} is the
+        classic case.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A double line between an entity type and a relationship
+        means: (a)~many-to-many; (b)~total participation; (c)~a weak entity;
+        (d)~an identifying relationship.
+  \item \textbf{(MCQ)} In $(\min,\max)$ notation, $(1,1)$ against
+        \ent{course} on the \ent{offers} line means: (a)~a department
+        offers exactly one course; (b)~a course belongs to exactly one
+        department; (c)~there is one department; (d)~the relationship is 1:1.
+  \item \textbf{(Short)} Give an example of a 1:1 relationship in a university
+        and say which end you would make total, with a reason.
+  \item \textbf{(Short)} Why is the participation of a weak entity type in its
+        identifying relationship always total? Answer from the definition of a
+        weak entity.
+  \item \textbf{(Short)} A tool that draws crow's-foot diagrams will not let
+        you record a many-to-many relationship. What does it make you do
+        instead, and what is lost by doing it at that moment rather than in
+        \chref{mapping}?
+  \item \textbf{(Applied)} A hospital records patients, doctors, appointments
+        and prescriptions. Give all four answers for every relationship you
+        identify, state which entity types are weak and why, and defend each
+        total participation with a specific situation that would break it if
+        you were wrong.
+  \item \textbf{(Applied)} Your university decides to allow co-teaching: two
+        instructors may share a section. State exactly which constraint in
+        Figure~\ref{fig:ercomplete} changes, what the relationship becomes,
+        what new attributes it may now need, and --- looking ahead to
+        \chref{mapping} --- why this change is cheap on paper and expensive
+        once the database is full.
+\end{reviewq}

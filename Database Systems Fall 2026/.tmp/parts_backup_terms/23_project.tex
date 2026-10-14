@@ -1,0 +1,477 @@
+%=====================================================================
+\chapter{Security, NoSQL, and the Semester Project}\label{ch:project}
+%=====================================================================
+\locator{6}{Part VI --- Making It Work, and What Comes Next}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Explain} SQL injection, \textbf{demonstrate} it against your
+        own database, and \textbf{prevent} it with parameters.
+  \item \textbf{Write} the \sqlkw{GRANT} and \sqlkw{REVOKE} statements a server
+        would need for the university's external schemas, and \textbf{say} what
+        SQLite offers instead.
+  \item \textbf{Describe} the four families of NoSQL database and
+        \textbf{state} what each gives up to get what it offers.
+  \item \textbf{Store and query} a document inside SQLite using its JSON
+        functions, and \textbf{compare} it with the relational form.
+  \item \textbf{Decide} whether a given system needs a server DBMS, using the
+        limits measured in this course.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+Appendix~A, section A.6 --- \textbf{the scope statement, which governs this
+chapter's laboratory}. \chref{whodoeswhat} for the authorisation manager SQLite
+lacks; \chref{views} for external schemas; \chref{transactions} for the
+one-writer limit. The finished \texttt{university.db}.
+\end{prereq}
+
+\begin{keyterms}
+SQL injection $\bullet$ parameterised query $\bullet$ placeholder $\bullet$
+least privilege $\bullet$ \sqlkw{GRANT} $\bullet$ \sqlkw{REVOKE} $\bullet$
+role $\bullet$ encryption at rest $\bullet$ NoSQL $\bullet$ key--value store
+$\bullet$ document store $\bullet$ wide-column store $\bullet$ graph database
+$\bullet$ schema-on-read $\bullet$ horizontal scaling $\bullet$ eventual
+consistency $\bullet$ CAP $\bullet$ JSON
+\end{keyterms}
+
+\section{Security: the Component SQLite Does Not Have}
+
+\chref{whodoeswhat} drew six components and said SQLite was missing one: the
+authorisation manager. HEC's 2017 and 2023 outlines do not mention security at
+all; HEC 2025's fifth learning outcome requires it, which is why it is here.
+It has two halves --- keeping out people who should not be in, and making sure
+that people who \emph{are} in cannot make the database do something it should
+not --- and SQLite can help with only the second.
+
+\begin{alertbox}[Scope --- this governs the laboratory below]
+Everything in this chapter runs against \textbf{a database file you created,
+on a machine you own}: your \texttt{university.db}, with invented data, which
+you can delete. \textbf{Running any of it against a system you do not own and
+have not been authorised in writing to test is a criminal offence in Pakistan}
+under the \textbf{Prevention of Electronic Crimes Act 2016}, sections~3 and~4.
+The purpose of the demonstration is that you never write the vulnerable code,
+not that you can find it in somebody else's.
+\end{alertbox}
+
+\begin{definitionbox}[SQL injection]
+\term{SQL injection} happens when a program builds a SQL statement by pasting
+in text that a user supplied. If the text contains SQL, the database runs it
+--- as part of the statement the programmer wrote, with the programmer's
+permissions.
+
+\smallskip
+A \term{parameterised query} sends the statement and the values separately.
+The statement has \term{placeholders} (\texttt{?}); the values are bound to
+them afterwards and are \emph{never} parsed as SQL, whatever they contain.
+\end{definitionbox}
+
+\begin{worked}[One login check, built two ways]
+A student portal checks a roll number before showing marks.
+
+\medskip
+\textbf{The vulnerable version} --- text pasted into SQL:
+\begin{lstlisting}[language=python]
+roll = input("Roll number: ")
+sql = f"SELECT name FROM student WHERE roll_no = '{roll}'"
+rows = cx.execute(sql).fetchall()
+\end{lstlisting}
+
+\textbf{Step 1 --- an ordinary input.} The roll number \texttt{2023-IT-00003}
+produces the statement
+\begin{lstlisting}[language=sql]
+SELECT name FROM student WHERE roll_no = '2023-IT-00003'
+\end{lstlisting}
+and one row comes back. Correct.
+
+\medskip
+\textbf{Step 2 --- an input that is SQL.} \texttt{x' OR '1'='1} gives
+\begin{lstlisting}[language=sql]
+SELECT name FROM student WHERE roll_no = 'x' OR '1'='1'
+\end{lstlisting}
+The quote in the input closed the string the programmer opened; \texttt{OR
+'1'='1'} is true for every row. On the seeded database it returns \textbf{all
+4{,}000 students}.
+
+\medskip
+\textbf{Step 3 --- the parameterised version.}
+\begin{lstlisting}[language=python]
+rows = cx.execute("SELECT name FROM student WHERE roll_no = ?",
+                  (roll,)).fetchall()
+\end{lstlisting}
+The same input now looks for a student whose roll number is, literally,
+\texttt{x' OR '1'='1}. There is none: \textbf{0 rows}. The quote is a character
+in a value, not the end of a string, because the value was never parsed.
+
+\medskip
+\textbf{The rule.} Never build SQL from input with \texttt{+}, \texttt{\%} or
+an f-string. Every value goes through a placeholder. There is no escaping
+function that is as safe, and no input validation that replaces it.
+\end{worked}
+
+\begin{examplebox}[The external schemas of Chapter 2, as a server would enforce them]
+SQLite cannot run any of this. It is written out because it is what the
+external level of \chref{architecture} \emph{means} once a database has users:
+
+\begin{lstlisting}[language=sql]
+CREATE ROLE fees_office;
+CREATE ROLE exams_office;
+CREATE ROLE portal;
+
+GRANT SELECT ON fees_view TO fees_office;          -- names and rolls only
+GRANT SELECT, UPDATE (grade) ON enrolment TO exams_office;
+GRANT SELECT ON transcript TO portal;              -- a view, never a table
+
+REVOKE ALL ON student FROM portal;                 -- least privilege
+\end{lstlisting}
+
+\smallskip
+\term{Least privilege}: each user gets exactly what its job needs and no more.
+Then even a successful SQL injection through the portal can only read what
+\texttt{portal} may read --- the damage is bounded by the grant, not by the
+programmer's care.
+
+\smallskip
+\textbf{What SQLite offers instead} is the operating system: whoever can read
+the file can read all of it. File permissions, an encrypted disk, or an
+encrypted SQLite build (SQLCipher) protect the file; nothing protects one
+table from another.
+\end{examplebox}
+
+\section{NoSQL: What It Gives Up to Get What It Offers}
+
+\begin{definitionbox}[Four families]
+\term{NoSQL} names databases that do not use the relational model. The four
+common families:
+
+\smallskip
+\begin{tabular}{@{}L{3.0cm}L{4.6cm}L{6.2cm}@{}}
+\textbf{Family} & \textbf{Stores} & \textbf{Good at} \\
+key--value & a value per key, opaque & caching, sessions: get and put by key \\
+document & a nested document (JSON) per key & records read whole, with
+  varying shape \\
+wide-column & rows with many sparse columns & huge write volumes across many
+  machines \\
+graph & nodes and edges & paths: friends of friends, prerequisites of
+  prerequisites \\
+\end{tabular}
+
+\smallskip
+What they usually give up, to different degrees: \textbf{joins},
+\textbf{a declared schema} (the data's shape is checked when read, not when
+written --- \term{schema-on-read}), and \textbf{multi-record ACID
+transactions}. What they gain is the ability to spread one database across
+many machines (\term{horizontal scaling}).
+\end{definitionbox}
+
+\begin{worked}[One student's record as a document, inside SQLite]
+SQLite has JSON functions, so a document store can be shown without
+installing one.
+
+\medskip
+\textbf{Step 1 --- build the document.} One student, with their enrolments
+nested inside:
+\begin{lstlisting}[language=sql]
+CREATE TABLE student_doc (roll_no TEXT PRIMARY KEY, doc TEXT NOT NULL);
+INSERT INTO student_doc
+SELECT s.roll_no,
+       json_object('name', s.name, 'programme', s.programme,
+         'enrolments', (SELECT json_group_array(
+             json_object('course', e.course_code, 'term', e.semester,
+                         'grade', e.grade))
+            FROM enrolment e WHERE e.roll_no = s.roll_no))
+  FROM student s;
+\end{lstlisting}
+
+\textbf{Step 2 --- what it is good at.} One student's whole record is one row,
+read in one lookup, with no join:
+\begin{lstlisting}[language=sql]
+SELECT doc FROM student_doc WHERE roll_no = '2023-IT-00003';
+\end{lstlisting}
+
+\textbf{Step 3 --- what it is bad at.} ``How many A grades were given in
+CS-101?'' was one \sqlkw{GROUP BY} in \chref{grouping}. Now every document must
+be opened and unpacked:
+\begin{lstlisting}[language=sql]
+SELECT COUNT(*) FROM student_doc, json_each(doc, '$.enrolments') j
+ WHERE json_extract(j.value, '$.course') = 'CS-101'
+   AND json_extract(j.value, '$.grade')  = 'A';
+\end{lstlisting}
+On the seeded database both forms find \textbf{161}. The relational query took
+9.8\,ms; the document form took \textbf{78.4\,ms}, eight times as long, because
+it parsed every one of 4{,}000 documents to look inside each.
+
+\textbf{Step 4 --- what it has given up.} Nothing stops a document with
+\texttt{"grade": "Z"}, or \texttt{"grde"}, or a course that does not exist ---
+\chref{constraints}'s three model-based constraints are gone, and a course's
+title, if stored, is copied into every document that mentions it:
+\chref{normalforms}'s update anomaly, by design.
+
+\medskip
+\textbf{The lesson.} A document store is the right model when records are read
+and written \emph{whole} and rarely questioned \emph{across}. A university's
+results are the opposite --- nearly every question in Part~IV crosses students
+--- which is why this course is relational. That is a decision about the
+\emph{questions}, not about which technology is newer.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[
+  tb/.style={rounded corners=2pt, draw=#1, line width=0.9pt, fill=#1!7,
+             text=#1!60!black, font=\scriptsize\ttfamily, align=left,
+             inner sep=3pt},
+  ttl/.style={font=\scriptsize\bfseries, text=#1, anchor=south},
+  lk/.style={-{Stealth[length=2mm]}, neutral!60, line width=0.7pt},
+  nt/.style={font=\scriptsize\itshape, text=#1, align=center}
+]
+  \node[ttl=primary] at (-4.0,2.2) {relational: the fact lives once};
+  \node[tb=primary] (s) at (-5.3,1.3) {student\\2023-IT-00003\\Ayesha Q.};
+  \node[tb=accent]  (e) at (-2.7,1.3) {enrolment\\00003 CS-101 A\\00003 MA-150 B\\\dots};
+  \node[tb=greenhl] (c) at (-4.0,-0.35) {course\\CS-101 \ PH Course 1\\MA-150 \ \dots};
+  \draw[lk] (e.west) -- (s.east);
+  \draw[lk] (e.south) -- (c.north east);
+  \node[nt=primary, text width=5.2cm] at (-4.0,-1.45)
+       {``A grades in CS-101'': one index search on one table. 9.8\,ms};
+
+  \node[ttl=purplehl] at (3.6,2.2) {document: the student lives once};
+  \node[tb=purplehl, text width=5.4cm] (d) at (3.6,0.75)
+       {\textbraceleft{} "name": "Ayesha Q.",\\
+        \ \ "enrolments": [\\
+        \ \ \ \ \textbraceleft"course":"CS-101","grade":"A"\textbraceright,\\
+        \ \ \ \ \textbraceleft"course":"MA-150","grade":"B"\textbraceright,
+        \dots ] \textbraceright};
+  \node[nt=purplehl, text width=5.6cm] at (3.6,-0.85)
+       {one lookup returns the whole record ---\\
+        but ``A grades in CS-101'' opens all 4{,}000. 78.4\,ms};
+  \node[nt=accent, text width=5.6cm] at (3.6,-1.6)
+       {and nothing stops \texttt{"grde": "Z"}};
+\end{tikzpicture}}%
+{One student, held two ways. The relational form stores each fact once and
+answers questions across students with a search; the document form stores each
+student once and answers questions about one student in a single read. Which
+is right depends on which kind of question the system is asked.}{docrel}
+
+\begin{conceptbox}[When to leave SQLite --- using what this course measured]
+\begin{tabular}{@{}L{4.4cm}L{4.4cm}L{5.0cm}@{}}
+\textbf{Limit} & \textbf{Measured in} & \textbf{Move to a server when} \\
+one writer at a time & \chref{transactions} & many users write at the same
+  moment, all day \\
+no users or privileges & \chref{whodoeswhat}, this chapter & different people
+  must see different parts \\
+on one machine & \chref{firstdatabase} & the data must be reached over a
+  network by many programs \\
+optimiser without STAT4 & \chref{indexes} & large, skewed tables where plan
+  choice matters \\
+\end{tabular}
+
+\smallskip
+And stay with it when none of those apply: SQLite is the most widely deployed
+database in the world --- in every phone, every browser --- precisely because
+for one program and one file it has nothing to administer. \chref{firstdatabase}
+counted that as zero installation steps, zero ports and zero accounts; this
+table is the other side of the same trade.
+\end{conceptbox}
+
+\section{The Semester Project}
+
+\begin{definitionbox}[What you submit]
+The project is the \texttt{university.db} you have built since
+\chref{firstdatabase}, finished. Submit one folder containing:
+
+\begin{tightnum}
+  \item \texttt{design.pdf} --- your ER diagram with every cardinality and
+        participation constraint (\chref{cardinality}), and the dependencies
+        of every table (\chref{fds}).
+  \item \texttt{v1\_create.sql}, \texttt{v2\_constraints.sql} and
+        \texttt{v3\_final.sql} --- the schema and each migration
+        (\chref{evolution}), each runnable from an empty file.
+  \item \texttt{queries.sql} --- twelve queries answering the questions on
+        the next page, each preceded by a comment stating the question.
+  \item \texttt{triggers.sql} --- the six-section rule for \sqlkw{INSERT}
+        \emph{and} \sqlkw{UPDATE} (\chref{views}), and an audit trigger.
+  \item \texttt{report.pdf} --- six pages: three decisions you made and the
+        evidence for each, including at least one measurement of your own.
+  \item \texttt{university.db} itself, after \texttt{PRAGMA
+        integrity\_check} and \texttt{PRAGMA foreign\_key\_check} both pass.
+\end{tightnum}
+\end{definitionbox}
+
+\begin{examplebox}[The twelve questions]
+\begin{tightnum}
+  \item Every student's transcript, with course titles and credit hours.
+  \item Each student's grade-point average over graded courses only.
+  \item The top three students in each programme, ties included.
+  \item Sections with no instructor --- the 73 of \chref{joins}.
+  \item Instructors teaching nothing, written with \sqlkw{NOT EXISTS}.
+  \item Students who have never received an A.
+  \item Every prerequisite of a course, to any depth.
+  \item Students enrolled in a course without having passed its direct
+        prerequisites.
+  \item Enrolments and average credit hours per department.
+  \item Each course's pass rate, ungraded enrolments excluded and counted.
+  \item A running total of credit hours per student, in correct term order.
+  \item One question of your own that needs a window function.
+\end{tightnum}
+
+\smallskip
+For each one, \texttt{queries.sql} must also contain its
+\sqlkw{EXPLAIN QUERY PLAN}, and your report must name any query whose plan you
+changed with an index, with both timings.
+\end{examplebox}
+
+\begin{conceptbox}[How it is marked]
+\begin{tabular}{@{}L{6.0cm}R{1.6cm}L{6.2cm}@{}}
+\textbf{Component} & \textbf{\%} & \textbf{What earns the marks} \\
+design: ER diagram and dependencies & 20 & every constraint argued, not just
+  drawn \\
+schema and migrations & 20 & runs from empty; every constraint enforced,
+  checked \\
+the twelve queries & 30 & correct with nulls; \sqlkw{NOT IN} on a nullable
+  column scores 0 \\
+triggers & 10 & every event that can break the rule is covered \\
+report and measurement & 20 & claims backed by numbers you produced \\
+\end{tabular}
+
+\smallskip
+A query that returns the right answer on the seeded data and the wrong one when
+a null appears is wrong. Test every one of them with a null.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Building SQL from input.} Parameters, always.
+  \item \textbf{Escaping instead of parameterising.} Escaping is a list of
+        characters somebody remembered; a parameter is never parsed.
+  \item \textbf{Treating a view as access control in SQLite.} No users, so no
+        restriction.
+  \item \textbf{Choosing NoSQL because it is newer.} Choose by the questions:
+        across records, relational; whole records, document.
+  \item \textbf{Submitting a schema that only runs on your machine.} Run every
+        script from an empty file before handing in.
+  \item \textbf{Testing queries only on data without nulls.} The FALL2026
+        grades are null for a reason.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Inject your own database, then make it impossible]
+Read Appendix~A, section A.6, first. Every step uses \texttt{university.db}
+on your own machine.
+
+\begin{lstlisting}[language=bash]
+# --- 1. The seeded database, which you can delete -------------------
+python code/schema/seed.py university.db
+\end{lstlisting}
+\begin{lstlisting}[language=python]
+# --- 2. The vulnerable query, in a file called inject.py ------------
+import sqlite3
+cx = sqlite3.connect("university.db")
+for roll in ["2023-IT-00003", "x' OR '1'='1"]:
+    sql = f"SELECT COUNT(*) FROM student WHERE roll_no = '{roll}'"
+    print(repr(roll), "->", cx.execute(sql).fetchone()[0], "rows")
+
+# --- 3. The same two inputs, parameterised --------------------------
+for roll in ["2023-IT-00003", "x' OR '1'='1"]:
+    n = cx.execute("SELECT COUNT(*) FROM student WHERE roll_no = ?",
+                   (roll,)).fetchone()[0]
+    print(repr(roll), "->", n, "rows (parameterised)")
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 4. A document, and a question it is bad at -----------------
+.open university.db
+CREATE TABLE student_doc (roll_no TEXT PRIMARY KEY, doc TEXT NOT NULL);
+-- Type in Step 1 of the worked example, then:
+SELECT json_extract(doc, '$.name'),
+       json_array_length(doc, '$.enrolments')
+  FROM student_doc LIMIT 3;
+
+-- --- 5. Compare one cross-record question both ways --------------
+.timer on
+SELECT COUNT(*) FROM enrolment
+ WHERE course_code = 'CS-101' AND grade = 'A';
+SELECT COUNT(*) FROM student_doc, json_each(doc, '$.enrolments') j
+ WHERE json_extract(j.value, '$.course') = 'CS-101'
+   AND json_extract(j.value, '$.grade') = 'A';
+-- Same count? Record both timings.
+
+-- --- 6. Put in a document no relational table would accept --------
+INSERT INTO student_doc VALUES ('X-1',
+  '{"name":"Nobody","enrolments":[{"course":"NONE","grde":"Z"}]}');
+-- Accepted. List the constraints from Chapter 8 it breaks.
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 7. Run your project's checks before submitting ------------------
+sqlite3 university.db "PRAGMA integrity_check; PRAGMA foreign_key_check;"
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 2's second line and step 3's second line are the
+same input, giving 4{,}000 rows and 0. Nothing about the input changed; only
+whether it was ever parsed as SQL. And step 6 is the other half of the
+chapter: a model that accepts anything checks nothing.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Explain exactly why \texttt{x' OR '1'='1} returned every student when
+        pasted into the query and none when bound as a parameter, naming the
+        character that made the difference and what happened to it in each
+        case.
+  \item Write the \sqlkw{GRANT} statements giving the examinations office
+        permission to read every enrolment and change only grades, and say
+        what SQLite would let that office do with the same file.
+  \item For the question ``all of one student's grades'' and the question
+        ``the number of A grades in CS-101'', say which model --- relational or
+        document --- answers each more naturally, and why.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item \textbf{SQL injection}: text pasted into SQL is parsed as SQL.
+        \texttt{x' OR '1'='1} returned \textbf{4{,}000 students} pasted and
+        \textbf{0} as a parameter.
+  \item A \textbf{parameterised query} sends values separately; they are never
+        parsed. There is no escaping function as safe.
+  \item A server enforces external schemas with roles, \sqlkw{GRANT} and
+        \sqlkw{REVOKE}, and \textbf{least privilege} bounds the damage of any
+        flaw. SQLite has no users: the file's permissions are the only
+        control.
+  \item \textbf{NoSQL} families --- key--value, document, wide-column, graph
+        --- usually give up joins, a declared schema and multi-record ACID to
+        gain horizontal scaling.
+  \item A document is read whole in one lookup and questioned across records
+        only by unpacking every one; it accepts any shape, so none of
+        \chref{constraints}'s constraints hold.
+  \item Choose the model by the questions. A university's questions cross
+        records, which is why this course is relational.
+  \item Leave SQLite when the measured limits bite: many simultaneous writers,
+        per-user access, network access, large skewed tables. Otherwise stay.
+  \item The project is the \texttt{university.db} built all term, with its
+        design, migrations, twelve queries, triggers and a report backed by
+        your own measurements.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A parameterised query prevents SQL injection because
+        the value is: (a)~escaped; (b)~validated; (c)~never parsed as SQL;
+        (d)~encrypted.
+  \item \textbf{(MCQ)} Which NoSQL family suits ``friends of friends''?
+        (a)~key--value; (b)~document; (c)~wide-column; (d)~graph.
+  \item \textbf{(Short)} State the principle of least privilege and say how it
+        limits the damage of an injection that does succeed.
+  \item \textbf{(Short)} What does ``schema-on-read'' mean, and what does a
+        document store therefore not check on write?
+  \item \textbf{(Short)} Give two limits measured in this course that would
+        justify moving the university's database to a server.
+  \item \textbf{(Applied)} Rewrite a program of your own from the term that
+        builds any SQL with string formatting so that every value is a
+        parameter. Show one input that changed the old version's behaviour
+        and does not change the new one's.
+  \item \textbf{(Applied)} A startup proposes storing the university's
+        records as one JSON document per student ``because it is simpler''.
+        Using this chapter's worked example and the twelve project questions,
+        say which questions become harder and why, what integrity is lost, and
+        under what changed requirements the startup would be right.
+\end{reviewq}

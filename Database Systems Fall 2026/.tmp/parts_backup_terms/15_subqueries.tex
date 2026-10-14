@@ -1,0 +1,453 @@
+%=====================================================================
+\chapter{Sub-queries, \texorpdfstring{\sqlkw{EXISTS}}{EXISTS} and Set Operations}\label{ch:subqueries}
+%=====================================================================
+\locator{4}{Part IV --- Asking Questions}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Write} a sub-query in the \sqlkw{WHERE}, \sqlkw{FROM} and
+        \sqlkw{SELECT} clauses, and \textbf{say} what each one must return.
+  \item \textbf{Distinguish} a correlated from an uncorrelated sub-query by
+        reading it.
+  \item \textbf{Write} a semi-join and an anti-join in several forms, and
+        \textbf{choose} one that is correct whatever the nulls.
+  \item \textbf{Explain} what makes a correlated sub-query expensive, and
+        \textbf{show} that it is not the correlation.
+  \item \textbf{Use} a common table expression to give a sub-query a name.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{select}, and especially its \sqlkw{NOT IN} alert --- this chapter
+measures the four alternatives. \chref{joins} for the anti-join idiom. You
+need \texttt{code/m15\_subqueries.py}.
+\end{prereq}
+
+\begin{keyterms}
+sub-query $\bullet$ nested query $\bullet$ scalar sub-query $\bullet$
+correlated sub-query $\bullet$ uncorrelated sub-query $\bullet$ semi-join
+$\bullet$ anti-join $\bullet$ \sqlkw{IN} $\bullet$ \sqlkw{EXISTS} $\bullet$
+\sqlkw{ANY} $\bullet$ \sqlkw{ALL} $\bullet$ derived table $\bullet$ common
+table expression $\bullet$ \sqlkw{WITH} $\bullet$ \sqlkw{UNION} $\bullet$
+\sqlkw{UNION ALL} $\bullet$ \sqlkw{INTERSECT} $\bullet$ \sqlkw{EXCEPT}
+\end{keyterms}
+
+\section{A Query Inside a Query}
+
+\chref{algebra}'s closure property --- every result is a relation --- is what
+makes this chapter possible. A \sqlkw{SELECT} produces a relation, so a
+\sqlkw{SELECT} can appear wherever a relation, a list or a single value is
+expected.
+
+\begin{definitionbox}[Three places a sub-query can go]
+\textbf{In \sqlkw{WHERE}}, after \sqlkw{IN} or \sqlkw{EXISTS}: it supplies a
+list of values, or the fact that some row exists.
+
+\smallskip
+\textbf{In \sqlkw{FROM}}: it supplies a whole relation, called a
+\term{derived table}, which must be given an alias.
+
+\smallskip
+\textbf{In the \sqlkw{SELECT} list}, or in a comparison: it must be a
+\term{scalar sub-query}, returning exactly one column and at most one row. If
+it returns no rows its value is null; if it returns two, SQLite silently uses
+the first --- other systems raise an error.
+\end{definitionbox}
+
+\begin{definitionbox}[Correlated and uncorrelated]
+An \term{uncorrelated} sub-query mentions only its own tables. It could be run
+on its own, and in principle it is run once.
+
+\smallskip
+A \term{correlated} sub-query mentions a column of the \emph{outer} query, so
+its answer depends on which outer row is being considered. In principle it is
+run once per outer row.
+
+\begin{lstlisting}[language=sql]
+-- uncorrelated: the inner query stands alone
+WHERE roll_no IN (SELECT roll_no FROM enrolment WHERE grade = 'A')
+
+-- correlated: s.roll_no belongs to the OUTER query
+WHERE EXISTS (SELECT 1 FROM enrolment e
+               WHERE e.roll_no = s.roll_no AND e.grade = 'A')
+\end{lstlisting}
+
+\smallskip
+``In principle'' is doing work in both definitions. The optimiser is free to
+run either one however it likes, and the measurement below shows it doing so.
+\end{definitionbox}
+
+\section{Semi-joins and Anti-joins}
+
+\begin{definitionbox}[Semi-join, anti-join]
+A \term{semi-join} returns the rows of $R$ that have \emph{at least one}
+partner in $S$ --- each row once, however many partners it has. ``Students with
+at least one A.''
+
+\smallskip
+An \term{anti-join} returns the rows of $R$ that have \emph{no} partner in
+$S$. ``Instructors who teach nothing.'' It is \chref{algebra}'s difference,
+and ``never'', ``none'' and ``no'' always mean one.
+\end{definitionbox}
+
+\begin{measured}[Seven spellings, one wrong answer, and correlation that was not the problem]
+\textsf{\footnotesize \texttt{code/m15\_subqueries.py}, seeded database,
+SQLite 3.51.2, Intel i5-6600, Windows 11. Best of three runs.}
+
+\medskip
+\textbf{1. A semi-join, three ways} --- students with at least one A
+
+\begin{tabular}{@{}L{5.0cm}R{2.0cm}R{1.9cm}L{5.0cm}@{}}
+\textbf{written as} & \textbf{answer} & \textbf{ms} & \\
+\sqlkw{IN} (uncorrelated)   & 3{,}449 & 20.3 & \\
+\sqlkw{EXISTS} (correlated) & 3{,}449 & 40.1 & twice the \sqlkw{IN} \\
+\sqlkw{JOIN} + \sqlkw{DISTINCT} & 3{,}449 & 21.4 & \\
+\end{tabular}
+
+\medskip
+\textbf{2. An anti-join, four ways} --- instructors who teach nothing, after
+three are hired who teach nothing yet; \texttt{section.emp\_id} has 73 nulls
+
+\begin{tabular}{@{}L{5.0cm}R{2.0cm}R{1.9cm}L{5.0cm}@{}}
+\textbf{written as} & \textbf{answer} & \textbf{ms} & \textbf{right?} \\
+\sqlkw{NOT IN}                 & \textbf{0} & 0.76 & \textbf{no} --- one null empties it \\
+\sqlkw{NOT EXISTS}             & 3 & 2.18 & yes \\
+\sqlkw{LEFT JOIN} \dots\ \sqlkw{IS NULL} & 3 & 2.52 & yes \\
+\sqlkw{EXCEPT}                 & 3 & 0.44 & yes \\
+\end{tabular}
+
+\smallskip
+The fastest wrong answer is no use. \sqlkw{EXCEPT} is a set operation rather
+than a comparison, so the null on its right-hand side can only remove a null
+on its left --- and \texttt{instructor.emp\_id}, a primary key, has none.
+
+\medskip
+\textbf{3. A correlated sub-query in the \sqlkw{SELECT} list} --- enrolments
+per course
+
+\begin{tabular}{@{}R{1.7cm}R{2.1cm}R{2.4cm}R{2.1cm}R{2.4cm}R{2.4cm}@{}}
+& & \multicolumn{2}{c}{\textbf{no index on course\_code}}
+& \multicolumn{2}{c}{\textbf{with the index}} \\
+\textbf{students} & \textbf{enrolments} & \textbf{correlated} & \textbf{\sqlkw{GROUP BY}}
+& \textbf{correlated} & \textbf{\sqlkw{GROUP BY}} \\
+2{,}000 & 30{,}027  & 191.1 & 53.8  & \textbf{2.4}  & 5.4 \\
+4{,}000 & 60{,}037  & 517.7 & 121.3 & \textbf{5.1}  & 12.2 \\
+8{,}000 & 120{,}134 & 1{,}101.4 & 275.8 & \textbf{10.3} & 23.7 \\
+\end{tabular}
+
+\smallskip
+All four agree on every count. Times in milliseconds.
+
+\medskip
+\textbf{Read part 3 carefully, because it contradicts the folklore.} Without
+an index the correlated form is about four times slower than \sqlkw{GROUP BY}:
+\textit{enrolment}'s primary key is \texttt{(roll\_no, course\_code, \dots)},
+so it cannot be searched by \texttt{course\_code}, and each of the 48 courses
+scans all 60 thousand enrolments. \textbf{Add one index and the correlated form
+becomes the faster of the two} --- 5.1 against 12.2\,ms --- because it now does
+48 index lookups, while \sqlkw{GROUP BY} still reads every enrolment. Both
+grow linearly with the data; neither diverges from the other as the table
+grows.
+
+\smallskip
+\textbf{So the cost was never the correlation.} It was whether the inner query
+had an index on the column it is correlated on. The plans say so directly:
+\texttt{SCAN e} inside \texttt{CORRELATED SCALAR SUBQUERY} without it,
+\texttt{SEARCH e USING \dots\ idx\_enr\_course (course\_code=?)} with it.
+\end{measured}
+
+\begin{alertbox}[What to take from the measurement]
+\begin{tight}
+  \item \textbf{For anti-joins, use \sqlkw{NOT EXISTS}.} It is correct
+        whatever the nulls, and its cost is in the same range as the
+        alternatives. \sqlkw{EXCEPT} is faster when it fits but returns only
+        the compared columns; \sqlkw{LEFT JOIN} \dots\ \sqlkw{IS NULL} is
+        correct but easy to break with a condition in the wrong clause
+        (\chref{joins}).
+  \item \textbf{Do not avoid correlated sub-queries on principle.} Avoid
+        unindexed ones. ``Correlated sub-queries are slow'' is a rule of thumb
+        learned on databases without the right index, and on this one it was
+        backwards by a factor of two.
+  \item \textbf{Read the plan before rewriting a query.} \sqlkw{SCAN} inside a
+        \sqlkw{CORRELATED} sub-query is the specific thing to look for; it
+        means the inner query reads a whole table once per outer row.
+\end{tight}
+\end{alertbox}
+
+\section{\sqlkw{ANY}, \sqlkw{ALL}, and Naming a Sub-query}
+
+\begin{examplebox}[\sqlkw{ALL} and \sqlkw{ANY}, and the null trap again]
+\texttt{x > ALL (sub-query)} is true when $x$ exceeds every value returned;
+\texttt{x > ANY (sub-query)} when it exceeds at least one. SQLite does not
+support either keyword, which is no loss --- both are clearer as an aggregate:
+
+\begin{lstlisting}[language=sql]
+-- "credit hours greater than every MA course"
+WHERE credit_hours > (SELECT MAX(credit_hours) FROM course
+                       WHERE dept_code = 'MA')
+\end{lstlisting}
+
+\smallskip
+And \sqlkw{ALL} has \sqlkw{NOT IN}'s trap: \texttt{x > ALL (\dots, NULL)} is
+\unk{} for every $x$, because one of its comparisons is. The
+aggregate form ignores nulls, which is usually what was meant.
+\end{examplebox}
+
+\begin{definitionbox}[Common table expression]
+A \term{common table expression} (CTE) names a sub-query before the main query
+uses it:
+
+\begin{lstlisting}[language=sql]
+WITH a_students AS (
+  SELECT DISTINCT roll_no FROM enrolment WHERE grade = 'A'
+)
+SELECT s.name
+  FROM student s JOIN a_students a ON a.roll_no = s.roll_no
+ WHERE s.programme = 'BSIT';
+\end{lstlisting}
+
+\smallskip
+It computes nothing a derived table could not. Its value is that the
+sub-query has a \emph{name}, can be read top to bottom, and can be referred to
+more than once. \sqlkw{WITH RECURSIVE} --- used in \chref{whodoeswhat}'s
+laboratory to generate 300 rows --- is the one form that does something new:
+it can walk the prerequisite chain to any depth, which no fixed number of joins
+can.
+\end{definitionbox}
+
+\begin{worked}[Every prerequisite of a course, to any depth]
+\textbf{The question.} Before taking a course, which courses must a student
+have passed --- directly, or because a prerequisite has a prerequisite?
+
+\medskip
+\textbf{Step 1 --- why a join cannot do it.} One join finds direct
+prerequisites. Two joins find their prerequisites. Each extra level needs an
+extra join, and nobody knows in advance how deep the chain goes.
+
+\medskip
+\textbf{Step 2 --- the recursive CTE.} Start from the direct prerequisites
+(the \emph{anchor}), then repeatedly add the prerequisites of whatever is
+already found (the \emph{recursive step}), until a step adds nothing:
+
+\begin{lstlisting}[language=sql]
+WITH RECURSIVE needs(code) AS (
+  SELECT requires FROM prerequisite
+   WHERE course_code = 'CS-305'                 -- the anchor
+  UNION
+  SELECT p.requires FROM prerequisite p
+    JOIN needs n ON p.course_code = n.code      -- the step
+)
+SELECT code FROM needs;
+\end{lstlisting}
+
+\medskip
+\textbf{Step 3 --- the answer, on the seeded database.} \texttt{CS-305}
+directly requires two courses, \texttt{CS-201} and \texttt{CS-258}. The query
+returns \textbf{four}: those two, plus \texttt{CS-150} (required by
+\texttt{CS-258}) and \texttt{CS-101} (required by \texttt{CS-150}). The chain
+is three levels deep --- 305, 258, 150, 101 --- and a query with one join
+would have found half of it.
+
+\medskip
+\textbf{Step 4 --- why \sqlkw{UNION} and not \sqlkw{UNION ALL}.} \sqlkw{UNION}
+discards rows already found, so a course reachable by two paths is listed
+once --- and, more importantly, a cycle in the data (A requires B requires A)
+terminates instead of running for ever. \textbf{\chref{mapping}'s
+\sqlkw{CHECK} stops a course requiring itself, but not a two-step cycle.} Only
+\sqlkw{UNION} saves you from that one.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[
+  crs/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!8,
+              text=#1!60!black, font=\scriptsize\bfseries\ttfamily,
+              minimum width=1.6cm, minimum height=0.62cm},
+  req/.style={-{Stealth[length=2.2mm]}, neutral!70, line width=0.9pt},
+  lvl/.style={font=\scriptsize\itshape, text=neutral},
+  br/.style={draw=#1, line width=0.9pt,
+             decorate, decoration={brace, amplitude=5pt, mirror}}
+]
+  \node[crs=primary]   (a) at (0,0)    {CS-305};
+  \node[crs=greenhl]   (b) at (3.0,0.75) {CS-201};
+  \node[crs=greenhl]   (c) at (3.0,-0.75) {CS-258};
+  \node[crs=goldhl]    (d) at (6.0,-0.75) {CS-150};
+  \node[crs=accent]    (e) at (9.0,-0.75) {CS-101};
+  \draw[req] (a) -- (b);
+  \draw[req] (a) -- (c);
+  \draw[req] (c) -- (d);
+  \draw[req] (d) -- (e);
+  \node[lvl, anchor=south] at (3.0,1.25) {level 1};
+  \node[lvl, anchor=south] at (6.0,-0.15) {level 2};
+  \node[lvl, anchor=south] at (9.0,-0.15) {level 3};
+  \draw[br=greenhl] (2.1,-1.35) -- (3.9,-1.35);
+  \node[lvl, text=greenhl!60!black, anchor=north] at (3.0,-1.6)
+       {one join finds these two};
+  \draw[br=accent] (2.1,-2.25) -- (9.9,-2.25);
+  \node[lvl, text=accent, anchor=north] at (6.0,-2.5)
+       {\sqlkw{WITH RECURSIVE} finds all four, however deep};
+\end{tikzpicture}}%
+{The prerequisites of \texttt{CS-305} on the seeded database. An arrow means
+``requires''. A fixed query reaches a fixed depth; the recursive one keeps
+going until a step adds nothing new.}{prereqchain}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{\sqlkw{NOT IN} against a nullable column.} Measured: 0 instead
+        of 3.
+  \item \textbf{Assuming correlation is the cost.} The missing index is.
+        Measured: with the index, the correlated form was the faster.
+  \item \textbf{A scalar sub-query that returns two rows.} SQLite quietly uses
+        one; other systems refuse.
+  \item \textbf{A derived table with no alias.} Required.
+  \item \textbf{\sqlkw{UNION} where \sqlkw{UNION ALL} was meant}, or the
+        reverse. \sqlkw{UNION} removes duplicates and costs a sort; in a
+        recursive CTE it is also what stops a cycle.
+  \item \textbf{\sqlkw{x > ALL} over a list with a null.} \unk{}
+        for every $x$. Use \sqlkw{MAX}.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Write one question seven ways, and find the one that lies]
+\begin{lstlisting}[language=bash]
+# --- 1. The seeded database ----------------------------------------
+python code/schema/seed.py university.db
+sqlite3 university.db
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. A semi-join three ways ---------------------------------
+.headers on
+.mode box
+.timer on
+SELECT COUNT(*) FROM student WHERE roll_no IN
+  (SELECT roll_no FROM enrolment WHERE grade = 'A');
+SELECT COUNT(*) FROM student s WHERE EXISTS
+  (SELECT 1 FROM enrolment e WHERE e.roll_no = s.roll_no
+                               AND e.grade = 'A');
+SELECT COUNT(DISTINCT s.roll_no) FROM student s
+  JOIN enrolment e ON e.roll_no = s.roll_no WHERE e.grade = 'A';
+-- Same answer three times? Record the three timings.
+
+-- --- 3. Hire three people, then an anti-join four ways -----------
+PRAGMA foreign_keys = ON;
+INSERT INTO instructor VALUES
+  ('E-9001','New Hire One','Lecturer','CS'),
+  ('E-9002','New Hire Two','Lecturer','IT'),
+  ('E-9003','New Hire Three','Lecturer','SE');
+SELECT COUNT(*) FROM instructor
+ WHERE emp_id NOT IN (SELECT emp_id FROM section);
+SELECT COUNT(*) FROM instructor i WHERE NOT EXISTS
+  (SELECT 1 FROM section s WHERE s.emp_id = i.emp_id);
+SELECT COUNT(*) FROM instructor i LEFT JOIN section s
+    ON s.emp_id = i.emp_id WHERE s.emp_id IS NULL;
+SELECT COUNT(*) FROM (SELECT emp_id FROM instructor
+                      EXCEPT SELECT emp_id FROM section);
+-- Three say 3. One says 0. Which, and why?
+
+-- --- 4. A correlated sub-query, and its plan ---------------------
+EXPLAIN QUERY PLAN
+SELECT c.course_code, (SELECT COUNT(*) FROM enrolment e
+                        WHERE e.course_code = c.course_code)
+  FROM course c;
+-- Find SCAN inside CORRELATED. Then time it:
+SELECT c.course_code, (SELECT COUNT(*) FROM enrolment e
+                        WHERE e.course_code = c.course_code)
+  FROM course c;
+
+-- --- 5. Give the inner query an index, and look again -------------
+CREATE INDEX idx_enr_course ON enrolment(course_code);
+EXPLAIN QUERY PLAN
+SELECT c.course_code, (SELECT COUNT(*) FROM enrolment e
+                        WHERE e.course_code = c.course_code)
+  FROM course c;
+-- SCAN has become SEARCH. Time it again and compare.
+
+-- --- 6. Every prerequisite, to any depth ------------------------
+SELECT requires FROM prerequisite WHERE course_code = 'CS-305';
+-- The direct prerequisites: two. Now every one, to any depth:
+WITH RECURSIVE needs(code) AS (
+  SELECT requires FROM prerequisite WHERE course_code = 'CS-305'
+  UNION
+  SELECT p.requires FROM prerequisite p JOIN needs n
+      ON p.course_code = n.code)
+SELECT code FROM needs;
+-- Four. Draw the chain on paper and check every one.
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 7. The measured version ----------------------------------------
+python code/m15_subqueries.py
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 5 is where a rule of thumb meets a measurement.
+The correlated query you were told to avoid becomes faster than the
+\sqlkw{GROUP BY} you were told to prefer, because of one index and nothing
+else. Rules about query \emph{shape} are usually rules about indexes in
+disguise, and \chref{indexes} takes the disguise off.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Classify each sub-query in the laboratory as correlated or
+        uncorrelated, and for each correlated one name the outer column it
+        refers to.
+  \item Of the four anti-join forms, one returned 0 and three returned 3. Say
+        which, explain why in terms of three-valued logic, and say why
+        \sqlkw{EXCEPT} was not affected by the same nulls.
+  \item Without an index the correlated sub-query was four times slower than
+        \sqlkw{GROUP BY}; with one it was twice as fast. Explain both results
+        in terms of what each query reads, and say what this tells you about
+        the advice ``avoid correlated sub-queries''.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A sub-query can go in \sqlkw{WHERE} (a list, or existence),
+        \sqlkw{FROM} (a derived table, which needs an alias) or the
+        \sqlkw{SELECT} list (a scalar: one column, at most one row).
+  \item A \textbf{correlated} sub-query mentions an outer column and, in
+        principle, runs per outer row. The optimiser decides what actually
+        happens.
+  \item A \textbf{semi-join} keeps rows with at least one partner; an
+        \textbf{anti-join} keeps rows with none.
+  \item \textbf{Measured: the three semi-join forms agreed} (3{,}449);
+        \sqlkw{EXISTS} took twice as long as \sqlkw{IN} here.
+  \item \textbf{Measured: \sqlkw{NOT IN} returned 0} where \sqlkw{NOT
+        EXISTS}, \sqlkw{LEFT JOIN} \dots\ \sqlkw{IS NULL} and \sqlkw{EXCEPT}
+        all returned 3. Use \sqlkw{NOT EXISTS}.
+  \item \textbf{Measured: without an index on the correlation column, the
+        correlated form was 4$\times$ slower than \sqlkw{GROUP BY}; with one
+        it was 2$\times$ faster.} The cost was never the correlation.
+  \item \sqlkw{SCAN} inside a \sqlkw{CORRELATED} sub-query in a plan means a
+        whole table read per outer row. Look for it.
+  \item A \textbf{CTE} names a sub-query. \sqlkw{WITH RECURSIVE} walks a chain
+        to any depth, and \sqlkw{UNION} in it is what stops a cycle.
+  \item \sqlkw{ALL} over a list containing a null is \unk{}; use an
+        aggregate.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A sub-query that mentions a column of the outer query
+        is: (a)~scalar; (b)~derived; (c)~correlated; (d)~recursive.
+  \item \textbf{(MCQ)} Which anti-join form can return no rows because of a
+        single null? (a)~\sqlkw{NOT EXISTS}; (b)~\sqlkw{NOT IN};
+        (c)~\sqlkw{EXCEPT}; (d)~\sqlkw{LEFT JOIN} \dots\ \sqlkw{IS NULL}.
+  \item \textbf{(Short)} What must a scalar sub-query return, and what does
+        SQLite do if it returns more?
+  \item \textbf{(Short)} Why does a recursive CTE over \textit{prerequisite}
+        need \sqlkw{UNION} rather than \sqlkw{UNION ALL}?
+  \item \textbf{(Short)} State in one sentence what decides whether a
+        correlated sub-query is expensive.
+  \item \textbf{(Applied)} Write ``courses with no enrolments in FALL2026''
+        as \sqlkw{NOT EXISTS}, as \sqlkw{LEFT JOIN} \dots\ \sqlkw{IS NULL} and
+        as \sqlkw{EXCEPT}. Run all three on the seeded database (insert one
+        new course first so the answer is not empty), confirm they agree, and
+        read each plan to say which index each one uses.
+  \item \textbf{(Applied)} A student's prerequisite chain is to be checked at
+        enrolment time. Write the recursive query that lists every course a
+        student must have passed before taking a given one, then extend it to
+        list only those the student has \emph{not} passed. Say what happens if
+        somebody inserts a two-step cycle, and how your query behaves.
+\end{reviewq}

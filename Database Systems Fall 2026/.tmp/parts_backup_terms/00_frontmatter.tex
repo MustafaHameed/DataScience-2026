@@ -1,0 +1,464 @@
+%=====================================================================
+% FRONT MATTER
+%=====================================================================
+\pagenumbering{roman}
+\structuralfigures{F.}
+\thispagestyle{empty}
+
+\begin{center}
+\vspace*{1.0cm}
+
+{\color{secondary}\rule{0.85\textwidth}{2pt}}\\[6pt]
+{\large\textsc{\color{secondary}Bachelor of Science in Information Technology}}\\[18pt]
+
+{\Huge\bfseries\color{primary}DATABASE SYSTEMS}\\[10pt]
+{\LARGE\bfseries\color{primary}Designing, Querying and Trusting\\[4pt]a Relational Database}\\[16pt]
+
+{\color{secondary}\rule{0.85\textwidth}{2pt}}\\[16pt]
+
+{\Large\textsc{Unified Lecture Handout}}\\[6pt]
+{\large\color{gray!70!black}Complete Course in One Volume $\bullet$ Fall 2026}\\[24pt]
+
+% --- the claim the whole book rests on ---
+\begin{tikzpicture}
+  \node[rounded corners=4pt, draw=primary, line width=1.1pt, fill=primary!6,
+        text=primary, align=center, font=\small\bfseries,
+        minimum width=11.6cm, minimum height=1.5cm]
+       {\faIcon{database}\\[2pt]A database is not a place to put data.
+        It is a set of promises about data.};
+\end{tikzpicture}\\[10pt]
+{\small\itshape\color{gray!70!black}This course is how each promise is made
+--- and, every time, what the database does when you do not ask it to keep
+one.}
+
+\vspace{1.0cm}
+
+\begin{tcolorbox}[enhanced, width=0.86\textwidth, colback=lightbg,
+  colframe=primary, boxrule=0pt, leftrule=4pt, arc=2pt, top=6pt, bottom=6pt]
+\small
+\textbf{\color{primary}What this volume covers.} Every clause of the HEC
+outline for \emph{Database Systems}, traced chapter by chapter in the Course
+Specification overleaf.
+
+\smallskip
+That outline is published in the \textbf{2017} curriculum (p.~88) and
+reprinted \emph{word for word} in the \textbf{2023} curriculum (p.~58) --- the
+two differ by a single added full stop across ninety words, six years apart.
+The \textbf{2025} curriculum deletes it: it covers only BS Computer Science,
+publishes no course content for any major course at all, and supplies five
+rewritten learning outcomes with no Bloom levels. All of that is recorded in
+the Course Specification rather than smoothed over.
+
+\smallskip
+The course is taught on a \textbf{running database}. One schema is designed in
+Chapter~6, created in Chapter~10, and every chapter afterwards adds to it or
+asks something of it; by Chapter~23 it is the semester project. The tool is
+\textbf{SQLite}, which you already have.
+\end{tcolorbox}
+
+\vspace{0.9cm}
+{\small\color{gray!60!black}Six Parts $\bullet$ Twenty-Three Chapters $\bullet$ Seven Appendices}
+\vspace{1cm}
+\end{center}
+
+\newpage
+
+%=====================================================================
+\chapter*{How to Use This Handout}
+\addcontentsline{toc}{chapter}{How to Use This Handout}
+\markboth{How to Use This Handout}{}
+
+There are two ways to teach this subject badly.
+
+The first is to teach it as theory. Relational algebra on a whiteboard,
+normal forms as definitions to be recited, ACID as four words beginning with
+the right letters. A student who has learned it this way can answer an
+examination question about third normal form and cannot look at a table and
+say whether it is in it.
+
+The second is to teach it as a tool. Open the software, click here, type a
+\sqlkw{SELECT}, admire the rows. A student who has learned it this way can
+produce an answer and has no way of knowing whether it is the right one,
+because nothing in the course ever told them what the database was promising.
+
+\textbf{This handout does neither, and the reason is in the title.} A database
+makes promises --- that this attribute is a number, that this row refers to a
+row that exists, that either all of this happened or none of it did --- and
+every one of those promises is \emph{checkable}. So the method of this book is
+to state the promise, then ask the database to break it, and see what happens.
+Eleven chapters end with a figure produced that way on a real machine. They
+are marked, and the file that produces each one is named.
+
+\section*{The furniture}
+
+Every chapter has the same parts, in the same order, so that you can find
+what you need without reading from the beginning.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{4.2cm}L{10.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{You will see} & \textbf{It means} \\
+\midrule
+\endhead
+\faIcon{bullseye}~Learning Outcomes & What you should be able to \emph{do}
+afterwards. Five per chapter, each with a verb you can be examined on \\
+\faIcon{link}~Before You Start & What this chapter assumes, and where it was
+taught \\
+\faIcon{tags}~Key Terms & Every term defined here. If one is unfamiliar at the
+end, the chapter did not work \\
+\faIcon{book}~Definition & A term being given its precise meaning. These are
+the sentences to learn exactly \\
+\faIcon{lightbulb}~Concept & An idea, a rule of thumb, or a way of deciding \\
+\faIcon{exclamation-triangle}~Watch Out & Something that is true, surprising,
+and will cost you if you do not know it \\
+\faIcon{code}~Example & A worked case, usually from the running database \\
+\faIcon{calculator}~Worked Example & Arithmetic, every step shown. Nothing is left
+``by inspection'' \\
+\faIcon{tachometer-alt}~Measured & A figure produced by running the named file
+in \texttt{code/}, on the machine in Appendix~A. You can reproduce every one \\
+\faIcon{exclamation-circle}~Common Pitfalls & What goes wrong, collected, so
+that you meet it here rather than in the laboratory \\
+\faIcon{flask}~Try It Yourself & The laboratory. Numbered steps, run in order \\
+\faIcon{question-circle}~Checkpoint & Three questions. Answers in Appendix~C,
+and they are full answers rather than a line each \\
+\faIcon{clipboard-check}~Chapter Summary & The chapter in eight or nine lines \\
+\faIcon{pen-fancy}~Review Questions & Seven: two multiple choice, three short,
+two applied \\
+\bottomrule
+\end{longtable}
+
+\section*{The laboratory, and what it needs}
+
+\textbf{Nothing to install.} The whole course runs on \textbf{SQLite}, which
+is already on every machine you are likely to use: it ships inside Python, it
+ships with most operating systems, and a database is a single file you can
+copy, email or delete. Appendix~A sets it up in one sitting, which for most
+readers means checking that it is already there.
+
+That choice is not a compromise with the curriculum. \textbf{HEC names no
+database product in any edition} --- the 2017 and 2023 outlines say only
+``in any DBMS'', and 2025 says ``popular database management systems''. What
+SQLite can and cannot show you is stated plainly in \chref{whynotfiles} and
+again in \chref{project}, because a tool's limits are part of what you are
+learning.
+
+\section*{The database we build}
+
+One schema, carried through the whole course. You design it in
+\chref{ermodel} and \chref{cardinality}, map it to tables in \chref{mapping},
+create it in \chref{ddl}, fill it, query it for five chapters, find out in
+\chref{normalforms} that it was wrong, fix it, index it, and defend it. It is
+a university enrolment database --- students, courses, sections, instructors,
+enrolments, grades --- chosen because you already know how it is supposed to
+behave, so no lecture time goes on explaining the subject matter.
+
+\section*{If you read nothing else}
+
+\begin{tight}
+  \item \chref{constraints}, on the difference between \emph{declaring} a key
+        and \emph{having} one.
+  \item \chref{normalforms}, which is the chapter this course exists for.
+  \item \chref{indexes}, where the rule everybody repeats stops being true and
+        you can see the exact row count at which it does.
+\end{tight}
+
+\newpage
+
+%=====================================================================
+\chapter*{Course Specification}
+\addcontentsline{toc}{chapter}{Course Specification}
+\markboth{Course Specification}{}
+
+This chapter exists so that a student, a lecturer or a reviewer can see
+exactly what this handout claims to cover and on what authority. Everything in
+it is traceable to a published document, and where those documents are wrong,
+unclear or contradict one another, that is recorded here rather than quietly
+corrected.
+
+\section*{Particulars}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{3.6cm}L{11.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Item} & \textbf{Value} \\
+\midrule
+\endhead
+Course title & \emph{Database Systems}. HEC 2023's description page calls it
+\emph{Database System}, singular, while every table in the same booklet says
+\emph{Systems}. The plural is used here \\
+Course code & \textbf{CS-103}. Unlike every sibling course in this series,
+there is no \texttt{INFT-} equivalent: the registrar uses CS-103 and nothing
+else \\
+Programme & BS Information Technology, \textbf{2nd semester}. This matches HEC
+2023, which places the course in semester~2 of every computing degree. HEC
+2017 placed it at BSIT semester~V; the discrepancy is recorded, not resolved \\
+Credit hours & \textbf{4 (3+1)} --- three lecture credits and \textbf{one
+credited laboratory}. The laboratory is paid for, which is why every chapter
+has one and why they are long enough to be worth the hour \\
+Prerequisite & \textbf{None.} HEC 2017's own booklet gives two different
+answers --- see defect~4 \\
+Duration & Sixteen teaching weeks, midterm in Week~8, project due Week~16
+(Appendix~G) \\
+Teaching methodology & As published (HEC 2017): lectures, written assignments,
+\textbf{practical labs}, semester project, presentations \\
+Assessment & As published (HEC 2017): sessional exam, home assignments,
+quizzes, project, presentations, final exam \\
+Set texts & As published: Connolly and Begg; Garcia-Molina, Ullman and Widom;
+Silberschatz, Korth and Sudarshan; Ramakrishnan and Gehrke. No publication
+years are given for any of the four, in any edition --- see Appendix~E \\
+\bottomrule
+\end{longtable}
+
+\section*{Where the outline comes from}
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{1.6cm}L{4.4cm}L{3.2cm}L{5.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{Edition} & \textbf{Status} & \textbf{Semester} &
+\textbf{Course content published?} \\
+\midrule
+\endhead
+\textbf{2017} & Computing Core --- compulsory in BSCS, BSSE \emph{and} BSIT &
+IV, IV, \textbf{V} & \textbf{Yes} --- p.~88 \\
+\textbf{2023} & Computing Core --- compulsory in all ten computing degrees and
+the Associate Degree & \textbf{2} & \textbf{Yes} --- p.~58, \emph{the 2017 text
+reprinted} \\
+2025 & Major Compulsory --- but the edition covers only BS Computer Science
+and the Associate Degree. \textbf{There is no BSIT in it at all} & III &
+\textbf{No} --- deleted; five CLO bullets only \\
+\bottomrule
+\end{longtable}
+
+\begin{alertbox}[Six defects in the published documents]
+Recorded rather than inherited. Each is stated with the correction this
+handout uses.
+
+\begin{tightnum}
+  \item \textbf{The syllabus is frozen.} The 2023 course outline is the 2017
+        course outline word for word, with \textbf{one added full stop}
+        (``vs'' becomes ``vs.'') across ninety words --- six years apart. Then
+        2025 removes it entirely. A field that changed a great deal in that
+        period is described by a text that did not change at all.
+  \item \textbf{The outline normalises before it designs.} The clause list
+        reaches \emph{normalization, functional dependencies, normal forms}
+        \textbf{before} \emph{entity relationship model \dots\
+        entity-relationship diagrams}. You cannot normalise a schema you have
+        not designed. All four of HEC's own reference books teach the
+        other order. \textbf{This handout reorders}: design in Part~II, map in
+        Part~III, normalise in Part~V. The clause numbers in the table below
+        show exactly where each one moved to.
+  \item \textbf{One clause is printed twice.} ``attributes'' appears in the
+        relational-model run and again in the entity-relationship run. Thirty
+        three clauses, thirty two distinct. Both occurrences are traced below
+        and the second is marked as a duplicate.
+  \item \textbf{The prerequisite contradicts itself inside one booklet.} HEC
+        2017's course description page says \texttt{Prerequisites: None}. All
+        three of its scheme-of-studies tables --- BSCS p.~25, BSIT p.~31, BSSE
+        p.~39 --- say \textbf{Data Structures \& Algorithms}. At 2nd semester
+        the department cannot assume Data Structures, so \textbf{this handout
+        assumes none}, and \chref{indexes} and \chref{transactions} are written
+        to be self-contained because of it.
+  \item \textbf{The 2023 learning-outcome table is broken in print.} CLO-3's
+        text stops mid-sentence; its remainder (``anomalies by normalizing
+        database tables.'') is printed as CLO-4's text; and the real CLO-4 is
+        left in a trailing row with \emph{no number and no Bloom level}. This
+        is a typesetting fault in the published national curriculum, not a
+        misreading. The outcomes are reconstructed below from the 2017 text,
+        which is intact.
+  \item \textbf{A Bloom level is wrong.} CLO-3 reads ``Identify functional
+        dependencies and \emph{resolve} database anomalies by normalizing
+        database tables'' and is tagged \textbf{C2}. Identifying is C2;
+        resolving and normalising are C3 at least. Every sibling course in
+        this series complains that HEC left the Bloom column blank. Here it is
+        filled in --- and filled in incorrectly, which is harder to notice.
+\end{tightnum}
+\end{alertbox}
+
+\section*{Course content, traced clause by clause}
+
+The outline is reproduced below exactly as published, in its published order,
+split into its thirty-three clauses. The right-hand column is where each is
+taught. Clauses that move are the subject of defect~2.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{0.9cm}L{9.3cm}L{4.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{\#} & \textbf{Clause, as published} & \textbf{Taught in} \\
+\midrule
+\endhead
+1 & Basic database concepts & \chref{whynotfiles} \\
+2 & Database approach vs file based system & \chref{whynotfiles} \\
+3 & database architecture & \chref{whodoeswhat} \\
+4 & three level schema architecture & \chref{architecture} \\
+5 & data independence & \chref{architecture} \\
+6 & relational data model & \chref{relational} \\
+7 & attributes & \chref{relational} \\
+8 & schemas & \chref{relational} \\
+9 & tuples & \chref{relational} \\
+10 & domains & \chref{relational} \\
+11 & relation instances & \chref{relational} \\
+12 & keys of relations & \chref{constraints} \\
+13 & integrity constraints & \chref{constraints} \\
+14 & relational algebra & \chref{algebra} \\
+15 & selection & \chref{algebra} \\
+16 & projection & \chref{algebra} \\
+17 & Cartesian product & \chref{algebra} \\
+18 & types of joins & \chref{joins} \\
+19 & \textbf{normalization} & \chref{normalforms} \emph{(moved later)} \\
+20 & \textbf{functional dependencies} & \chref{fds} \emph{(moved later)} \\
+21 & \textbf{normal forms} & \chref{normalforms} \emph{(moved later)} \\
+22 & \textbf{entity relationship model} & \chref{ermodel} \emph{(moved
+earlier)} \\
+23 & entity sets & \chref{ermodel} \\
+24 & attributes & \textbf{duplicate of 7} \\
+25 & relationship & \chref{ermodel}, \chref{cardinality} \\
+26 & entity-relationship diagrams & \chref{cardinality}, \chref{mapping} \\
+27 & Structured Query Language (SQL) & \chref{ddl}, \chref{select} \\
+28 & Joins and sub-queries in SQL & \chref{joins}, \chref{subqueries} \\
+29 & Grouping and aggregation in SQL & \chref{grouping} \\
+30 & concurrency control & \chref{transactions} \\
+31 & database backup and recovery & \chref{transactions} \\
+32 & indexes & \chref{indexes} \\
+33 & NoSQL systems & \chref{project} \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Three topics taught that the outline does not name]
+A reviewer will ask, so the justification is here rather than implied.
+
+\begin{tight}
+  \item \textbf{\chref{evolution}, changing a schema that is already full.}
+        The outline never mentions \sqlkw{ALTER}. A student who cannot change
+        a schema cannot carry one database through sixteen weeks, and the
+        project requires exactly that.
+  \item \textbf{\chref{views}, views and triggers.} Absent from the clause
+        list. Required by CLO-2, which asks for \emph{logical and physical}
+        schemas, and assumed by the department's own
+        \emph{E-Commerce Application Development} (INFT-4041), which lists
+        this course as its prerequisite --- see Appendix~F.
+  \item \textbf{\chref{project}, security and authorisation.} Absent from 2017
+        and 2023 entirely. \textbf{HEC 2025 requires it by name}: its fifth
+        learning outcome is ``Analyze the role of databases in information
+        systems and their security considerations''. The newest edition
+        justifies the addition.
+\end{tight}
+\end{conceptbox}
+
+\section*{Course Learning Outcomes}
+
+\textbf{HEC 2017's four, verbatim}, with the Domain and Bloom levels exactly as
+published --- including the one that is wrong.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{1.4cm}L{9.6cm}L{1.6cm}L{2.0cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{CLO} & \textbf{As published} & \textbf{Level} & \textbf{Taught in} \\
+\midrule
+\endhead
+CLO-1 & ``Explain fundamental database concepts.'' & C2 & Part~I \\
+CLO-2 & ``Design conceptual, logical and physical database schemas using
+different data models.'' & C5 & Parts~II, III \\
+CLO-3 & ``Identify functional dependencies and resolve database anomalies by
+normalizing database tables.'' & \textbf{C2}\,$^\dagger$ & Part~V \\
+CLO-4 & ``Use Structured Query Language (SQL) for database definition and
+manipulation in any DBMS.'' & C4 & Parts~III, IV \\
+\bottomrule
+\end{longtable}
+
+\noindent$^\dagger$\,\textbf{As published, and incorrect} --- see defect~6.
+Assessed in this course at \textbf{C3}.
+
+\medskip
+\noindent\textbf{Four added by the department}, each discharging one of HEC
+2025's five outcomes, which the 2017 clause list does not reach.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{1.4cm}L{1.3cm}L{8.3cm}L{3.6cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{CLO} & \textbf{Level} & \textbf{Outcome} & \textbf{Discharges} \\
+\midrule
+\endhead
+CLO-5 & C3 & Write SQL for retrieval, insertion, update and deletion against a
+schema you did not design & HEC 2025 outcome~2 \\
+CLO-6 & C2 & Explain transactions, concurrency and recovery, and demonstrate
+what a transaction prevents & HEC 2025 outcome~3 \\
+CLO-7 & C3 & Implement and administer a working database, including backup and
+restore & HEC 2025 outcome~4 \\
+CLO-8 & C4 & Analyse a database's role in a wider system and its security
+posture, and justify the analysis from evidence & HEC 2025 outcome~5 \\
+\bottomrule
+\end{longtable}
+
+\newpage
+
+%=====================================================================
+\chapter*{Prerequisite Self-Check}
+\addcontentsline{toc}{chapter}{Prerequisite Self-Check}
+\markboth{Prerequisite Self-Check}{}
+
+This is a \textbf{second-semester} course. It assumes one semester of
+programming and nothing else --- in particular it does \emph{not} assume Data
+Structures, whatever HEC 2017's scheme-of-studies tables say (defect~4).
+
+Twelve questions. If you can answer ten, start at \chref{whynotfiles}. If you
+cannot, the right-hand column says where to look --- and none of it will take
+more than an evening.
+
+\rowcolors{2}{white}{lightbg}
+\begin{longtable}{@{}L{0.8cm}L{9.4cm}L{4.4cm}@{}}
+\toprule
+\rowcolor{primary!15}
+\textbf{\#} & \textbf{Question} & \textbf{If not} \\
+\midrule
+\endhead
+1 & What is the difference between a file and a folder? & --- \\
+2 & A text file holds one record per line, fields separated by commas. How
+would you find every line whose third field is ``2026''? & Programming
+Fundamentals \\
+3 & Write a loop that reads a file line by line. & Programming Fundamentals \\
+4 & What does it mean for two values to be \emph{equal} when one is the number
+7 and the other is the text ``7''? & \chref{ddl} returns to this \\
+5 & What is an array index? What happens if you use one that is too large? &
+Programming Fundamentals \\
+6 & Given sets $A=\{1,2,3\}$ and $B=\{2,3,4\}$, write $A \cup B$, $A \cap B$
+and $A - B$. & Appendix~B \\
+7 & What does $A \times B$ mean for two sets, and how many elements does it
+have? & Appendix~B \\
+8 & Is the statement ``$x > 5$ and $x < 3$'' ever true? & Appendix~B \\
+9 & What is the truth value of ``not (P and Q)'' when P is true and Q is
+false? & Appendix~B \\
+10 & Two people edit the same file at the same time and both save. What
+happens to the first person's changes? & \chref{transactions} \\
+11 & Roughly how many times do you have to halve 1{,}000{,}000 to get to 1? &
+Appendix~B; \chref{indexes} needs it \\
+12 & What is a function, in the mathematical sense --- how many outputs may one
+input have? & Appendix~B; \chref{fds} depends on it \\
+\bottomrule
+\end{longtable}
+
+\begin{conceptbox}[Question 12 is the one that matters]
+Everything in Part~V rests on it. A \emph{functional dependency} is nothing
+more than the statement that one set of attributes is a function of another:
+give me a student's roll number and there is exactly one name it can be paired
+with. If question~12 was uncomfortable, read Appendix~B before \chref{fds},
+not during it.
+\end{conceptbox}
+
+\newpage
+\tableofcontents
+\newpage
+\listoffigures
+\newpage
+
+% Back to arabic for the body. Without this line the roman numbering set at the
+% top of this file runs all the way to the end, and a 230-page handout numbers
+% its last page ccxxx. It also silently breaks the decks: the slide pipeline
+% reads each chapter's start page from the .aux and parses it as an integer, so
+% every chapter footer printed "Handout p. 0" until this was restored.
+\pagenumbering{arabic}

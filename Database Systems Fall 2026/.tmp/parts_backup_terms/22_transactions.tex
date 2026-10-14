@@ -1,0 +1,423 @@
+%=====================================================================
+\chapter{Transactions, Concurrency and Recovery}\label{ch:transactions}
+%=====================================================================
+\locator{6}{Part VI --- Making It Work, and What Comes Next}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} the four ACID properties and \textbf{give} a failure
+        that each one prevents.
+  \item \textbf{Show} a lost update happening, and \textbf{prevent} it with
+        the right kind of transaction.
+  \item \textbf{Explain} SQLite's locks and why it allows one writer at a time.
+  \item \textbf{Distinguish} the deadlock SQLite can have from the one a server
+        DBMS has, and \textbf{say} how each is resolved.
+  \item \textbf{Back up} a live database safely, and \textbf{state} what the
+        journal does after a crash.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{whynotfiles}: atomicity and concurrent access were two of the six
+problems. \chref{whodoeswhat}: the transaction, lock and recovery managers.
+\chref{evolution}: \sqlkw{BEGIN} and \sqlkw{COMMIT} in a migration. No
+operating-systems course is assumed. You need
+\texttt{code/m22\_transactions.py}.
+\end{prereq}
+
+\begin{keyterms}
+transaction $\bullet$ \sqlkw{BEGIN} $\bullet$ \sqlkw{COMMIT} $\bullet$
+\sqlkw{ROLLBACK} $\bullet$ \sqlkw{SAVEPOINT} $\bullet$ ACID $\bullet$
+atomicity $\bullet$ consistency $\bullet$ isolation $\bullet$ durability
+$\bullet$ autocommit $\bullet$ lost update $\bullet$ dirty read $\bullet$
+serialisable $\bullet$ lock $\bullet$ \sqlkw{SHARED} $\bullet$
+\sqlkw{RESERVED} $\bullet$ \sqlkw{EXCLUSIVE} $\bullet$ \sqlkw{DEFERRED}
+$\bullet$ \sqlkw{IMMEDIATE} $\bullet$ deadlock $\bullet$ \texttt{SQLITE\_BUSY}
+$\bullet$ \texttt{busy\_timeout} $\bullet$ rollback journal $\bullet$ WAL
+$\bullet$ \texttt{synchronous}
+\end{keyterms}
+
+\section{Promises About Groups of Changes}
+
+Every constraint in Part~II was a promise about a row. A transaction is a
+promise about a \emph{group} of changes: that they happen together, or not at
+all, and that nothing anybody else does at the same moment can see them half
+done. \chref{whynotfiles} listed atomicity and concurrent access among the six
+problems of files. This chapter is where the database keeps those promises ---
+and measures what keeping them costs.
+
+\begin{definitionbox}[Transaction, and ACID]
+A \term{transaction} is a sequence of operations treated as one unit, begun
+with \sqlkw{BEGIN} and ended with \sqlkw{COMMIT} (keep it) or \sqlkw{ROLLBACK}
+(undo it all). Outside one, SQLite is in \term{autocommit}: every statement is
+its own transaction.
+
+\smallskip
+\textbf{Atomicity}: all of it happens, or none. \textbf{Consistency}: it takes
+the database from one state satisfying every constraint to another.
+\textbf{Isolation}: concurrent transactions do not see each other's
+unfinished work. \textbf{Durability}: once committed, it survives a crash.
+\end{definitionbox}
+
+\begin{measured}[A crash, a lost update, a deadlock, and the price of durability]
+\textsf{\footnotesize \texttt{code/m22\_transactions.py}; two real connections
+to one file, real failures. SQLite 3.51.2, Intel i5-6600, Windows 11,
+mechanical disk.}
+
+\medskip
+\textbf{1. Atomicity} --- move a student between sections, a \sqlkw{DELETE}
+then an \sqlkw{INSERT}, and fail between them
+
+\begin{tabular}{@{}L{4.4cm}L{3.4cm}L{6.0cm}@{}}
+& \textbf{enrolled in} & \\
+autocommit & \textbf{nothing} & the \sqlkw{DELETE} was already permanent \\
+\sqlkw{BEGIN} \dots\ \sqlkw{ROLLBACK} & section 1 & the two were one unit \\
+\end{tabular}
+
+\medskip
+\textbf{2. The lost update} --- two clerks each add one to a seat count of 40:
+A reads, B reads, A writes, B writes
+
+\begin{tabular}{@{}L{3.4cm}L{8.6cm}R{1.6cm}@{}}
+& \textbf{what happened} & \textbf{final} \\
+no transaction & both read 40, both wrote 41 & \textbf{41} \\
+\sqlkw{BEGIN DEFERRED} & B's write refused: \texttt{database is locked}; then
+  A's \sqlkw{COMMIT} refused too; B rolled back; A committed & 41 \\
+\sqlkw{BEGIN IMMEDIATE} & B could not begin until A had finished; then read 41
+  and wrote 42 & \textbf{42} \\
+\end{tabular}
+
+\smallskip
+With no transaction an enrolment simply vanished, and nobody was told. With
+\sqlkw{DEFERRED} the two clerks \textbf{deadlocked}: B held a read lock and
+wanted to write; A held the write lock and needed B's read lock released before
+it could commit. Neither could move until B gave up --- so B's +1 was lost
+again, \emph{but B was told}, and can retry. \sqlkw{IMMEDIATE} counted both.
+
+\medskip
+\textbf{3. \texttt{SQLITE\_BUSY}} --- A holds the write lock for 300\,ms; B
+tries to write
+
+\begin{tabular}{@{}L{4.4cm}L{6.0cm}R{3.0cm}@{}}
+\textbf{B's busy\_timeout} & \textbf{outcome} & \textbf{B waited} \\
+0\,ms (the default) & failed at once: \texttt{database is locked} & 0\,ms \\
+1{,}000\,ms & succeeded after A committed & 455\,ms \\
+\end{tabular}
+
+\smallskip
+B waited for A's 300\,ms, A's commit, and the interval at which SQLite's busy
+handler retries --- and then went ahead.
+
+\medskip
+\textbf{4. Durability, priced} --- 200 inserts
+
+\begin{tabular}{@{}L{7.4cm}R{2.8cm}R{2.8cm}@{}}
+& \textbf{total} & \textbf{per row} \\
+a commit each, \texttt{synchronous = FULL} & 4{,}590.9\,ms & 22.954\,ms \\
+one commit for all, \texttt{synchronous = FULL} & 27.8\,ms & 0.139\,ms \\
+a commit each, \texttt{synchronous = OFF} & 239.2\,ms & 1.196\,ms \\
+\end{tabular}
+
+\smallskip
+\textbf{One commit for all 200 was 165$\times$ faster than one each.} A commit
+waits until the disk confirms the data is really on it; on a mechanical disk
+that wait is 23\,ms and is almost the whole cost. \texttt{synchronous = OFF}
+skips the wait --- 19$\times$ faster, still 9$\times$ slower than batching ---
+and gives up durability: a power cut can lose transactions that were reported
+as committed, or corrupt the file. Batching keeps the guarantee \emph{and} is
+faster.
+\end{measured}
+
+\begin{alertbox}[Four rules from the measurement]
+\begin{tight}
+  \item \textbf{Anything that is two statements and must be one fact goes in a
+        transaction.} Measured: autocommit left a student enrolled in nothing.
+  \item \textbf{A read-then-write goes in \sqlkw{BEGIN IMMEDIATE}.} It takes
+        the write lock before the read, so nobody else can read the old value
+        in between. \sqlkw{DEFERRED} (the default) deadlocked.
+  \item \textbf{Set \texttt{busy\_timeout} on every connection.} The default
+        is 0, so a second writer is refused instead of waiting. It is per
+        connection, like \chref{constraints}'s \texttt{foreign\_keys}, and for
+        the same reason has to be set every time.
+  \item \textbf{Group writes into transactions; never turn durability off to
+        go faster.} The guarantee and the speed are not in conflict here.
+\end{tight}
+\end{alertbox}
+
+\section{How SQLite Isolates: One Lock for the Whole File}
+
+\begin{definitionbox}[SQLite's locks]
+SQLite locks the \emph{database file}, not rows or tables. A connection
+progresses through:
+
+\smallskip
+\begin{tabular}{@{}L{2.8cm}L{11.0cm}@{}}
+\sqlkw{SHARED} & may read. Any number of connections may hold it. \\
+\sqlkw{RESERVED} & intends to write. Only one at a time; readers continue. \\
+\sqlkw{EXCLUSIVE} & is committing. Needed to write to the file; requires
+  every \sqlkw{SHARED} lock to be released first. \\
+\end{tabular}
+
+\smallskip
+\sqlkw{BEGIN DEFERRED} takes no lock until the first read (then
+\sqlkw{SHARED}) or write (then \sqlkw{RESERVED}). \sqlkw{BEGIN IMMEDIATE}
+takes \sqlkw{RESERVED} at once. \sqlkw{BEGIN EXCLUSIVE} takes
+\sqlkw{EXCLUSIVE} at once.
+
+\smallskip
+The consequence: \textbf{one writer at a time, for the whole database}, and
+transactions that are \term{serialisable} --- the result is always as if they
+had run one after another. There are no weaker isolation levels to choose
+from, because there is nothing to relax.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  tx/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!8,
+             text=#1!60!black, font=\scriptsize\bfseries, align=center,
+             minimum width=2.2cm, minimum height=0.8cm},
+  rs/.style={rounded corners=3pt, draw=neutral, line width=0.9pt,
+             fill=neutral!8, text=neutral!80!black, font=\scriptsize,
+             align=center, minimum width=2.4cm, minimum height=0.8cm},
+  hold/.style={-{Stealth[length=2.2mm]}, greenhl!70!black, line width=1.1pt},
+  want/.style={-{Stealth[length=2.2mm]}, accent, line width=1.1pt, dashed},
+  ttl/.style={font=\scriptsize\bfseries, text=primary, anchor=south},
+  lb/.style={font=\scriptsize\itshape, text=#1}
+]
+  % --- SQLite: one file, a lock upgrade
+  \node[ttl] at (-3.9,1.85) {SQLite: one lock, upgraded};
+  \node[tx=secondary] (a) at (-5.6,0.9) {A};
+  \node[tx=purplehl]  (b) at (-2.2,0.9) {B};
+  \node[rs] (f) at (-3.9,-0.6) {the database file};
+  \draw[hold] (a.south) -- node[lb=greenhl!60!black, left, pos=0.45]
+       {holds RESERVED} (f.north west);
+  \draw[hold] (b.south) -- node[lb=greenhl!60!black, right, pos=0.45]
+       {holds SHARED} (f.north east);
+  \draw[want] (a.east) -- node[lb=accent, above] {needs B to let go} (b.west);
+  \node[lb=neutral, text width=6.0cm, align=center] at (-3.9,-1.55)
+       {A cannot commit while B reads; B cannot write while A holds
+        RESERVED. \textbf{Measured} --- SQLite refuses, one rolls back.};
+
+  % --- server: two rows, a cycle
+  \node[ttl] at (3.9,1.85) {a server DBMS: two rows, a cycle};
+  \node[tx=secondary] (c) at (2.2,0.9) {T1};
+  \node[tx=purplehl]  (d) at (5.6,0.9) {T2};
+  \node[rs] (r1) at (2.2,-0.6) {row: section 1};
+  \node[rs] (r2) at (5.6,-0.6) {row: section 2};
+  \draw[hold] (c) -- node[lb=greenhl!60!black, left] {locks} (r1);
+  \draw[hold] (d) -- node[lb=greenhl!60!black, right] {locks} (r2);
+  \draw[want] (c.south east) -- node[lb=accent, above, sloped, pos=0.35]
+       {wants} (r2.north west);
+  \draw[want] (d.south west) -- node[lb=accent, above, sloped, pos=0.35]
+       {wants} (r1.north east);
+  \node[lb=neutral, text width=6.0cm, align=center] at (3.9,-1.55)
+       {Each waits for the other's row for ever. The server finds the cycle
+        and kills one. \textbf{Cannot happen in SQLite}: there are no row
+        locks.};
+\end{tikzpicture}}%
+{Two kinds of deadlock. The left one was produced by the harness with two
+\sqlkw{DEFERRED} transactions. The right one needs row-level locks, which
+SQLite does not have, so it is drawn here rather than run --- \chref{project}
+is where a server's locking is compared properly.}{deadlock}
+
+\begin{conceptbox}[What SQLite does not have, and what you would get instead]
+A server DBMS --- PostgreSQL, MySQL, Oracle --- locks rows, and most use
+\term{multi-version concurrency control}: a writer creates a new version of a
+row while readers keep seeing the old one, so readers and writers never block
+each other. It offers several \emph{isolation levels}, from \textsc{read
+committed} to \textsc{serializable}, trading correctness for concurrency.
+
+\smallskip
+SQLite has none of that, and for one database file on one machine it does not
+need it. What it costs is concurrency: many readers, \textbf{one} writer. For a
+university's results system with a few clerks it is plenty; for a booking site
+with a thousand simultaneous purchases it is the reason to move to a server,
+and \chref{project} makes that comparison.
+\end{conceptbox}
+
+\section{Recovery, and Backup}
+
+\begin{definitionbox}[The journal, and what happens after a crash]
+Before changing a page of the database file, SQLite writes the page's
+\emph{original} contents to a \term{rollback journal}, \texttt{university.db-journal}.
+Only then does it change the file. At \sqlkw{COMMIT} it deletes the journal.
+
+\smallskip
+After a crash, the next connection finds a journal still present, knows a
+transaction was interrupted, and copies the original pages back. The database
+returns to its state before the transaction began --- atomicity and
+durability, kept by one extra file.
+
+\smallskip
+\term{WAL} mode (\texttt{PRAGMA journal\_mode = WAL}) reverses the idea:
+changes are appended to a write-ahead log and copied into the database later.
+Readers then never block the writer, which is the nearest SQLite comes to a
+server's concurrency.
+\end{definitionbox}
+
+\begin{examplebox}[Backing up a database that is in use]
+\textbf{The wrong way:} \texttt{copy university.db backup.db} while a program
+is writing. If the copy happens mid-transaction it captures a half-written
+file without its journal --- a backup that may not open, discovered on the day
+it is needed.
+
+\smallskip
+\textbf{Two right ways}, both of which take a consistent snapshot:
+\begin{lstlisting}[language=sql]
+.backup backup.db                     -- in the sqlite3 shell
+VACUUM INTO 'backup.db';              -- as SQL, from any program
+\end{lstlisting}
+
+\smallskip
+And \chref{evolution}'s rule applies: \textbf{open the backup} and run
+\texttt{PRAGMA integrity\_check;} on it. A backup that has never been restored
+is a hope.
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Two statements that must be one fact, in autocommit.} Measured:
+        a student enrolled in nothing.
+  \item \textbf{Read-then-write in \sqlkw{BEGIN DEFERRED}.} Measured: a
+        deadlock. Use \sqlkw{IMMEDIATE}.
+  \item \textbf{Leaving \texttt{busy\_timeout} at 0.} A second writer is
+        refused instead of waiting.
+  \item \textbf{A commit per row in a bulk load.} Measured: 165$\times$ slower.
+  \item \textbf{\texttt{synchronous = OFF} for speed.} It gives up durability
+        and is still slower than batching.
+  \item \textbf{Copying a live database file as a backup.} Use
+        \texttt{.backup} or \sqlkw{VACUUM INTO}, then open the result.
+  \item \textbf{Python's default \texttt{isolation\_level}.} The
+        \texttt{sqlite3} module silently issues \sqlkw{BEGIN} for you before
+        writes. The harness sets \texttt{isolation\_level=None} so every
+        \sqlkw{BEGIN} is one you wrote.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Lose an enrolment, deadlock two clerks, and back up safely]
+\begin{lstlisting}[language=bash]
+# --- 1. Two shells on ONE file: open two terminals ------------------
+sqlite3 txn.db          # terminal A
+sqlite3 txn.db          # terminal B
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. In A only: a table to fight over ------------------------
+CREATE TABLE section (id TEXT PRIMARY KEY, seats_taken INTEGER) STRICT;
+INSERT INTO section VALUES ('CS-103/1', 40);
+
+-- --- 3. The lost update, by hand: type in this order -------------
+-- A:  SELECT seats_taken FROM section;         -- 40
+-- B:  SELECT seats_taken FROM section;         -- 40
+-- A:  UPDATE section SET seats_taken = 41;
+-- B:  UPDATE section SET seats_taken = 41;
+-- A:  SELECT seats_taken FROM section;         -- 41. Two clerks, +1.
+
+-- --- 4. The deadlock: reset to 40, then type in this order -------
+-- A:  BEGIN DEFERRED;  SELECT seats_taken FROM section;
+-- B:  BEGIN DEFERRED;  SELECT seats_taken FROM section;
+-- A:  UPDATE section SET seats_taken = 41;     -- works
+-- B:  UPDATE section SET seats_taken = 41;     -- database is locked
+-- A:  COMMIT;                                  -- also locked. Why?
+-- B:  ROLLBACK;
+-- A:  COMMIT;                                  -- now it works
+
+-- --- 5. The fix: reset to 40, then ------------------------------
+-- A:  BEGIN IMMEDIATE;  SELECT seats_taken FROM section;
+-- B:  BEGIN IMMEDIATE;                         -- refused: wait
+-- A:  UPDATE section SET seats_taken = 41;  COMMIT;
+-- B:  BEGIN IMMEDIATE;  SELECT seats_taken FROM section;   -- 41
+-- B:  UPDATE section SET seats_taken = 42;  COMMIT;
+
+-- --- 6. Waiting instead of failing ------------------------------
+-- B:  .timeout 5000
+-- Repeat step 5. What does B do now instead of refusing?
+
+-- --- 7. A safe backup -------------------------------------------
+.backup txn_backup.db
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 8. Open the backup and check it --------------------------------
+sqlite3 txn_backup.db "PRAGMA integrity_check; SELECT * FROM section;"
+
+# --- 9. The measured version ----------------------------------------
+python code/m22_transactions.py
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 4's second \sqlkw{COMMIT} is the one to explain.
+A already holds the write lock; to commit it needs the \sqlkw{EXCLUSIVE} lock,
+which requires every reader to leave --- and B is a reader, waiting to become a
+writer. Neither can move. SQLite cannot wait its way out of that, so it
+refuses, and one of the two must roll back.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item For each ACID property, give the measured result in this chapter that
+        shows it being kept or broken, and say what would have happened
+        without it.
+  \item Two clerks deadlocked under \sqlkw{BEGIN DEFERRED} and both increments
+        counted under \sqlkw{BEGIN IMMEDIATE}. Explain both outcomes in terms of
+        which lock each connection held and wanted at each step.
+  \item A bulk load of 200 rows took 4.6 seconds with a commit per row and
+        28\,ms in one transaction. Explain the difference, say why
+        \texttt{synchronous = OFF} is not the fix, and say what it would cost
+        the university if it were used.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A \textbf{transaction} groups changes into one unit with
+        \sqlkw{BEGIN}, \sqlkw{COMMIT} and \sqlkw{ROLLBACK}. Outside one, every
+        statement is its own (\textbf{autocommit}).
+  \item \textbf{ACID}: atomicity, consistency, isolation, durability.
+  \item \textbf{Measured:} a failure between a \sqlkw{DELETE} and an
+        \sqlkw{INSERT} left a student \textbf{enrolled in nothing} in
+        autocommit; inside a transaction, nothing changed.
+  \item \textbf{Measured:} two read-then-write clerks \textbf{lost an update}
+        with no transaction, \textbf{deadlocked} under \sqlkw{DEFERRED}, and
+        were both counted under \sqlkw{IMMEDIATE}.
+  \item SQLite locks the whole file --- \sqlkw{SHARED}, \sqlkw{RESERVED},
+        \sqlkw{EXCLUSIVE} --- so it has one writer at a time and is always
+        serialisable.
+  \item \textbf{Measured:} with \texttt{busy\_timeout} 0 a second writer was
+        refused; with 1{,}000\,ms it waited 455\,ms and succeeded. Set it on
+        every connection.
+  \item A server's two-row deadlock cycle cannot occur in SQLite, which has no
+        row locks; SQLite's deadlock is two connections on the one file lock.
+  \item \textbf{Measured:} one commit for 200 inserts was \textbf{165$\times$}
+        faster than one each. \texttt{synchronous = OFF} gave up durability and
+        was still 9$\times$ slower than batching.
+  \item The \textbf{rollback journal} holds original pages until commit, and is
+        replayed after a crash. Back up with \texttt{.backup} or
+        \sqlkw{VACUUM INTO}, never by copying a live file --- then open the
+        backup.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} In autocommit mode, each statement is: (a)~never
+        committed; (b)~its own transaction; (c)~part of one transaction per
+        connection; (d)~rolled back on exit.
+  \item \textbf{(MCQ)} \sqlkw{BEGIN IMMEDIATE} acquires: (a)~no lock;
+        (b)~\sqlkw{SHARED}; (c)~\sqlkw{RESERVED}; (d)~a row lock.
+  \item \textbf{(Short)} Why does a read-then-write need its write lock before
+        the read?
+  \item \textbf{(Short)} Why can SQLite never have a two-row deadlock cycle?
+  \item \textbf{(Short)} What does the rollback journal contain, and what is
+        done with it after a crash?
+  \item \textbf{(Applied)} Write the transaction that moves a student from one
+        section to another and adjusts both sections' seat counts. Say which
+        kind of \sqlkw{BEGIN} you would use and why, what happens if it fails
+        after the second statement, and how a second clerk doing the same move
+        at the same moment would be affected.
+  \item \textbf{(Applied)} The university's results are entered by six clerks
+        at once during the last week of term. Using the measured lock
+        behaviour, explain what each clerk would experience with
+        \texttt{busy\_timeout} 0 and with 5{,}000\,ms, estimate how long a
+        clerk might wait if each commit took 23\,ms, and say at what number of
+        clerks you would recommend moving to a server DBMS --- and why the
+        answer is not a fixed number.
+\end{reviewq}

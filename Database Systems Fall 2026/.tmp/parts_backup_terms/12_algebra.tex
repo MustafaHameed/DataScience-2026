@@ -1,0 +1,454 @@
+%=====================================================================
+\chapter{Relational Algebra}\label{ch:algebra}
+%=====================================================================
+\locator{4}{Part IV --- Asking Questions}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Apply} selection, projection, Cartesian product, union,
+        difference and rename to small relations by hand.
+  \item \textbf{Write} an algebra expression for a question stated in English.
+  \item \textbf{Translate} between an algebra expression and the
+        \sqlkw{SELECT} statement that computes it.
+  \item \textbf{Explain} why the output of every operator is a relation, and
+        what that makes possible.
+  \item \textbf{State} which operators need union-compatible inputs, and
+        \textbf{check} that two relations are.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{relational}: a relation is a set of tuples. Appendix~B for set union,
+intersection and difference --- if those three words are not routine, read it
+first; it is four pages. This chapter is the first in the course with a
+symbol on most pages.
+\end{prereq}
+
+\begin{keyterms}
+relational algebra $\bullet$ operator $\bullet$ closure $\bullet$ selection
+($\sigma$) $\bullet$ projection ($\pi$) $\bullet$ Cartesian product
+($\times$) $\bullet$ union ($\cup$) $\bullet$ set difference ($-$) $\bullet$
+intersection ($\cap$) $\bullet$ rename ($\rho$) $\bullet$ union-compatible
+$\bullet$ predicate $\bullet$ query tree $\bullet$ procedural $\bullet$
+declarative
+\end{keyterms}
+
+\section{Why a Course on SQL Starts With Algebra}
+
+SQL is the language you will use. Relational algebra is the language the
+\emph{database} uses --- the optimiser of \chref{whodoeswhat} turns your
+\sqlkw{SELECT} into an algebra expression, rearranges it, and runs that.
+Knowing the algebra is knowing what your query becomes.
+
+It also answers a question that SQL hides: why can a query be used inside
+another query? The answer is one property, and it is the first definition.
+
+\begin{definitionbox}[Relational algebra, and closure]
+The \term{relational algebra} is a set of operators. Each takes one or two
+relations as input and produces \textbf{a relation} as output.
+
+\smallskip
+That last fact is \term{closure}: because every result is a relation, every
+result can be the input to another operator. Expressions nest without limit,
+exactly as $(3+4)\times 2$ does in arithmetic --- and for the same reason, which
+is that $3+4$ is a number.
+
+\smallskip
+Six operators are fundamental: $\sigma$, $\pi$, $\times$, $\cup$, $-$ and
+$\rho$. Every other operator, including every kind of join, can be written in
+terms of these six.
+\end{definitionbox}
+
+\section{The Two Unary Operators}
+
+\begin{definitionbox}[Selection and projection]
+\term{Selection} $\sigma_{p}(R)$ returns the tuples of $R$ for which the
+predicate $p$ is true. It chooses \textbf{rows}. The result has the same
+attributes as $R$ and at most as many tuples.
+
+\smallskip
+\term{Projection} $\pi_{A_1,\dots,A_k}(R)$ returns the tuples of $R$
+restricted to the attributes $A_1,\dots,A_k$. It chooses \textbf{columns}.
+Because the result is a set, \textbf{duplicates are removed} --- so it may have
+fewer tuples than $R$.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  cell/.style={draw=primary!35, line width=0.5pt, minimum width=1.55cm,
+               minimum height=0.42cm, font=\scriptsize\ttfamily,
+               text=primary!65!black, inner sep=0pt},
+  hd/.style={cell, fill=primary, text=white, font=\scriptsize\bfseries},
+  sel/.style={cell, fill=greenhl!18},
+  prj/.style={cell, fill=secondary!18},
+  ttl/.style={font=\scriptsize\bfseries, text=#1, anchor=south},
+  nt/.style={font=\scriptsize\itshape, text=neutral, align=center}
+]
+  % --- selection: rows
+  \node[ttl=greenhl!60!black] at (-3.9,0.55)
+       {$\sigma_{\,\mathit{programme}=\mathrm{'BSIT'}}(\mathit{student})$};
+  \foreach \c/\h [count=\i] in {roll\_no/r, name/n, programme/p}{
+    \node[hd] at (-5.45+\i*1.55-1.55,0.21) {\c};}
+  \foreach \r/\a/\b/\c/\s in {1/IT-001/Ayesha/BSIT/sel, 2/IT-002/Bilal/BSIT/sel,
+                              3/CS-007/Hira/BSCS/cell, 4/IT-014/Saad/BSIT/sel}{
+    \node[\s] at (-5.45,-0.42*\r+0.21) {\a};
+    \node[\s] at (-3.90,-0.42*\r+0.21) {\b};
+    \node[\s] at (-2.35,-0.42*\r+0.21) {\c};}
+  \node[nt, text width=4.6cm] at (-3.9,-2.25)
+       {chooses \textbf{rows}; every column survives};
+
+  % --- projection: columns
+  \node[ttl=secondary!70!black] at (3.1,0.55)
+       {$\pi_{\,\mathit{programme}}(\mathit{student})$};
+  \foreach \c [count=\i] in {roll\_no, name, programme}{
+    \node[hd] at (1.55+\i*1.55-1.55,0.21) {\c};}
+  \foreach \r/\a/\b/\c in {1/IT-001/Ayesha/BSIT, 2/IT-002/Bilal/BSIT,
+                           3/CS-007/Hira/BSCS, 4/IT-014/Saad/BSIT}{
+    \node[cell] at (1.55,-0.42*\r+0.21) {\a};
+    \node[cell] at (3.10,-0.42*\r+0.21) {\b};
+    \node[prj]  at (4.65,-0.42*\r+0.21) {\c};}
+  \draw[-{Stealth[length=2mm]}, secondary!70, line width=0.9pt]
+       (5.55,-0.6) -- (6.35,-0.6);
+  \node[hd]   at (7.2,-0.21) {programme};
+  \node[prj]  at (7.2,-0.63) {BSIT};
+  \node[prj]  at (7.2,-1.05) {BSCS};
+  \node[nt, text width=4.8cm] at (3.1,-2.25)
+       {chooses \textbf{columns}, then removes duplicates: four rows in, two
+        out};
+\end{tikzpicture}}%
+{The two unary operators. Selection cuts horizontally and never loses a
+column; projection cuts vertically and can lose rows, because three
+\texttt{BSIT} values become one.}{selproj}
+
+\begin{examplebox}[Both operators, and their SQL]
+\begin{tabular}{@{}L{5.6cm}L{8.4cm}@{}}
+\textbf{Algebra} & \textbf{SQL} \\
+$\sigma_{\mathit{semester}=2}(\mathit{student})$ &
+  \texttt{SELECT * FROM student WHERE semester = 2;} \\
+$\pi_{\mathit{name},\,\mathit{programme}}(\mathit{student})$ &
+  \texttt{SELECT DISTINCT name, programme FROM student;} \\
+$\pi_{\mathit{name}}(\sigma_{\mathit{semester}=2}(\mathit{student}))$ &
+  \texttt{SELECT DISTINCT name FROM student WHERE semester = 2;} \\
+\end{tabular}
+
+\smallskip
+\textbf{Look at the word \sqlkw{DISTINCT}.} It is in all three projection rows
+because algebra projection removes duplicates and SQL's does not. SQL returns
+a \emph{bag} --- duplicates kept --- unless told otherwise, which is
+\chref{relational}'s ``a table is not a relation'' showing up in the query
+language. Without \sqlkw{DISTINCT}, the second query returns 4{,}000 rows; with
+it, one per distinct name and programme pair.
+
+\smallskip
+\textbf{And notice the nesting in the third row.} $\sigma$ inside, $\pi$
+outside, and SQL writes them in the opposite order from how they run: the
+\sqlkw{SELECT} list is applied last, after \sqlkw{WHERE}. Reading SQL in
+execution order --- \sqlkw{FROM}, then \sqlkw{WHERE}, then \sqlkw{SELECT} --- is
+the single most useful habit this chapter can give you.
+\end{examplebox}
+
+\section{The Binary Operators}
+
+\begin{definitionbox}[Product, union, difference, intersection]
+The \term{Cartesian product} $R \times S$ pairs every tuple of $R$ with every
+tuple of $S$. If $R$ has $m$ tuples and $S$ has $n$, the result has
+$m \times n$ tuples and the attributes of both.
+
+\smallskip
+\term{Union} $R \cup S$, \term{difference} $R - S$ and \term{intersection}
+$R \cap S$ are the set operations of Appendix~B, applied to tuples. All three
+require $R$ and $S$ to be \term{union-compatible}: the same number of
+attributes, with compatible domains, in the same order.
+
+\smallskip
+Intersection is not fundamental: $R \cap S = R - (R - S)$.
+\end{definitionbox}
+
+\begin{worked}[How big is a product, and why that matters]
+On the seeded database that \texttt{code/schema/seed.py} builds,
+\textit{student} has 4{,}000 tuples and \textit{enrolment} has 60{,}037.
+
+\medskip
+\textbf{Step 1 --- the size.} $|\mathit{student} \times \mathit{enrolment}|
+= 4{,}000 \times 60{,}037 = 240{,}148{,}000$ tuples.
+
+\medskip
+\textbf{Step 2 --- how many of them mean anything.} A pair is meaningful only
+when the student in it \emph{is} the student the enrolment is about. Each
+enrolment has exactly one such student, so the meaningful pairs number exactly
+60{,}037.
+
+\medskip
+\textbf{Step 3 --- the proportion.} $60{,}037 / 240{,}148{,}000 = 0.025\%$.
+One pair in four thousand is true; the other 3{,}999 pair a student with an
+enrolment that belongs to somebody else.
+
+\medskip
+\textbf{Step 4 --- the fix, in algebra.} Select the meaningful ones:
+\[
+  \sigma_{\mathit{student.roll\_no} = \mathit{enrolment.roll\_no}}
+  (\mathit{student} \times \mathit{enrolment})
+\]
+That expression \emph{is} a join, and \chref{joins} gives it its own symbol.
+Every join in SQL is a product followed by a selection --- in meaning. In
+execution it is never computed that way, because 240 million intermediate
+tuples to keep 60 thousand is exactly the plan an optimiser exists to avoid,
+and \chref{joins} measures how it avoids it.
+\end{worked}
+
+\begin{alertbox}[Union-compatibility is checked by position, and that is a trap]
+\begin{lstlisting}[language=sql]
+SELECT roll_no, name FROM student
+UNION
+SELECT emp_id,  name FROM instructor;
+\end{lstlisting}
+
+This runs. Two attributes each side, both text: union-compatible. The result
+is a list of people --- students and staff --- and that is what was meant.
+
+\begin{lstlisting}[language=sql]
+SELECT name,    roll_no FROM student
+UNION
+SELECT emp_id,  name    FROM instructor;
+\end{lstlisting}
+
+This \emph{also} runs, and produces a column that holds student names and
+employee numbers, and a second column holding roll numbers and instructor
+names. SQL checks that the count and types match \emph{by position}; it does
+not check that the meanings do, because it cannot.
+
+\smallskip
+\textbf{The rule:} in a \sqlkw{UNION}, \sqlkw{EXCEPT} or \sqlkw{INTERSECT},
+list the columns in the same order on both sides and give them the same
+meaning. The database will hold you to the first half only.
+\end{alertbox}
+
+\section{Rename, and a Question Written Three Ways}
+
+\begin{definitionbox}[Rename]
+\term{Rename} $\rho_{S}(R)$ gives the relation $R$ the name $S$;
+$\rho_{S(B_1,\dots,B_n)}(R)$ also renames its attributes.
+
+\smallskip
+It is needed whenever a relation appears twice in one expression --- the
+recursive relationship of \chref{cardinality} --- because otherwise
+$\mathit{course.course\_code}$ would name two different things. In SQL it is
+the \emph{alias}: \texttt{FROM course AS c1, course AS c2}.
+\end{definitionbox}
+
+\begin{worked}[``Which students have taken a course but never received an A?'']
+\textbf{Step 1 --- in English, the two sets.} Students who have taken
+something, minus students who have an A somewhere.
+
+\medskip
+\textbf{Step 2 --- each set in algebra.}
+\begin{align*}
+  T &= \pi_{\mathit{roll\_no}}(\mathit{enrolment}) \\
+  A &= \pi_{\mathit{roll\_no}}(\sigma_{\mathit{grade}=\mathrm{'A'}}
+        (\mathit{enrolment}))
+\end{align*}
+
+\textbf{Step 3 --- combine.} $T - A$. Both are projections onto
+\textit{roll\_no}, so they are union-compatible by construction.
+
+\medskip
+\textbf{Step 4 --- the SQL.}
+\begin{lstlisting}[language=sql]
+SELECT roll_no FROM enrolment
+EXCEPT
+SELECT roll_no FROM enrolment WHERE grade = 'A';
+\end{lstlisting}
+
+\medskip
+\textbf{Step 5 --- check it against a wrong answer.} The tempting version is
+\[
+  \pi_{\mathit{roll\_no}}(\sigma_{\mathit{grade} \neq \mathrm{'A'}}
+  (\mathit{enrolment}))
+\]
+--- ``students with a grade that is not A''. That includes every student who
+has one B, even if they also have five A's. It answers a different question
+and it runs without complaint. On the seeded database the right expression
+returns \textbf{551} students; the tempting one returns \textbf{4{,}000} ---
+every student in the university, because every one of them has at least one
+grade that is not an A.
+
+\smallskip
+\textbf{The lesson.} ``Never'' is a difference, not a selection. Questions
+with \emph{no}, \emph{never}, \emph{none} or \emph{only} in them almost
+always need $-$ or its SQL equivalents, and \chref{subqueries} returns to
+exactly this, with \sqlkw{NOT EXISTS} and a measurement.
+\end{worked}
+
+\begin{conceptbox}[Algebra is procedural; SQL is declarative --- and why both exist]
+An algebra expression says \emph{how}: first select, then project, then take
+the difference. Its nesting is an order of operations.
+
+\smallskip
+SQL says \emph{what}: the rows satisfying this condition, from these tables.
+It deliberately does not say in what order.
+
+\smallskip
+The optimiser sits between them. It turns your SQL into one algebra
+expression, then uses algebraic laws --- $\sigma$ before $\times$ rather than
+after, $\pi$ as early as possible --- to rewrite it into a cheaper one that
+computes the same relation. Those laws are true \emph{only because} every
+operator is closed and every intermediate result is a relation.
+
+\smallskip
+So closure, the first definition in this chapter, is not a curiosity. It is
+the reason a database can choose a plan at all, and \chref{indexes} is about
+what happens when it chooses badly.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Forgetting \sqlkw{DISTINCT}.} Algebra $\pi$ removes
+        duplicates; SQL's \sqlkw{SELECT} list does not.
+  \item \textbf{Reading SQL in written order.} It runs \sqlkw{FROM},
+        \sqlkw{WHERE}, \sqlkw{SELECT}. Read it that way.
+  \item \textbf{Writing ``never'' as a selection.} $\sigma_{\neq}$ answers
+        ``at least once something else''. ``Never'' is a difference.
+  \item \textbf{Trusting \sqlkw{UNION} to check meaning.} It checks count and
+        type by position. Order the columns yourself.
+  \item \textbf{Forgetting the size of a product.} $m \times n$. Four thousand
+        by sixty thousand is 240 million.
+  \item \textbf{Using a relation twice without renaming it.} The attribute
+        names become ambiguous. Use an alias.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Compute five algebra expressions, and catch one wrong answer]
+\begin{lstlisting}[language=bash]
+# --- 1. A populated database, the same rows as the handout ---------
+python code/schema/seed.py university.db
+sqlite3 university.db
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. Selection and projection -------------------------------
+.headers on
+.mode box
+SELECT COUNT(*) FROM student WHERE semester = 2;
+SELECT COUNT(*) FROM (SELECT programme FROM student);
+SELECT COUNT(*) FROM (SELECT DISTINCT programme FROM student);
+-- The last two are both "projection onto programme". Why do they
+-- give different numbers, and which one is the algebra's answer?
+
+-- --- 3. The size of a product, without computing it -------------
+SELECT (SELECT COUNT(*) FROM student) * (SELECT COUNT(*) FROM enrolment);
+-- Do NOT run SELECT COUNT(*) FROM student, enrolment on this
+-- database unless you are prepared to wait. Say why.
+
+-- --- 4. A product made meaningful: the selection that is a join -
+SELECT COUNT(*) FROM student s, enrolment e
+ WHERE s.roll_no = e.roll_no;
+-- Compare with the size of enrolment. Explain the match.
+
+-- --- 5. Union, and the positional trap --------------------------
+SELECT roll_no AS id, name FROM student
+UNION
+SELECT emp_id, name FROM instructor
+LIMIT 5;
+SELECT name, roll_no FROM student
+UNION
+SELECT emp_id, name FROM instructor
+LIMIT 5;
+-- Both run. Describe precisely what is wrong with the second.
+
+-- --- 6. "Never an A" -- the right way ---------------------------
+SELECT COUNT(*) FROM (
+  SELECT roll_no FROM enrolment
+  EXCEPT
+  SELECT roll_no FROM enrolment WHERE grade = 'A');
+
+-- --- 7. "Never an A" -- the tempting way ------------------------
+SELECT COUNT(DISTINCT roll_no) FROM enrolment WHERE grade <> 'A';
+-- Write both counts down. One of them is every student in the
+-- university. Which, and why? This is the worked example, run.
+
+-- --- 8. Rename: the recursive relationship ----------------------
+SELECT c1.title AS course, c2.title AS requires
+  FROM prerequisite p
+  JOIN course c1 ON c1.course_code = p.course_code
+  JOIN course c2 ON c2.course_code = p.requires
+ LIMIT 5;
+-- course appears twice. Remove the aliases and record what fails.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Steps 6 and 7 differ by one idea --- 551 against
+4{,}000 on the seeded data --- and neither one raises an error. Every query you
+write from here should be checked against a hand-worked expectation, because
+a confident wrong answer looks identical to a confident right one.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item $\pi_{\mathit{programme}}(\mathit{student})$ on 4{,}000 students
+        returns 4 tuples, and \texttt{SELECT programme FROM student} returns
+        4{,}000 rows. Explain the difference in terms of the definition of a
+        relation, and say which keyword reconciles them.
+  \item Write, in algebra and in SQL, ``students in semester 2 who are
+        enrolled in nothing in FALL2026''. Say which operator expresses
+        ``nothing'', and give the tempting wrong version and what it returns.
+  \item Every join is a selection over a product. Using the seeded sizes,
+        explain why no database computes a join that way, and say which
+        property of the algebra lets the optimiser compute something else
+        instead and still be correct.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Relational algebra is a set of operators on relations whose every
+        result is \textbf{a relation}. That is \textbf{closure}, and it is why
+        queries nest.
+  \item Six operators are fundamental: \textbf{selection} $\sigma$ (rows),
+        \textbf{projection} $\pi$ (columns), \textbf{product} $\times$,
+        \textbf{union} $\cup$, \textbf{difference} $-$, \textbf{rename}
+        $\rho$. Intersection and every join are built from them.
+  \item Algebra projection \textbf{removes duplicates}; SQL's does not unless
+        you write \sqlkw{DISTINCT}. A table is a bag; a relation is a set.
+  \item SQL runs \sqlkw{FROM}, then \sqlkw{WHERE}, then \sqlkw{SELECT} --- the
+        opposite of the order it is written in.
+  \item $|R \times S| = |R| \times |S|$. On the seeded data that is 240
+        million tuples, of which 0.025\% mean anything. A join is a selection
+        over a product \emph{in meaning}, never in execution.
+  \item \sqlkw{UNION}, \sqlkw{EXCEPT} and \sqlkw{INTERSECT} check
+        union-compatibility \textbf{by position and type}, never by meaning.
+  \item ``Never'', ``none'' and ``only'' are \textbf{differences}, not
+        selections. The selection version runs and answers a different
+        question.
+  \item \textbf{Rename} is the SQL alias, and it is required whenever a
+        relation appears twice in one query.
+  \item Algebra is procedural, SQL declarative; the optimiser turns one into
+        the other and rewrites it using laws that hold only because of
+        closure.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which operator can return fewer tuples than its input
+        even when no condition is given? (a)~selection; (b)~projection;
+        (c)~rename; (d)~Cartesian product.
+  \item \textbf{(MCQ)} $|R| = 30$ and $|S| = 50$. $|R \times S|$ is:
+        (a)~80; (b)~30; (c)~1{,}500; (d)~it depends on the keys.
+  \item \textbf{(Short)} Define union-compatibility and give two relations
+        from the university schema that are union-compatible but whose union
+        would be meaningless.
+  \item \textbf{(Short)} Show that intersection can be written using only
+        difference.
+  \item \textbf{(Short)} Why does SQL need \sqlkw{DISTINCT} when relational
+        algebra does not?
+  \item \textbf{(Applied)} Write in algebra and then in SQL: (a)~the names of
+        instructors in the CS department; (b)~course codes that are a
+        prerequisite for something but require nothing themselves;
+        (c)~students who have received both an A and an F. For each, say which
+        operators you used and why.
+  \item \textbf{(Applied)} Draw the query tree for
+        $\pi_{\mathit{name}}(\sigma_{\mathit{grade}=\mathrm{'A'}}
+        (\mathit{student} \times \mathit{enrolment}))$ with the join condition
+        added. Then draw an equivalent tree that is cheaper, say which
+        algebraic law justifies each change, and estimate from the seeded
+        table sizes how many intermediate tuples each tree produces.
+\end{reviewq}

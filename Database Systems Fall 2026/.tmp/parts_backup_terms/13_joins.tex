@@ -1,0 +1,417 @@
+%=====================================================================
+\chapter{Joins: the Algebra and the SQL}\label{ch:joins}
+%=====================================================================
+\locator{4}{Part IV --- Asking Questions}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} theta join, equijoin and natural join in algebra, and
+        \textbf{write} each in SQL.
+  \item \textbf{Distinguish} inner from outer joins, and \textbf{predict}
+        which rows an inner join will drop.
+  \item \textbf{Explain} why \sqlkw{NATURAL JOIN} is dangerous, using a case
+        from this course's own schema.
+  \item \textbf{Read} an \sqlkw{EXPLAIN QUERY PLAN} for a join and
+        \textbf{say} whether it is using an index.
+  \item \textbf{Account for} a hundred-fold difference between two joins that
+        return identical rows.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{algebra}: a join is a selection over a product. \chref{relational} for
+nulls, whose consequence for joins this chapter measures. You need
+\texttt{code/m13\_joins.py} and a seeded \texttt{university.db}.
+\end{prereq}
+
+\begin{keyterms}
+join $\bullet$ theta join $\bullet$ equijoin $\bullet$ natural join ($\bowtie$)
+$\bullet$ inner join $\bullet$ outer join $\bullet$ left outer join $\bullet$
+right outer join $\bullet$ full outer join $\bullet$ self-join $\bullet$
+\sqlkw{USING} $\bullet$ \sqlkw{ON} $\bullet$ nested-loop join $\bullet$
+automatic index $\bullet$ \sqlkw{EXPLAIN QUERY PLAN} $\bullet$ \sqlkw{SCAN}
+$\bullet$ \sqlkw{SEARCH}
+\end{keyterms}
+
+\section{One Operator, Three Strengths}
+
+\chref{algebra} ended on the expression
+$\sigma_{\mathit{s.roll\_no}=\mathit{e.roll\_no}}(\mathit{s} \times
+\mathit{e})$. It occurs so often that it has its own symbol, and three
+variants that differ only in how much the condition is allowed to say.
+
+\begin{definitionbox}[Theta join, equijoin, natural join]
+A \term{theta join} $R \bowtie_{\theta} S$ is $\sigma_{\theta}(R \times S)$
+for any condition $\theta$ comparing attributes of $R$ with attributes of $S$
+using $=, <, \le, >, \ge$ or $\neq$.
+
+\smallskip
+An \term{equijoin} is a theta join whose condition uses only $=$. Almost every
+join you will write is one.
+
+\smallskip
+A \term{natural join} $R \bowtie S$ is an equijoin on \emph{every attribute
+the two relations share by name}, keeping one copy of each. It has no
+condition at all --- the condition is whatever the names happen to be.
+\end{definitionbox}
+
+\begin{examplebox}[The same join, four ways in SQL]
+\begin{lstlisting}[language=sql]
+-- 1. the product, then the selection: chapter 12 exactly
+SELECT * FROM student s, enrolment e WHERE s.roll_no = e.roll_no;
+
+-- 2. explicit, and the form this course uses
+SELECT * FROM student s JOIN enrolment e ON s.roll_no = e.roll_no;
+
+-- 3. when the column has the same name on both sides
+SELECT * FROM student JOIN enrolment USING (roll_no);
+
+-- 4. natural: no condition written at all
+SELECT * FROM student NATURAL JOIN enrolment;
+\end{lstlisting}
+
+\smallskip
+The first three are one query to the optimiser --- the measurement below shows
+the same plan for each. The fourth is not, on this schema, and the reason is
+the most useful thing in this chapter.
+\end{examplebox}
+
+\section{What a Join Drops}
+
+\begin{definitionbox}[Inner and outer joins]
+An \term{inner join} returns only the pairs that satisfy the condition. A row
+with no partner on the other side does not appear.
+
+\smallskip
+A \term{left outer join} of $R$ with $S$ returns every row of $R$; where
+there is no partner in $S$, the $S$ attributes are null. A \term{right outer
+join} keeps every row of $S$; a \term{full outer join} keeps every row of
+both.
+
+\smallskip
+SQLite supports all three. \sqlkw{LEFT JOIN} is the one you will need, and the
+question that decides it is always the same: \emph{must a row with no partner
+still appear?}
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  cell/.style={draw=primary!35, line width=0.5pt, minimum width=1.5cm,
+               minimum height=0.40cm, font=\scriptsize\ttfamily,
+               text=primary!65!black, inner sep=0pt},
+  hd/.style={cell, fill=primary, text=white, font=\scriptsize\bfseries},
+  gone/.style={cell, fill=accent!12, text=accent},
+  nul/.style={cell, text=neutral},
+  ttl/.style={font=\scriptsize\bfseries, text=#1, anchor=south},
+  nt/.style={font=\scriptsize\itshape, text=neutral, align=center}
+]
+  % section (left table)
+  \node[ttl=primary] at (-5.4,0.5) {section};
+  \foreach \c [count=\i] in {course, emp\_id}{
+    \node[hd] at (-6.95+\i*1.5,0.2) {\c};}
+  \foreach \r/\a/\b/\s in {1/CS-103/E-114/cell, 2/CS-201/E-120/cell,
+                           3/CS-305/NULL/gone}{
+    \node[\s] at (-5.45,-0.4*\r+0.2) {\a};
+    \node[\s] at (-3.95,-0.4*\r+0.2) {\b};}
+
+  % inner join result
+  \node[ttl=greenhl!60!black] at (0.75,0.5) {\sqlkw{JOIN} instructor};
+  \foreach \c [count=\i] in {course, emp\_id, name}{
+    \node[hd] at (-1.5+\i*1.5,0.2) {\c};}
+  \foreach \r/\a/\b/\c in {1/CS-103/E-114/Malik, 2/CS-201/E-120/Raza}{
+    \node[cell] at (0.0,-0.4*\r+0.2) {\a};
+    \node[cell] at (1.5,-0.4*\r+0.2) {\b};
+    \node[cell] at (3.0,-0.4*\r+0.2) {\c};}
+  \node[nt, text=accent, text width=4.4cm] at (1.5,-1.35)
+       {CS-305 is \textbf{gone}: its emp\_id is null and null equals
+        nothing};
+
+  % left join result
+  \node[ttl=secondary!70!black] at (6.95,0.5) {\sqlkw{LEFT JOIN} instructor};
+  \foreach \c [count=\i] in {course, emp\_id, name}{
+    \node[hd] at (4.7+\i*1.5,0.2) {\c};}
+  \foreach \r/\a/\b/\c/\s in {1/CS-103/E-114/Malik/cell,
+                              2/CS-201/E-120/Raza/cell,
+                              3/CS-305/NULL/NULL/nul}{
+    \node[\s] at (6.2,-0.4*\r+0.2) {\a};
+    \node[\s] at (7.7,-0.4*\r+0.2) {\b};
+    \node[\s] at (9.2,-0.4*\r+0.2) {\c};}
+  \node[nt, text width=4.4cm] at (7.7,-1.55)
+       {every section survives; the missing partner is filled with null};
+\end{tikzpicture}}%
+{The section nobody has been assigned to teach. An inner join drops it without
+comment; a left join keeps it and marks what is missing. On the seeded
+database this is 73 sections out of 1{,}500.}{innerleft}
+
+\section{Measured: Plans, Nulls and the Cost of a Missing Index}
+
+\begin{measured}[Three joins that return the same rows and one that returns none]
+\textsf{\footnotesize \texttt{code/m13\_joins.py}, seeded database (4{,}000
+students, 60{,}037 enrolments), SQLite 3.51.2, Intel i5-6600, Windows 11.}
+
+\medskip
+\textbf{1. Four spellings of one inner join}
+
+\begin{tabular}{@{}L{4.6cm}R{1.9cm}R{1.7cm}L{5.6cm}@{}}
+\textbf{written as} & \textbf{rows} & \textbf{ms} & \textbf{plan} \\
+comma + \sqlkw{WHERE}  & 60{,}037 & 29.1 & \texttt{SCAN e} + \texttt{SEARCH s} \\
+\sqlkw{JOIN} \dots\ \sqlkw{ON} & 60{,}037 & 30.4 & identical \\
+\sqlkw{JOIN} \dots\ \sqlkw{USING} & 60{,}037 & 30.1 & identical \\
+\sqlkw{NATURAL JOIN} & \textbf{0} & 43.7 & \\
+\end{tabular}
+
+\smallskip
+The two tables share \textbf{two} attribute names, not one:
+\texttt{roll\_no}, and \texttt{semester} --- which is an \texttt{INTEGER} year
+of study (e.g.\ \texttt{8}) in \textit{student} and a \texttt{TEXT} term label
+(e.g.\ \texttt{'FALL2025'}) in \textit{enrolment}. \sqlkw{NATURAL JOIN} matched
+on both, demanded a year equal a term label, and returned nothing. \textbf{No
+error, on the schema exactly as \chref{mapping} built it.}
+
+\medskip
+\textbf{2. Inner against left join}
+
+\begin{tabular}{@{}L{9.4cm}R{2.4cm}@{}}
+sections in the database & 1{,}500 \\
+sections with no instructor yet (\texttt{emp\_id} null) & 73 \\
+timetable as an inner join & 1{,}427 \\
+timetable as a left join & 1{,}500 \\
+\end{tabular}
+
+\smallskip
+The 73 missing from the inner join are exactly the sections nobody has been
+assigned to --- the rows a timetable most needs to show.
+
+\medskip
+\textbf{3. Students who share a name: a join on an unindexed column}
+
+\begin{tabular}{@{}R{1.6cm}R{2.0cm}R{1.9cm}R{2.4cm}R{2.0cm}R{1.8cm}@{}}
+\textbf{students} & \textbf{pairs found} & \textbf{as written}
+& \textbf{automatic index off} & \textbf{real index} & \textbf{slowdown} \\
+1{,}000 & 1{,}785  & 3.2\,ms  & 235.1\,ms  & 2.9\,ms  & 82$\times$ \\
+2{,}000 & 7{,}109  & 8.6\,ms  & 1{,}088.1\,ms & 11.1\,ms & 98$\times$ \\
+4{,}000 & 28{,}517 & 25.1\,ms & 4{,}170.1\,ms & 38.7\,ms & \textbf{108$\times$} \\
+\end{tabular}
+
+\smallskip
+\textbf{Compare across a row, not down a column.} The pairs found grow about
+four-fold per doubling for \emph{every} method, because names come from a
+fixed pool and the number of real matches is itself quadratic --- so growth
+ratios here mix up how much the database \emph{looked at} with how much it
+\emph{returned}. Across a row the output is identical, and the difference is
+pure search: without an index, all $4000 \times 3999 / 2 \approx 8$ million
+pairs are examined to find 28 thousand. The slowdown itself rises with size,
+82 to 108, which is the real signature of a quadratic method.
+
+\medskip
+\textbf{4. Why ``as written'' is fast anyway}
+
+\begin{tabular}{@{}L{4.8cm}L{9.2cm}@{}}
+automatic index on (default) & \texttt{SEARCH b USING AUTOMATIC COVERING INDEX (name=?)} \\
+automatic index off & \texttt{SEARCH b USING INDEX \dots (roll\_no>?)} \\
+\texttt{CREATE INDEX} on name & \texttt{SEARCH b USING INDEX idx\_name (name=?)} \\
+\end{tabular}
+
+\smallskip
+SQLite noticed the missing index, \textbf{built one for this single query,
+used it, and threw it away}. You pay to build an index on every run and never
+get to keep it.
+\end{measured}
+
+\begin{alertbox}[What the measurement means for the queries you write]
+\begin{tight}
+  \item \textbf{Never use \sqlkw{NATURAL JOIN}.} Its condition is decided by
+        column names, and column names change for reasons that have nothing to
+        do with the join. This course's own schema has the trap in it, and it
+        was not put there on purpose --- a year of study and a term are both
+        reasonably called ``semester''. Write \sqlkw{ON} or \sqlkw{USING} and
+        say what you mean.
+  \item \textbf{Ask, for every join, whether an unmatched row must still
+        appear.} If yes, it is a \sqlkw{LEFT JOIN}. The inner join's silence
+        about the 73 is not a bug in SQL; it is the definition, applied to a
+        null foreign key that \chref{cardinality} deliberately allowed.
+  \item \textbf{Read the plan.} \sqlkw{AUTOMATIC INDEX} is the optimiser
+        telling you an index is missing, in plain words. It is the cheapest
+        performance diagnosis there is, and \chref{indexes} is about acting on
+        it.
+\end{tight}
+\end{alertbox}
+
+\section{Joining a Table to Itself}
+
+\begin{examplebox}[The self-join, and the condition that halves it]
+``Pairs of students who share a name'' joins \textit{student} to itself, which
+needs two aliases --- \chref{algebra}'s rename:
+
+\begin{lstlisting}[language=sql]
+SELECT a.roll_no, b.roll_no, a.name
+  FROM student a
+  JOIN student b ON a.name = b.name
+                AND a.roll_no < b.roll_no;
+\end{lstlisting}
+
+\smallskip
+\textbf{The second condition does two jobs.} Without it every student matches
+themselves --- Ayesha shares a name with Ayesha --- and every real pair appears
+twice, once each way round. \texttt{a.roll\_no < b.roll\_no} removes both: no
+row is paired with itself, and each pair appears in exactly one order. Use
+$<$, never $\neq$, which would keep both orders.
+
+\smallskip
+The prerequisite query in \chref{algebra}'s laboratory was a self-join too, of
+\textit{course}, through \textit{prerequisite}. Every recursive relationship in
+an ER diagram becomes a self-join in SQL.
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{\sqlkw{NATURAL JOIN}.} It joined on two columns, not one, and
+        returned nothing. Measured.
+  \item \textbf{An inner join where a left join was meant.} The unmatched rows
+        vanish silently --- 73 sections from a timetable.
+  \item \textbf{A condition on the right table in \sqlkw{WHERE} after a
+        \sqlkw{LEFT JOIN}.} \texttt{WHERE i.name = 'Malik'} discards the
+        null-extended rows and turns it back into an inner join. Put such
+        conditions in \sqlkw{ON}.
+  \item \textbf{Forgetting the join condition.} You get the product: 240
+        million rows on the seeded data.
+  \item \textbf{A self-join with $\neq$.} Every pair twice. Use $<$.
+  \item \textbf{Ignoring \sqlkw{AUTOMATIC INDEX} in a plan.} It is a missing
+        index announcing itself.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Lose 73 sections, find them, and make a join a hundred times faster]
+\begin{lstlisting}[language=bash]
+# --- 1. The seeded database ----------------------------------------
+python code/schema/seed.py university.db
+sqlite3 university.db
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. The timetable, as an inner join -------------------------
+.headers on
+.mode box
+SELECT COUNT(*) FROM section s JOIN instructor i ON s.emp_id = i.emp_id;
+SELECT COUNT(*) FROM section;
+-- The two numbers differ. By how much, and which sections are they?
+
+-- --- 3. Find them -----------------------------------------------
+SELECT s.course_code, s.section_no, s.semester
+  FROM section s LEFT JOIN instructor i ON s.emp_id = i.emp_id
+ WHERE i.emp_id IS NULL
+ LIMIT 10;
+-- This is the anti-join idiom: LEFT JOIN, then keep the rows that
+-- found no partner. Learn it; Chapter 15 measures it.
+
+-- --- 4. Break the left join by mistake --------------------------
+SELECT COUNT(*) FROM section s LEFT JOIN instructor i
+    ON s.emp_id = i.emp_id
+ WHERE i.designation = 'Professor';
+SELECT COUNT(*) FROM section s LEFT JOIN instructor i
+    ON s.emp_id = i.emp_id AND i.designation = 'Professor';
+-- Same condition, two places, two very different counts. Explain.
+
+-- --- 5. The natural join, on the schema you built ---------------
+SELECT COUNT(*) FROM student NATURAL JOIN enrolment;
+-- Zero. Find out why:
+PRAGMA table_info(student);
+PRAGMA table_info(enrolment);
+-- Name the second shared column, and its two meanings.
+
+-- --- 6. Read a plan ---------------------------------------------
+EXPLAIN QUERY PLAN
+SELECT COUNT(*) FROM student a JOIN student b
+    ON a.name = b.name AND a.roll_no < b.roll_no;
+-- Find the word AUTOMATIC. Say what SQLite just did.
+
+-- --- 7. Give it the index it keeps building ---------------------
+CREATE INDEX idx_student_name ON student(name);
+EXPLAIN QUERY PLAN
+SELECT COUNT(*) FROM student a JOIN student b
+    ON a.name = b.name AND a.roll_no < b.roll_no;
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 8. The measured version ----------------------------------------
+python code/m13_joins.py
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 4 is the one that catches people in examinations
+and in production alike. A condition in \sqlkw{WHERE} is applied \emph{after}
+the outer join has produced its null-extended rows, and since a null
+\texttt{designation} is not \texttt{'Professor'}, they are all discarded ---
+the outer join has silently become an inner one.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item \sqlkw{NATURAL JOIN} of \textit{student} and \textit{enrolment}
+        returns 0 rows on this course's schema. Explain exactly why, say what
+        you would change in the query, and say what you would change in the
+        schema if you could change only one column name.
+  \item An inner join of \textit{section} to \textit{instructor} returns 1{,}427
+        rows and the table has 1{,}500. Identify the missing 73 by a property
+        they share, write the query that lists them, and say which design
+        decision in \chref{cardinality} made them possible.
+  \item Two joins return the same 28{,}517 rows, one in 38.7\,ms and one in
+        4{,}170\,ms. Explain the difference using the number of pairs each one
+        examined, and say why comparing growth ratios down the columns would
+        have given a misleading answer.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A \textbf{theta join} is $\sigma_\theta(R \times S)$; an
+        \textbf{equijoin} uses only $=$; a \textbf{natural join} equijoins on
+        \emph{every} shared attribute name.
+  \item Comma-plus-\sqlkw{WHERE}, \sqlkw{JOIN \dots ON} and \sqlkw{JOIN \dots
+        USING} produce the same plan. Use \sqlkw{ON}.
+  \item \textbf{Measured: \sqlkw{NATURAL JOIN} returned 0 rows} on this
+        course's schema, because \textit{student} and \textit{enrolment} both
+        have a \texttt{semester} --- a year of study in one, a term label in
+        the other. Never use it.
+  \item An \textbf{inner join} drops rows with no partner; a \textbf{left
+        join} keeps them with nulls. \textbf{Measured: 73 of 1{,}500 sections}
+        vanished from the inner-join timetable --- the ones with no instructor.
+  \item A condition on the right-hand table belongs in \sqlkw{ON}. In
+        \sqlkw{WHERE} it turns a left join back into an inner one.
+  \item A \textbf{self-join} needs two aliases, and $<$ rather than $\neq$ to
+        avoid both self-pairs and duplicate pairs.
+  \item \textbf{Measured: a join on an unindexed column was 108$\times$ slower}
+        at 4{,}000 students than the same join with an index --- 8 million
+        pairs examined against 28 thousand found.
+  \item Compare methods \textbf{at the same size}. Here the output itself grew
+        quadratically, so growth ratios mixed search cost with output size.
+  \item SQLite builds an \textbf{automatic index} for a single query when one
+        is missing, and discards it. \sqlkw{AUTOMATIC} in a plan is a missing
+        index announcing itself.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A natural join of $R$ and $S$ is an equijoin on:
+        (a)~their primary keys; (b)~their foreign keys; (c)~every attribute
+        they share by name; (d)~the first column of each.
+  \item \textbf{(MCQ)} A section whose \texttt{emp\_id} is null, joined to
+        \textit{instructor} with an inner join, appears: (a)~once, with nulls;
+        (b)~not at all; (c)~once per instructor; (d)~with an error.
+  \item \textbf{(Short)} Why does \texttt{a.roll\_no < b.roll\_no} in a
+        self-join give each pair exactly once, while $\neq$ gives it twice?
+  \item \textbf{(Short)} What does \sqlkw{AUTOMATIC COVERING INDEX} in a query
+        plan tell you, and what should you do about it?
+  \item \textbf{(Short)} Give a query in the university schema that needs a
+        \sqlkw{LEFT JOIN}, and say what an inner join would silently omit.
+  \item \textbf{(Applied)} Write the query that lists every course with its
+        number of sections in FALL2026, including courses with none. (On the
+        seeded database every course has one, so first insert a new course
+        with no sections, or there is nothing to omit.) Show the inner-join
+        version that gets it wrong, say which courses it omits, and then give
+        the correct version and explain where its condition on semester must
+        go and why.
+  \item \textbf{(Applied)} The measured slowdown was 82$\times$, 98$\times$ and
+        108$\times$ at 1{,}000, 2{,}000 and 4{,}000 students. Predict it at
+        8{,}000, show your reasoning from the number of pairs examined and
+        found, and explain why the slowdown is rising rather than constant.
+\end{reviewq}

@@ -1,0 +1,509 @@
+%=====================================================================
+\chapter{Answers to the Checkpoints}\label{app:answers}
+%=====================================================================
+\normalfigures
+
+Three answers per chapter, in order. Attempt each checkpoint from memory before
+reading these. Several are judgement calls rather than facts, and say so; where
+an answer quotes a number, the number comes from the chapter's harness or from
+the seeded database, and you can reproduce it.
+
+% The slide pipeline parses this appendix: \ansch{<number> --- <title>} must be
+% followed immediately by an ans environment of exactly three items.
+\newcommand{\ansch}[1]{\subsection*{\color{primary}Chapter #1}}
+\newenvironment{ans}
+  {\begin{enumerate}[leftmargin=*, itemsep=4pt, topsep=3pt,
+                     label=\textbf{\arabic*.}]}
+  {\end{enumerate}}
+
+%---------------------------------------------------------------------
+\ansch{1 --- Why Not Just Files?}
+\begin{ans}
+  \item \textbf{It escapes most of them, for now.} With one clerk per file and
+        no shared data there is no redundancy, no inconsistency between copies
+        and no concurrent access. It still has \emph{isolation} (``which
+        borrowers are also in arrears?'' needs both files), \emph{integrity}
+        (rules live in each clerk's head) and \emph{atomicity} (a half-saved
+        file). The answer changes the moment any fact --- a student's name ---
+        is recorded in both files, or a second clerk edits either one.
+  \item A \textbf{database} is the data together with its description; a
+        \textbf{DBMS} is the software that manages it. ``We bought a database''
+        might mean a product (SQLite, Oracle) with no data in it, or a
+        populated set of tables, or a whole system --- three purchases with
+        different costs, owners and risks. You cannot install, back up or
+        migrate it until you know which.
+  \item Disk is cheap; \textbf{disagreement} is not. Redundancy's real cost is
+        \emph{inconsistency}: two copies of one fact that can diverge. Example:
+        a student's name changes and is corrected in \texttt{students.csv} but
+        not \texttt{fees.csv}. Each file is internally correct; the system now
+        holds two names for one person, and the fee receipt goes to someone
+        who no longer exists.
+\end{ans}
+
+\ansch{2 --- Three Levels, and Why They Are Separate}
+\begin{ans}
+  \item Adding an index: \textbf{internal}, physical independence. Adding a
+        column: \textbf{conceptual}, logical independence (programs that never
+        named it carry on). Renaming a column: \textbf{conceptual}, and logical
+        independence \emph{fails} unless a view keeps the old name. A faster
+        disk: \textbf{internal}, physical independence. A view with no home
+        addresses: \textbf{external}; no independence is involved --- it is
+        the external level being used.
+  \item A schema is the \emph{form}; an instance is what is \emph{written on
+        it}. A blank admission form is the schema: it says there will be a
+        name, a date of birth, a programme. This year's 4{,}000 filled-in
+        forms are the instance. Reprinting the form with a new box is a schema
+        change and is rare; filling one in is an instance change and happens
+        every minute.
+  \item The \textbf{external level} is affected: views can define it, but
+        nothing can confine a user to one, because SQLite has no users. You can
+        still write the views and have programs use only them. You cannot stop
+        anyone who can open the file from reading the base tables. In an
+        application the program itself becomes the gatekeeper --- it holds the
+        file, authenticates people, and only ever queries the views --- which
+        is enforcement by convention, not by the database.
+\end{ans}
+
+\ansch{3 --- What Is Inside a DBMS, and Who Does What}
+\begin{ans}
+  \item The \textbf{optimiser} (a different plan --- perhaps statistics were
+        refreshed, or an index dropped) and the \textbf{buffer manager} (Monday
+        the pages were in memory; Friday they were not). Tell them apart with
+        \sqlkw{EXPLAIN QUERY PLAN}: if the plan changed, it is the optimiser;
+        if the plan is identical, run the query twice --- a fast second run
+        means the first was paying for disk reads.
+  \item \textbf{Advantage:} any tool can discover a database it has never
+        seen with an ordinary \sqlkw{SELECT}, and the schema is backed up with
+        the data. \textbf{Problem:} the dictionary can be damaged by the same
+        failures as the data, and in SQLite anyone who can write the file can
+        in principle corrupt \texttt{sqlite\_master} and with it every table.
+  \item DBA: when to back up. Designer: what the keys are. Programmer: how a
+        query is parameterised. End user: what question is asked. In this
+        course the designer, programmer and DBA decisions are all yours; the
+        DBA decisions that need users and privileges simply cannot be made,
+        and backup becomes \texttt{.backup} run by you.
+\end{ans}
+
+\ansch{4 --- Your First Database, in One Command}
+\begin{ans}
+  \item Page 1 (4{,}096 bytes) holds the 100-byte database header and the
+        schema table \texttt{sqlite\_master} --- the data dictionary. Page 2
+        (4{,}096 bytes) is the root page of the new table's B-tree, empty.
+        Fewer is impossible: storage is allocated in whole pages, the
+        dictionary must exist for the file to describe itself, and the table
+        must have a root.
+  \item From 1{,}000 to 10{,}000 rows the file grew $262{,}144 - 32{,}768 =
+        229{,}376$ bytes, about 25.5 bytes a row, so 2{,}000 rows predicts
+        $32{,}768 + 25{,}500 \approx 58{,}300$, rounded up to a whole page:
+        61{,}440 (15 pages). \textbf{Measured: 57{,}344 bytes, 14 pages.} The
+        naive guess --- double 32{,}768 --- gives 65{,}536 and is further off,
+        because part of the file is fixed overhead (the header page and the
+        tree's interior page) that does not grow with the rows.
+  \item \texttt{CREATE TABLE instructor (emp\_id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL, department TEXT NOT NULL, designation TEXT)
+        STRICT;} \texttt{emp\_id} is \textbf{text} because \texttt{E-0114} has
+        a letter and a leading zero and is never used in arithmetic; it is
+        \textbf{not null} because an identifier that is missing identifies
+        nothing. \texttt{designation} may be null: a new appointment may not
+        have one yet.
+\end{ans}
+
+\ansch{5 --- The Entity-Relationship Model}
+\begin{ans}
+  \item ``Almost every'' means some have two, and one column cannot hold two
+        values that can be searched. The first student with two numbers forces
+        either a lost number or a comma-separated list, which no query can
+        search correctly. Instead, a \texttt{student\_phone(roll\_no, phone)}
+        table with both columns in the key; it costs one join whenever a
+        number is shown.
+  \item Candidate keys: $\{$emp\_id$\}$ (issued uniquely by the university),
+        $\{$cnic$\}$ (national identity, unique by law), $\{$email$\}$ (issued
+        one per employee). \textbf{Primary key: emp\_id} --- unique, always
+        present (CNIC may be missing for foreign staff), never changing (email
+        changes with a name or a reorganisation), short. \texttt{office\_no},
+        \texttt{name} and \texttt{department} are not keys: offices are
+        shared, names repeat, departments hold many people.
+  \item A grade is a fact about \emph{a student in a particular section} ---
+        neither alone determines it. On \ent{student} there is room for one
+        grade per student for their whole degree. On \ent{section} there is
+        room for one grade per section, the same for every student in it. Only
+        the pairing of the two has a grade, and the pairing is the
+        relationship.
+\end{ans}
+
+\ansch{6 --- Cardinality, Participation and Weak Entities}
+\begin{ans}
+  \item \textbf{It will refuse a section with no instructor.} A section is
+        created in June for the autumn timetable; the lecturer is appointed in
+        August. For two months the database will not accept the section ---
+        and somebody will invent an instructor called ``TBA''.
+  \item \textbf{M:N}, with \textbf{partial} participation of \ent{student}
+        (a student may be enrolled in nothing) and \textbf{partial}
+        participation of \ent{section} (a section may have no students). With
+        $(1,N)$ at the section end, participation of \ent{section} becomes
+        \textbf{total}: a section with no students could not exist, so a new
+        section could not be created until its first enrolment arrived.
+  \item Section numbers repeat across courses --- every course has a section
+        1 --- so \texttt{section\_no} identifies a section only within its
+        owner. Partial key: \texttt{section\_no}. Full key: $\{$course\_code,
+        semester, section\_no$\}$. With a surrogate \texttt{section\_id} you
+        must still declare \sqlkw{UNIQUE} (course\_code, semester,
+        section\_no); forget it and the same section can be created twice,
+        with students split between the copies.
+\end{ans}
+
+\ansch{7 --- The Relational Model}
+\begin{ans}
+  \item \textbf{Degree 5} counts attributes and belongs to the schema;
+        \textbf{cardinality 200} counts tuples and belongs to the instance.
+        Cardinality changes without a schema change, with every
+        \sqlkw{INSERT} or \sqlkw{DELETE}. Degree changes only with a schema
+        change: \sqlkw{ALTER TABLE} \dots\ \sqlkw{ADD} or \sqlkw{DROP COLUMN}.
+  \item \texttt{SELECT COUNT(*) FROM enrolment WHERE roll\_no = ?} --- if the
+        same enrolment can be inserted twice, a student's course count is
+        inflated. Declare the composite \sqlkw{PRIMARY KEY} (roll\_no,
+        course\_code, semester, section\_no), which makes the duplicate
+        impossible.
+  \item One null marker carries both meanings, and SQLite has no second kind.
+        \textbf{Design 1:} a \texttt{grade\_status} column (\texttt{'not sat'},
+        \texttt{'lost'}, \texttt{'graded'}) beside a nullable grade --- one
+        column more, and a rule that the two agree. \textbf{Design 2:} a
+        separate \texttt{exam\_incident} table recording lost papers --- no
+        nulls overloaded, but a join to tell the two cases apart.
+\end{ans}
+
+\ansch{8 --- Keys and Integrity Constraints}
+\begin{ans}
+  \item \texttt{PRAGMA foreign\_keys;} tells you whether \emph{this
+        connection} enforces --- not whether anyone else's does, or ever did.
+        \texttt{PRAGMA foreign\_key\_list(t);} shows the declarations exist.
+        \texttt{PRAGMA foreign\_key\_check;} lists every orphan already
+        present: rows means enforcement was off at some point; none means no
+        violation survives, \emph{not} that enforcement was on. Nothing in the
+        file records whether it ever was.
+  \item \ent{section}$\rightarrow$\ent{course}: \sqlkw{CASCADE} --- a
+        section is a weak entity and means nothing without its course.
+        \ent{section}$\rightarrow$\ent{instructor}: \sqlkw{SET NULL} --- the
+        section survives a resignation; participation is partial.
+        \ent{enrolment}$\rightarrow$\ent{student}: \sqlkw{RESTRICT} --- a
+        student with a grade history must never be silently deleted.
+  \item It will accept a \textbf{null} primary key and store it, violating
+        \textbf{entity integrity}. Fix it with \sqlkw{NOT NULL} on the column,
+        or \sqlkw{STRICT} on the table --- measured in \chref{constraints},
+        each one alone refuses the null.
+\end{ans}
+
+\ansch{9 --- Mapping an ER Diagram to Tables}
+\begin{ans}
+  \item On \ent{department}, as \texttt{head\_emp\_id}: every department must
+        have a head (total), but most instructors head nothing (partial), so
+        the totally-participating side can declare the column \sqlkw{NOT NULL}.
+        On \ent{instructor} instead it would be \texttt{heads\_dept\_code},
+        null for all but eight of a hundred instructors.
+  \item \texttt{roll\_no}: who. \texttt{course\_code}: which course.
+        \texttt{semester}: when. \texttt{section\_no}: which group within that
+        offering. Without \texttt{semester} a student could not appear in the
+        same course and section number in two terms --- so repeating a failed
+        course becomes impossible, or overwrites the old grade.
+  \item \texttt{prerequisite(course\_code, requires)}, primary key (course\_code,
+        requires); both columns \sqlkw{REFERENCES} \texttt{course(course\_code)}.
+        The unstated rule: \texttt{CHECK (course\_code <> requires)} --- no
+        course is its own prerequisite. (A two-step cycle needs a trigger;
+        \chref{subqueries} shows why it also needs \sqlkw{UNION}.)
+\end{ans}
+
+\ansch{10 --- SQL: Creating the Schema}
+\begin{ans}
+  \item The marks were 95, 72, \texttt{'absent'}, 88 and 100. Affinity left
+        \texttt{'absent'} as text; \sqlkw{AVG} read it as 0, so the sum was
+        $95 + 72 + 0 + 88 + 100 = 355$ and, because it is not null, the count
+        was 5: $355 / 5 = 71$. Proof: \texttt{SELECT typeof(score), COUNT(*)
+        FROM marks GROUP BY 1;} shows the text row, and \texttt{SELECT
+        SUM(score), COUNT(score) FROM marks;} returns 355 and 5.
+  \item A column constraint follows one column and can name only it; a table
+        constraint follows all the columns and can name several. In
+        \texttt{v1\_create.sql}: the composite \sqlkw{PRIMARY KEY} of
+        \textit{section} (three columns), and the three-column
+        \sqlkw{FOREIGN KEY} of \textit{enrolment} --- neither belongs to one
+        column, so neither can be written beside one.
+  \item \textbf{Compatibility}: other tools and older SQLite versions (before
+        3.37) cannot read a \sqlkw{STRICT} table, and it forbids type names
+        like \texttt{VARCHAR} or \texttt{DATETIME} that ported SQL uses. That
+        is a real cost when the file is shared with old software; for this
+        course's database it does not apply, and the measured cost was zero.
+\end{ans}
+
+\ansch{11 --- Changing a Schema That Is Already Full}
+\begin{ans}
+  \item Nullable \texttt{email}: \textbf{cheap} --- no existing row changes.
+        \texttt{email} \sqlkw{NOT NULL}: \textbf{expensive} --- every row needs
+        a value, so backfill and rebuild. \texttt{semester} text to integer:
+        \textbf{expensive} --- a rebuild, and step~0 must find any value that
+        will not convert. Splitting a whole address: \textbf{impossible} to do
+        exactly --- the parts were never recorded separately, and parsing free
+        text guesses.
+  \item After the migration, backfilled values are indistinguishable from
+        values entered since; a rollback that drops the column cannot tell
+        which were invented, and one that keeps them keeps invented data. To
+        make it reversible, record at migration time which rows were
+        backfilled --- a \texttt{migration\_backfill(roll\_no)} table, or a
+        flag column --- so the reverse can remove exactly those.
+  \item If the migration fails after \sqlkw{COMMIT} but the version is set
+        afterwards, that is merely late. The real danger is the reverse: set
+        after a migration that failed and was rolled back, and the file claims
+        to be version 2 while holding the version 1 schema. Every later
+        migration then assumes columns that are not there.
+\end{ans}
+
+\ansch{12 --- Relational Algebra}
+\begin{ans}
+  \item A relation is a \emph{set}, so $\pi$ removes duplicates: four
+        programmes, four tuples. A SQL result is a \emph{bag} and keeps every
+        row. \sqlkw{DISTINCT} reconciles them:
+        \texttt{SELECT DISTINCT programme FROM student} returns 4.
+  \item $\pi_{roll}(\sigma_{semester=2}(\mathit{student})) -
+        \pi_{roll}(\sigma_{semester='FALL2026'}(\mathit{enrolment}))$, i.e.
+        \texttt{SELECT roll\_no FROM student WHERE semester = 2 EXCEPT SELECT
+        roll\_no FROM enrolment WHERE semester = 'FALL2026'}. ``Nothing'' is the
+        difference. The tempting wrong version, a join with
+        \texttt{e.semester <> 'FALL2026'}, returns second-year students enrolled
+        in \emph{some other} term --- including those also enrolled in
+        FALL2026. Note the two meanings of \texttt{semester}: \chref{joins}
+        returns to them.
+  \item $4{,}000 \times 60{,}037 = 240{,}148{,}000$ intermediate tuples, of
+        which 60{,}037 survive the selection. \textbf{Closure} --- every
+        intermediate result is a relation --- is what makes algebraic laws such
+        as ``select before you multiply'' valid, so the optimiser may compute
+        the join by index lookups and still return exactly the same relation.
+\end{ans}
+
+\ansch{13 --- Joins: the Algebra and the SQL}
+\begin{ans}
+  \item The two tables share \textbf{two} column names: \texttt{roll\_no} and
+        \texttt{semester}. \sqlkw{NATURAL JOIN} required both to be equal, and
+        a year of study (\texttt{8}) never equals a term label
+        (\texttt{'FALL2025'}). In the query: \texttt{JOIN \dots\ USING
+        (roll\_no)} or \sqlkw{ON}. In the schema: rename
+        \texttt{student.semester} to \texttt{year\_of\_study} --- it is the one
+        whose name is misleading.
+  \item They are the 73 sections whose \texttt{emp\_id} is null.
+        \texttt{SELECT s.* FROM section s LEFT JOIN instructor i ON
+        s.emp\_id = i.emp\_id WHERE i.emp\_id IS NULL;} The decision was making
+        \ent{section}'s participation in \ent{teaches} \textbf{partial} in
+        \chref{cardinality} --- deliberately, so a section can exist before its
+        lecturer is appointed.
+  \item Without an index, every pair of 4{,}000 students was compared ---
+        about 8 million --- to find 28{,}517 matches; with one, only the
+        matches were visited: 108$\times$ faster. Growth ratios mislead because
+        the number of \emph{matches} itself grew four-fold per doubling (names
+        come from a fixed pool), so even the indexed join looked quadratic down
+        its column. Only a comparison at equal size isolates search cost.
+\end{ans}
+
+\ansch{14 --- Selecting Rows, and the Trouble with NULL}
+\begin{ans}
+  \item $60{,}037 - 7{,}268 - 32{,}777 = 19{,}992$ rows: the ungraded FALL2026
+        enrolments, whose grade is null. For them both \texttt{= 'A'} and
+        \texttt{<> 'A'} are \unk{}, and \sqlkw{WHERE} keeps only \emph{true}.
+        \texttt{WHERE grade <> 'A' OR grade IS NULL} returns all 52{,}769 that
+        are not an A (in SQLite \texttt{WHERE grade IS NOT 'A'} says the same).
+  \item \texttt{x NOT IN (a, NULL)} means \texttt{x <> a AND x <> NULL}. The
+        second comparison is \unk{}. If the first is false the whole is false;
+        if the first is true, \texttt{T AND U = U}. So for every $x$ the
+        condition is false or \unk{} --- never true --- and \sqlkw{WHERE}
+        discards every row.
+  \item It decides that \textbf{a missing mark is a zero} --- an absent
+        student failed. Scores 80, 90, null: \sqlkw{AVG} gives
+        $(80+90)/2 = 85$; \sqlkw{AVG}(\sqlkw{COALESCE}) gives $(80+90+0)/3 =
+        56.7$. Write \sqlkw{AVG}(score), and report the count of missing marks
+        beside it, so the decision about them is made by the examinations
+        office rather than by a function.
+\end{ans}
+
+\ansch{15 --- Sub-queries, \texorpdfstring{\sqlkw{EXISTS}}{EXISTS} and Set Operations}
+\begin{ans}
+  \item The \sqlkw{IN} sub-query of step~2 is \textbf{uncorrelated}. Its
+        \sqlkw{EXISTS} is \textbf{correlated}, on \texttt{s.roll\_no}. In
+        step~3, \sqlkw{NOT IN} and the two \sqlkw{EXCEPT} branches are
+        uncorrelated; \sqlkw{NOT EXISTS} is correlated, on \texttt{i.emp\_id}.
+        Steps~4 and~5 are correlated, on \texttt{c.course\_code}. The recursive
+        CTE's step refers to itself, not to an outer query.
+  \item \sqlkw{NOT IN} returned 0. Its list contained the 73 null
+        \texttt{emp\_id}s, so each instructor's test included \texttt{x <>
+        NULL}, which is \unk{} --- and no row's condition could be true.
+        \sqlkw{EXCEPT} is a set operation, not a comparison: it removes a
+        left-hand row only if an equal row appears on the right, and a null on
+        the right could only remove a null on the left. \texttt{instructor.emp\_id}
+        has none.
+  \item Without an index, each of 48 courses scanned all 60{,}037
+        enrolments --- 2.9 million row visits --- while \sqlkw{GROUP BY} read
+        them once. With an index, each course became one index search and the
+        correlated form read only what it counted, while \sqlkw{GROUP BY} still
+        read everything. The advice is really ``avoid \emph{unindexed}
+        correlated sub-queries''; correlation itself costs nothing.
+\end{ans}
+
+\ansch{16 --- Grouping, Aggregation and Window Functions}
+\begin{ans}
+  \item 2.383 divides the points by the \textbf{40{,}045} graded enrolments;
+        1.590 divides the same points by all \textbf{60{,}037}, counting each
+        ungraded enrolment as a zero. Publish 2.383, labelled as the average
+        over graded courses, with the 19{,}992 in progress reported separately:
+        an unfinished course is not an F.
+  \item \texttt{course\_code LIKE 'CS-\%'} mentions only a grouping column, so
+        it gives the same answer whether rows are removed before grouping or
+        whole groups after --- and SQLite moved it into \sqlkw{WHERE} itself.
+        \texttt{COUNT(*) > 1000} needs the count, which does not exist until
+        grouping is finished, so it can only be tested after. Write
+        \sqlkw{WHERE} because it states what you mean; the rewrite is an
+        optimisation, not a promise.
+  \item ``Each student's rank within their programme.''
+        \texttt{SELECT roll\_no, programme, gpa, RANK() OVER (PARTITION BY
+        programme ORDER BY gpa DESC) FROM per\_student;} \sqlkw{GROUP BY}
+        programme would collapse each programme to one row and lose every
+        student; the window keeps all of them and adds the rank.
+\end{ans}
+
+\ansch{17 --- Functional Dependencies}
+\begin{ans}
+  \item $\{$emp\_id$\}^{+}$: start \{emp\_id\}; \fd{emp\_id}{instructor} adds
+        instructor; nothing else applies: \textbf{\{emp\_id, instructor\}}.
+        $\{$course\_code, semester, section\_no$\}^{+}$: pass 1 adds room and
+        emp\_id (the section rule) and title, credit\_hours, dept\_code (the
+        course rule); pass 2 adds instructor (via emp\_id) and dept\_name (via
+        dept\_code); pass 3 adds nothing. Ten attributes; not a superkey ---
+        roll\_no, name, programme and grade are missing.
+  \item $\{$roll\_no, course\_code$\}^{+}$: pass 1 adds name, programme (from
+        roll\_no) and title, credit\_hours, dept\_code (from course\_code);
+        pass 2 adds dept\_name. \textbf{dept\_name is in the closure, so the
+        dependency follows.}
+  \item Step 1: already single right sides. Step 2: in \fd{AC}{D}, is $C$
+        extraneous? $\{A\}^{+} = \{A, B, C\}$ by \fd{A}{B} and \fd{A}{C}, then
+        \fd{AC}{D} gives $D$ --- so \fd{A}{D} holds and $C$ is extraneous.
+        Step 3: \fd{A}{C} is redundant (\fd{A}{B}, \fd{B}{C}). Result
+        $\{$\fd{A}{B}, \fd{B}{C}, \fd{A}{D}$\}$; $\{A\}^{+} = \{A,B,C,D\}$ in
+        both.
+\end{ans}
+
+\ansch{18 --- Normal Forms: 1NF to BCNF}
+\begin{ans}
+  \item \textbf{Update}: renaming department CS changed 7{,}869 rows (one in
+        \textit{department}), and a half-done rename left two names --- caused
+        by \fd{dept\_code}{dept\_name}. \textbf{Insertion}: a new course with no
+        enrolments had no row to live in --- \fd{course\_code}{title, \dots}
+        with a key that needs a student. \textbf{Deletion}: removing PH-350's
+        1{,}122 enrolments removed the course --- the same dependency.
+  \item Key $\{A, B\}$. \fd{A}{C} is \textbf{partial} (violates 2NF);
+        \fd{C}{D} is \textbf{transitive} (violates 3NF). So R is in 1NF only.
+        Deepest first: on \fd{C}{D}, $R_1(\underline{C}, D)$, remainder
+        $(A, B, C)$; on \fd{A}{C}, $R_2(\underline{A}, C)$, remainder
+        $R_3(\underline{A}, \underline{B})$. All three are in BCNF.
+  \item The transcript was a \emph{lookup}: the normalised \textit{enrolment}
+        could search its primary key by roll\_no, while \textit{report} had no
+        index at all and was read end to end. The department report was a
+        \emph{full scan}, cheaper over one table than over three. With an index
+        on roll\_no the transcript result changes to \textbf{a tie} (0.08 against
+        0.09\,ms); the full-scan result does not change.
+\end{ans}
+
+\ansch{19 --- Decomposition, and Denormalising on Purpose}
+\begin{ans}
+  \item $R_1 \cap R_2 = \{$course\_code$\}$. Its closure (under the rules
+        these two tables can express) does not contain roll\_no or grade, so
+        it is a superkey of neither: \textbf{lossy}. Joining on course\_code
+        pairs every student who took a course with every grade given in it ---
+        182{,}920 rows from 39{,}152 true facts.
+  \item Split \textit{course} into \texttt{course\_dept(course\_code,
+        dept\_code)} and \texttt{course\_dname(course\_code, dept\_name)}:
+        lossless (course\_code is the key of both), but \fd{dept\_code}{dept\_name}
+        lies in neither. Inserting \texttt{('CS-150', 'Computing')} when
+        another CS course says \texttt{'Computer Science'} is accepted ---
+        measured in \chref{decomposition}.
+  \item Pays off when reads per write exceed $3.679 / 69.73 = 0.053$: one
+        read in every 19 writes. On a 1\,ms-commit SSD, writes get cheaper in
+        general, and the part of the 3.679\,ms that came from making a second
+        table's page durable at each commit shrinks; \chref{views} measured the
+        trigger's own work near 0.03\,ms. The added cost per write falls, so the
+        break-even falls too --- the summary table pays off at even fewer
+        reads.
+\end{ans}
+
+\ansch{20 --- Views, Triggers and Keeping Data Honest}
+\begin{ans}
+  \item SQLite stored only the view's \sqlkw{SELECT} text, substituted it into
+        the query that named it, and compiled the result. What runs is the
+        hand-written query with renumbered cursors. Nothing was stored, so
+        nothing can be out of date: each use is the query run now.
+  \item Choose the table when measured read cost matters --- here 700$\times$
+        --- and reads greatly outnumber writes. Alongside it: triggers on
+        \sqlkw{INSERT}, \sqlkw{DELETE} \emph{and} \sqlkw{UPDATE} of every
+        table it summarises; a query comparing it with the equivalent view,
+        run on a schedule; and a script that rebuilds it from the base tables
+        when they disagree.
+  \item \texttt{CREATE TRIGGER max\_six\_upd BEFORE UPDATE OF semester,
+        roll\_no ON enrolment WHEN (SELECT COUNT(*) FROM enrolment WHERE
+        roll\_no = NEW.roll\_no AND semester = NEW.semester) >= 6 BEGIN SELECT
+        RAISE(ABORT, 'at most six sections a term'); END;} It uses \texttt{NEW},
+        because the limit concerns the term the enrolment is moving
+        \emph{into}; \texttt{OLD} is the term it is leaving.
+\end{ans}
+
+\ansch{21 --- Indexes, and Where They Stop Helping}
+\begin{ans}
+  \item Each page of a B-tree divides its range among a few hundred children,
+        so three levels reach millions of entries and a lookup reads one page
+        per level --- three or four reads at 10{,}000 rows or a million.
+        Hence 0.053 against 0.057\,ms. A scan reads every page, and a hundred
+        times the rows is roughly a hundred times the pages: 1.37 to
+        199.90\,ms.
+  \item It lacked the \textbf{distribution} of \textit{k}: \texttt{sqlite\_stat1}
+        recorded only the row count and one row per key, so every range looked
+        selective. That would come from \textbf{STAT4} histograms, which the
+        SQLite shipped with Python does not include. To force the scan: write
+        \texttt{+k} in the condition, or \texttt{FROM t NOT INDEXED}.
+  \item \texttt{roll\_no = ?}: \textbf{yes} --- the leftmost column.
+        \texttt{course\_code = ?}: \textbf{no} --- course\_code values are
+        scattered through every roll\_no. Both: \textbf{yes} --- the full
+        prefix, the most selective use.
+\end{ans}
+
+\ansch{22 --- Transactions, Concurrency and Recovery}
+\begin{ans}
+  \item \textbf{Atomicity}: the failed move left a student in nothing under
+        autocommit, unchanged inside a transaction. \textbf{Consistency}:
+        constraints from \chref{constraints} refuse any end state that breaks
+        them. \textbf{Isolation}: \sqlkw{IMMEDIATE} counted both clerks where
+        no transaction lost one. \textbf{Durability}: \texttt{synchronous =
+        FULL} waited 23\,ms per commit for the disk; without it a power cut can
+        lose a reported commit.
+  \item \sqlkw{DEFERRED}: both took \sqlkw{SHARED} to read; A's write took
+        \sqlkw{RESERVED}; B's write wanted \sqlkw{RESERVED} and was refused;
+        A's \sqlkw{COMMIT} wanted \sqlkw{EXCLUSIVE}, which needs B's
+        \sqlkw{SHARED} gone --- deadlock until B rolled back.
+        \sqlkw{IMMEDIATE}: A took \sqlkw{RESERVED} at \sqlkw{BEGIN}, so B
+        could not begin; after A committed, B began, read 41 and wrote 42.
+  \item Each commit waited about 23\,ms for the disk to confirm; 200 waits is
+        4.6\,s, and one transaction waits once. \texttt{synchronous = OFF}
+        removes the wait by abandoning the guarantee --- and was still
+        9$\times$ slower than batching. Used for results entry, a power cut in
+        the last week of term could lose grades the clerks saw saved, or
+        corrupt the file.
+\end{ans}
+
+\ansch{23 --- Security, NoSQL, and the Semester Project}
+\begin{ans}
+  \item The \textbf{single quote}. Pasted, it closed the string the programmer
+        had opened, so \texttt{OR '1'='1'} became SQL and was true for all
+        4{,}000 rows. Bound as a parameter, the value was never parsed: the
+        quote was just a character in a roll number that no student has, so 0
+        rows.
+  \item \texttt{GRANT SELECT ON enrolment TO exams\_office;} and
+        \texttt{GRANT UPDATE (grade) ON enrolment TO exams\_office;} In SQLite
+        the same office, if it can open the file, can read and change every
+        table, including fees and addresses --- there are no users to grant to.
+  \item ``All of one student's grades'': the \textbf{document} --- one lookup
+        returns the whole record. ``A grades in CS-101'': \textbf{relational}
+        --- one indexed condition on one table, against unpacking all 4{,}000
+        documents (9.8 against 78.4\,ms on the seeded data). The model should
+        follow the questions the system is asked most.
+\end{ans}

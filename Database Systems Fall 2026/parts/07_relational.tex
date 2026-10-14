@@ -1,0 +1,514 @@
+%=====================================================================
+\chapter{The Relational Model}\label{ch:relational}
+%=====================================================================
+\locator{2}{Part II --- Designing It}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} relation, tuple, attribute, domain, degree and
+        cardinality, and \textbf{use} each word correctly.
+  \item \textbf{State} the four properties of a relation and \textbf{show}
+        which of them a SQL table does not have.
+  \item \textbf{Distinguish} a relation schema from a relation instance, and
+        \textbf{write} both in the standard notation.
+  \item \textbf{Identify} superkeys, candidate keys and the primary key of a
+        relation from its data \emph{and} its guarantees.
+  \item \textbf{Explain} what a null value is, what it is not, and why it is
+        the model's weakest point.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ermodel} for keys --- the definitions are the same ones, restated for
+relations. \chref{firstdatabase} for the \relation{}{} notation and for
+\texttt{sqlite3}, which you will use at the end to break one of this
+chapter's rules on purpose.
+\end{prereq}
+
+\begin{keyterms}
+relational data model $\bullet$ relation $\bullet$ tuple $\bullet$ attribute
+$\bullet$ domain $\bullet$ atomic value $\bullet$ relation schema $\bullet$
+relation instance $\bullet$ degree $\bullet$ arity $\bullet$ cardinality
+$\bullet$ relational database schema $\bullet$ superkey $\bullet$ candidate
+key $\bullet$ primary key $\bullet$ foreign key $\bullet$ null value
+$\bullet$ unknown $\bullet$ inapplicable
+\end{keyterms}
+
+\section{One Idea, and It Is Mathematics}
+
+Codd's 1970 paper proposed that all data in a database be represented one way:
+as relations. Not as files, not as linked records, not as trees. One structure,
+with a mathematical definition, so that questions about data could be answered
+by reasoning rather than by knowing how the file was laid out.
+
+That is the whole of the relational model, and the reason every system in
+\chref{whynotfiles}'s list --- Oracle, PostgreSQL, MySQL, SQL Server, SQLite
+--- is a different implementation of the same five pages of theory.
+
+\begin{definitionbox}[Domain, attribute, tuple, relation]
+A \term{domain} is a named set of \term{atomic} values --- values the model
+treats as indivisible. \texttt{semester} might have domain
+$\{1,2,\dots,8\}$; \texttt{roll\_no} the set of strings matching the
+university's pattern.
+
+\smallskip
+An \term{attribute} is a name for the role a domain plays in a relation. Two
+attributes may share a domain: \texttt{start\_year} and \texttt{end\_year} are
+both years and are not the same attribute.
+
+\smallskip
+A \term{tuple} is an ordered list of values, one from each attribute's domain.
+Informally, a row.
+
+\smallskip
+A \term{relation} is a \emph{set} of tuples over the same attributes.
+Informally, a table --- and the gap between ``informally'' and ``exactly'' is
+section~7.3.
+\end{definitionbox}
+
+\begin{examplebox}[The vocabulary on one small relation]
+\relation{student}{\relkey{roll\_no}, name, programme, semester}
+
+\medskip
+\begin{tabular}{@{}L{3.2cm}L{3.0cm}L{2.4cm}L{2.2cm}@{}}
+\textbf{roll\_no} & \textbf{name} & \textbf{programme} & \textbf{semester} \\
+2021-IT-001 & Ayesha Khan & BSIT & 2 \\
+2021-IT-002 & Bilal Ahmed & BSIT & 2 \\
+2021-CS-007 & Hira Nadeem & BSCS & 4 \\
+\end{tabular}
+
+\medskip
+\begin{tight}
+  \item The \textbf{relation schema} is the heading: the name plus the four
+        attributes. It is written \relation{student}{\relkey{roll\_no}, name,
+        programme, semester}.
+  \item The \textbf{relation instance} is the three tuples. Tomorrow it is
+        different; the schema is not.
+  \item The \textbf{degree} (or \term{arity}) is \textbf{4} --- the number of
+        attributes. It changes only when the schema changes.
+  \item The \textbf{cardinality} is \textbf{3} --- the number of tuples. It
+        changes every time somebody enrols.
+  \item The \textbf{domain} of \texttt{semester} is the integers 1 to 8. The
+        value 2 appears twice and that is fine; domains are not keys.
+\end{tight}
+
+\smallskip
+A \term{relational database schema} is the set of all the relation
+schemas in one database --- \textit{student}, \textit{course},
+\textit{section} and the rest, taken together.
+
+\smallskip
+\textbf{Degree and cardinality are easy to swap by accident.} Degree counts
+columns and is a property of the schema; cardinality counts rows and is a
+property of the instance. ``A relation of degree 4 and cardinality 3'' names
+the table above exactly.
+\end{examplebox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  hd/.style={font=\scriptsize\bfseries, text=white},
+  cell/.style={font=\scriptsize\ttfamily, text=primary!65!black},
+  note/.style={font=\scriptsize\itshape, text=neutral, align=left},
+  tag/.style={font=\scriptsize\bfseries, text=accent},
+  br/.style={draw=accent!70, line width=0.8pt,
+             decorate, decoration={brace, amplitude=4pt}}
+]
+  % heading band
+  \fill[primary, rounded corners=2pt] (0,0) rectangle (9.2,0.55);
+  \node[hd, anchor=west] at (0.15,0.28)  {roll\_no};
+  \node[hd, anchor=west] at (2.55,0.28)  {name};
+  \node[hd, anchor=west] at (5.15,0.28)  {programme};
+  \node[hd, anchor=west] at (7.65,0.28)  {semester};
+  % body
+  \foreach \i/\a/\b/\c/\d in {%
+      1/2021-IT-001/Ayesha Khan/BSIT/2,
+      2/2021-IT-002/Bilal Ahmed/BSIT/2,
+      3/2021-CS-007/Hira Nadeem/BSCS/4}{
+    \pgfmathsetmacro{\yy}{-0.42*\i}
+    \ifodd\i\fill[primary!5] (0,\yy-0.17) rectangle (9.2,\yy+0.23);\fi
+    \node[cell, anchor=west] at (0.15,\yy) {\a};
+    \node[cell, anchor=west] at (2.55,\yy) {\b};
+    \node[cell, anchor=west] at (5.15,\yy) {\c};
+    \node[cell, anchor=west] at (7.65,\yy) {\d};}
+  \draw[primary!35, line width=0.8pt] (0,-1.43) rectangle (9.2,0.55);
+
+  % annotations
+  \draw[br] (9.45,0.5) -- node[tag, right=5pt] {} (9.45,-1.4);
+  \node[tag, anchor=west, align=left] at (9.9,-0.45)
+       {cardinality\\= 3 tuples};
+  \draw[br] (0,0.85) -- (9.2,0.85);
+  \node[tag, anchor=south] at (4.6,1.0) {degree = 4 attributes};
+
+  \node[note, anchor=east, text width=3.3cm] at (-0.35,0.28)
+       {\textbf{\color{primary}heading}\\the relation \emph{schema}};
+  \node[note, anchor=east, text width=3.3cm] at (-0.35,-0.85)
+       {\textbf{\color{primary}body}\\the relation \emph{instance}};
+  \node[note, anchor=north west, text width=5.4cm] at (0,-1.75)
+       {\textbf{one tuple} --- a value from each attribute's domain, every one
+        of them \emph{atomic}};
+  \node[note, anchor=north west, text width=5.2cm] at (5.4,-1.75)
+       {\textbf{a set} --- no tuple repeats, and no tuple is first};
+  \draw[-{Stealth[length=1.8mm]}, neutral!60] (1.6,-1.72) -- (1.3,-1.3);
+  \draw[-{Stealth[length=1.8mm]}, neutral!60] (7.4,-1.72) -- (7.4,-1.45);
+\end{tikzpicture}}%
+{One relation, with every word of the vocabulary attached to the thing it
+names. Degree belongs to the heading and changes only when the schema does;
+cardinality belongs to the body and changes all day.}{relanatomy}
+
+\section{The Four Properties of a Relation}
+
+\begin{definitionbox}[What makes a relation a relation]
+\begin{tightnum}
+  \item \textbf{No duplicate tuples.} A relation is a \emph{set}. The same
+        tuple cannot appear twice --- which is another way of saying every
+        relation has a key, if only the whole tuple.
+  \item \textbf{Tuples are unordered.} There is no first row. Two relations
+        with the same tuples in a different sequence are the same relation.
+  \item \textbf{Attributes are unordered.} Attributes are referred to by name,
+        not position. \texttt{(name, roll\_no)} and \texttt{(roll\_no, name)}
+        are the same heading.
+  \item \textbf{Every value is atomic.} One value per attribute per tuple: no
+        lists, no nested tables, no ``three phone numbers in one field''.
+\end{tightnum}
+\end{definitionbox}
+
+\begin{conceptbox}[Why each property is worth having]
+These are not arbitrary tidiness. Each one buys something specific.
+
+\begin{tight}
+  \item \textbf{No duplicates} means every fact is stored once and can be
+        addressed. Two identical rows cannot be told apart, so neither can be
+        updated or deleted individually --- which is the file-based system's
+        redundancy problem (\chref{whynotfiles}) reappearing inside the
+        database.
+  \item \textbf{Unordered tuples} is what lets the optimiser
+        (\chref{whodoeswhat}) choose any plan it likes. If row order were part
+        of the meaning, no index could ever be used and \chref{indexes} would
+        not exist.
+  \item \textbf{Unordered attributes} is what lets you add a column without
+        breaking programs --- the logical data independence of
+        \chref{architecture}, and the reason \sqlkw{SELECT *} is a bad habit:
+        it depends on an order the model says is not there.
+  \item \textbf{Atomic values} is what makes the query language finite. If a
+        field could hold a list, every query would need loops, and relational
+        algebra (\chref{algebra}) could not be written down. This property is
+        also \textbf{first normal form}, arrived at from the other direction
+        in \chref{normalforms}.
+\end{tight}
+\end{conceptbox}
+
+\begin{alertbox}[A SQL table is not a relation, and the difference is measurable]
+SQL was designed around the relational model and departs from it in three
+places. You should know all three, because each one is a bug waiting to
+happen.
+
+\medskip
+\begin{tabular}{@{}L{4.0cm}L{4.6cm}L{5.1cm}@{}}
+\textbf{Relation} & \textbf{SQL table} & \textbf{What follows} \\
+no duplicate tuples & \textbf{duplicates allowed} unless a key is declared &
+  a table without a key is not a relation at all \\
+tuples unordered & \sqlkw{ORDER BY} imposes one, and without it the order is
+  arbitrary & never rely on the order you happen to see \\
+values atomic & mostly enforced, but a text column will hold
+  \texttt{"0300-1234567, 0321-9876543"} quite happily &
+  the model cannot stop you; only you can \\
+\end{tabular}
+
+\smallskip
+The first is the serious one and you can demonstrate it in four lines:
+
+\begin{lstlisting}[language=sql]
+CREATE TABLE t (a TEXT, b TEXT);        -- no key declared
+INSERT INTO t VALUES ('x','y'), ('x','y');
+SELECT COUNT(*) FROM t;                 -- 2
+DELETE FROM t WHERE a='x' AND b='y';    -- deletes BOTH
+\end{lstlisting}
+
+Two identical rows, and no \sqlkw{WHERE} clause in the language can address one
+of them, because there is nothing that distinguishes them. \textbf{This is why
+every table in this course declares a primary key}, and \chref{constraints} is
+about making the declaration real.
+\end{alertbox}
+
+\section{Keys, Restated for Relations}
+
+The definitions are \chref{ermodel}'s, which is the point: the ER model and the
+relational model agree about keys, and that agreement is what makes
+\chref{mapping} possible.
+
+\begin{definitionbox}[Keys of a relation]
+A \term{superkey} is a set of attributes $K$ such that no two tuples of any
+legal instance agree on all of $K$.
+
+\smallskip
+A \term{candidate key} is a minimal superkey: no proper subset of it is a
+superkey.
+
+\smallskip
+The \term{primary key} is the chosen candidate key. Its attributes may not be
+null --- an identifier that is missing identifies nothing.
+
+\smallskip
+A \term{foreign key} is a set of attributes in one relation whose values must
+appear as the primary key of another (or be null). It is how relations are
+joined to each other, and it is \chref{constraints}'s subject.
+\end{definitionbox}
+
+\begin{worked}[Reading keys off an instance, and why you cannot]
+\begin{tabular}{@{}L{2.8cm}L{2.6cm}L{2.2cm}L{2.0cm}L{2.4cm}@{}}
+\textbf{roll\_no} & \textbf{name} & \textbf{prog} & \textbf{sem}
+& \textbf{email} \\
+2021-IT-001 & Ayesha Khan & BSIT & 2 & ayesha@iub.pk \\
+2021-IT-002 & Bilal Ahmed & BSIT & 2 & bilal@iub.pk \\
+2021-CS-007 & Hira Nadeem & BSCS & 4 & hira@iub.pk \\
+\end{tabular}
+
+\medskip
+\textbf{Step 1 --- what is unique in this instance?} All of
+\texttt{roll\_no}, \texttt{name}, \texttt{email}; also
+$\{$\texttt{prog}, \texttt{sem}$\}$ is \emph{not} --- rows 1 and 2 agree.
+
+\medskip
+\textbf{Step 2 --- which of those are superkeys?} This is where the exercise
+stops being mechanical. A superkey is a constraint on \emph{every legal
+instance}, and three rows cannot establish one.
+\begin{tight}
+  \item \texttt{roll\_no}: the university guarantees it. \textbf{Superkey.}
+  \item \texttt{email}: issued one per student. \textbf{Superkey} --- on that
+        guarantee, not on these rows.
+  \item \texttt{name}: unique \emph{here}. The university guarantees nothing.
+        \textbf{Not a superkey}, and the data cannot tell you so.
+\end{tight}
+
+\medskip
+\textbf{Step 3 --- minimality.} $\{$\texttt{roll\_no}$\}$ and
+$\{$\texttt{email}$\}$ are both minimal, so both are candidate keys.
+$\{$\texttt{roll\_no}, \texttt{sem}$\}$ is a superkey and not minimal.
+
+\medskip
+\textbf{Step 4 --- choose.} \texttt{roll\_no}, on \chref{ermodel}'s four
+grounds: unique, always present, never changing, short. \texttt{email} fails
+``never changing''.
+
+\medskip
+\textbf{The asymmetry worth remembering.} An instance can \emph{disprove} a key
+instantly --- one duplicate and it is settled. It can never prove one. So:
+check the data to find candidates, then ask a human to confirm each, and
+record the answer. The examination version of this question gives you the
+guarantees; the real version does not, and you have to go and ask.
+\end{worked}
+
+\section{Null, and Why It Is the Awkward Part}
+
+\begin{definitionbox}[Null]
+A \term{null} is a marker in a tuple meaning that no value from the domain is
+recorded for that attribute. It is \textbf{not} zero, \textbf{not} the empty
+string, and \textbf{not} a value of any kind --- it is the absence of one.
+
+\smallskip
+Codd distinguished two reasons for a null and most systems, including SQLite,
+distinguish neither:
+\begin{tight}
+  \item \term{unknown} --- the student has a CNIC, we do not know it;
+  \item \term{inapplicable} --- the student has no CNIC, because they are
+        fifteen.
+\end{tight}
+One marker, two meanings, and no way to tell them apart in a query.
+\end{definitionbox}
+
+\begin{examplebox}[Three nulls in one row, meaning three different things]
+\begin{tabular}{@{}L{2.9cm}L{3.4cm}L{7.6cm}@{}}
+\textbf{Attribute} & \textbf{Value} & \textbf{What the null means} \\
+\texttt{cnic}        & \textsc{null} & unknown --- they have one, it is not on file \\
+\texttt{thesis\_title} & \textsc{null} & inapplicable --- second-semester
+                                        students do not write one \\
+\texttt{grade}       & \textsc{null} & not yet --- the semester is not over \\
+\end{tabular}
+
+\smallskip
+All three print as blank and all three behave identically in every comparison.
+A query that counts ``students with no CNIC on file'' will silently include
+anybody whose CNIC was inapplicable, and nothing in the database records that
+the two cases were different.
+
+\smallskip
+\textbf{What a designer does about it.} Where the distinction matters, make it
+explicit: a separate \texttt{cnic\_status} attribute, or a different relation
+for thesis students. Where it does not, allow the null and write the ambiguity
+down. The one thing not to do is invent a magic value --- \texttt{'N/A'},
+\texttt{0000-0000000}, \texttt{9999-12-31} --- which is a null that the
+database does not know is a null, and which will be counted, averaged and
+sorted as though it were real.
+\end{examplebox}
+
+\begin{alertbox}[Null is ahead of you in three later chapters]
+This chapter only names the problem. It returns, each time worse:
+
+\begin{tight}
+  \item \chref{select}: \texttt{WHERE grade = NULL} matches nothing, ever ---
+        not even the rows where grade is null. Comparison with null is neither
+        true nor false but \emph{unknown}, and SQL's logic has three values.
+  \item \chref{grouping}: \sqlkw{COUNT(*)} and \sqlkw{COUNT(grade)} give
+        different answers on the same rows, and \sqlkw{AVG} silently ignores
+        nulls rather than treating them as zero --- which is usually right and
+        occasionally catastrophic.
+  \item \chref{joins}: a row whose foreign key is null disappears from an inner
+        join, so the section with no instructor vanishes from the timetable
+        report and nobody notices until a Tuesday.
+\end{tight}
+
+\smallskip
+Nulls are the single largest source of quietly wrong answers in SQL. Every one
+you allow in a schema is a decision; allow them deliberately.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Saying ``table'' when the question asks about a relation.} In
+        an examination the distinction is the answer: a table may have
+        duplicates and an order.
+  \item \textbf{Swapping degree and cardinality.} Degree counts attributes,
+        cardinality counts tuples.
+  \item \textbf{Relying on row order.} Without \sqlkw{ORDER BY} there is none,
+        and the order you see today comes from the plan, which
+        \chref{indexes} will change.
+  \item \textbf{Reading keys off sample data.} Data disproves keys; it never
+        proves them.
+  \item \textbf{Treating null as zero or as the empty string.} It is neither,
+        and the arithmetic will show it.
+  \item \textbf{Inventing a magic value instead of a null.} It gets averaged.
+  \item \textbf{Creating a table with no primary key.} It is not a relation,
+        and you have given up the ability to address a row.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Break three properties of a relation, deliberately]
+\begin{lstlisting}[language=bash]
+# --- 1. A scratch database; keep university.db clean ----------------
+sqlite3 relmodel.db
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. A table that is not a relation --------------------------
+.headers on
+.mode box
+CREATE TABLE nokey (roll_no TEXT, name TEXT);
+INSERT INTO nokey VALUES ('2021-IT-001','Ayesha Khan');
+INSERT INTO nokey VALUES ('2021-IT-001','Ayesha Khan');
+SELECT COUNT(*) FROM nokey;
+-- Property 1 broken. Now try to delete exactly one of them.
+DELETE FROM nokey WHERE roll_no = '2021-IT-001' AND name = 'Ayesha Khan';
+SELECT COUNT(*) FROM nokey;
+-- Write down how many rows went, and say why you could not keep one.
+
+-- --- 3. The same table, as a relation ---------------------------
+CREATE TABLE withkey (roll_no TEXT PRIMARY KEY, name TEXT NOT NULL);
+INSERT INTO withkey VALUES ('2021-IT-001','Ayesha Khan');
+INSERT INTO withkey VALUES ('2021-IT-001','Ayesha Khan');
+-- Record the error. One keyword is the whole difference.
+
+-- --- 4. Prove tuples are unordered ------------------------------
+INSERT INTO withkey VALUES ('2021-CS-007','Hira Nadeem');
+INSERT INTO withkey VALUES ('2021-IT-002','Bilal Ahmed');
+SELECT * FROM withkey;
+CREATE INDEX idx_nm ON withkey(name);
+SELECT * FROM withkey;
+-- Same relation, same query. Did the order change? Either way,
+-- say what you are entitled to assume about it.
+
+-- --- 5. Break atomicity, which nothing will stop you doing ------
+CREATE TABLE badphone (roll_no TEXT PRIMARY KEY, phones TEXT);
+INSERT INTO badphone VALUES
+  ('2021-IT-001','0300-1234567, 0321-9876543');
+-- Now answer: which students have a number starting 0321?
+SELECT roll_no FROM badphone WHERE phones LIKE '%0321%';
+-- It appears to work. Now explain, in one sentence, why
+-- '0321' in the MIDDLE of a number would also match, and what
+-- you would have to write to do this correctly.
+
+-- --- 6. Three nulls, one appearance -----------------------------
+CREATE TABLE nulls (roll_no TEXT PRIMARY KEY, cnic TEXT, grade TEXT);
+INSERT INTO nulls VALUES ('2021-IT-001', NULL, NULL);
+SELECT * FROM nulls WHERE cnic IS NULL;
+SELECT * FROM nulls WHERE cnic = NULL;
+-- Two queries, one of them returns nothing. Which, and WHY?
+-- This is the whole of Chapter 14 in two lines; write your
+-- explanation down now and check it when you get there.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 2 is the one to keep. Two identical rows, and the
+language has no way to refer to one of them --- not because SQLite is
+deficient, but because there is genuinely nothing that tells them apart. Every
+primary key you declare for the rest of this course is buying your way out of
+that position.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A relation has degree 5 and cardinality 200. Say precisely what each
+        number counts, which of the two can change without a schema change,
+        and what operation changes the other.
+  \item Give a specific query that returns a different answer depending on
+        whether duplicate tuples are permitted, and say what you would declare
+        to make the answer reliable.
+  \item \texttt{grade} is null for a student who has not sat the examination
+        and also for one whose paper was lost. Explain why the database cannot
+        distinguish them, give two different designs that could, and say what
+        each design costs.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A \textbf{domain} is a set of atomic values; an \textbf{attribute}
+        names a domain's role; a \textbf{tuple} picks one value per attribute;
+        a \textbf{relation} is a \emph{set} of tuples.
+  \item \textbf{Degree} counts attributes and belongs to the schema;
+        \textbf{cardinality} counts tuples and belongs to the instance.
+  \item Four properties: \textbf{no duplicate tuples}, \textbf{tuples
+        unordered}, \textbf{attributes unordered}, \textbf{values atomic}.
+  \item Each property buys something: addressability, the optimiser's freedom,
+        logical data independence, and a finite query language.
+  \item \textbf{A SQL table is not a relation.} It permits duplicates unless a
+        key is declared, exposes an order, and cannot stop you putting a list
+        in a text column.
+  \item A table with no primary key gives up the ability to address a row: two
+        identical rows cannot be told apart by any \sqlkw{WHERE} clause.
+  \item \textbf{Superkey}, \textbf{candidate key} and \textbf{primary key} mean
+        in the relational model exactly what they meant in the ER model, which
+        is what makes \chref{mapping} mechanical.
+  \item An instance can \textbf{disprove} a key but never prove one. Use the
+        data to find candidates and a human to confirm them.
+  \item A \textbf{null} marks the absence of a value. It is not zero and not
+        the empty string, it conflates \emph{unknown} with
+        \emph{inapplicable}, and it is the source of quietly wrong answers in
+        Chapters~\ref{ch:joins}, \ref{ch:select} and \ref{ch:grouping}.
+  \item Never substitute a magic value for a null. It will be counted, averaged
+        and sorted as though it were real.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} The number of attributes in a relation is its:
+        (a)~cardinality; (b)~degree; (c)~domain; (d)~arity of its key.
+  \item \textbf{(MCQ)} Which property of a relation does a SQL table most
+        clearly fail to have? (a)~attributes unordered; (b)~values atomic;
+        (c)~no duplicate tuples; (d)~a named schema.
+  \item \textbf{(Short)} Two attributes share the domain ``year''. Explain why
+        they are still two different attributes, with an example.
+  \item \textbf{(Short)} Why can an instance disprove a candidate key but never
+        establish one? Illustrate with \texttt{name}.
+  \item \textbf{(Short)} State the difference between \texttt{WHERE cnic IS
+        NULL} and \texttt{WHERE cnic = NULL}, and say which returns rows.
+  \item \textbf{(Applied)} You are given a table of 50{,}000 rows and told only
+        that ``it is the student list''. Describe the queries you would run to
+        propose a primary key, say exactly what each result would and would not
+        establish, and state what you would have to ask a person before
+        declaring one.
+  \item \textbf{(Applied)} A system stores a student's phone numbers in one
+        comma-separated text column. List four distinct questions the
+        university cannot reliably answer in that design, show the relation you
+        would replace it with, and explain which of the four properties of a
+        relation the original violated.
+\end{reviewq}

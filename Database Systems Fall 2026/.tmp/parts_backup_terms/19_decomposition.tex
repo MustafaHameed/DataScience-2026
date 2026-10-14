@@ -1,0 +1,436 @@
+%=====================================================================
+\chapter{Decomposition, and Denormalising on Purpose}\label{ch:decomposition}
+%=====================================================================
+\locator{5}{Part V --- Getting the Design Right}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} a lossless-join decomposition and \textbf{apply} the
+        one-line test for it.
+  \item \textbf{Show} what a lossy decomposition does to a query, by counting
+        its spurious tuples.
+  \item \textbf{Define} dependency preservation and \textbf{identify} a
+        decomposition that loses a dependency.
+  \item \textbf{Decide} between BCNF and 3NF when they conflict.
+  \item \textbf{Measure} a denormalisation --- what it saves per read, what it
+        costs per write --- and \textbf{compute} where it breaks even.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{normalforms}: the normal forms, and its measurement of the wide table.
+\chref{fds} for closure, which the lossless test uses. You need
+\texttt{code/m19\_decomposition.py}.
+\end{prereq}
+
+\begin{keyterms}
+decomposition $\bullet$ lossless join $\bullet$ lossy join $\bullet$ spurious
+tuple $\bullet$ dependency preservation $\bullet$ projection of dependencies
+$\bullet$ 3NF synthesis $\bullet$ denormalisation $\bullet$ summary table
+$\bullet$ materialised data $\bullet$ trigger $\bullet$ break-even $\bullet$
+read--write ratio $\bullet$ staleness
+\end{keyterms}
+
+\section{Two Things a Split Must Not Lose}
+
+\chref{normalforms} decomposed \textit{report} into six tables by splitting on
+violating dependencies. Any split \emph{can} be made; not every split is
+correct. A decomposition must keep two things, and they are independent.
+
+\begin{definitionbox}[Lossless join]
+A decomposition of $R$ into $R_1$ and $R_2$ is \term{lossless} if joining them
+back gives exactly $R$ --- no tuple missing, \textbf{no tuple added}.
+
+\smallskip
+\textbf{The test.} It is lossless if and only if the attributes they share
+determine all of one side:
+\[
+  (R_1 \cap R_2) \rightarrow R_1 \quad\text{or}\quad
+  (R_1 \cap R_2) \rightarrow R_2 .
+\]
+In words: the shared attributes are a superkey of one of the halves. Compute
+$(R_1 \cap R_2)^{+}$, as in \chref{fds}, and look.
+
+\smallskip
+A \term{lossy} decomposition never loses tuples --- it \emph{adds}
+\term{spurious tuples}, rows that look like facts and were never true.
+\end{definitionbox}
+
+\begin{definitionbox}[Dependency preservation]
+A decomposition \term{preserves dependencies} if every dependency of $R$ can be
+checked within a single one of the $R_i$ --- or follows from dependencies that
+can.
+
+\smallskip
+It matters because a database enforces rules one table at a time. A
+dependency that spans two tables can only be checked by joining them, and
+nothing in the schema does that on every insert.
+\end{definitionbox}
+
+\begin{measured}[A split that invents facts, a split that loses a rule, and a summary table priced]
+\textsf{\footnotesize \texttt{code/m19\_decomposition.py}, seeded database
+(4{,}000 students), SQLite 3.51.2, Intel i5-6600, Windows 11.}
+
+\medskip
+\textbf{1. Lossy against lossless}
+
+\begin{tabular}{@{}L{9.6cm}R{2.8cm}@{}}
+\multicolumn{2}{@{}l}{\textbf{lossy:} $R_1$(roll\_no, course\_code) and
+  $R_2$(course\_code, grade)} \\
+graded (roll\_no, course\_code, grade) facts & 39{,}152 \\
+$R_1 \bowtie R_2$ on course\_code & 182{,}920 \\
+\textbf{spurious tuples --- never true} & \textbf{143{,}768} \\
+\multicolumn{2}{@{}l}{\textbf{lossless:} $S_1$(roll\_no, name, programme) and
+  $S_2$(roll\_no, semester, cnic)} \\
+student rows, and $S_1 \bowtie S_2$ & 4{,}000 and 4{,}000 \\
+\end{tabular}
+
+\smallskip
+The lossy join returned \textbf{4.7$\times$} the real facts: every student now
+appears to hold every grade that anybody got in the course. The test explains
+it in one line --- $R_1 \cap R_2 = \{$course\_code$\}$, a key of neither half;
+$S_1 \cap S_2 = \{$roll\_no$\}$, the key of both.
+
+\medskip
+\textbf{2. Lossless, but a dependency is lost}
+
+Two tables, \textit{course\_dept}(course\_code, dept\_code) and
+\textit{course\_dname}(course\_code, dept\_name), both keyed on course\_code ---
+so the join is lossless. Two courses, both CS. A second name for CS:
+
+\begin{tabular}{@{}L{9.6cm}L{2.8cm}@{}}
+insert \texttt{('CS-150', 'Computing')} & \textbf{accepted} \\
+the join: CS $\rightarrow$ & \texttt{'Computer Science'} \\
+the join: CS $\rightarrow$ & \texttt{'Computing'} \\
+\end{tabular}
+
+\smallskip
+\fd{dept\_code}{dept\_name} is violated, and nothing could refuse it: the rule
+spans two tables, and a \sqlkw{CHECK} sees one row of one table. This is
+exactly the decomposition \chref{normalforms} warned the wrong splitting order
+produces.
+
+\medskip
+\textbf{3. Denormalisation, priced} --- enrolments and credit hours per
+department
+
+\begin{tabular}{@{}L{8.4cm}R{2.6cm}@{}}
+read: computed by two joins & 69.79\,ms \\
+read: from a summary table & 0.060\,ms \\
+\quad \textbf{saved per read} & \textbf{69.73\,ms} \\
+write: one enrolment, no trigger & 28.464\,ms \\
+write: one enrolment, trigger maintaining the summary & 32.143\,ms \\
+\quad \textbf{added per write} & \textbf{3.679\,ms} \\
+summary agreed with the joins, before and after 400 writes & yes, yes \\
+\end{tabular}
+
+\smallskip
+\textbf{Break-even: one read every 19 writes.} Above that ratio the summary
+table is cheaper overall; below it, computing on demand is. A department report
+is read far more often than once per nineteen enrolments, so for this report
+the summary table wins --- by a margin that is not close.
+
+\smallskip
+Most of the 28\,ms per write is the \sqlkw{COMMIT} --- making one enrolment
+durable --- and the trigger's two \sqlkw{UPDATE}s ride inside that same
+transaction. That is why the trigger adds 13\%, not 200\%.
+\end{measured}
+
+\dsfig{%
+\begin{tikzpicture}[
+  cell/.style={draw=primary!35, line width=0.5pt, minimum width=1.25cm,
+               minimum height=0.40cm, font=\scriptsize\ttfamily,
+               text=primary!65!black, inner sep=0pt},
+  hd/.style={cell, fill=primary, text=white, font=\scriptsize\bfseries},
+  bad/.style={cell, fill=accent!14, text=accent},
+  ttl/.style={font=\scriptsize\bfseries, text=#1, anchor=south},
+  nt/.style={font=\scriptsize\itshape, text=neutral, align=center}
+]
+  % original
+  \node[ttl=primary] at (-5.8,0.5) {the facts};
+  \foreach \c [count=\i] in {roll, course, grade}{
+    \node[hd] at (-7.05+\i*1.25-1.25+1.25,0.2) {\c};}
+  \foreach \r/\a/\b/\g in {1/Ayesha/CS-103/A, 2/Bilal/CS-103/C}{
+    \node[cell] at (-5.80,-0.4*\r+0.2) {\a};
+    \node[cell] at (-4.55,-0.4*\r+0.2) {\b};
+    \node[cell] at (-3.30,-0.4*\r+0.2) {\g};}
+  \node[nt] at (-4.55,-1.05) {2 rows};
+
+  % R1, R2
+  \node[ttl=secondary!70!black] at (-0.6,1.65) {$R_1$};
+  \node[hd] at (-1.25,1.35) {roll};  \node[hd] at (0.0,1.35) {course};
+  \node[cell] at (-1.25,0.95) {Ayesha}; \node[cell] at (0.0,0.95) {CS-103};
+  \node[cell] at (-1.25,0.55) {Bilal};  \node[cell] at (0.0,0.55) {CS-103};
+  \node[ttl=secondary!70!black] at (-0.6,-0.35) {$R_2$};
+  \node[hd] at (-1.25,-0.65) {course}; \node[hd] at (0.0,-0.65) {grade};
+  \node[cell] at (-1.25,-1.05) {CS-103}; \node[cell] at (0.0,-1.05) {A};
+  \node[cell] at (-1.25,-1.45) {CS-103}; \node[cell] at (0.0,-1.45) {C};
+
+  \draw[-{Stealth[length=2mm]}, primary!50, line width=0.9pt]
+       (-2.55,-0.2) -- (-2.0,-0.2);
+  \draw[-{Stealth[length=2mm]}, primary!50, line width=0.9pt]
+       (0.75,-0.2) -- (1.35,-0.2) node[midway, above,
+       font=\scriptsize\bfseries, text=primary] {$\bowtie$};
+
+  % rejoined
+  \node[ttl=accent] at (3.35,0.5) {$R_1 \bowtie R_2$ on course};
+  \foreach \c [count=\i] in {roll, course, grade}{
+    \node[hd] at (1.6+\i*1.25-1.25+0.5,0.2) {\c};}
+  \foreach \r/\a/\g/\s in {1/Ayesha/A/cell, 2/Ayesha/C/bad,
+                           3/Bilal/A/bad, 4/Bilal/C/cell}{
+    \node[\s] at (2.10,-0.4*\r+0.2) {\a};
+    \node[\s] at (3.35,-0.4*\r+0.2) {CS-103};
+    \node[\s] at (4.60,-0.4*\r+0.2) {\g};}
+  \node[nt, text width=3.9cm, text=accent] at (3.35,-1.95)
+       {4 rows: \textbf{2 never true}. Ayesha did not get a C; Bilal did not
+        get an A};
+\end{tikzpicture}}%
+{A lossy split on the smallest possible scale. The two halves share only
+\textit{course}, which is a key of neither, so the join pairs every student in
+the course with every grade in it. On the seeded data this is 143{,}768
+invented facts.}{lossy}
+
+\begin{alertbox}[What this does and does not license]
+\begin{tight}
+  \item \textbf{Always test a decomposition for losslessness.} A lossy one
+        produces 4.7 false facts for every true one here, and no query
+        afterwards can tell them apart.
+  \item \textbf{The summary table is a denormalisation, and it is correct only
+        while the trigger runs.} Drop the trigger, insert through a path that
+        bypasses it, or restore an old backup of one table, and the summary is
+        silently wrong. That risk is what the 69\,ms buys.
+  \item \textbf{Denormalise by adding, never by replacing.} The normalised
+        tables stayed. The summary is derived from them and can be rebuilt
+        from them at any moment --- which is the difference between this and
+        \chref{normalforms}'s \textit{report}, where the wide table was the
+        only copy.
+  \item \textbf{Decide with a ratio, not a feeling.} One read per nineteen
+        writes is a number; ``reports are slow'' is not.
+\end{tight}
+\end{alertbox}
+
+\section{When BCNF and Dependency Preservation Conflict}
+
+\begin{conceptbox}[The trade, and the rule for making it]
+Every relation has a \textbf{lossless, dependency-preserving decomposition into
+3NF}. The \term{3NF synthesis} algorithm finds one: take a minimal cover
+(\chref{fds}), make one relation per dependency, add one relation holding a
+candidate key if none already does.
+
+\smallskip
+A lossless BCNF decomposition always exists too --- but it is \emph{not}
+always dependency-preserving. \chref{normalforms}'s
+\relation{teaches}{student, course, instructor} is the case: BCNF forces
+\fd{student, course}{instructor} out of every single table.
+
+\smallskip
+\textbf{The rule:} prefer BCNF; when it would lose a dependency you need
+enforced, stop at 3NF and accept the small redundancy that remains. A
+redundancy you can see is safer than a rule nothing enforces. For the
+university schema the question never arises --- the six tables are in BCNF
+\emph{and} preserve every dependency.
+\end{conceptbox}
+
+\begin{worked}[Testing two decompositions of \textit{section}]
+\relation{section}{\relkey{course\_code}, \relkey{semester},
+\relkey{section\_no}, room, emp\_id}, with
+\fd{course\_code, semester, section\_no}{room, emp\_id}.
+
+\medskip
+\textbf{Decomposition A:} $A_1$(course\_code, semester, section\_no, room)
+and $A_2$(course\_code, semester, section\_no, emp\_id).
+
+\smallskip
+$A_1 \cap A_2 = \{$course\_code, semester, section\_no$\}$, whose closure is
+everything: a superkey of both. \textbf{Lossless.} The dependency splits into
+\fd{\dots}{room} in $A_1$ and \fd{\dots}{emp\_id} in $A_2$ --- each checkable in
+one table. \textbf{Preserving.} Correct, and pointless: it is two tables where
+one would do, and every split is a join somebody pays for on every read.
+
+\medskip
+\textbf{Decomposition B:} $B_1$(course\_code, room) and $B_2$(room, semester,
+section\_no, emp\_id).
+
+\smallskip
+$B_1 \cap B_2 = \{$room$\}$. Does \textit{room} determine all of either half?
+No: one room hosts many courses and many sections. \textbf{Lossy.} Joined back
+on room, every course would appear in every section that ever met in the same
+room --- the pattern of part~1 of the measurement, in a different table.
+
+\medskip
+\textbf{The lesson.} The test took one closure each time. B ``looks
+reasonable'' --- room is a natural thing to split on --- and is wrong in a way
+the data would never report.
+\end{worked}
+
+\section{Triggers, and the Summary Table Written Out}
+
+\begin{examplebox}[The summary table that was measured]
+\begin{lstlisting}[language=sql]
+CREATE TABLE dept_stats (
+  dept_code   TEXT PRIMARY KEY NOT NULL REFERENCES department(dept_code),
+  n_enrol     INTEGER NOT NULL,
+  sum_credits INTEGER NOT NULL
+) STRICT;
+
+CREATE TRIGGER stats_ins AFTER INSERT ON enrolment BEGIN
+  UPDATE dept_stats
+     SET n_enrol     = n_enrol + 1,
+         sum_credits = sum_credits +
+           (SELECT credit_hours FROM course
+             WHERE course_code = NEW.course_code)
+   WHERE dept_code =
+           (SELECT dept_code FROM course
+             WHERE course_code = NEW.course_code);
+END;
+\end{lstlisting}
+
+\smallskip
+\texttt{NEW} is the row just inserted. A matching \texttt{stats\_del} trigger
+on \sqlkw{DELETE} uses \texttt{OLD}. \textbf{An \sqlkw{UPDATE} trigger is
+needed too}, and the harness does not have one: an enrolment moved from one
+course to another would leave both departments' figures wrong. That gap is
+\chref{views}' starting point, and the reason a view is often the better
+answer.
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Splitting on an attribute that is not a key of either half.}
+        Lossy: 143{,}768 spurious tuples here.
+  \item \textbf{Expecting a lossy join to lose rows.} It adds them. The answer
+        is too big, not too small, and looks plausible.
+  \item \textbf{A rule that spans two tables.} No \sqlkw{CHECK} can enforce
+        it; it needs a trigger, or a design that keeps it in one table.
+  \item \textbf{Denormalising by replacing the normalised tables.} Add the
+        summary; keep the source of truth.
+  \item \textbf{Forgetting the \sqlkw{UPDATE} trigger.} Insert and delete are
+        maintained; a changed row silently is not.
+  \item \textbf{Deciding to denormalise without the ratio.} Measure reads and
+        writes; compute the break-even.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Invent 143{,}768 facts, then price a summary table]
+\begin{lstlisting}[language=bash]
+# --- 1. The seeded database ----------------------------------------
+python code/schema/seed.py university.db
+sqlite3 university.db
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. A lossy split -------------------------------------------
+CREATE TEMP TABLE r1 AS SELECT DISTINCT roll_no, course_code
+                          FROM enrolment WHERE grade IS NOT NULL;
+CREATE TEMP TABLE r2 AS SELECT DISTINCT course_code, grade
+                          FROM enrolment WHERE grade IS NOT NULL;
+SELECT COUNT(*) FROM (SELECT DISTINCT roll_no, course_code, grade
+                        FROM enrolment WHERE grade IS NOT NULL);
+SELECT COUNT(*) FROM r1 JOIN r2 USING (course_code);
+-- How many facts were invented? Apply the one-line test to explain.
+
+-- --- 3. Pick one student and see what the lossy join says ------
+SELECT grade FROM r1 JOIN r2 USING (course_code)
+ WHERE roll_no = (SELECT MIN(roll_no) FROM r1) LIMIT 10;
+SELECT grade FROM enrolment
+ WHERE roll_no = (SELECT MIN(roll_no) FROM r1) AND grade IS NOT NULL;
+
+-- --- 4. The summary table and its trigger -----------------------
+-- Type in dept_stats and stats_ins from this chapter, then fill it:
+INSERT INTO dept_stats
+  SELECT d.dept_code, COUNT(e.roll_no), COALESCE(SUM(c.credit_hours),0)
+    FROM department d
+    LEFT JOIN course c    ON c.dept_code   = d.dept_code
+    LEFT JOIN enrolment e ON e.course_code = c.course_code
+   GROUP BY d.dept_code;
+
+-- --- 5. Time both reads -----------------------------------------
+.timer on
+SELECT * FROM dept_stats;
+SELECT c.dept_code, COUNT(*), SUM(c.credit_hours)
+  FROM enrolment e JOIN course c ON c.course_code = e.course_code
+ GROUP BY c.dept_code;
+
+-- --- 6. Break it --------------------------------------------------
+UPDATE enrolment SET course_code =
+       (SELECT course_code FROM course WHERE dept_code = 'MA' LIMIT 1)
+ WHERE rowid = (SELECT MIN(rowid) FROM enrolment);
+-- Re-run both reads from step 5. Do they still agree? Why not?
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 7. The measured version ----------------------------------------
+python code/m19_decomposition.py
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 6 is the price of the 69\,ms. The summary table is
+correct exactly as long as every change to \textit{enrolment} passes through a
+trigger that knows about it --- and the harness, like most first attempts,
+forgot \sqlkw{UPDATE}. (Step 6 may also be refused if the move would duplicate
+an enrolment's key; pick another row if so.)
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Apply the lossless test to $R_1$(roll\_no, course\_code) and
+        $R_2$(course\_code, grade), and explain from the result why the join
+        produced 4.7 times the real facts.
+  \item Give a decomposition of the university schema that is lossless but not
+        dependency-preserving, name the dependency it loses, and show an insert
+        that violates the dependency without any table refusing it.
+  \item The summary table saves 69.73\,ms per read and costs 3.679\,ms per
+        write. Show the break-even calculation, and say what would change it
+        if the database moved to a fast SSD where a commit took 1\,ms.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A decomposition must be \textbf{lossless} (the join gives back exactly
+        $R$) and should be \textbf{dependency-preserving} (every rule checkable
+        in one table). The two are independent.
+  \item \textbf{Lossless test:} the shared attributes must be a superkey of one
+        half. One closure decides it.
+  \item \textbf{Measured:} a lossy split of \textit{enrolment} produced
+        \textbf{143{,}768 spurious tuples} --- 4.7$\times$ the real facts. A
+        lossy join adds rows; it does not lose them.
+  \item \textbf{Measured:} a lossless split that lost
+        \fd{dept\_code}{dept\_name} \textbf{accepted two names for CS}. A rule
+        spanning two tables cannot be enforced by a \sqlkw{CHECK}.
+  \item 3NF synthesis is always lossless and preserving; BCNF is always
+        lossless but not always preserving. Prefer BCNF; stop at 3NF when BCNF
+        would cost a rule you need.
+  \item \textbf{Measured:} a trigger-maintained summary table saved
+        \textbf{69.73\,ms per read} for \textbf{3.679\,ms per write} --- break
+        even at \textbf{one read per 19 writes}.
+  \item Most of a write's cost is the \sqlkw{COMMIT}; a trigger rides inside
+        it, which is why it added 13\%.
+  \item Denormalise by \emph{adding} derived data beside the normalised
+        tables, never by replacing them --- and maintain it on insert, delete
+        \emph{and} update.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A lossy decomposition, when joined back, produces:
+        (a)~fewer tuples; (b)~the same tuples; (c)~extra, spurious tuples;
+        (d)~an error.
+  \item \textbf{(MCQ)} $R_1 \cap R_2 = \{A\}$ is lossless if: (a)~$A$ is a
+        superkey of $R_1$ or of $R_2$; (b)~$A$ is in both; (c)~$A$ is
+        indexed; (d)~$R_1$ and $R_2$ have the same size.
+  \item \textbf{(Short)} Why can a \sqlkw{CHECK} constraint not enforce a
+        dependency that spans two tables?
+  \item \textbf{(Short)} State the rule for choosing between BCNF and 3NF.
+  \item \textbf{(Short)} What three triggers does a summary table need, and
+        what goes wrong without the third?
+  \item \textbf{(Applied)} Decompose
+        \relation{booking}{room, date, slot, course\_code, emp\_id, capacity}
+        (\chref{fds}'s review question) into BCNF, test each split for
+        losslessness by closure, and say whether every dependency is
+        preserved.
+  \item \textbf{(Applied)} The university asks for a ``students per
+        programme per semester'' figure on its home page, read 5{,}000 times a
+        day; about 300 enrolments change a day. Design the summary table and
+        its triggers, compute the break-even using this chapter's measured
+        costs, and say whether you would build it.
+\end{reviewq}

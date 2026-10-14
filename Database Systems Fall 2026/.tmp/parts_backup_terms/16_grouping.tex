@@ -1,0 +1,479 @@
+%=====================================================================
+\chapter{Grouping, Aggregation and Window Functions}\label{ch:grouping}
+%=====================================================================
+\locator{4}{Part IV --- Asking Questions}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Use} \sqlkw{COUNT}, \sqlkw{SUM}, \sqlkw{AVG}, \sqlkw{MIN} and
+        \sqlkw{MAX}, and \textbf{predict} what each does with a null.
+  \item \textbf{Write} a \sqlkw{GROUP BY} query and \textbf{state} which
+        columns may appear in its \sqlkw{SELECT} list.
+  \item \textbf{Choose} between \sqlkw{WHERE} and \sqlkw{HAVING} by what the
+        condition is about.
+  \item \textbf{Write} a window function with \sqlkw{PARTITION BY} and
+        \sqlkw{ORDER BY}, and \textbf{explain} how it differs from grouping.
+  \item \textbf{Read} a query plan for \sqlkw{TEMP B-TREE}, and \textbf{say}
+        what index would remove it.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{select} for three-valued logic, which the aggregates handle in their
+own way. \chref{subqueries} for correlated sub-queries, one of which this
+chapter replaces. You need \texttt{code/m16\_grouping.py}.
+\end{prereq}
+
+\begin{keyterms}
+aggregate function $\bullet$ \sqlkw{COUNT} $\bullet$ \sqlkw{SUM} $\bullet$
+\sqlkw{AVG} $\bullet$ \sqlkw{MIN} $\bullet$ \sqlkw{MAX} $\bullet$
+\sqlkw{GROUP BY} $\bullet$ group $\bullet$ \sqlkw{HAVING} $\bullet$ bare
+column $\bullet$ window function $\bullet$ \sqlkw{OVER} $\bullet$
+\sqlkw{PARTITION BY} $\bullet$ \sqlkw{RANK} $\bullet$ \sqlkw{DENSE\_RANK}
+$\bullet$ \sqlkw{ROW\_NUMBER} $\bullet$ running total $\bullet$
+\sqlkw{TEMP B-TREE}
+\end{keyterms}
+
+\section{Collapsing Rows Into One}
+
+Every query so far has returned rows that existed --- possibly filtered,
+possibly joined, but each one traceable to a tuple in the database. An
+aggregate returns a row that existed nowhere: the \emph{average} grade, the
+\emph{number} of students.
+
+\begin{definitionbox}[The five aggregates, and what they skip]
+\begin{tabular}{@{}L{3.6cm}L{10.4cm}@{}}
+\sqlkw{COUNT(*)} & the number of rows. Counts everything, nulls included. \\
+\sqlkw{COUNT}$(x)$ & the number of rows where $x$ is \textbf{not null}. \\
+\sqlkw{SUM}, \sqlkw{AVG} & over the non-null values only. \sqlkw{AVG}
+  divides by the number of non-null values, not by the number of rows. \\
+\sqlkw{MIN}, \sqlkw{MAX} & over the non-null values only. \\
+\end{tabular}
+
+\smallskip
+Every aggregate except \sqlkw{COUNT(*)} \textbf{skips nulls}. Over a set that
+is entirely null, \sqlkw{SUM} and \sqlkw{AVG} return null --- not zero ---
+and \sqlkw{COUNT} returns 0.
+\end{definitionbox}
+
+\section{\sqlkw{GROUP BY}}
+
+\begin{definitionbox}[Grouping]
+\sqlkw{GROUP BY} $a$ partitions the rows into groups, one for each distinct
+value of $a$, and an aggregate in the \sqlkw{SELECT} list is then computed
+\emph{per group}. The result has one row per group.
+
+\smallskip
+\textbf{The rule for the \sqlkw{SELECT} list:} every column in it must either
+be in the \sqlkw{GROUP BY}, or be inside an aggregate. A column that is neither
+--- a \term{bare column} --- has no single value per group, so there is
+nothing correct to print.
+
+\smallskip
+Null forms a group of its own. All the nulls are grouped together, even though
+\texttt{NULL = NULL} is \unk{}: grouping uses ``is the same value''
+rather than ``compares equal''.
+\end{definitionbox}
+
+\begin{alertbox}[SQLite allows the bare column, and it should not]
+\begin{lstlisting}[language=sql]
+SELECT programme, name, COUNT(*) FROM student GROUP BY programme;
+\end{lstlisting}
+
+PostgreSQL rejects this: \texttt{name} is neither grouped nor aggregated.
+SQLite runs it and prints, for each programme, the name of \emph{some} student
+in it --- whichever row the engine happened to process last. The output looks
+like a meaningful answer, and on each run it may name a different student.
+
+\smallskip
+There is one documented exception: with exactly one \sqlkw{MIN} or
+\sqlkw{MAX}, SQLite guarantees the bare columns come from the row holding that
+minimum or maximum. It is a convenience no other system offers, so code that
+depends on it will not move. \textbf{In this course, every non-aggregated
+column is in the \sqlkw{GROUP BY}.}
+\end{alertbox}
+
+\section{Measured: Nulls, Plans, and a Rank}
+
+\begin{measured}[What aggregates skip, what an index removes, and what a window replaces]
+\textsf{\footnotesize \texttt{code/m16\_grouping.py}, seeded database,
+SQLite 3.51.2, Intel i5-6600, Windows 11. Best of three runs.}
+
+\medskip
+\textbf{1. Aggregates and nulls} --- \textit{enrolment}, 60{,}037 rows
+
+\begin{tabular}{@{}L{6.4cm}R{2.4cm}L{5.4cm}@{}}
+\sqlkw{COUNT(*)}      & 60{,}037 & every row \\
+\sqlkw{COUNT}(grade)  & 40{,}045 & rows where grade is not null \\
+difference            & 19{,}992 & the ungraded FALL2026 rows \\
+\sqlkw{AVG}(points)   & \textbf{2.383} & nulls skipped: $\div$ 40{,}045 \\
+\sqlkw{AVG}(\sqlkw{COALESCE}(points, 0)) & \textbf{1.590} & nulls as zero:
+  $\div$ 60{,}037 \\
+\end{tabular}
+
+\smallskip
+The second average is \textbf{33\% lower}, and it has decided that an ungraded
+course is an F. \sqlkw{GROUP BY} grade puts the 19{,}992 nulls in a group of
+their own, beside A (7{,}268), B (12{,}756), C (11{,}283), D (5{,}524) and F
+(3{,}214).
+
+\medskip
+\textbf{2. \sqlkw{GROUP BY} with and without a supporting index} --- enrolments
+per course
+
+\begin{tabular}{@{}R{2.0cm}R{2.4cm}R{2.6cm}R{2.6cm}R{2.4cm}@{}}
+\textbf{students} & \textbf{enrolments} & \textbf{no index} & \textbf{with index}
+& \textbf{speed-up} \\
+4{,}000  & 60{,}037  & 37.0\,ms  & 6.8\,ms  & 5.5$\times$ \\
+8{,}000  & 120{,}134 & 86.3\,ms  & 13.9\,ms & 6.2$\times$ \\
+16{,}000 & 240{,}025 & 174.2\,ms & 31.3\,ms & 5.6$\times$ \\
+\end{tabular}
+
+\smallskip
+Without the index the plan says \texttt{USE TEMP B-TREE FOR GROUP BY}: the
+rows were sorted into groups before they could be counted. An index on
+\texttt{course\_code} is already in that order, so the sort disappears from the
+plan --- and five-sixths of the cost goes with it. The speed-up is roughly
+constant as the table grows, because both forms are linear and the sort was a
+fixed proportion of the work.
+
+\medskip
+\textbf{3. The same filter in \sqlkw{WHERE} and in \sqlkw{HAVING}}
+
+\begin{tabular}{@{}L{6.0cm}R{1.5cm}R{1.7cm}L{3.0cm}@{}}
+& \textbf{ms} & \textbf{groups} & \\
+\texttt{WHERE course\_code LIKE 'CS-\%'}  & 13.1 & 6 & \\
+\texttt{HAVING course\_code LIKE 'CS-\%'} & 13.9 & 6 & same answer \\
+\end{tabular}
+
+\smallskip
+\textbf{The two compiled to the identical program}, 47 bytecode operations
+each, with the \sqlkw{LIKE} tested at operation 8, \emph{before} the grouping
+sort at operation 12. SQLite moved the \sqlkw{HAVING} condition into
+\sqlkw{WHERE} by itself --- which it can do only because the condition mentions
+no aggregate. \texttt{HAVING COUNT(*) > 1000} was tested at operation 33,
+\emph{after} the sort at operation 9, because a count does not exist until the
+grouping is done.
+
+\medskip
+\textbf{4. A rank within each programme} --- by number of A grades
+
+\begin{tabular}{@{}R{2.0cm}R{3.4cm}R{3.4cm}R{2.0cm}L{2.4cm}@{}}
+\textbf{students} & \textbf{window \sqlkw{RANK()}} & \textbf{correlated}
+& \textbf{ratio} & \textbf{agree?} \\
+1{,}000 & 16.9\,ms  & 51.6\,ms  & 3$\times$ & yes \\
+2{,}000 & 38.4\,ms  & 190.4\,ms & 5$\times$ & yes \\
+4{,}000 & 103.2\,ms & 736.7\,ms & \textbf{7$\times$} & yes \\
+\end{tabular}
+
+\smallskip
+The ratio grows with the data. The correlated form counts, for each student,
+how many in the same programme did better --- every student against every
+other in the programme, quadratic. The window function sorts each programme
+once and reads the rank off the order.
+\end{measured}
+
+\begin{alertbox}[What the four results say about how to write these queries]
+\begin{tight}
+  \item \textbf{Never \sqlkw{COALESCE} to zero inside an aggregate unless a
+        missing value really is a zero.} It moved the average by a third.
+        That is the same fact \chref{ddl} found with a text value in a numeric
+        column, approached from the other side.
+  \item \textbf{\sqlkw{TEMP B-TREE} in a plan is a sort you could have avoided.}
+        An index on the grouping column supplies the order for free.
+        \chref{indexes} shows where the same idea stops working.
+  \item \textbf{Put a condition on a column in \sqlkw{WHERE} because that is
+        what it means, not because it is faster here.} SQLite fixed the
+        \sqlkw{HAVING} version itself; that is an optimisation, not a promise,
+        and the next system you use may not make it.
+  \item \textbf{For rankings, running totals and ``top $n$ per group'', use a
+        window function.} The correlated alternative was seven times slower at
+        4{,}000 students and getting worse.
+\end{tight}
+\end{alertbox}
+
+\section{Window Functions}
+
+\begin{definitionbox}[A window function]
+A \term{window function} computes a value for each row from a set of related
+rows --- its \emph{window} --- \textbf{without collapsing them}. Grouping turns
+many rows into one; a window function keeps every row and adds a column.
+
+\begin{lstlisting}[language=sql]
+SELECT roll_no, programme, n_a,
+       RANK() OVER (PARTITION BY programme ORDER BY n_a DESC) AS pos
+  FROM per_student;
+\end{lstlisting}
+
+\smallskip
+\sqlkw{PARTITION BY} divides the rows into windows, like \sqlkw{GROUP BY} but
+without merging them. \sqlkw{ORDER BY} inside \sqlkw{OVER} orders each window.
+The function then runs along the ordered window.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  cell/.style={draw=primary!35, line width=0.5pt, minimum width=1.45cm,
+               minimum height=0.40cm, font=\scriptsize\ttfamily,
+               text=primary!65!black, inner sep=0pt},
+  hd/.style={cell, fill=primary, text=white, font=\scriptsize\bfseries},
+  p1/.style={cell, fill=secondary!14},
+  p2/.style={cell, fill=goldhl!16},
+  nw/.style={cell, fill=greenhl!20, font=\scriptsize\bfseries\ttfamily,
+             text=greenhl!55!black},
+  ttl/.style={font=\scriptsize\bfseries, text=#1, anchor=south},
+  arr/.style={-{Stealth[length=2.2mm]}, primary!50, line width=0.9pt},
+  nt/.style={font=\scriptsize\itshape, text=neutral, align=center}
+]
+  % source rows
+  \node[ttl=primary] at (-5.3,0.5) {per\_student};
+  \foreach \c [count=\i] in {prog, n\_a}{\node[hd] at (-6.75+\i*1.45,0.2) {\c};}
+  \foreach \r/\p/\n/\s in {1/BSIT/9/p1, 2/BSIT/7/p1, 3/BSIT/5/p1,
+                           4/BSCS/8/p2, 5/BSCS/6/p2}{
+    \node[\s] at (-5.30,-0.4*\r+0.2) {\p};
+    \node[\s] at (-3.85,-0.4*\r+0.2) {\n};}
+
+  % group by
+  \draw[arr] (-2.95,-0.25) -- (-1.75,0.15);
+  \node[ttl=secondary!70!black] at (0.0,0.5) {\sqlkw{GROUP BY} prog};
+  \foreach \c [count=\i] in {prog, MAX(n\_a)}{\node[hd] at (-1.45+\i*1.45,0.2) {\c};}
+  \node[p1] at (0.0,-0.2) {BSIT};  \node[p1] at (1.45,-0.2) {9};
+  \node[p2] at (0.0,-0.6) {BSCS};  \node[p2] at (1.45,-0.6) {8};
+  \node[nt, text width=3.6cm] at (0.72,-1.35)
+       {five rows become \textbf{two}: one per group};
+
+  % window
+  \draw[arr] (-2.95,-1.15) .. controls (-1.2,-2.4) and (2.5,-2.4) .. (3.4,-1.3);
+  \node[ttl=greenhl!60!black] at (5.4,0.5)
+       {\sqlkw{RANK() OVER} (\sqlkw{PARTITION BY} prog)};
+  \foreach \c [count=\i] in {prog, n\_a, rank}{\node[hd] at (2.95+\i*1.45,0.2) {\c};}
+  \foreach \r/\p/\n/\k/\s in {1/BSIT/9/1/p1, 2/BSIT/7/2/p1, 3/BSIT/5/3/p1,
+                              4/BSCS/8/1/p2, 5/BSCS/6/2/p2}{
+    \node[\s] at (4.40,-0.4*\r+0.2) {\p};
+    \node[\s] at (5.85,-0.4*\r+0.2) {\n};
+    \node[nw] at (7.30,-0.4*\r+0.2) {\k};}
+  \node[nt, text width=4.4cm] at (5.85,-2.35)
+       {five rows stay \textbf{five}; each gains a column computed from its
+        own partition};
+\end{tikzpicture}}%
+{The difference in one picture. Grouping collapses each partition into a single
+row; a window function keeps every row and adds a value computed from the
+partition it belongs to. The colours mark the two partitions.}{groupwindow}
+
+\begin{examplebox}[\sqlkw{ROW\_NUMBER}, \sqlkw{RANK} and \sqlkw{DENSE\_RANK} on a tie]
+Four students in one programme with 9, 7, 7 and 5 A grades:
+
+\medskip
+\begin{tabular}{@{}R{2.2cm}R{3.2cm}R{2.6cm}R{3.2cm}@{}}
+\textbf{A grades} & \sqlkw{ROW\_NUMBER} & \sqlkw{RANK} & \sqlkw{DENSE\_RANK} \\
+9 & 1 & 1 & 1 \\
+7 & 2 & 2 & 2 \\
+7 & 3 & 2 & 2 \\
+5 & 4 & \textbf{4} & \textbf{3} \\
+\end{tabular}
+
+\smallskip
+\sqlkw{ROW\_NUMBER} never ties, so it numbers the two sevens arbitrarily ---
+use it only when the order is fully determined. \sqlkw{RANK} gives ties the
+same number and \emph{skips} the next, as a sports table does.
+\sqlkw{DENSE\_RANK} does not skip. The university's merit list is a policy
+decision between the last two, and the query has to make it explicitly.
+\end{examplebox}
+
+\begin{worked}[A running total of credit hours, per student, in term order]
+\textbf{The question.} For each enrolment of one student, how many credit hours
+had they completed up to and including that term?
+
+\medskip
+\textbf{Step 1 --- why grouping cannot do it.} \sqlkw{GROUP BY} roll\_no gives
+one total per student. The question wants every row kept, each with its own
+total so far.
+
+\medskip
+\textbf{Step 2 --- the window.}
+\begin{lstlisting}[language=sql]
+SELECT e.semester, c.course_code, c.credit_hours,
+       SUM(c.credit_hours) OVER (
+         PARTITION BY e.roll_no
+         ORDER BY e.semester
+         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+       ) AS hours_so_far
+  FROM enrolment e JOIN course c ON c.course_code = e.course_code
+ WHERE e.roll_no = (SELECT MIN(roll_no) FROM student);
+\end{lstlisting}
+
+\medskip
+\textbf{Step 3 --- the frame.} \sqlkw{ROWS BETWEEN UNBOUNDED PRECEDING AND
+CURRENT ROW} says ``from the first row of the window to this one''. That is
+what makes it a running total rather than a grand total repeated on every row.
+
+\medskip
+\textbf{Step 4 --- a trap in the ordering.} \texttt{ORDER BY e.semester} sorts
+the text \texttt{'FALL2025'}, \texttt{'FALL2026'}, \texttt{'SPRING2026'}
+\emph{alphabetically} --- and so puts Fall 2026 before Spring 2026, which is
+wrong. A term label that sorts correctly as text has to be designed to,
+\texttt{'2025-2'} rather than \texttt{'FALL2025'}. This is the same column that
+broke \sqlkw{NATURAL JOIN} in \chref{joins}, and the second reason to revisit
+it when \chref{normalforms} reconsiders the schema.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{A bare column in a grouped query.} SQLite prints some row's
+        value; other systems refuse.
+  \item \textbf{\sqlkw{COALESCE} to zero inside \sqlkw{AVG}.} Measured: a third
+        off.
+  \item \textbf{Expecting \sqlkw{SUM} of nothing to be 0.} It is null.
+        \sqlkw{COALESCE}(\sqlkw{SUM}(x), 0) is the honest fix there.
+  \item \textbf{\sqlkw{HAVING} for a condition on a column.} It works here,
+        because SQLite rewrites it. Write \sqlkw{WHERE}.
+  \item \textbf{A correlated sub-query for a rank.} Measured: seven times
+        slower and growing. Use \sqlkw{RANK} \sqlkw{OVER}.
+  \item \textbf{\sqlkw{ROW\_NUMBER} where ties are possible.} It breaks them
+        arbitrarily.
+  \item \textbf{Ordering by a term label stored as text.} It sorts
+        alphabetically, which is not chronologically.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Move an average by a third, remove a sort, and rank a programme]
+\begin{lstlisting}[language=bash]
+# --- 1. The seeded database ----------------------------------------
+python code/schema/seed.py university.db
+sqlite3 university.db
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. Count three ways ----------------------------------------
+.headers on
+.mode box
+.timer on
+SELECT COUNT(*), COUNT(grade), COUNT(DISTINCT grade) FROM enrolment;
+-- Three numbers. Say what each one counts.
+
+-- --- 3. Two averages, one of them a decision about failure ------
+SELECT AVG(CASE grade WHEN 'A' THEN 4 WHEN 'B' THEN 3 WHEN 'C' THEN 2
+                      WHEN 'D' THEN 1 WHEN 'F' THEN 0 END) FROM enrolment;
+SELECT AVG(COALESCE(CASE grade WHEN 'A' THEN 4 WHEN 'B' THEN 3
+              WHEN 'C' THEN 2 WHEN 'D' THEN 1 WHEN 'F' THEN 0 END, 0))
+  FROM enrolment;
+-- By what percentage do they differ, and what did the second decide?
+
+-- --- 4. The null group -----------------------------------------
+SELECT grade, COUNT(*) FROM enrolment GROUP BY grade ORDER BY grade;
+
+-- --- 5. A sort you can see --------------------------------------
+EXPLAIN QUERY PLAN
+SELECT course_code, COUNT(*) FROM enrolment GROUP BY course_code;
+SELECT course_code, COUNT(*) FROM enrolment GROUP BY course_code;
+-- Find TEMP B-TREE. Record the time.
+
+-- --- 6. Remove it -----------------------------------------------
+CREATE INDEX idx_enr_course ON enrolment(course_code);
+EXPLAIN QUERY PLAN
+SELECT course_code, COUNT(*) FROM enrolment GROUP BY course_code;
+SELECT course_code, COUNT(*) FROM enrolment GROUP BY course_code;
+-- What disappeared from the plan, and what happened to the time?
+
+-- --- 7. WHERE against HAVING, and a condition that cannot move ---
+SELECT course_code, COUNT(*) FROM enrolment
+ GROUP BY course_code HAVING COUNT(*) > 1300;
+-- Try to write that one with WHERE instead. Why can you not?
+
+-- --- 8. A rank, with a window ------------------------------------
+WITH a AS (SELECT s.roll_no, s.programme, SUM(e.grade = 'A') AS n_a
+             FROM student s JOIN enrolment e ON e.roll_no = s.roll_no
+            GROUP BY s.roll_no)
+SELECT programme, roll_no, n_a,
+       RANK()       OVER w AS rnk,
+       DENSE_RANK() OVER w AS dense
+  FROM a WINDOW w AS (PARTITION BY programme ORDER BY n_a DESC)
+ ORDER BY programme, rnk LIMIT 12;
+-- Find a tie. Show where RANK and DENSE_RANK disagree.
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 9. The measured version ----------------------------------------
+python code/m16_grouping.py
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 7 is the real difference between the two
+clauses. A condition on \texttt{course\_code} could go in either, and SQLite
+quietly makes them identical. A condition on \sqlkw{COUNT(*)} can only go in
+\sqlkw{HAVING}, because when \sqlkw{WHERE} runs the count has not been
+computed. Choose by \emph{what the condition is about}, and the clause chooses
+itself.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item On the seeded data \sqlkw{AVG}(points) is 2.383 and
+        \sqlkw{AVG}(\sqlkw{COALESCE}(points, 0)) is 1.590. Explain both
+        numbers in terms of what each one divides by, and say which one the
+        examinations office should publish and why.
+  \item The \sqlkw{WHERE} and \sqlkw{HAVING} versions of the same filter
+        compiled to identical programs. Explain why SQLite was able to do that
+        for \texttt{course\_code LIKE 'CS-\%'} and not for \texttt{COUNT(*) >
+        1000}, and say why you should write \sqlkw{WHERE} anyway.
+  \item Give a question that needs a window function rather than
+        \sqlkw{GROUP BY}, write the query, and say what \sqlkw{GROUP BY} would
+        have lost.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Every aggregate except \sqlkw{COUNT(*)} \textbf{skips nulls};
+        \sqlkw{AVG} divides by the non-null count; \sqlkw{SUM} of nothing is
+        null, not 0.
+  \item \textbf{Measured:} \sqlkw{AVG} skipping nulls gave 2.383;
+        \sqlkw{COALESCE} to zero gave 1.590 --- \textbf{a third lower}, and a
+        decision that ungraded means failed.
+  \item \sqlkw{GROUP BY} makes one row per group. Every \sqlkw{SELECT} column
+        must be grouped or aggregated; SQLite permits a bare column and prints
+        an arbitrary row's value.
+  \item Null forms its own group.
+  \item \textbf{Measured:} an index on the grouping column removed
+        \sqlkw{TEMP B-TREE FOR GROUP BY} from the plan and made the query
+        \textbf{5.5--6.2$\times$} faster.
+  \item \textbf{Measured:} the \sqlkw{WHERE} and \sqlkw{HAVING} forms of a
+        column condition \textbf{compiled to the same program} --- SQLite
+        moved it. An aggregate condition cannot move. Choose by what the
+        condition is about.
+  \item A \textbf{window function} adds a value to every row without
+        collapsing them. \sqlkw{PARTITION BY} defines the windows,
+        \sqlkw{ORDER BY} orders them, the frame bounds them.
+  \item \textbf{Measured:} a window \sqlkw{RANK()} was \textbf{7$\times$}
+        faster than the correlated equivalent at 4{,}000 students, and the gap
+        was widening.
+  \item \sqlkw{RANK} skips after a tie, \sqlkw{DENSE\_RANK} does not,
+        \sqlkw{ROW\_NUMBER} breaks ties arbitrarily.
+  \item A term label stored as \texttt{'FALL2025'} sorts alphabetically, not
+        chronologically --- the second fault found in the \texttt{semester}
+        column.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} On a column with 10 rows of which 4 are null,
+        \sqlkw{COUNT}$(x)$ returns: (a)~10; (b)~6; (c)~4; (d)~null.
+  \item \textbf{(MCQ)} A condition on \sqlkw{COUNT(*)} must go in:
+        (a)~\sqlkw{WHERE}; (b)~\sqlkw{HAVING}; (c)~\sqlkw{ORDER BY};
+        (d)~either.
+  \item \textbf{(Short)} Why can a bare column in a grouped query not have a
+        correct value, and what does SQLite print instead?
+  \item \textbf{(Short)} What does \sqlkw{TEMP B-TREE FOR GROUP BY} in a plan
+        mean, and what removes it?
+  \item \textbf{(Short)} Give four rows with a tie and show how
+        \sqlkw{RANK}, \sqlkw{DENSE\_RANK} and \sqlkw{ROW\_NUMBER} number them.
+  \item \textbf{(Applied)} Write the query giving each programme's average
+        grade points, number of graded enrolments and number of ungraded ones,
+        only for programmes with more than 5{,}000 graded enrolments. State
+        for each condition which clause it belongs in, and why.
+  \item \textbf{(Applied)} The university wants a merit list: the top three
+        students by grade points in each programme, ties included. Write it
+        with a window function, say whether you chose \sqlkw{RANK} or
+        \sqlkw{DENSE\_RANK} and what the choice means for a student tied in
+        third place, and estimate from the measurement how the correlated
+        alternative would behave at 16{,}000 students.
+\end{reviewq}

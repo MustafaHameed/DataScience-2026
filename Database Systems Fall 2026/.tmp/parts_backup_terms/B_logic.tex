@@ -1,0 +1,226 @@
+%=====================================================================
+\chapter{Just Enough Sets, Logic and Logarithms}\label{app:logic}
+%=====================================================================
+\normalfigures
+
+This appendix is the mathematics the course uses, and nothing more. It is short
+because the course needs little: sets for the relational model and the
+algebra, logic for \sqlkw{WHERE} and for nulls, one idea about logarithms for
+indexes, and the definition of a function for Part~V. Each section names the
+chapter that depends on it. Questions 6--9, 11 and 12 of the Prerequisite
+Self-Check are answered here.
+
+\section{Sets}
+
+\begin{definitionbox}[Set, element, subset]
+A \term{set} is a collection of distinct things, its \term{elements}, with no
+order. $\{1,2,3\}$ and $\{3,1,2\}$ are the same set; $\{1,1,2\}$ is just
+$\{1,2\}$.
+
+\smallskip
+$x \in A$ means $x$ is an element of $A$. $A \subseteq B$ ($A$ is a
+\term{subset} of $B$) means every element of $A$ is in $B$. The empty set is
+$\varnothing$. $|A|$ is the number of elements.
+
+\smallskip
+\textbf{Why it matters:} a relation is a \emph{set} of tuples
+(\chref{relational}). ``No duplicates'' and ``no order'' are not rules somebody
+chose for databases; they are what the word ``set'' means.
+\end{definitionbox}
+
+\begin{examplebox}[The three operations --- Self-Check question 6]
+$A = \{1,2,3\}$, $B = \{2,3,4\}$.
+
+\medskip
+\begin{tabular}{@{}L{3.6cm}L{3.0cm}L{4.8cm}L{2.4cm}@{}}
+\textbf{Operation} & \textbf{Result} & \textbf{Contains} & \textbf{SQL} \\
+union $A \cup B$ & $\{1,2,3,4\}$ & in $A$ or in $B$ (or both) & \sqlkw{UNION} \\
+intersection $A \cap B$ & $\{2,3\}$ & in both & \sqlkw{INTERSECT} \\
+difference $A - B$ & $\{1\}$ & in $A$ and not in $B$ & \sqlkw{EXCEPT} \\
+\end{tabular}
+
+\smallskip
+Difference is not symmetric: $B - A = \{4\}$. And
+$A \cap B = A - (A - B)$: take away from $A$ everything not in $B$, and what is
+left is in both. \chref{algebra} uses exactly this to show intersection is not
+a fundamental operator.
+\end{examplebox}
+
+\begin{definitionbox}[Ordered pair, Cartesian product --- Self-Check question 7]
+An \term{ordered pair} $(a, b)$ has a first element and a second; unlike a
+set, $(a,b) \neq (b,a)$ when $a \neq b$.
+
+\smallskip
+The \term{Cartesian product} $A \times B$ is the set of every pair $(a, b)$
+with $a \in A$ and $b \in B$. It has $|A| \times |B|$ elements.
+
+\smallskip
+$\{1,2\} \times \{x, y, z\} = \{(1,x), (1,y), (1,z), (2,x), (2,y), (2,z)\}$ ---
+six pairs. In \chref{algebra} the product of 4{,}000 students and 60{,}037
+enrolments is 240{,}148{,}000 pairs, which is why no database ever computes a
+join that way.
+\end{definitionbox}
+
+\section{Relations and Functions}
+
+\begin{definitionbox}[Relation, in the mathematical sense]
+A \term{relation} between sets $A$ and $B$ is any subset of $A \times B$ ---
+a chosen collection of pairs. ``Is enrolled in'', between students and
+sections, is the set of (student, section) pairs that are true.
+
+\smallskip
+With more sets the pairs become tuples: a relation over $A$, $B$ and $C$ is a
+subset of $A \times B \times C$. That is precisely Codd's definition, and why a
+database table is called a relation. The \emph{domains} of \chref{relational}
+are the sets $A$, $B$, $C$.
+\end{definitionbox}
+
+\begin{definitionbox}[Function --- Self-Check question 12]
+A \term{function} $f$ from $A$ to $B$ is a relation in which \textbf{every
+element of $A$ is paired with exactly one element of $B$}. One input, one
+output. $f(x) = x^2$ is a function: each $x$ has one square. ``The square
+roots of $x$'' is not: 4 has two.
+
+\smallskip
+Many inputs may share an output --- $(-2)^2 = 2^2$ --- that is allowed. What
+is not allowed is one input with two outputs.
+
+\smallskip
+\textbf{This is the whole foundation of \chref{fds}.} The functional
+dependency \fd{roll\_no}{name} says ``name is a function of roll\_no'': a roll
+number has exactly one name. Two students sharing a name is fine (many inputs,
+one output). One roll number with two names is the violation.
+\end{definitionbox}
+
+\section{Logic}
+
+\begin{definitionbox}[Propositions, and the three connectives]
+A \term{proposition} is a statement that is true or false: ``$x > 5$''.
+
+\medskip
+\begin{tabular}{@{}cc|ccc@{}}
+$P$ & $Q$ & $P$ \sqlkw{AND} $Q$ & $P$ \sqlkw{OR} $Q$ & \sqlkw{NOT} $P$ \\
+\midrule
+T & T & T & T & F \\
+T & F & F & T & F \\
+F & T & F & T & T \\
+F & F & F & F & T \\
+\end{tabular}
+
+\smallskip
+\sqlkw{AND} is true only when both are; \sqlkw{OR} when at least one is.
+\sqlkw{OR} is \emph{inclusive}: true when both are.
+\end{definitionbox}
+
+\begin{examplebox}[Two Self-Check questions, answered]
+\textbf{Question 8 --- is ``$x > 5$ and $x < 3$'' ever true?} No. No number is
+both greater than 5 and less than 3, so the statement is a
+\term{contradiction}: false for every $x$. A \sqlkw{WHERE} clause that is a
+contradiction returns no rows, and no error --- a common bug when a condition
+was meant to be \sqlkw{OR}.
+
+\medskip
+\textbf{Question 9 --- ``not ($P$ and $Q$)'' with $P$ true, $Q$ false.} $P$
+\sqlkw{AND} $Q$ is false, so its negation is \textbf{true}. \term{De Morgan's
+laws} make this mechanical:
+\[
+  \neg(P \wedge Q) \equiv \neg P \vee \neg Q \qquad
+  \neg(P \vee Q) \equiv \neg P \wedge \neg Q
+\]
+``Not both'' means ``at least one is not''. \chref{select} uses the second law
+to explain \sqlkw{NOT IN}: \texttt{x NOT IN (a, b)} is \texttt{NOT (x = a OR x
+= b)}, which is \texttt{x <> a AND x <> b}.
+\end{examplebox}
+
+\begin{conceptbox}[A third truth value --- what SQL adds]
+Two-valued logic has no room for ``I do not know''. SQL needs one, because a
+comparison with a null cannot be true or false. It adds \unk{}, and the tables
+extend (\chref{select} has them in full). The two facts that matter:
+
+\begin{tight}
+  \item \texttt{F AND} anything is F, and \texttt{T OR} anything is T --- a
+        missing value cannot change those.
+  \item \texttt{NOT} \unk{} is \unk{}. So De Morgan's laws still hold, but a
+        condition and its negation no longer cover every row --- 19{,}992
+        enrolments fall through the gap on the seeded data.
+\end{tight}
+\end{conceptbox}
+
+\begin{definitionbox}[Quantifiers, and their SQL]
+$\exists x\, P(x)$, ``there exists'', is true if $P$ holds for \emph{at least
+one} $x$. $\forall x\, P(x)$, ``for all'', is true if $P$ holds for
+\emph{every} $x$.
+
+\smallskip
+They are linked by negation: $\neg \forall x\, P(x) \equiv \exists x\, \neg
+P(x)$ --- ``not every student passed'' means ``some student did not''.
+
+\smallskip
+SQL has $\exists$ directly, as \sqlkw{EXISTS} (\chref{subqueries}). It has no
+\sqlkw{FOR ALL}; ``every'' is written as ``there is no counter-example'':
+\sqlkw{NOT EXISTS} ( \dots\ \sqlkw{NOT} \dots\ ). ``Students who passed every
+course they took'' becomes ``students for whom there is no course they took
+and failed''.
+\end{definitionbox}
+
+\section{Logarithms: How Many Halvings}
+
+\begin{definitionbox}[The logarithm as a count --- Self-Check question 11]
+How many times must 1{,}000{,}000 be halved to reach 1? Halving 20 times gives
+$1{,}000{,}000 / 2^{20} = 1{,}000{,}000 / 1{,}048{,}576 < 1$, and 19 times is
+not quite enough. So about \textbf{20}.
+
+\smallskip
+That count is the \term{logarithm}: $\log_2 1{,}000{,}000 \approx 20$. In
+general $\log_b n$ is how many times you divide $n$ by $b$ to reach 1 --- or,
+the other way round, the power of $b$ that gives $n$.
+
+\smallskip
+The property that matters: \textbf{multiplying $n$ adds only a little to its
+logarithm.} $\log_2$ of a thousand is about 10; of a million, 20; of a
+billion, 30. A thousand times more data costs ten more halvings.
+\end{definitionbox}
+
+\begin{examplebox}[Why it is the whole story of Chapter 21]
+A B-tree page divides its range into a few hundred parts --- divides by, say,
+$b = 300$ rather than by 2. Its depth is $\log_{300} n$:
+
+\medskip
+\begin{tabular}{@{}R{3.6cm}R{3.4cm}R{3.4cm}@{}}
+\textbf{rows $n$} & $\log_2 n$ & $\log_{300} n$ \\
+1{,}000 & 10 & 1.2 \\
+1{,}000{,}000 & 20 & 2.4 \\
+1{,}000{,}000{,}000 & 30 & 3.6 \\
+\end{tabular}
+
+\smallskip
+Rounding up, a million rows need a tree three levels deep, and a billion only
+four. That is why \chref{indexes} measured a lookup at 0.053\,ms for 10{,}000
+rows and 0.057\,ms for a million: a hundredfold more data added at most one
+level. A scan, which reads everything, has no logarithm in it --- a hundred
+times the rows is a hundred times the work.
+\end{examplebox}
+
+% Not a checkpoint environment: every checkpoint in this handout is answered
+% in Appendix C, which is per chapter. These are answered here instead.
+\begin{conceptbox}[Three to try, with answers]
+\begin{tightnum}
+  \item With $A = \{a, b, c, d\}$ and $B = \{c, d, e\}$, write $A \cup B$,
+        $A \cap B$, $A - B$ and $B - A$, and give $|A \times B|$.
+  \item Is ``each student has exactly one date of birth'' a function from
+        students to dates? Is ``each date has exactly one student born on
+        it''? Say which, if either, could be a functional dependency.
+  \item Write ``every section has at least one student'' using only
+        \sqlkw{NOT EXISTS}, by first rewriting it as ``there is no section
+        such that \dots''.
+\end{tightnum}
+
+\smallskip
+\textbf{Answers.} (1)~$\{a,b,c,d,e\}$; $\{c,d\}$; $\{a,b\}$; $\{e\}$;
+$4 \times 3 = 12$. (2)~The first is a function, and is
+\fd{roll\_no}{date\_of\_birth}. The second is not --- one date has many
+students --- so \fd{date\_of\_birth}{roll\_no} does not hold. (3)~``There is no
+section with no enrolment'': \texttt{NOT EXISTS (SELECT 1 FROM section s WHERE
+NOT EXISTS (SELECT 1 FROM enrolment e WHERE e.course\_code = s.course\_code AND
+e.semester = s.semester AND e.section\_no = s.section\_no))}.
+\end{conceptbox}

@@ -1,0 +1,367 @@
+%=====================================================================
+\chapter{Three Levels, and Why They Are Separate}\label{ch:architecture}
+%=====================================================================
+\locator{1}{Part I --- What a Database Is}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Name} the three levels of the ANSI/SPARC architecture and
+        \textbf{state} what each one describes.
+  \item \textbf{Distinguish} a schema from an instance, and \textbf{explain}
+        why the difference matters when something changes.
+  \item \textbf{Define} logical and physical data independence, and
+        \textbf{give} an example of a change that each one protects you from.
+  \item \textbf{Identify} which level a given change belongs to.
+  \item \textbf{Explain} why a system with no separation of levels is the
+        file-based system of \chref{whynotfiles} again.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{whynotfiles}: the six problems, and what a DBMS is. Nothing else. This
+chapter is the one piece of pure architecture in the course and it is here
+because every later chapter quietly assumes it.
+\end{prereq}
+
+\begin{keyterms}
+ANSI/SPARC architecture $\bullet$ external level $\bullet$ external schema
+$\bullet$ user view $\bullet$ conceptual level $\bullet$ conceptual schema
+$\bullet$ internal level $\bullet$ internal schema $\bullet$ physical level
+$\bullet$ schema $\bullet$ instance $\bullet$ mapping $\bullet$ logical data
+independence $\bullet$ physical data independence
+\end{keyterms}
+
+\section{One Database, Three Descriptions}
+
+In \chref{whynotfiles} the fees program and the results program each had their
+own file and their own idea of what a student was. Putting them behind one
+DBMS fixes the duplication --- but it creates a new problem immediately.
+
+The fees clerk wants a student to be a roll number, a name and an amount
+owing. The examinations officer wants a roll number, a name and a list of
+marks. The person who has to make the database fast wants to know that the
+student table is sorted by roll number and has an index on surname. All three
+are talking about the same data and none of them should have to care about the
+other two.
+
+The answer, standardised in 1975 and unchanged since, is to describe the
+database \emph{three times}.
+
+\begin{definitionbox}[The three levels]
+The \term{external level} is what a particular user or program sees: their own
+tailored view of the part of the database they need, in the shape they need
+it. There are many external schemas, one per group of users.
+
+\smallskip
+The \term{conceptual level} is the whole database, described once, logically:
+every entity, every attribute, every relationship and every constraint ---
+and nothing at all about how it is stored. There is exactly one conceptual
+schema.
+
+\smallskip
+The \term{internal level} is how it is actually stored: files, pages, record
+layouts, indexes, compression. There is exactly one internal schema.
+
+\smallskip
+A \term{mapping} connects adjacent levels, so that the DBMS can translate a
+request expressed against one into an operation on the next.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  lvl/.style={rounded corners=3pt, draw=#1, line width=1.1pt, fill=#1!8,
+              text=#1!60!black, font=\bfseries\small, align=center,
+              text width=3.3cm, minimum height=1.1cm},
+  ext/.style={rounded corners=2pt, draw=secondary, line width=0.9pt,
+              fill=secondary!8, text=secondary!60!black,
+              font=\scriptsize\bfseries, align=center,
+              text width=2.5cm, minimum height=0.85cm},
+  note/.style={font=\scriptsize, text=neutral, align=left, text width=5.4cm,
+               anchor=west},
+  arr/.style={-{Stealth[length=2.2mm]}, primary!55, line width=0.9pt},
+  map/.style={font=\scriptsize\itshape, text=accent, align=center}
+]
+  \node[ext] (e1) at (-2.9,3.6) {Fees clerk};
+  \node[ext] (e2) at (0.0,3.6)  {Examinations};
+  \node[ext] (e3) at (2.9,3.6)  {Student portal};
+  \node[lvl=primary]  (c) at (0,1.7) {Conceptual schema\\{\scriptsize
+       \mdseries the whole database, once}};
+  \node[lvl=purplehl] (i) at (0,-0.2) {Internal schema\\{\scriptsize
+       \mdseries pages, records, indexes}};
+  \node[draw=neutral, line width=0.9pt, fill=neutral!8, text=neutral,
+        font=\scriptsize, align=center, text width=3.3cm,
+        minimum height=0.6cm] (d) at (0,-1.7) {the stored database};
+
+  \foreach \e in {e1,e2,e3}{\draw[arr] (\e) -- (c);}
+  \draw[arr] (c) -- (i);
+  \draw[arr] (i) -- (d);
+
+  \node[map] at (3.6,2.65) {external/conceptual\\mapping};
+  \node[map] at (3.6,0.75) {conceptual/internal\\mapping};
+
+  \node[note, text=secondary!60!black] at (4.9,3.6)
+       {Many of these. Each sees only what it needs, shaped how it needs it.};
+  \node[note, text=primary!60!black] at (4.9,1.7)
+       {\textbf{Exactly one.} Every entity, attribute, relationship and
+        constraint --- and nothing about storage.};
+  \node[note, text=purplehl!60!black] at (4.9,-0.2)
+       {Exactly one. How it is really kept. Change this and nothing above
+        should notice.};
+\end{tikzpicture}}%
+{The ANSI/SPARC three-level architecture. The two mappings are the whole
+value of the arrangement: because they exist, a change at one level can be
+absorbed instead of propagated.}{threelevels}
+
+\section{Schema and Instance}
+
+Two words that students use interchangeably for about a fortnight, and then
+cannot afford to.
+
+\begin{definitionbox}[Schema, Instance]
+A \term{schema} is the \emph{description}: the names of the tables, their
+columns, the types, the constraints. It is set when the database is designed
+and changes rarely.
+
+\smallskip
+An \term{instance} (or \emph{state}, or \emph{extension}) is the data
+\emph{in} the database at one moment. It changes every time anybody inserts a
+row.
+
+\smallskip
+The analogy worth keeping: a schema is a variable's declaration, an instance
+is its value. \texttt{int count;} is the schema; \texttt{7} is the instance.
+\end{definitionbox}
+
+\begin{examplebox}[The same distinction, three ways]
+\begin{tabular}{@{}L{4.0cm}L{5.0cm}L{5.0cm}@{}}
+& \textbf{Schema} & \textbf{Instance} \\
+Programming & \texttt{int count;} & \texttt{7} \\
+A database & \relation{Student}{\relkey{roll\_no}, name, programme} &
+the 4{,}000 rows in it today \\
+A form & the blank form & one filled-in copy \\
+\end{tabular}
+
+\smallskip
+When somebody says ``the database changed'', the first question is always
+which of the two they mean, because the answers are days apart in effort.
+\end{examplebox}
+
+\section{Data Independence, Which Is the Point of All This}
+
+Three descriptions and two mappings are a lot of machinery. It buys exactly
+one thing, and the thing is worth it.
+
+\begin{definitionbox}[Logical and physical data independence]
+\term{Physical data independence} is the ability to change the \emph{internal}
+schema --- how data is stored --- without changing the conceptual schema or
+any application program. Adding an index, moving to a different disk,
+reorganising the file: none of these should require a line of application code
+to change.
+
+\smallskip
+\term{Logical data independence} is the ability to change the
+\emph{conceptual} schema --- adding a table, adding a column, splitting one
+table into two --- without changing the external schemas or the programs that
+use them.
+
+\smallskip
+Physical independence is easy and essentially achieved. \textbf{Logical
+independence is hard and only partly achieved}, which is why it is worth
+understanding where it fails.
+\end{definitionbox}
+
+\begin{conceptbox}[Which level does this change belong to?]
+A question worth being able to answer instantly, because the cost of a change
+is decided by its level.
+
+\begin{tight}
+  \item \textbf{``Add an index on surname.''} Internal. Nothing else changes.
+        \chref{indexes} does exactly this and measures it.
+  \item \textbf{``Add a telephone number to students.''} Conceptual. Existing
+        views that never mentioned it carry on working --- this is logical
+        independence succeeding.
+  \item \textbf{``Split the student table into student and student-contact.''}
+        Conceptual, and this is where logical independence is \emph{tested}:
+        \chref{views} shows how a view can hide the split from programs that
+        still want one table. \chref{normalforms} does this split for real.
+  \item \textbf{``The fees clerk should not see home addresses.''} External. A
+        view, and in a server DBMS a privilege (\chref{project}).
+  \item \textbf{``Store dates as text rather than numbers.''} Looks internal.
+        It is \emph{conceptual}, because it changes what comparisons mean ---
+        and \chref{ddl} measures what SQLite does about that.
+\end{tight}
+
+\smallskip
+The last one is the one that catches people, and it catches them because
+``how it is stored'' sounds internal in English and is not.
+\end{conceptbox}
+
+\section{Where SQLite's Three Levels Are}
+
+An architecture standardised in 1975 is worth nothing to you unless you can
+point at its three levels in the tool on your own machine, which at first
+glance appears to have only one.
+
+\begin{alertbox}[All three are there; only two can be enforced]
+It is worth knowing how an architecture from 1975 maps onto the tool in front
+of you, because at first glance SQLite seems to have only one level.
+
+\begin{tight}
+  \item \textbf{Conceptual:} your \sqlkw{CREATE TABLE} statements. Exactly one
+        set of them, and \texttt{.schema} prints it.
+  \item \textbf{Internal:} the page structure, the B-trees, the indexes.
+        \chref{firstdatabase} measures it directly and you never write it ---
+        SQLite decides, and \sqlkw{PRAGMA} is the only window onto it.
+  \item \textbf{External:} views (\chref{views}). SQLite has them, so the
+        level exists --- but it has no users, so it cannot restrict anybody
+        \emph{to} a view. The level is present and the enforcement is not,
+        which is \chref{project}'s subject.
+\end{tight}
+
+\smallskip
+\textbf{This is a real limitation and worth stating now rather than in week
+sixteen.} You will build all three levels in this course. You will only be
+able to \emph{enforce} two of them.
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Confusing schema with instance.} A schema change is a project;
+        an instance change is a Tuesday.
+  \item \textbf{Thinking there are many conceptual schemas.} There is one. Many
+        external, one conceptual, one internal.
+  \item \textbf{Believing physical independence means performance does not
+        matter.} It means you can change storage \emph{without rewriting
+        programs}. It does not mean the choice is free --- \chref{indexes}
+        measures exactly how unfree it is.
+  \item \textbf{Calling a storage-format change internal when it changes
+        meaning.} If a comparison starts giving different answers, it was
+        conceptual.
+  \item \textbf{Assuming logical independence is automatic.} It is the hard
+        one, and \chref{views} is how it is bought.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Find the three levels in a database you did not design]
+\begin{lstlisting}[language=bash]
+# --- 1. Make a database with something in it -------------------------
+sqlite3 arch.db
+\end{lstlisting}
+then, in the shell:
+\begin{lstlisting}[language=sql]
+-- --- 2. State a conceptual schema -------------------------------
+CREATE TABLE student (
+  roll_no   TEXT PRIMARY KEY,
+  name      TEXT NOT NULL,
+  programme TEXT NOT NULL,
+  semester  INTEGER NOT NULL
+);
+INSERT INTO student VALUES
+  ('2021-IT-001','Ayesha Khan','BSIT',2),
+  ('2021-IT-002','Bilal Ahmed','BSIT',2),
+  ('2021-CS-007','Hira Nadeem','BSCS',4);
+
+-- --- 3. Read the conceptual schema back -------------------------
+.schema student
+-- That text IS the conceptual schema. Nothing in it mentions storage.
+
+-- --- 4. Build an external schema --------------------------------
+CREATE VIEW fees_view AS
+  SELECT roll_no, name FROM student;
+SELECT * FROM fees_view;
+-- A user given only this cannot see "programme" or "semester".
+
+-- --- 5. Look at the internal schema -----------------------------
+PRAGMA page_size;
+PRAGMA page_count;
+SELECT name, type FROM sqlite_master;
+-- You did not write any of this and cannot usefully change it.
+
+-- --- 6. Change the internal level and prove nothing else moved --
+CREATE INDEX idx_name ON student(name);
+SELECT * FROM fees_view;
+-- Same answer. That is physical data independence, demonstrated.
+
+-- --- 7. Now change the conceptual level -------------------------
+ALTER TABLE student ADD COLUMN email TEXT;
+SELECT * FROM fees_view;
+-- Still works, and still has two columns. Logical independence.
+
+-- --- 8. Break it ------------------------------------------------
+-- Try to drop the column the view depends on:
+ALTER TABLE student DROP COLUMN name;
+-- Write down exactly what happens, and which level failed.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Steps 6 and 7 are the two kinds of independence, each
+demonstrated in one line. Step 8 is the limit of the second one, and the error
+message is worth reading twice.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Classify each of these by level, and say which kind of data
+        independence (if any) protects the programs from it: adding an index;
+        adding a column; renaming a column; storing the database on a faster
+        disk; giving the library staff a view with no home addresses.
+  \item Explain the difference between a schema and an instance to somebody who
+        has written programs but never used a database, using an example that
+        is not a database.
+  \item SQLite has views but no users. Say precisely which of the three levels
+        is affected by that, what you can still do, what you cannot, and how
+        you would achieve the same effect in an application built on SQLite.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item The ANSI/SPARC architecture describes one database three times:
+        \emph{many} external schemas, \emph{one} conceptual schema, \emph{one}
+        internal schema, joined by two mappings.
+  \item The external level is what a user sees; the conceptual level is the
+        whole database logically and says nothing about storage; the internal
+        level is how it is really kept.
+  \item A \emph{schema} is the description and changes rarely; an
+        \emph{instance} is the data and changes constantly. A schema is a
+        declaration, an instance is a value.
+  \item \textbf{Physical data independence} lets the internal schema change
+        without touching programs. It is essentially achieved.
+  \item \textbf{Logical data independence} lets the conceptual schema change
+        without touching external schemas. It is hard, partial, and bought
+        with views (\chref{views}).
+  \item The level a change belongs to decides what it costs. ``Store dates as
+        text'' sounds internal and is conceptual, because it changes what
+        comparisons mean.
+  \item In SQLite the conceptual level is your \sqlkw{CREATE TABLE}
+        statements, the internal level is pages and B-trees you never write,
+        and the external level is views --- which exist but cannot be
+        enforced, because there are no users to restrict.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} How many conceptual schemas does a database have?
+        (a)~one per user; (b)~one per table; (c)~exactly one; (d)~one per
+        application.
+  \item \textbf{(MCQ)} Adding an index without changing any program
+        demonstrates: (a)~logical data independence; (b)~physical data
+        independence; (c)~an external schema; (d)~an instance change.
+  \item \textbf{(Short)} Give one change that logical data independence
+        protects you from and one that it does not, and say what makes the
+        difference.
+  \item \textbf{(Short)} Why does the architecture need \emph{mappings} as well
+        as schemas? What would be lost without them?
+  \item \textbf{(Short)} A colleague says the internal level does not matter
+        because of physical data independence. Reply in two sentences.
+  \item \textbf{(Applied)} A university wants three groups to use one student
+        database: admissions, examinations, and the students themselves. Design
+        the external schemas --- what each sees and what each must not --- and
+        say which parts of your design SQLite can enforce and which it cannot.
+  \item \textbf{(Applied)} Your conceptual schema must change: the single
+        \texttt{address} column becomes four columns. Describe how you would
+        make that change without breaking existing programs, what the view
+        would look like, what it would cost, and at what point you would decide
+        the view is no longer worth keeping.
+\end{reviewq}

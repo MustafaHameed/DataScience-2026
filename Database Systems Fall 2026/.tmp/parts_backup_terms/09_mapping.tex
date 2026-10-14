@@ -1,0 +1,512 @@
+%=====================================================================
+\chapter{Mapping an ER Diagram to Tables}\label{ch:mapping}
+%=====================================================================
+\locator{3}{Part III --- From Diagram to Schema}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Apply} the seven mapping rules, in order, to any ER diagram.
+  \item \textbf{Map} a 1:N relationship by placing a foreign key, and
+        \textbf{say} which side it goes on and why.
+  \item \textbf{Resolve} an M:N relationship into a table, and
+        \textbf{determine} its primary key.
+  \item \textbf{Map} a weak entity, a multi-valued attribute and a recursive
+        relationship, each of which has its own rule.
+  \item \textbf{Check} a finished schema back against the diagram it came
+        from, constraint by constraint.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{cardinality}: the finished, constrained diagram --- you will map the one
+you drew. \chref{constraints} for foreign keys and referential actions, which
+are what the rules produce.
+\end{prereq}
+
+\begin{keyterms}
+mapping $\bullet$ logical design $\bullet$ strong entity $\bullet$ weak entity
+$\bullet$ relationship table $\bullet$ junction table $\bullet$ composite
+primary key $\bullet$ foreign key placement $\bullet$ resolving a
+many-to-many $\bullet$ surrogate key $\bullet$ recursive relationship
+$\bullet$ ternary relationship $\bullet$ flattening a composite attribute
+\end{keyterms}
+
+\section{The Part of Design That Is Mechanical}
+
+Everything in Part~II was judgement: whether a noun is an entity, whether
+participation is really total, which candidate key to choose. Those decisions
+were expensive and nobody could make them for you.
+
+This chapter is the opposite. Given a finished diagram, turning it into tables
+is a \emph{procedure}. Seven rules, applied in order, and two people who
+follow them get the same schema. That is the point of having spent four
+chapters on the diagram: the hard thinking is over, and what remains can be
+checked.
+
+\begin{conceptbox}[The seven rules, in the order they must be applied]
+\begin{tabular}{@{}R{0.7cm}L{5.3cm}L{8.0cm}@{}}
+\textbf{1} & Strong entity type & one table; its key becomes the primary key \\
+\textbf{2} & Composite attribute & store the \emph{parts}, not the whole \\
+\textbf{3} & Multi-valued attribute & \textbf{a new table}: owner's key +
+  the value, both in the primary key \\
+\textbf{4} & 1:1 relationship & a foreign key on the side with \emph{total}
+  participation \\
+\textbf{5} & 1:N relationship & a foreign key on the \textbf{many} side \\
+\textbf{6} & M:N relationship & \textbf{a new table}: both keys, together the
+  primary key, plus the relationship's own attributes \\
+\textbf{7} & Weak entity type & a table whose primary key is the owner's key
+  \emph{plus} the partial key \\
+\end{tabular}
+
+\smallskip
+\textbf{Order matters.} Rules 4--7 place foreign keys, and a foreign key can
+only point at a primary key that already exists. Do all the entities first.
+\end{conceptbox}
+
+\section{Rules 1 to 3: the Entities}
+
+\begin{examplebox}[Rule 1 --- a strong entity becomes a table]
+\ent{student}, with key \texttt{roll\_no}, becomes
+
+\medskip
+\relation{student}{\relkey{roll\_no}, name, programme, semester}
+
+\medskip
+\begin{lstlisting}[language=sql]
+CREATE TABLE student (
+  roll_no   TEXT    PRIMARY KEY NOT NULL,
+  name      TEXT    NOT NULL,
+  programme TEXT    NOT NULL,
+  semester  INTEGER NOT NULL CHECK (semester BETWEEN 1 AND 8)
+) STRICT;
+\end{lstlisting}
+
+The \sqlkw{CHECK} is the domain constraint from \chref{constraints}, and it
+came from the ER diagram's domain, not from inspiration.
+\end{examplebox}
+
+\begin{examplebox}[Rules 2 and 3 --- the two attribute kinds that will not fit]
+\textbf{Rule 2, composite.} \texttt{address} = house, street, city. Store the
+parts:
+
+\begin{lstlisting}[language=sql]
+  addr_house  TEXT,
+  addr_street TEXT,
+  addr_city   TEXT,
+\end{lstlisting}
+
+Three columns, one for each leaf of the ER tree. Never one \texttt{address}
+column --- \chref{ermodel} explained what that costs, and the cost is paid at
+the moment somebody asks ``how many students live in Bahawalpur''.
+
+\medskip
+\textbf{Rule 3, multi-valued.} \texttt{phone} cannot be a column at all. It
+becomes its own table:
+
+\medskip
+\relation{student\_phone}{\relkey{roll\_no}, \relkey{phone}}
+
+\begin{lstlisting}[language=sql]
+CREATE TABLE student_phone (
+  roll_no TEXT NOT NULL REFERENCES student(roll_no) ON DELETE CASCADE,
+  phone   TEXT NOT NULL,
+  PRIMARY KEY (roll_no, phone)
+) STRICT;
+\end{lstlisting}
+
+\smallskip
+\textbf{Both attributes are in the primary key, and that is the rule, not a
+convenience.} It says a student may have many numbers and may not have the
+same number recorded twice. Make \texttt{roll\_no} alone the key and each
+student gets one phone --- which is where you started. Leave the key off
+altogether and \chref{relational}'s step 2 happens: the same number goes in
+twice and no \sqlkw{DELETE} can remove one of them.
+
+\smallskip
+The cascade is right here because a phone number belongs to a student in
+exactly the way \chref{constraints} requires: it cannot exist without one.
+\end{examplebox}
+
+\section{Rules 4 to 6: the Relationships}
+
+\begin{definitionbox}[Where a foreign key goes, and why there is no choice]
+In a \textbf{1:N} relationship the foreign key goes on the \textbf{many} side,
+always. The reason is the atomicity of \chref{relational}: a course belongs to
+one department, so one value fits in one column. A department has many courses,
+and many values do not.
+
+\smallskip
+In a \textbf{1:1} relationship either side would work, so there is a choice and
+a rule for making it: \textbf{put it on the side with total participation}, so
+that it can be declared \sqlkw{NOT NULL}. Put it on the partial side and most
+of the column is null.
+
+\smallskip
+In an \textbf{M:N} relationship \emph{neither} side works, and that is why the
+relationship needs a table of its own.
+\end{definitionbox}
+
+\begin{worked}[Rule 6 --- resolving \ent{enrols}, and finding its key]
+\ent{student} (0,N) --- \ent{enrols} --- (0,N) \ent{section}, carrying
+\texttt{grade}.
+
+\medskip
+\textbf{Step 1 --- why no foreign key will do.} Put \texttt{section\_id} on
+\ent{student} and a student takes one section. Put \texttt{roll\_no} on
+\ent{section} and a section holds one student. Both are wrong, and neither is
+fixable by choosing the other side.
+
+\medskip
+\textbf{Step 2 --- make a table.} It gets the primary key of each participant:
+
+\medskip
+\relation{enrolment}{\relkey{roll\_no}, \relkey{course\_code},
+\relkey{semester}, \relkey{section\_no}, grade}
+
+\medskip
+Four key attributes, not two --- because \ent{section} is weak
+(\chref{cardinality}) and its own key is already three attributes wide. A weak
+entity on either end of an M:N relationship makes the junction table wide, and
+that is the honest consequence of the design rather than a mistake.
+
+\medskip
+\textbf{Step 3 --- the primary key is the combination.} All four together.
+This states exactly one thing, and it is the thing the university means:
+\emph{a student may appear in a section only once}.
+
+\medskip
+\textbf{Step 4 --- the relationship's attribute comes too.} \texttt{grade} is
+not in the key. It is a fact \emph{about} the enrolment, nullable because the
+semester is not over.
+
+\medskip
+\begin{lstlisting}[language=sql]
+CREATE TABLE enrolment (
+  roll_no     TEXT    NOT NULL REFERENCES student(roll_no),
+  course_code TEXT    NOT NULL,
+  semester    TEXT    NOT NULL,
+  section_no  INTEGER NOT NULL,
+  grade       TEXT    CHECK (grade IN ('A','B','C','D','F')),
+  PRIMARY KEY (roll_no, course_code, semester, section_no),
+  FOREIGN KEY (course_code, semester, section_no)
+    REFERENCES section(course_code, semester, section_no)
+) STRICT;
+\end{lstlisting}
+
+\smallskip
+\textbf{Notice the second foreign key is written separately.} A foreign key of
+three columns cannot be declared inline against one column; it needs its own
+\sqlkw{FOREIGN KEY} clause naming all three, in the same order as the parent's
+primary key. This is where a wide weak-entity key is actually felt, and it is
+the strongest practical argument for giving \ent{section} a surrogate
+\texttt{section\_id} instead --- an argument \chref{evolution} makes with a
+measurement rather than with taste.
+\end{worked}
+
+\begin{alertbox}[The M:N table is not ``just a link table''; it is where the facts live]
+Students meet this table and call it plumbing. It is the most informative
+table in the database:
+
+\begin{tight}
+  \item \texttt{grade} is there, and nowhere else. Every transcript, every GPA,
+        every pass rate is a query over this table.
+  \item It is the only place that records \emph{when} a student took something.
+  \item It is almost always the largest table --- 4{,}000 students $\times$ 5
+        sections $\times$ 8 semesters is 160{,}000 rows against a few thousand
+        everywhere else, which is why \chref{indexes} measures this table and
+        not the others.
+\end{tight}
+
+\smallskip
+If an M:N table has no attributes of its own today, it still will: ``when did
+they enrol'', ``who approved it'', ``was it a repeat''. Design it as a first
+class table, because it is one.
+\end{alertbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  ent/.style={draw=primary, line width=1pt, fill=primary!8,
+              text=primary!60!black, font=\scriptsize\bfseries,
+              minimum width=1.8cm, minimum height=0.62cm},
+  weak/.style={ent, draw=purplehl, fill=purplehl!8, text=purplehl!65!black,
+               double, double distance=1.1pt},
+  rel/.style={draw=greenhl, line width=0.9pt, fill=greenhl!8,
+              text=greenhl!55!black, font=\scriptsize\bfseries,
+              diamond, aspect=2.2, inner sep=0.5pt},
+  tb/.style={rounded corners=2pt, draw=#1, line width=0.9pt, fill=#1!6,
+             text=#1!60!black, font=\scriptsize, align=left,
+             inner sep=3pt, text width=5.2cm},
+  ln/.style={draw=neutral!55, line width=0.7pt},
+  rr/.style={-{Stealth[length=2.2mm]}, accent!75, line width=1pt},
+  rl/.style={font=\scriptsize\bfseries, text=accent},
+  hd/.style={font=\scriptsize\bfseries, text=primary}
+]
+  \node[hd] at (-3.4,2.5) {the diagram};
+  \node[hd] at ( 4.4,2.5) {the tables};
+
+  \node[ent]  (stu) at (-5.3, 1.3) {STUDENT};
+  \node[rel]  (enr) at (-3.4, 1.3) {ENROLS};
+  \node[weak] (sec) at (-1.5, 1.3) {SECTION};
+  % Double diamond: HAS is the identifying relationship, and drawing it as an
+  % ordinary one here contradicted Figure 6.1 two chapters earlier.
+  \node[rel, draw=purplehl, fill=purplehl!8, text=purplehl!65!black,
+        double, double distance=1.1pt] (has) at (-1.5,-0.3) {HAS};
+  \node[ent]  (crs) at (-1.5,-1.6) {COURSE};
+  \draw[ln] (stu) -- (enr);  \draw[ln] (enr) -- (sec);
+  \draw[ln, double, double distance=1pt] (sec) -- (has);
+  \draw[ln] (has) -- (crs);
+
+  \node[tb=primary]  (t1) at (4.4, 1.75)
+       {\textbf{student}(\relkey{roll\_no}, name, \dots)};
+  \node[tb=accent]   (t2) at (4.4, 0.75)
+       {\textbf{enrolment}(\relkey{roll\_no}, \relkey{course\_code},
+        \relkey{semester}, \relkey{section\_no}, grade)};
+  \node[tb=purplehl] (t3) at (4.4,-0.55)
+       {\textbf{section}(\relkey{course\_code}, \relkey{semester},
+        \relkey{section\_no}, room)};
+  \node[tb=primary]  (t4) at (4.4,-1.6)
+       {\textbf{course}(\relkey{course\_code}, title, \dots)};
+
+  % Each label rides its OWN curve with pos=, rather than floating between
+  % two of them: the first draft put "rule 6" in the gap where the enrolment
+  % and section arrows cross, and it was impossible to tell which it named.
+  \draw[rr] (stu.east) ..controls (-4.2,2.6) and (0.6,2.9)..
+       node[rl, above, pos=0.55] {rule 1} (t1.west);
+  % These two curves run close together in the middle of the figure, so each
+  % label goes where its OWN curve is alone: rule 6 late, on the flat approach
+  % to the enrolment table; rule 7 early, just as it leaves SECTION. Placed at
+  % mid-curve they printed on each other's arrows.
+  \draw[rr] (enr.south) ..controls (-3.4,0.2) and (0.6,0.75)..
+       node[rl, above, pos=0.80] {rule 6} (t2.west);
+  \draw[rr] (sec.east) ..controls (0.0,1.3) and (0.6,-0.2)..
+       node[rl, right, pos=0.18] {rule 7} (t3.west);
+  \draw[rr] (crs.east) ..controls (0.0,-1.6) and (0.6,-1.6)..
+       node[rl, above, pos=0.5] {rule 1} (t4.west);
+\end{tikzpicture}}%
+{Four of the seven rules on the part of the diagram that uses them. Rule~1
+makes a table per box; rule~6 turns the diamond into a table of its own;
+rule~7 gives the weak entity its owner's key. The arrows are the whole of
+logical design.}{mapping}
+
+\section{Rule 7, and the Two Awkward Cases}
+
+\begin{examplebox}[Rule 7 --- a weak entity]
+\ent{section} is identified by its owner plus its discriminator, so its primary
+key is the owner's key plus the partial key, and the owner's key is
+\emph{simultaneously} a foreign key:
+
+\begin{lstlisting}[language=sql]
+CREATE TABLE section (
+  course_code TEXT    NOT NULL
+              REFERENCES course(course_code) ON DELETE CASCADE,
+  semester    TEXT    NOT NULL,
+  section_no  INTEGER NOT NULL CHECK (section_no > 0),
+  room        TEXT,
+  emp_id      TEXT REFERENCES instructor(emp_id) ON DELETE SET NULL,
+  PRIMARY KEY (course_code, semester, section_no)
+) STRICT;
+\end{lstlisting}
+
+\smallskip
+Three things are true of \texttt{course\_code} at once: it is part of the
+primary key, it is a foreign key, and it is \sqlkw{NOT NULL}. All three come
+straight off the diagram --- the double line in Figure~\ref{fig:ercomplete}
+said the participation was total, and \sqlkw{CASCADE} is correct here for the
+reason \chref{constraints} gave and nowhere else in this schema.
+\end{examplebox}
+
+\begin{conceptbox}[The recursive relationship, and the ternary one]
+Two cases the seven rules cover, but which look as though they need an eighth.
+
+\medskip
+\textbf{Recursive (\ent{course} \ent{requires} \ent{course}, M:N).} Rule 6
+applies unchanged. The new table takes the key of each participant --- and
+both participants are \ent{course}, so it takes \texttt{course\_code}
+\emph{twice}, under the two role names:
+
+\begin{lstlisting}[language=sql]
+CREATE TABLE prerequisite (
+  course_code TEXT NOT NULL REFERENCES course(course_code),
+  requires    TEXT NOT NULL REFERENCES course(course_code),
+  PRIMARY KEY (course_code, requires),
+  CHECK (course_code <> requires)          -- nothing requires itself
+) STRICT;
+\end{lstlisting}
+
+The role names from \chref{ermodel} become the column names. Without them you
+would have two columns called \texttt{course\_code} and no legal way to name
+either.
+
+\medskip
+\textbf{Ternary.} A relationship among three entity types becomes one table
+with three foreign keys, and its primary key is normally all three. Do
+\emph{not} map it as three binary relationships: ``student, section,
+instructor'' as three pairs cannot record which instructor taught which
+student in which section, only that each pair occurred.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Putting the foreign key on the ``one'' side of a 1:N.} One
+        column cannot hold many values. This is the single most common error.
+  \item \textbf{Mapping M:N with a foreign key.} It cannot be done; make the
+        table.
+  \item \textbf{Giving the M:N table a surrogate key and nothing else.} An
+        \texttt{id} column makes rows addressable; without the composite
+        \sqlkw{UNIQUE} the same student enrols twice.
+  \item \textbf{Making the multi-valued table's key just the owner.} Then the
+        owner has one value again, which is what you were escaping.
+  \item \textbf{Storing a composite attribute whole.} Three columns, one per
+        leaf.
+  \item \textbf{Declaring a multi-column foreign key inline.} It needs its own
+        \sqlkw{FOREIGN KEY} clause, with the columns in the parent's key order.
+  \item \textbf{Mapping a ternary relationship as three binary ones.} It loses
+        exactly the fact the relationship existed to record.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Turn your diagram into the database you will use all term]
+This lab produces \texttt{code/schema/v1\_create.sql}, and every later chapter
+runs against what you build here.
+
+\begin{lstlisting}[language=bash]
+# --- 1. Start the file ----------------------------------------------
+# Open code/schema/v1_create.sql in an editor. First line, always:
+#   PRAGMA foreign_keys = ON;
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. Rule 1: one table per strong entity ---------------------
+--     department, course, instructor, student.
+--     Primary key first, NOT NULL, STRICT on every table.
+
+-- --- 3. Rules 2 and 3: the awkward attributes -------------------
+--     Flatten the composite one into its parts.
+--     Give the multi-valued one its own table, with BOTH
+--     attributes in the primary key.
+
+-- --- 4. Rule 5: the 1:N foreign keys ----------------------------
+--     course -> department.  Which side, and NOT NULL or not?
+--     Your Chapter 6 diagram already decided both.
+
+-- --- 5. Rule 7: the weak entity ---------------------------------
+--     section. Owner's key plus discriminator, and the owner's
+--     key is a foreign key at the same time.
+
+-- --- 6. Rule 6: the M:N tables ----------------------------------
+--     enrolment, and prerequisite (the recursive one).
+--     Composite primary keys. Relationship attributes included.
+
+-- --- 7. A referential action for every foreign key --------------
+--     There are at least six. CASCADE only to a weak entity.
+--     Write a one-line comment on each saying why.
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 8. Create it ---------------------------------------------------
+rm -f university.db
+sqlite3 university.db ".read code/schema/v1_create.sql"
+sqlite3 university.db ".tables"
+sqlite3 university.db ".schema section"
+
+# --- 9. Check it against the diagram, constraint by constraint ------
+sqlite3 university.db "PRAGMA foreign_key_list(section);"
+sqlite3 university.db "PRAGMA foreign_key_list(enrolment);"
+sqlite3 university.db "PRAGMA table_info(course);"
+# For EVERY line of Figure 6.1, find the line of SQL that implements
+# it. Any line of the diagram with no SQL is a mapping you skipped.
+
+# --- 10. Prove the M:N key does its job ------------------------------
+sqlite3 university.db "PRAGMA foreign_keys=ON;
+  INSERT INTO student VALUES ('2021-IT-001','Ayesha Khan','BSIT',2);
+  INSERT INTO department VALUES ('CS','Computer Science');
+  INSERT INTO course VALUES ('CS-103','Database Systems',4,'CS');
+  INSERT INTO section VALUES ('CS-103','FALL2026',1,'R7',NULL);
+  INSERT INTO enrolment VALUES
+    ('2021-IT-001','CS-103','FALL2026',1,NULL);
+  INSERT INTO enrolment VALUES
+    ('2021-IT-001','CS-103','FALL2026',1,NULL);"
+# The second one must fail. Record the message.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 9 is the check that makes mapping a procedure
+rather than a craft: every line of the diagram should have a line of SQL, and
+every line of SQL should have a line of the diagram. Lines of SQL with no
+diagram behind them are decisions you made without noticing, and they are
+exactly the ones that turn out to be wrong in week twelve.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A 1:1 relationship joins \ent{department} and \ent{instructor} (the
+        head of department). Say which table gets the foreign key, justify the
+        choice from the participation constraints, and say what the column
+        would look like if you chose the other side.
+  \item \ent{enrolment}'s primary key has four attributes. Explain what fact
+        about the university each one contributes, and say precisely what
+        becomes possible if you remove \texttt{semester} from the key.
+  \item Map the recursive relationship \ent{course} \ent{requires}
+        \ent{course}. Give the table, its primary key, its two foreign keys,
+        and one \sqlkw{CHECK} constraint that the ER diagram does not state but
+        that the university certainly means.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Mapping is \textbf{mechanical}. Seven rules, applied in order, and two
+        people get the same schema --- which is what four chapters of diagram
+        bought.
+  \item \textbf{Entities first} (rules 1--3), then relationships (4--7): a
+        foreign key can only point at a primary key that already exists.
+  \item A \textbf{composite} attribute is stored as its parts; a
+        \textbf{multi-valued} attribute becomes a table whose primary key is
+        \emph{both} columns.
+  \item \textbf{1:N} puts the foreign key on the \textbf{many} side, because
+        one column holds one value. \textbf{1:1} puts it on the \emph{totally
+        participating} side so it can be \sqlkw{NOT NULL}.
+  \item \textbf{M:N} becomes a table carrying both keys plus the
+        relationship's own attributes; the primary key is the combination, and
+        it is what forbids enrolling twice.
+  \item The M:N table is not plumbing. It holds the grades, it records the
+        time, and it is the biggest table in the database.
+  \item A \textbf{weak entity} becomes a table whose key is the owner's key
+        plus the partial key, with the owner's key simultaneously a foreign
+        key and \sqlkw{NOT NULL}.
+  \item A \textbf{recursive} M:N uses rule 6 unchanged, taking the same key
+        twice under the ER diagram's \textbf{role names}.
+  \item A \textbf{ternary} relationship is one table with three foreign keys,
+        never three binary relationships --- that loses the fact it existed to
+        record.
+  \item A multi-column foreign key needs its own \sqlkw{FOREIGN KEY} clause,
+        with columns in the parent key's order.
+  \item Check the schema back: every line of the diagram should have a line of
+        SQL, and every line of SQL a line of the diagram.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} In a 1:N relationship the foreign key is placed:
+        (a)~on the one side; (b)~on the many side; (c)~in a new table;
+        (d)~on either side.
+  \item \textbf{(MCQ)} A multi-valued attribute maps to: (a)~several columns;
+        (b)~a comma-separated column; (c)~a new table keyed on owner and
+        value; (d)~a \sqlkw{CHECK} constraint.
+  \item \textbf{(Short)} Why can an M:N relationship not be mapped with a
+        foreign key? Answer using a property of relations from
+        \chref{relational}.
+  \item \textbf{(Short)} A 1:1 relationship is partial on both sides. Where do
+        you put the foreign key, and what is the consequence either way?
+  \item \textbf{(Short)} What does the composite primary key of
+        \ent{enrolment} forbid, and what would be permitted without it?
+  \item \textbf{(Applied)} Map this diagram completely: a \ent{library} has
+        many \ent{book}s; each book has many \ent{copy}s; \ent{member}s
+        \ent{borrow} copies and a borrowing records a date out and a date
+        back. Give every table, every key, every foreign key and a referential
+        action for each, and name the rule that produced each table.
+  \item \textbf{(Applied)} Take your own \texttt{v1\_create.sql} and go through
+        Figure~\ref{fig:ercomplete} line by line. Produce a two-column table:
+        the diagram constraint, and the SQL that implements it. Then list
+        anything in either column with no partner, and for each one say
+        whether the diagram or the schema is wrong.
+\end{reviewq}

@@ -1,0 +1,422 @@
+%=====================================================================
+\chapter{Functional Dependencies}\label{ch:fds}
+%=====================================================================
+\locator{5}{Part V --- Getting the Design Right}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Define} a functional dependency and \textbf{read} one written
+        as \fd{X}{Y}.
+  \item \textbf{State} Armstrong's three axioms and \textbf{derive} new
+        dependencies from given ones.
+  \item \textbf{Compute} the closure $X^{+}$ of a set of attributes, step by
+        step.
+  \item \textbf{Use} attribute closure to test whether a set of attributes is
+        a superkey or a candidate key.
+  \item \textbf{Reduce} a set of dependencies to a minimal cover.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{relational} for keys. Appendix~B for sets and the meaning of
+``function'' --- the Prerequisite Self-Check's question~12 is the whole
+foundation of this chapter, and if it was uncomfortable, read Appendix~B
+first, not during.
+\end{prereq}
+
+\begin{keyterms}
+functional dependency $\bullet$ determinant $\bullet$ dependent $\bullet$
+trivial dependency $\bullet$ Armstrong's axioms $\bullet$ reflexivity
+$\bullet$ augmentation $\bullet$ transitivity $\bullet$ union rule $\bullet$
+decomposition rule $\bullet$ attribute closure $\bullet$ $X^{+}$ $\bullet$
+superkey $\bullet$ candidate key $\bullet$ prime attribute $\bullet$ minimal
+cover $\bullet$ extraneous attribute $\bullet$ redundant dependency
+\end{keyterms}
+
+\section{One Table That Everyone Has Built}
+
+Every university has a spreadsheet like this one. It is the first thing a
+department builds when it is asked for ``all the results in one place'', and it
+is the table this Part is about:
+
+\medskip
+\relation{report}{roll\_no, name, programme, course\_code, title,
+credit\_hours, dept\_code, dept\_name, semester, section\_no, room, emp\_id,
+instructor, grade}
+
+\medskip
+Fourteen columns, one row per enrolment, and on the seeded data 60{,}037 rows.
+It answers every question in Part~IV without a single join, which is why
+people build it. \chref{normalforms} measures what it costs. This chapter
+supplies the vocabulary for saying \emph{why} it costs anything --- and the
+vocabulary is one idea.
+
+\begin{definitionbox}[Functional dependency]
+A \term{functional dependency} \fd{X}{Y}, read ``$X$ determines $Y$'', holds in
+a relation when any two tuples that agree on $X$ must also agree on $Y$.
+
+\smallskip
+$X$ is the \term{determinant}; $Y$ is the \term{dependent}. Both are sets of
+attributes.
+
+\smallskip
+It is the word ``function'' in its mathematical sense, from Appendix~B: give
+me the value of $X$ and there is exactly one value of $Y$ it can be paired
+with. \fd{roll\_no}{name} says a roll number has exactly one name.
+\end{definitionbox}
+
+\begin{examplebox}[The dependencies in \textit{report}, found by asking]
+As with keys in \chref{ermodel}, these come from the university, not from the
+data. Each one is a rule somebody can confirm:
+
+\medskip
+\begin{tabular}{@{}L{6.6cm}L{7.4cm}@{}}
+\textbf{Dependency} & \textbf{Because} \\
+\fd{roll\_no}{name, programme} & a student has one name and is in one
+  programme \\
+\fd{course\_code}{title, credit\_hours, dept\_code} & a course is defined
+  once \\
+\fd{dept\_code}{dept\_name} & a department has one name \\
+\fd{course\_code, semester, section\_no}{room, emp\_id} & a section meets in
+  one room with one instructor \\
+\fd{emp\_id}{instructor} & an employee has one name \\
+\fd{roll\_no, course\_code, semester, section\_no}{grade} & one grade per
+  enrolment \\
+\end{tabular}
+
+\smallskip
+Six rules. Notice that each one is a sentence the examinations officer would
+agree with immediately --- and that each one says the dependent is stored in
+\textit{report} \emph{once per enrolment}, when it is one fact. Ayesha's name
+is in the table once for every section she has ever taken.
+\end{examplebox}
+
+\begin{alertbox}[An instance can disprove a dependency, never prove one]
+\chref{relational} said this about keys, and it is the same fact, because a
+key is a dependency (below). On the seeded data, \textit{name} happens to
+determine \textit{programme} for some names. That is coincidence, not a rule
+--- two students called Hira Nadeem can be in different programmes, and the
+next admission may be the one that proves it.
+
+\smallskip
+A query \emph{can} disprove a dependency, and it is worth knowing:
+
+\begin{lstlisting}[language=sql]
+-- Does course_code -> title hold in this data?
+SELECT course_code FROM report
+ GROUP BY course_code HAVING COUNT(DISTINCT title) > 1;
+-- Any row returned is a counter-example. None returned proves nothing.
+\end{lstlisting}
+\end{alertbox}
+
+\section{Deriving New Dependencies}
+
+\begin{definitionbox}[Armstrong's axioms]
+For sets of attributes $X$, $Y$, $Z$:
+
+\smallskip
+\textbf{Reflexivity.} If $Y \subseteq X$ then \fd{X}{Y}. (A set determines its
+own parts. Such a dependency is \term{trivial}.)
+
+\smallskip
+\textbf{Augmentation.} If \fd{X}{Y} then \fd{XZ}{YZ}. (Adding the same
+attributes to both sides keeps it true.)
+
+\smallskip
+\textbf{Transitivity.} If \fd{X}{Y} and \fd{Y}{Z} then \fd{X}{Z}.
+
+\smallskip
+These three are \emph{sound} (they never derive anything false) and
+\emph{complete} (they derive everything that follows). Two derived rules save
+time: \textbf{union} --- \fd{X}{Y} and \fd{X}{Z} give \fd{X}{YZ}; and
+\textbf{decomposition} --- \fd{X}{YZ} gives \fd{X}{Y} and \fd{X}{Z}.
+\end{definitionbox}
+
+\begin{examplebox}[One transitive dependency, and why it is the important one]
+From the table:
+\begin{tight}
+  \item \fd{course\_code}{dept\_code} \hfill (given, by decomposition)
+  \item \fd{dept\_code}{dept\_name} \hfill (given)
+  \item therefore \fd{course\_code}{dept\_name} \hfill (transitivity)
+\end{tight}
+
+\smallskip
+Nobody wrote that third rule down, and it is true. It is also the one that
+causes trouble: \textit{dept\_name} depends on \textit{course\_code} only
+\emph{through} \textit{dept\_code}. Renaming the department means changing
+every row of every course it offers --- \chref{normalforms} calls that a
+transitive dependency and third normal form forbids it.
+\end{examplebox}
+
+\section{Attribute Closure}
+
+Deriving dependencies one axiom at a time is how proofs are written. The
+practical question is narrower: \emph{given $X$, what does it determine?} There
+is an algorithm, and it is the most useful thing in Part~V.
+
+\begin{definitionbox}[Attribute closure $X^{+}$]
+The \term{closure} $X^{+}$ of a set of attributes $X$ under a set of
+dependencies $F$ is the set of every attribute that $X$ determines.
+
+\smallskip
+\textbf{Algorithm.}
+\begin{tightnum}
+  \item Start with $X^{+} = X$.
+  \item Repeat: for each dependency \fd{A}{B} in $F$, if $A \subseteq X^{+}$,
+        add $B$ to $X^{+}$.
+  \item Stop when a full pass adds nothing.
+\end{tightnum}
+
+\smallskip
+It always terminates --- there are finitely many attributes and $X^{+}$ only
+grows.
+\end{definitionbox}
+
+\begin{worked}[$\{\mathit{course\_code}\}^{+}$, then the key of \textit{report}]
+Using the six dependencies from the examplebox, abbreviated
+$F$.
+
+\medskip
+\textbf{Part A --- what does \textit{course\_code} determine?}
+
+\smallskip
+\begin{tabular}{@{}L{1.4cm}L{6.0cm}L{6.6cm}@{}}
+\textbf{pass} & \textbf{dependency used} & \textbf{$X^{+}$ is now} \\
+start & --- & \{course\_code\} \\
+1 & \fd{course\_code}{title, credit\_hours, dept\_code} & \{course\_code,
+  title, credit\_hours, dept\_code\} \\
+1 & \fd{dept\_code}{dept\_name} --- its left side is now inside & \dots\ plus
+  dept\_name \\
+2 & nothing new applies & \textbf{stop} \\
+\end{tabular}
+
+\smallskip
+$\{\mathit{course\_code}\}^{+} = \{$course\_code, title, credit\_hours,
+dept\_code, dept\_name$\}$. Five of the fourteen. \textit{course\_code} is not a
+key of \textit{report}.
+
+\medskip
+\textbf{Part B --- the key.} Try $K = \{$roll\_no, course\_code, semester,
+section\_no$\}$:
+\begin{tight}
+  \item \fd{roll\_no}{name, programme} adds 2;
+  \item \fd{course\_code}{title, credit\_hours, dept\_code} adds 3, and then
+        \fd{dept\_code}{dept\_name} adds 1;
+  \item \fd{course\_code, semester, section\_no}{room, emp\_id} adds 2, and
+        then \fd{emp\_id}{instructor} adds 1;
+  \item \fd{roll\_no, course\_code, semester, section\_no}{grade} adds 1.
+\end{tight}
+$4 + 2 + 3 + 1 + 2 + 1 + 1 = 14$. $K^{+}$ is every attribute: \textbf{$K$ is a
+superkey}.
+
+\medskip
+\textbf{Part C --- is it a candidate key?} Remove each attribute in turn and
+recompute. Without \textit{roll\_no}, nothing determines \textit{name}; without
+\textit{course\_code}, nothing determines \textit{title}; without
+\textit{semester} or \textit{section\_no}, nothing determines \textit{room}. No
+proper subset is a superkey, so \textbf{$K$ is a candidate key} --- and it is
+exactly \chref{mapping}'s primary key of \textit{enrolment}, found here from
+the dependencies alone.
+\end{worked}
+
+\begin{conceptbox}[Why closure is the tool for everything in Part V]
+Three questions, one algorithm:
+
+\begin{tight}
+  \item \textbf{Is $X$ a superkey?} Compute $X^{+}$; it is if $X^{+}$ is every
+        attribute.
+  \item \textbf{Does \fd{X}{Y} follow from $F$?} Compute $X^{+}$; it does if
+        $Y \subseteq X^{+}$. No axioms needed.
+  \item \textbf{Is an attribute in a dependency redundant?} Remove it and
+        recompute; if the closure is unchanged, it was. That is the minimal
+        cover, next.
+\end{tight}
+
+\smallskip
+Every normal form in \chref{normalforms} is a test you run with closures, and
+\chref{decomposition}'s lossless-join test is one too.
+\end{conceptbox}
+
+\section{Minimal Cover}
+
+\begin{definitionbox}[Minimal cover]
+A \term{minimal cover} of $F$ is an equivalent set of dependencies --- one with
+the same closure --- in which:
+\begin{tightnum}
+  \item every right-hand side is a single attribute;
+  \item no left-hand side has an \term{extraneous attribute} (one that could be
+        removed without changing what the dependency implies);
+  \item no dependency is \term{redundant} (derivable from the others).
+\end{tightnum}
+
+\smallskip
+It is the smallest statement of the same rules. \chref{normalforms}'s 3NF
+synthesis algorithm starts from one.
+\end{definitionbox}
+
+\begin{worked}[A minimal cover, in three steps]
+$F = \{$ \fd{A}{BC}, \fd{B}{C}, \fd{AB}{D} $\}$.
+
+\medskip
+\textbf{Step 1 --- single right-hand sides.} Decompose:
+\fd{A}{B}, \fd{A}{C}, \fd{B}{C}, \fd{AB}{D}.
+
+\medskip
+\textbf{Step 2 --- extraneous left-hand attributes.} Only \fd{AB}{D} has two.
+Is $B$ extraneous? Compute $\{A\}^{+}$: $A \rightarrow B$ gives $B$, so
+$\{A\}^{+} \ni B$, and then \fd{AB}{D} applies. $\{A\}^{+} = \{A,B,C,D\}$,
+which contains $D$. So \fd{A}{D} already holds: \textbf{$B$ is extraneous},
+and \fd{AB}{D} becomes \fd{A}{D}.
+
+\medskip
+\textbf{Step 3 --- redundant dependencies.} Is \fd{A}{C} redundant? Remove it
+and compute $\{A\}^{+}$ from the rest: $A \to B$, $B \to C$. It contains $C$.
+\textbf{Redundant} --- it follows by transitivity. Remove it.
+
+\medskip
+\textbf{Result.} $\{$ \fd{A}{B}, \fd{B}{C}, \fd{A}{D} $\}$. Three dependencies
+instead of four, each as small as it can be, and the same closure as the
+original. Check: $\{A\}^{+} = \{A,B,C,D\}$ in both.
+\end{worked}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Reading a dependency off sample data.} Data disproves; it never
+        proves. Ask.
+  \item \textbf{Reading \fd{X}{Y} backwards.} \fd{roll\_no}{name} does not
+        give \fd{name}{roll\_no}; two students share a name.
+  \item \textbf{Stopping closure after one pass.} A dependency whose left side
+        becomes available in pass 1 must still be applied. Repeat until a pass
+        adds nothing.
+  \item \textbf{Calling a superkey a candidate key.} Test every proper subset.
+  \item \textbf{Splitting a left-hand side.} \fd{AB}{C} does \emph{not} give
+        \fd{A}{C}. Only right-hand sides decompose.
+  \item \textbf{Forgetting the transitive dependencies nobody wrote down.}
+        Closure finds them; that is what it is for.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Build the report table, then find its dependencies and its key]
+\begin{lstlisting}[language=bash]
+# --- 1. The seeded database ----------------------------------------
+python code/schema/seed.py university.db
+sqlite3 university.db
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. Build the table everybody builds ------------------------
+CREATE TABLE report AS
+SELECT s.roll_no, s.name, s.programme,
+       c.course_code, c.title, c.credit_hours,
+       d.dept_code, d.name AS dept_name,
+       e.semester, e.section_no, x.room, x.emp_id,
+       i.name AS instructor, e.grade
+  FROM enrolment e
+  JOIN student    s ON s.roll_no     = e.roll_no
+  JOIN course     c ON c.course_code = e.course_code
+  JOIN department d ON d.dept_code   = c.dept_code
+  JOIN section    x ON x.course_code = e.course_code
+                   AND x.semester    = e.semester
+                   AND x.section_no  = e.section_no
+  LEFT JOIN instructor i ON i.emp_id = x.emp_id;
+SELECT COUNT(*) FROM report;
+
+-- --- 3. Test a dependency that should hold ----------------------
+SELECT course_code FROM report
+ GROUP BY course_code HAVING COUNT(DISTINCT title) > 1;
+-- No rows: no counter-example. Does that PROVE course_code -> title?
+
+-- --- 4. Test one that should not --------------------------------
+SELECT name FROM report
+ GROUP BY name HAVING COUNT(DISTINCT roll_no) > 1 LIMIT 5;
+-- Counter-examples: name does not determine roll_no. Settled.
+
+-- --- 5. Count the copies of one fact ----------------------------
+SELECT roll_no, name, COUNT(*) AS copies FROM report
+ GROUP BY roll_no ORDER BY copies DESC LIMIT 3;
+-- One student's name, stored this many times. Why?
+
+-- --- 6. The transitive one -------------------------------------
+SELECT dept_code, COUNT(*) AS rows_holding_its_name
+  FROM report GROUP BY dept_code;
+-- To rename one department, how many rows must change?
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 7. On paper -----------------------------------------------------
+# Compute {course_code}+ , {roll_no}+ and {emp_id}+ by the algorithm,
+# one pass per line, from the six dependencies in this chapter.
+# Then prove {roll_no, course_code, semester, section_no} is a
+# candidate key: superkey first, then every proper subset.
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Steps 5 and 6 are the whole motivation for Part~V. One
+fact --- a name, a department name --- is stored once for every enrolment it
+touches, because the dependency that determines it has a smaller left side than
+the table's key. Keep \textit{report}: \chref{normalforms} measures it against
+the normalised schema, and \chref{decomposition} measures it again.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Compute $\{\mathit{emp\_id}\}^{+}$ and
+        $\{\mathit{course\_code}, \mathit{semester}, \mathit{section\_no}\}^{+}$
+        under the six dependencies of \textit{report}, showing each pass.
+  \item Using closure only --- no axioms --- decide whether
+        \fd{roll\_no, course\_code}{dept\_name} follows from the six
+        dependencies, and show the closure that settles it.
+  \item Find a minimal cover of
+        $\{$ \fd{A}{B}, \fd{A}{C}, \fd{B}{C}, \fd{AC}{D} $\}$, showing all
+        three steps and checking that the result has the same closure of $A$.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item \fd{X}{Y} holds when tuples agreeing on $X$ must agree on $Y$. It is a
+        function, in Appendix~B's sense, from $X$-values to $Y$-values.
+  \item Dependencies come from the university. An instance can disprove one
+        with a \sqlkw{GROUP BY} \dots\ \sqlkw{HAVING} \sqlkw{COUNT(DISTINCT)}
+        query; it can never prove one.
+  \item \textbf{Armstrong's axioms} --- reflexivity, augmentation,
+        transitivity --- are sound and complete. Union and decomposition
+        follow from them.
+  \item Only right-hand sides decompose. \fd{AB}{C} does not give
+        \fd{A}{C}.
+  \item The \textbf{closure} $X^{+}$ is everything $X$ determines: start with
+        $X$, apply every dependency whose left side is inside, repeat until a
+        pass adds nothing.
+  \item Closure answers three questions: is $X$ a superkey, does a dependency
+        follow, is an attribute redundant.
+  \item The key of \textit{report} is \{roll\_no, course\_code, semester,
+        section\_no\} --- the primary key of \textit{enrolment}, found from
+        the dependencies alone.
+  \item A \textbf{minimal cover} has single-attribute right sides, no
+        extraneous left-side attributes, and no redundant dependencies.
+  \item In \textit{report}, every fact whose determinant is smaller than the
+        key is stored once per enrolment. That is what \chref{normalforms}
+        removes, and measures.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} \fd{AB}{C} and \fd{C}{D} together imply:
+        (a)~\fd{A}{D}; (b)~\fd{AB}{D}; (c)~\fd{D}{AB}; (d)~\fd{C}{AB}.
+  \item \textbf{(MCQ)} A dependency \fd{X}{Y} with $Y \subseteq X$ is:
+        (a)~transitive; (b)~trivial; (c)~redundant; (d)~a key.
+  \item \textbf{(Short)} Why can a query find a counter-example to a
+        dependency but never prove one holds?
+  \item \textbf{(Short)} State the closure algorithm in three lines, and say
+        why it must terminate.
+  \item \textbf{(Short)} Show by a two-row example that \fd{AB}{C} does not
+        imply \fd{A}{C}.
+  \item \textbf{(Applied)} A relation \relation{booking}{room, date, slot,
+        course\_code, emp\_id, capacity} has the rules: a room has a fixed
+        capacity; a room, date and slot is booked for one course; a course has
+        one instructor per booking. Write the dependencies, compute the closure
+        of \{room, date, slot\}, and find every candidate key.
+  \item \textbf{(Applied)} Using the six dependencies of \textit{report}, list
+        every attribute whose determinant is a proper subset of the key, and for
+        each one compute from the seeded data (step~5 of the laboratory) how
+        many copies of a single fact it causes. Which one costs the most rows?
+\end{reviewq}

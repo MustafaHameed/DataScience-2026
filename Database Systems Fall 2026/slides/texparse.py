@@ -794,6 +794,23 @@ def text_runs(tex: str, bold=False, italic=False, mono=False, term=False,
                         _, k = find_group(tex, k)
                 i = k
                 continue
+            # \unk is the third truth value and takes NO argument. It must be
+            # caught here, before the generic "macro followed by a brace"
+            # branch below -- because the handout writes it \unk{} to end
+            # the control word, and that branch took the empty {} as its
+            # argument and printed nothing. Chapter 14 uses it eighteen
+            # times, in every truth table, and the first parse of that
+            # chapter found the word "unknown" twice: the slides would have
+            # read "NOT  is " where the handout reads "NOT unknown is
+            # unknown". Upper-cased for the same reason \sqlkw is.
+            if name == "unk":
+                flush()
+                runs.append(Run("UNKNOWN", bold, italic, color=color))
+                k = j
+                if k + 1 < n and tex[k] == "{" and tex[k + 1] == "}":
+                    k += 2
+                i = k
+                continue
             # declarations that style the rest of their group: {\bfseries x}
             if name in ("bfseries", "itshape", "ttfamily", "em"):
                 flush()
@@ -842,6 +859,16 @@ def text_runs(tex: str, bold=False, italic=False, mono=False, term=False,
                     # small-caps run property that survives a round trip
                     # through python-pptx, and SELECT reads as a keyword at
                     # a glance in a way that "select" does not.
+                    runs.append(Run(plain(text_runs(inner)).upper(),
+                                    bold, italic, color=color))
+                elif name == "ent":
+                    # An entity type named in prose, set in small caps by the
+                    # handout. Upper-cased on a slide for the reason \sqlkw
+                    # is: no small-caps run property survives python-pptx.
+                    # Without this branch it fell to the generic case and
+                    # printed as an ordinary lower-case word, so "the
+                    # SECTION entity" and "a section of the timetable" were
+                    # indistinguishable on the slide.
                     runs.append(Run(plain(text_runs(inner)).upper(),
                                     bold, italic, color=color))
                 elif name == "fd":

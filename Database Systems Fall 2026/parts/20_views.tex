@@ -1,0 +1,459 @@
+%=====================================================================
+\chapter{Views, Triggers and Keeping Data Honest}\label{ch:views}
+%=====================================================================
+\locator{5}{Part V --- Getting the Design Right}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Create} a view and \textbf{explain} what is stored when you
+        do.
+  \item \textbf{Show}, from a compiled program, that a view costs nothing at
+        run time.
+  \item \textbf{Use} a view to provide an external schema and to hide a
+        schema change from the programs that read it.
+  \item \textbf{Write} \sqlkw{BEFORE}, \sqlkw{AFTER} and \sqlkw{INSTEAD OF}
+        triggers, and \textbf{say} when each is the right one.
+  \item \textbf{Choose} between a view and a trigger-maintained table by what
+        each guarantees.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{architecture}: the external level, which a view implements.
+\chref{decomposition}: the summary table and its missing \sqlkw{UPDATE}
+trigger. You need \texttt{code/m20\_views.py}.
+\end{prereq}
+
+\begin{keyterms}
+view $\bullet$ virtual table $\bullet$ base table $\bullet$ view expansion
+$\bullet$ flattening $\bullet$ co-routine $\bullet$ updatable view $\bullet$
+trigger $\bullet$ \sqlkw{BEFORE} $\bullet$ \sqlkw{AFTER} $\bullet$
+\sqlkw{INSTEAD OF} $\bullet$ \texttt{NEW} $\bullet$ \texttt{OLD} $\bullet$
+\sqlkw{RAISE} $\bullet$ audit table $\bullet$ business rule $\bullet$
+materialised view
+\end{keyterms}
+
+\section{A Query With a Name}
+
+\begin{definitionbox}[View]
+A \term{view} is a named query. \sqlkw{CREATE VIEW} $v$ \sqlkw{AS}
+\sqlkw{SELECT} \dots\ stores the \emph{text} of the \sqlkw{SELECT} in the data
+dictionary (\chref{whodoeswhat}) and nothing else --- no rows.
+
+\smallskip
+A query that names $v$ is rewritten, before it is compiled, with $v$'s
+\sqlkw{SELECT} in its place --- \term{view expansion}. The view is a \term{virtual table}; the tables it
+reads are \term{base tables}.
+
+\smallskip
+So a view is always \textbf{current}: it is the query, run now, against
+whatever the base tables hold now. It cannot be stale, because there is
+nothing stored to go stale.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  q/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!7,
+            text=#1!60!black, font=\scriptsize\ttfamily, align=left,
+            text width=5.0cm, inner sep=4pt},
+  dd/.style={rounded corners=3pt, draw=goldhl, line width=1pt, fill=goldhl!8,
+             text=goldhl!60!black, font=\scriptsize\ttfamily, align=left,
+             text width=4.4cm, inner sep=4pt},
+  st/.style={rounded corners=3pt, draw=neutral, line width=0.9pt,
+             fill=neutral!8, text=neutral!80!black, font=\scriptsize\bfseries,
+             align=center, text width=2.6cm, minimum height=0.8cm},
+  arr/.style={-{Stealth[length=2.2mm]}, primary!55, line width=0.9pt},
+  tg/.style={font=\scriptsize\itshape, text=neutral}
+]
+  \node[q=secondary] (u) at (-4.4,1.4)
+       {SELECT * FROM transcript\\ WHERE roll\_no = ?};
+  \node[tg, anchor=south] at (-4.4,2.05) {what the program sends};
+  \node[dd] (v) at (2.0,1.4)
+       {transcript = SELECT e.roll\_no, c.course\_code, \dots\\
+        FROM enrolment e JOIN course c ON \dots};
+  \node[tg, anchor=south] at (2.0,2.2) {what the dictionary holds --- text};
+  \node[q=primary] (r) at (-1.2,-0.4)
+       {SELECT e.roll\_no, c.course\_code, \dots\\
+        FROM enrolment e JOIN course c ON \dots\\
+        WHERE e.roll\_no = ?};
+  \node[tg, anchor=north, text width=5.4cm, align=center] at (-1.2,-1.25)
+       {the query after substitution: the view is gone, and the filter sits on
+        the base table};
+  \node[st] (c) at (4.6,-0.4) {compiled\\program};
+  \node[tg, anchor=north, text width=3.0cm, align=center] at (4.6,-0.95)
+       {23 instructions, as if written by hand};
+  \draw[arr] (u.south) -- ++(0,-0.35) -| ([xshift=-1.0cm]r.north);
+  \draw[arr] (v.south) -- ++(0,-0.35) -| ([xshift=1.2cm]r.north);
+  \draw[arr] (r.east) -- (c.west);
+\end{tikzpicture}}%
+{What a view is, in one diagram. The dictionary holds only the view's text;
+SQLite substitutes it into the query that names it, then compiles. By the time
+anything runs there is no view left to cost anything, or to be out of date.}%
+{viewexpand}
+
+\begin{examplebox}[The three jobs a view does in this course]
+\textbf{1. An external schema.} \chref{architecture}'s \texttt{fees\_view} ---
+roll number and name, nothing else --- is the external level, built:
+
+\begin{lstlisting}[language=sql]
+CREATE VIEW fees_view AS SELECT roll_no, name FROM student;
+\end{lstlisting}
+
+\textbf{2. Logical data independence.} When \chref{evolution}'s migration
+split a column, a view with the old shape let old programs keep working:
+
+\begin{lstlisting}[language=sql]
+CREATE VIEW student_v1 AS
+SELECT roll_no, name, programme, semester,
+       addr_house || ', ' || addr_street || ', ' || addr_city AS address
+  FROM student;
+\end{lstlisting}
+
+\textbf{3. A query written once.} The transcript is a join every report needs.
+Write it once and every query that names \texttt{transcript} gets it right.
+
+\smallskip
+\textbf{What a view does \emph{not} do in SQLite} is restrict anyone to it.
+There are no users (\chref{whodoeswhat}), so a person who can open the file can
+read \textit{student} directly. The external level exists here; its
+enforcement waits for \chref{project}.
+\end{examplebox}
+
+\section{Measured: What a View Costs, and What a Trigger Costs}
+
+\begin{measured}[A view costs nothing; a trigger costs less than the same work by hand]
+\textsf{\footnotesize \texttt{code/m20\_views.py}, seeded database (4{,}000
+students), SQLite 3.51.2, Intel i5-6600, Windows 11, mechanical disk.}
+
+\medskip
+\textbf{1. A view against the query it wraps} --- one student's transcript
+
+\begin{tabular}{@{}L{6.4cm}R{2.0cm}R{1.6cm}R{2.6cm}@{}}
+& \textbf{ms} & \textbf{rows} & \textbf{instructions} \\
+the query written out & 0.091 & 15 & 23 \\
+the same through a view & 0.104 & 15 & 23 \\
+\end{tabular}
+
+\smallskip
+\textbf{The same 23 instructions in the same order.} Seventeen of them differ
+at all, and every one differs only in which \emph{cursor number} it uses: the
+view's program numbers its tables one higher. That is the whole difference ---
+the view was substituted and compiled away before it could cost anything.
+
+\medskip
+\textbf{2. Does a filter on the view reach inside it?}
+
+\begin{tabular}{@{}L{7.0cm}L{7.0cm}@{}}
+\texttt{transcript WHERE roll\_no = ?} &
+  \texttt{SEARCH e USING INDEX \dots\ (roll\_no=?)} \\
+grouped view, no index on course\_code &
+  \texttt{CO-ROUTINE} + \texttt{SCAN enrolment} \\
+grouped view, with that index &
+  \texttt{CO-ROUTINE} + \texttt{SEARCH \dots\ (course\_code=?)} \\
+\end{tabular}
+
+\smallskip
+A grouped view cannot be flattened, so it runs as a co-routine --- but the
+filter is still pushed into it. Without an index the plan shows a
+\texttt{SCAN}, which looks like no push-down and is not: there was simply
+nothing to search with. With the index, only one course's rows were ever
+grouped (0.277\,ms through the view, 0.268\,ms written out).
+
+\medskip
+\textbf{3. What a trigger costs} --- an audit trigger recording every grade
+change. Commit per row: 200 changes, median of 3. One commit: 30{,}000
+changes, median of 5. Per row.
+
+% Five columns inside a measured box must total 14.3 cm with their gaps:
+% 4.2 + 2.2 + 1.8 + 2.2 + 2.2 = 12.6, plus four gaps of 0.42 = 14.3.
+\begin{tabular}{@{}L{4.2cm}R{2.2cm}R{1.8cm}R{2.2cm}R{2.2cm}@{}}
+& \textbf{1 per row} & \textbf{(range)} & \textbf{1 for all} & \textbf{(range)} \\
+\sqlkw{UPDATE} only & 27.58\,ms & 27.4--34.7 & 0.0494\,ms & 0.041--0.064 \\
++ audit trigger & 31.29\,ms & 28.2--49.7 & 0.0622\,ms & 0.052--0.168 \\
++ the same \sqlkw{INSERT} by hand & 30.15\,ms & 29.6--34.9 & 0.0634\,ms &
+  0.051--0.089 \\
+\end{tabular}
+
+\smallskip
+\textbf{The trigger costs what the work inside it costs.} Against the same
+\sqlkw{INSERT} written by hand, the ranges overlap in both modes --- neither is
+reliably cheaper --- so the mechanism itself adds nothing measurable. What the
+trigger adds to an update is real but small: about a hundredth of a
+millisecond per row in bulk. With a commit per row it is lost in the disk
+sync, whose run-to-run range is wider than the trigger's whole cost.
+
+\smallskip
+\textbf{A note on how this was established, because it took three tries.} The
+first version ran each case once and blamed the cost on ``the second table'';
+a hand-written control cost \emph{more}, so that was wrong. The second
+version, on 200 rows, concluded the trigger was \emph{cheaper} than by hand ---
+and \texttt{code/run\_all.py} caught that conclusion failing on a re-run: at
+200 rows a bulk run takes 30\,ms in total, and the trigger's ``cost'' came out
+\emph{negative} on two runs in three. A second full run of this version also
+moved the trigger's share of an update from 26\% to 49\%. The one result that
+held on every run is the one stated above. Small effects need many rows,
+several runs, ranges and a control --- and a harness that re-checks the
+handout's claims, because the second error would otherwise have been
+published.
+
+\medskip
+\textbf{4. The view and \chref{decomposition}'s summary table, after one
+enrolment moves from a CS course to an MA course}
+
+\begin{tabular}{@{}L{3.0cm}R{2.4cm}R{2.4cm}R{2.8cm}@{}}
+& \textbf{truth} & \textbf{view} & \textbf{summary table} \\
+CS & 7{,}868 & 7{,}868 & \textbf{7{,}869} \\
+MA & 7{,}174 & 7{,}174 & \textbf{7{,}173} \\
+read cost & & 53.69\,ms & 0.076\,ms \\
+\end{tabular}
+
+\smallskip
+The view is right, because it is the query run now. The table is wrong in both
+rows, because it has insert and delete triggers and no update trigger --- the
+gap \chref{decomposition} left. It is 700$\times$ faster to read and exactly as
+correct as its triggers are complete.
+\end{measured}
+
+\begin{alertbox}[Choosing between a view and a maintained table]
+\begin{tight}
+  \item \textbf{Default to the view.} It costs nothing beyond the query it
+        names, and it cannot be wrong. Measured.
+  \item \textbf{Replace it with a maintained table only when the measured read
+        cost forces you to} --- and then with triggers for \sqlkw{INSERT},
+        \sqlkw{DELETE} \emph{and} \sqlkw{UPDATE}, plus a query that checks the
+        table against the view, run on a schedule.
+  \item \textbf{Do not fear triggers for their cost.} An audit trigger cost
+        what the same \sqlkw{INSERT} written by the program cost --- about a
+        hundredth of a millisecond a row in bulk. What they really cost is the
+        attention needed to keep them complete.
+  \item \textbf{Other systems offer a \term{materialised view}} --- a view
+        whose result is stored and refreshed by the database. SQLite does not.
+        The summary table with triggers is what that feature does, written out.
+\end{tight}
+\end{alertbox}
+
+\section{Triggers}
+
+\begin{definitionbox}[Trigger]
+A \term{trigger} is a block of SQL the database runs automatically when a
+named event happens to a table: \sqlkw{INSERT}, \sqlkw{UPDATE} (optionally
+\sqlkw{OF} named columns) or \sqlkw{DELETE}.
+
+\smallskip
+It runs \sqlkw{BEFORE} or \sqlkw{AFTER} the change, once for each row
+affected. Inside it, \texttt{NEW} is the row as it will be and \texttt{OLD} the
+row as it was --- \texttt{NEW} has no meaning in a \sqlkw{DELETE} trigger, nor
+\texttt{OLD} in an \sqlkw{INSERT} trigger.
+
+\smallskip
+\sqlkw{WHEN} limits it to rows meeting a condition. \texttt{RAISE(ABORT,
+'message')} inside a trigger cancels the statement with an error.
+\end{definitionbox}
+
+\begin{worked}[A business rule no \sqlkw{CHECK} can express]
+\textbf{The rule.} A student may not enrol in more than six sections in one
+semester.
+
+\medskip
+\textbf{Step 1 --- why a \sqlkw{CHECK} cannot do it.} A \sqlkw{CHECK} sees one
+row of one table. ``More than six'' is a fact about \emph{other} rows ---
+the student's other enrolments --- so it is out of reach, exactly as
+\chref{decomposition}'s two-table dependency was.
+
+\medskip
+\textbf{Step 2 --- \sqlkw{BEFORE INSERT}, so the bad row never arrives.}
+\begin{lstlisting}[language=sql]
+CREATE TRIGGER max_six BEFORE INSERT ON enrolment
+WHEN (SELECT COUNT(*) FROM enrolment
+       WHERE roll_no = NEW.roll_no AND semester = NEW.semester) >= 6
+BEGIN
+  SELECT RAISE(ABORT, 'a student may take at most six sections a term');
+END;
+\end{lstlisting}
+
+\medskip
+\textbf{Step 3 --- the gap.} This guards \sqlkw{INSERT}. An \sqlkw{UPDATE} that
+moves an enrolment from Fall into a Spring that is already full is not
+guarded. \textbf{Every rule implemented by trigger needs a trigger for every
+event that can break it} --- the lesson of the summary table, again, and the
+single most common defect in trigger code.
+
+\medskip
+\textbf{Step 4 --- why \sqlkw{BEFORE} and not \sqlkw{AFTER}.} Either would
+work: \texttt{RAISE(ABORT)} in an \sqlkw{AFTER} trigger also undoes the
+statement. \sqlkw{BEFORE} states the intent --- \emph{check, then allow} ---
+and does no work on a row that will be refused.
+\end{worked}
+
+\begin{examplebox}[\sqlkw{INSTEAD OF}: making a view accept writes]
+A view that accepts writes is called \term{updatable}. In SQLite
+\textbf{no} view is: none can be written to directly --- not even
+\texttt{fees\_view}, which reads a single table:
+\texttt{cannot modify fees\_view because it is a view}. Other systems accept
+writes to simple one-table views; SQLite accepts none, and an \sqlkw{INSTEAD
+OF} trigger is the only way to say what a write to a view should do:
+
+\begin{lstlisting}[language=sql]
+CREATE TRIGGER fees_view_update INSTEAD OF UPDATE OF name ON fees_view
+BEGIN
+  UPDATE student SET name = NEW.name WHERE roll_no = OLD.roll_no;
+END;
+
+UPDATE fees_view SET name = 'Ayesha K. Khan'
+ WHERE roll_no = '2021-IT-001';      -- now works
+\end{lstlisting}
+
+\smallskip
+This completes the external level: a group of users can read \emph{and}
+correct the part of the database they see, through the view, without ever
+naming the base table.
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Believing a view stores rows.} It stores a \sqlkw{SELECT}. It
+        cannot be stale.
+  \item \textbf{Avoiding views for speed.} Measured: compiled away; same
+        instructions as the query written out.
+  \item \textbf{Reading \texttt{SCAN} in a grouped view's plan as ``no
+        push-down''.} It may mean there was no index to search with.
+  \item \textbf{A trigger for one event when the rule can be broken by three.}
+        The summary table had no \sqlkw{UPDATE} trigger and was wrong after one
+        \sqlkw{UPDATE}.
+  \item \textbf{Using \texttt{NEW} in a \sqlkw{DELETE} trigger.} There is no
+        new row.
+  \item \textbf{Treating a view as security in SQLite.} No users, so no
+        restriction.
+  \item \textbf{Concluding from one timing run.} The first version of this
+        chapter's harness did, and its explanation was wrong.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Prove a view is free, catch a summary table lying, and enforce a rule]
+\begin{lstlisting}[language=bash]
+# --- 1. The seeded database ----------------------------------------
+python code/schema/seed.py university.db
+sqlite3 university.db
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. A view, and the query it wraps --------------------------
+CREATE VIEW transcript AS
+SELECT e.roll_no, c.course_code, c.title, e.semester, e.grade
+  FROM enrolment e JOIN course c ON c.course_code = e.course_code;
+EXPLAIN QUERY PLAN SELECT * FROM transcript
+ WHERE roll_no = (SELECT MIN(roll_no) FROM student);
+-- The filter reached the base table. Where can you see that?
+
+-- --- 3. What was stored -----------------------------------------
+SELECT type, name, sql FROM sqlite_master WHERE name = 'transcript';
+-- Text. No rows. That is the whole of a view.
+
+-- --- 4. An external schema --------------------------------------
+CREATE VIEW fees_view AS SELECT roll_no, name FROM student;
+SELECT * FROM fees_view LIMIT 3;
+SELECT * FROM student LIMIT 3;
+-- The second still works. What would a server DBMS do instead?
+
+-- --- 5. A rule no CHECK can express -----------------------------
+CREATE TRIGGER max_six BEFORE INSERT ON enrolment
+WHEN (SELECT COUNT(*) FROM enrolment WHERE roll_no = NEW.roll_no
+                                       AND semester = NEW.semester) >= 6
+BEGIN SELECT RAISE(ABORT, 'at most six sections a term'); END;
+SELECT roll_no, COUNT(*) FROM enrolment WHERE semester = 'FALL2026'
+ GROUP BY roll_no HAVING COUNT(*) = 6 LIMIT 1;
+-- Try to enrol that student in one more FALL2026 section. Record
+-- the message. Then find a way around the trigger with an UPDATE.
+
+-- --- 6. An audit trail ------------------------------------------
+CREATE TABLE grade_audit (roll_no TEXT, course_code TEXT,
+  old_grade TEXT, new_grade TEXT,
+  changed_at TEXT DEFAULT (datetime('now')));
+CREATE TRIGGER audit_grade AFTER UPDATE OF grade ON enrolment
+WHEN OLD.grade IS NOT NEW.grade BEGIN
+  INSERT INTO grade_audit (roll_no, course_code, old_grade, new_grade)
+  VALUES (OLD.roll_no, OLD.course_code, OLD.grade, NEW.grade);
+END;
+UPDATE enrolment SET grade = 'A'
+ WHERE rowid = (SELECT MIN(rowid) FROM enrolment WHERE grade = 'B');
+SELECT * FROM grade_audit;
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 7. The measured version ----------------------------------------
+python code/m20_views.py
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 5's second half is the chapter's warning, found
+by hand: a rule enforced on \sqlkw{INSERT} can be broken by \sqlkw{UPDATE}.
+Writing the \sqlkw{BEFORE UPDATE} trigger that closes the gap is part of the
+project in \chref{project}.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item A view's compiled program had the same 23 instructions as the query it
+        wraps, differing only in cursor numbers. Explain what SQLite did with
+        the view to produce that, and why it means the view cannot be stale.
+  \item The summary table read in 0.076\,ms and the view in 53.69\,ms, and
+        after one \sqlkw{UPDATE} only the view was right. State the condition
+        under which you would choose the table, and list everything you would
+        have to build alongside it.
+  \item Write the trigger that closes the gap in the six-section rule for
+        \sqlkw{UPDATE}, and say which of \texttt{NEW} and \texttt{OLD} it must
+        use, and why.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A \textbf{view} stores a \sqlkw{SELECT}, not rows. It is substituted
+        into each query that names it, so it is always current.
+  \item \textbf{Measured:} a view compiled to \textbf{the same 23
+        instructions} as the query it wraps, differing only in cursor
+        numbers. It costs nothing.
+  \item \textbf{Measured:} a filter on a view reaches the base table, even
+        through a grouped view run as a co-routine --- visible once there is an
+        index to search with.
+  \item Views provide the \textbf{external level}, \textbf{logical data
+        independence}, and a query written once. In SQLite they do not restrict
+        access.
+  \item A \textbf{trigger} runs per row, \sqlkw{BEFORE} or \sqlkw{AFTER} an
+        event, with \texttt{NEW} and \texttt{OLD}; \sqlkw{RAISE(ABORT)}
+        refuses the change.
+  \item \textbf{Measured:} an audit trigger cost \textbf{what the same
+        \sqlkw{INSERT} written by hand cost} --- the ranges overlapped on every
+        run --- about a hundredth of a millisecond a row in bulk. With a commit
+        per row its cost was inside the disk-sync noise.
+  \item Triggers enforce rules a \sqlkw{CHECK} cannot reach --- but only for
+        the events they are written for. Every event that can break the rule
+        needs one.
+  \item \textbf{Measured:} after one \sqlkw{UPDATE}, the view was right and
+        the trigger-maintained table was wrong. Default to the view.
+  \item \sqlkw{INSTEAD OF} triggers make a view writable.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} \sqlkw{CREATE VIEW} stores: (a)~a copy of the rows;
+        (b)~the text of the query; (c)~an index; (d)~a trigger.
+  \item \textbf{(MCQ)} In a \sqlkw{DELETE} trigger, which row reference is
+        available? (a)~\texttt{NEW}; (b)~\texttt{OLD}; (c)~both;
+        (d)~neither.
+  \item \textbf{(Short)} Why can a view never be stale, while a summary table
+        can?
+  \item \textbf{(Short)} Give a rule that needs a trigger because no
+        \sqlkw{CHECK} can express it, and say why.
+  \item \textbf{(Short)} When is \sqlkw{INSTEAD OF} the only kind of trigger
+        that will do?
+  \item \textbf{(Applied)} Write the views that give the examinations office,
+        the fees office and the student portal their external schemas from
+        \chref{architecture}'s review question, an \sqlkw{INSTEAD OF} trigger
+        letting the portal correct a student's phone number, and say what
+        SQLite cannot enforce about any of it.
+  \item \textbf{(Applied)} The audit trigger added about 0.013\,ms per row in
+        bulk.
+        Estimate what auditing every grade change costs per semester on the
+        seeded data, decide whether that matters, and list the three trigger
+        events an audit of \textit{enrolment} would need to be complete.
+\end{reviewq}

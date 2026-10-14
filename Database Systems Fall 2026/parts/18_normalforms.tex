@@ -1,0 +1,485 @@
+%=====================================================================
+\chapter{Normal Forms: 1NF to BCNF}\label{ch:normalforms}
+%=====================================================================
+\locator{5}{Part V --- Getting the Design Right}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Name} the three anomalies --- update, insertion, deletion ---
+        and \textbf{show} each one in a real table.
+  \item \textbf{State} the conditions for 1NF, 2NF, 3NF and BCNF, and
+        \textbf{test} a relation against each using its dependencies.
+  \item \textbf{Identify} a partial and a transitive dependency, and
+        \textbf{say} which normal form each one violates.
+  \item \textbf{Decompose} a relation into BCNF by splitting on a violating
+        dependency.
+  \item \textbf{Weigh} what normalisation costs in reads against what it saves
+        in correctness, using measured figures.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{fds}: functional dependencies, attribute closure and candidate keys ---
+every test in this chapter is a closure. The \textit{report} table from that
+chapter's laboratory. You need \texttt{code/m18\_normalforms.py}.
+\end{prereq}
+
+\begin{keyterms}
+normalisation $\bullet$ anomaly $\bullet$ update anomaly $\bullet$ insertion
+anomaly $\bullet$ deletion anomaly $\bullet$ first normal form $\bullet$
+atomic $\bullet$ partial dependency $\bullet$ second normal form $\bullet$
+transitive dependency $\bullet$ third normal form $\bullet$ prime attribute
+$\bullet$ Boyce--Codd normal form $\bullet$ decomposition $\bullet$ redundancy
+\end{keyterms}
+
+\section{Three Ways a Wide Table Goes Wrong}
+
+\chref{fds} built \textit{report}: fourteen columns, one row per enrolment,
+every fact the university holds about it in one place. It answers questions
+without joins. This chapter is about what it does when the data
+\emph{changes}, which is the thing it was never designed for.
+
+\begin{definitionbox}[The three anomalies]
+An \term{update anomaly}: one fact is stored in many rows, so changing it means
+changing all of them --- and changing some of them leaves the table holding two
+versions of the truth.
+
+\smallskip
+An \term{insertion anomaly}: a fact cannot be recorded without also recording
+an unrelated one that does not exist yet.
+
+\smallskip
+A \term{deletion anomaly}: deleting one fact removes another that had nowhere
+else to live.
+
+\smallskip
+All three have one cause. \textbf{A fact whose determinant is smaller than the
+key is stored once per key value}, so the table is holding several relations
+at once and can only change them together.
+\end{definitionbox}
+
+\begin{measured}[The same information, held wide and held normalised]
+\textsf{\footnotesize \texttt{code/m18\_normalforms.py}, seeded database
+(4{,}000 students), SQLite 3.51.2, Intel i5-6600, Windows 11. Best of three
+runs where timed.}
+
+\medskip
+\textbf{1. Bytes, and copies of one fact}
+
+\begin{tabular}{@{}L{6.6cm}R{2.0cm}R{2.6cm}L{2.8cm}@{}}
+& \textbf{rows} & \textbf{bytes} & \\
+\textit{report}, as \sqlkw{CREATE TABLE AS} made it & 60{,}037 & 6{,}860{,}800 & no index \\
+\textit{report}, with its key indexed & 60{,}037 & 9{,}289{,}728 & like for like \\
+normalised, 6 tables & 65{,}693 & 5{,}574{,}656 & key indexes \\
+\end{tabular}
+
+\smallskip
+\textbf{Like for like, the wide table is 1.7$\times$ the size.} Compared as
+created it looks like 1.2$\times$, because \sqlkw{CREATE TABLE AS} copies rows
+and nothing else --- no key, no index --- while every normalised table carries
+the index its \sqlkw{PRIMARY KEY} implies. The bytes are not the real cost;
+the copies are:
+
+\begin{tabular}{@{}L{6.6cm}R{2.6cm}R{2.6cm}@{}}
+\textbf{copies of one fact} & \textbf{\textit{report}} & \textbf{normalised} \\
+a student's name & 18 & 1 \\
+an instructor's name & 949 & 1 \\
+a course's title & 1{,}382 & 1 \\
+a department's name & \textbf{7{,}936} & 1 \\
+\end{tabular}
+
+\medskip
+\textbf{2. The update anomaly} --- rename one department
+
+\begin{tabular}{@{}L{6.6cm}R{2.6cm}R{2.6cm}@{}}
+& \textbf{rows changed} & \textbf{ms} \\
+\textit{report} & 7{,}869 & 378.9 \\
+\textit{department} & 1 & 25.4 \\
+\end{tabular}
+
+\smallskip
+Most of the 25.4\,ms is the commit, not the change: one row costs about as
+much to make durable as it does to write.
+
+\medskip
+\textbf{3. A half-finished update} --- the IT department renamed in the
+FALL2025 rows only, as a crashed program or a wrong \sqlkw{WHERE} would leave
+it
+
+\begin{tabular}{@{}L{6.6cm}R{2.6cm}@{}}
+\texttt{'Information Technology'} & 5{,}273 rows \\
+\texttt{'Information Tech.'} & 2{,}663 rows \\
+\end{tabular}
+
+\smallskip
+Two names for one department, in one table, and no constraint anywhere that
+could have refused it. In \textit{department} the same mistake is impossible:
+there is only one place to write the name.
+
+\medskip
+\textbf{4. Insertion and deletion}
+
+\begin{tabular}{@{}L{8.0cm}L{6.0cm}@{}}
+a new course, nobody enrolled yet: rows in \textit{report} that can hold it &
+  \textbf{0} \\
+the same course in \textit{course} & one row, accepted \\
+\textit{report} after deleting the 1{,}122 enrolments of PH-350: rows still
+  describing the course & \textbf{0} \\
+the same course in \textit{course} & still there \\
+\end{tabular}
+
+\medskip
+\textbf{5. Read cost} --- where the wide table is supposed to win
+
+\begin{tabular}{@{}L{8.0cm}R{2.4cm}L{3.6cm}@{}}
+\textbf{(a) one student's transcript} & \textbf{ms} & \\
+\textit{report}, no index on roll\_no & 15.35 & \textbf{162$\times$ slower} \\
+normalised, one join & 0.09 & \\
+\textit{report}, with an index on roll\_no & 0.08 & a tie \\
+\textbf{(b) enrolments per department} & & \\
+\textit{report}, no joins & 66.51 & \textbf{1.5$\times$ faster} \\
+normalised, two joins & 98.34 & \\
+\end{tabular}
+
+\smallskip
+\textbf{The wide table lost the lookup by two orders of magnitude}, and not
+because of a join: the normalised \textit{enrolment} table's primary key
+begins with \texttt{roll\_no}, so the transcript was an index search, while
+\textit{report} had no index and was read end to end. Given one index the two
+tied. It won only the full-scan report, by 1.5$\times$ --- the case where
+reading one table instead of joining three is a real saving.
+\end{measured}
+
+\begin{alertbox}[So the trade is not ``fast reads against slow writes'']
+That is how it is usually described, and the measurement does not support it:
+
+\begin{tight}
+  \item \textbf{Lookups were not faster wide.} They were 162$\times$ slower
+        until an index was added, and equal after. ``No joins'' is not an
+        advantage when the join is an index search.
+  \item \textbf{Full scans were faster wide, by 1.5$\times$.} Real, and modest.
+  \item \textbf{Writes were 7{,}869 times the work}, and one half-finished
+        write left the table permanently self-contradictory.
+\end{tight}
+
+\smallskip
+The honest summary: normalisation costs a little on reports over every row,
+and buys correctness that no amount of care in the application can supply.
+\chref{decomposition} asks when the 1.5$\times$ is worth paying for, and the
+answer is a measurement, not a preference.
+\end{alertbox}
+
+\section{The Normal Forms}
+
+Each normal form forbids one kind of dependency. They are nested: every BCNF
+relation is in 3NF, every 3NF relation in 2NF, and every 2NF relation in 1NF.
+
+\begin{definitionbox}[1NF and 2NF]
+\textbf{First normal form (1NF):} every attribute value is atomic --- no
+lists, no repeating groups, no ``three phone numbers in one field''. It is
+\chref{relational}'s fourth property of a relation, and \chref{mapping}'s rule
+for multi-valued attributes.
+
+\smallskip
+A \term{partial dependency} is one whose determinant is a \emph{proper subset}
+of a candidate key: \fd{roll\_no}{name}, when the key is \{roll\_no,
+course\_code, semester, section\_no\}.
+
+\smallskip
+\textbf{Second normal form (2NF):} 1NF, and no non-prime attribute is partially
+dependent on any candidate key. (A \term{prime attribute} is one that belongs
+to some candidate key.)
+\end{definitionbox}
+
+\begin{definitionbox}[3NF and BCNF]
+A \term{transitive dependency} is \fd{K}{Y} holding only because \fd{K}{X} and
+\fd{X}{Y}, where $X$ is not a superkey: \fd{course\_code}{dept\_name} through
+\textit{dept\_code}.
+
+\smallskip
+\textbf{Third normal form (3NF):} for every non-trivial \fd{X}{A}, either $X$
+is a superkey, or $A$ is a prime attribute.
+
+\smallskip
+\textbf{Boyce--Codd normal form (BCNF):} for every non-trivial \fd{X}{A},
+$X$ is a superkey. Full stop --- the prime-attribute exception is gone.
+
+\smallskip
+\textbf{The one sentence to remember:} in BCNF, every determinant is a
+superkey. Every fact is about the key, the whole key, and nothing but the key.
+\end{definitionbox}
+
+\begin{worked}[\textit{report}, from nowhere to BCNF]
+Key $K = \{$roll\_no, course\_code, semester, section\_no$\}$ (\chref{fds}).
+Test each dependency: is its determinant a superkey?
+
+\medskip
+\begin{tabular}{@{}L{6.2cm}L{2.5cm}L{5.3cm}@{}}
+\textbf{dependency} & \textbf{superkey?} & \textbf{violates} \\
+\fd{roll\_no}{name, programme} & no & 2NF --- partial \\
+\fd{course\_code}{title, credit\_hours, dept\_code} & no & 2NF --- partial \\
+\fd{dept\_code}{dept\_name} & no & 3NF --- transitive \\
+\fd{course\_code, semester, section\_no}{room, emp\_id} & no & 2NF --- partial \\
+\fd{emp\_id}{instructor} & no & 3NF --- transitive \\
+\fd{$K$}{grade} & \textbf{yes} & nothing \\
+\end{tabular}
+
+\medskip
+Five violations, one clean dependency. \textbf{The decomposition procedure:}
+take a violating \fd{X}{Y}; split $R$ into $R_1 = X \cup Y$ and $R_2 = R - Y$;
+repeat on whatever still violates. \textbf{Split on the transitive
+dependencies first} --- the box below shows what goes wrong otherwise.
+
+\medskip
+\begin{tightnum}
+  \item On \fd{dept\_code}{dept\_name}: \relation{department}{\relkey{dept\_code},
+        dept\_name}. Remove dept\_name from the rest.
+  \item On \fd{emp\_id}{instructor}: \relation{instructor}{\relkey{emp\_id},
+        instructor}. Remove instructor.
+  \item On \fd{roll\_no}{name, programme}: \relation{student}{\relkey{roll\_no},
+        name, programme}. Remove name and programme.
+  \item On \fd{course\_code}{title, credit\_hours, dept\_code}:
+        \relation{course}{\relkey{course\_code}, title, credit\_hours,
+        dept\_code}. Remove title, credit\_hours and dept\_code.
+  \item On \fd{course\_code, semester, section\_no}{room, emp\_id}:
+        \relation{section}{\relkey{course\_code}, \relkey{semester},
+        \relkey{section\_no}, room, emp\_id}. Remove room and emp\_id.
+  \item What remains: \relation{enrolment}{\relkey{roll\_no},
+        \relkey{course\_code}, \relkey{semester}, \relkey{section\_no},
+        grade} --- whose only dependency has the key as its determinant.
+\end{tightnum}
+
+\medskip
+\textbf{Why the order matters.} Split on \fd{course\_code}{title, credit\_hours,
+dept\_code} \emph{first} and $R_2 = R - Y$ removes \textit{dept\_code} from the
+remainder --- but leaves \textit{dept\_name} there, with nothing beside it that
+determines it except, transitively, \textit{course\_code}. The next split is
+then on \fd{course\_code}{dept\_name}, and produces
+\relation{}{\relkey{course\_code}, dept\_name}: a department's name stored
+once \emph{per course}, which is the redundancy you were removing. Every
+relation is still in BCNF, so no normal-form test fails --- but the department
+has no table of its own, and \fd{dept\_code}{dept\_name} now lives in
+\emph{no} single table, so nothing can enforce it: two CS courses could carry
+two different department names. \chref{decomposition} calls that losing
+dependency preservation. Handle the deepest dependency first and each fact
+lands with its own determinant.
+
+\medskip
+\textbf{Six relations, every one in BCNF --- and they are exactly the six
+tables \chref{mapping} produced from the ER diagram.} Two routes, one from
+design and one from dependencies, arrived at the same schema. That agreement
+is the best evidence a design is right.
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[
+  wide/.style={rounded corners=3pt, draw=accent, line width=1.1pt,
+               fill=accent!7, text=accent!70!black, font=\scriptsize,
+               align=left, text width=4.4cm, inner sep=4pt},
+  tb/.style={rounded corners=2pt, draw=#1, line width=0.9pt, fill=#1!7,
+             text=#1!60!black, font=\scriptsize, align=left,
+             text width=4.5cm, inner sep=3pt},
+  arr/.style={-{Stealth[length=2.2mm]}, primary!50, line width=0.9pt},
+  lbl/.style={font=\scriptsize\itshape, text=neutral, align=center}
+]
+  \node[wide] (r) at (-4.9,0) {\textbf{report} --- 14 attributes\\[2pt]
+       roll\_no, name, programme, course\_code, title, credit\_hours,
+       dept\_code, dept\_name, semester, section\_no, room, emp\_id,
+       instructor, grade\\[3pt]
+       \textbf{60{,}037 rows}; a department's name stored
+       \textbf{7{,}936} times};
+
+  \node[tb=primary]  (s) at (2.6, 2.25) {\textbf{student}(\relkey{roll\_no},
+       name, programme)};
+  \node[tb=primary]  (c) at (2.6, 1.35) {\textbf{course}(\relkey{course\_code},
+       title, credit\_hours, dept\_code)};
+  \node[tb=greenhl]  (d) at (2.6, 0.45) {\textbf{department}(\relkey{dept\_code},
+       dept\_name)};
+  \node[tb=purplehl] (x) at (2.6,-0.45) {\textbf{section}(\relkey{course\_code},
+       \relkey{semester}, \relkey{section\_no}, room, emp\_id)};
+  \node[tb=greenhl]  (i) at (2.6,-1.35) {\textbf{instructor}(\relkey{emp\_id},
+       instructor)};
+  \node[tb=accent]   (e) at (2.6,-2.25) {\textbf{enrolment}(\relkey{roll\_no},
+       \relkey{course\_code}, \relkey{semester}, \relkey{section\_no},
+       grade)};
+
+  \foreach \t in {s,c,x,e}{\draw[arr] (r.east) -- (\t.west);}
+  \draw[arr, greenhl!60] (c.east) .. controls (5.4,1.35) and (5.4,0.45)
+       .. (d.east);
+  \draw[arr, greenhl!60] (x.east) .. controls (5.4,-0.45) and (5.4,-1.35)
+       .. (i.east);
+
+  \node[lbl, text=primary!70!black] at (-1.2,2.35) {partial: 2NF};
+  \node[lbl, text=greenhl!60!black, anchor=west] at (5.6,0.9)
+       {transitive:\\3NF};
+  \node[lbl, text=greenhl!60!black, anchor=west] at (5.6,-0.9)
+       {transitive:\\3NF};
+\end{tikzpicture}}%
+{\textit{report} decomposed to BCNF. Splitting on each partial dependency
+gives four relations; splitting on the two transitive ones gives two more. The
+result is the six tables \chref{mapping} derived from the ER diagram by an
+entirely different route.}{bcnf}
+
+\begin{conceptbox}[3NF against BCNF: the one case where they differ]
+They differ only when a relation has two \emph{overlapping} composite
+candidate keys --- rare, but it exists. A classic case:
+\relation{teaches}{student, course, instructor}, where each instructor teaches
+one course (\fd{instructor}{course}) and each student has one instructor per
+course (\fd{student, course}{instructor}).
+
+\smallskip
+\fd{instructor}{course}: \textit{instructor} is not a superkey, so BCNF is
+violated. But \textit{course} is prime --- it is in the key \{student,
+course\} --- so 3NF is satisfied. Decomposing to BCNF gives
+\relation{}{\relkey{instructor}, course} and \relation{}{\relkey{student},
+\relkey{instructor}}, and \textbf{loses} the dependency
+\fd{student, course}{instructor}: no single table can now enforce it.
+
+\smallskip
+That trade --- BCNF, or keeping every dependency enforceable --- is
+\chref{decomposition}'s subject. For the university schema it never arises.
+\end{conceptbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Thinking normalisation is about saving bytes.} It saved a
+        factor of 1.7. It removed 7{,}935 copies of one department name.
+        The copies are the point.
+  \item \textbf{Believing a wide table reads faster.} Measured: 162$\times$
+        slower on a lookup without an index; a tie with one.
+  \item \textbf{Comparing a \sqlkw{CREATE TABLE AS} copy with indexed tables.}
+        The copy has no index. Measure like for like.
+  \item \textbf{Testing 2NF against one key when there are several.} A partial
+        dependency on \emph{any} candidate key violates it.
+  \item \textbf{Stopping at 3NF without checking BCNF.} They usually coincide;
+        check rather than assume.
+  \item \textbf{Splitting a relation and losing the join.} Every decomposition
+        must keep the determinant in both halves --- \chref{decomposition}
+        explains why.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Break the wide table three ways, then decompose it]
+\begin{lstlisting}[language=bash]
+# --- 1. Seed, and rebuild report from Chapter 17 --------------------
+python code/schema/seed.py university.db
+sqlite3 university.db
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. Recreate report (Chapter 17's lab, step 2), then ---------
+SELECT COUNT(*) FROM report;
+
+-- --- 3. The update anomaly -------------------------------------
+.timer on
+UPDATE report SET dept_name = 'Computing' WHERE dept_code = 'CS';
+-- Rows changed? (.changes on, or SELECT changes();)
+UPDATE department SET name = 'Computing' WHERE dept_code = 'CS';
+
+-- --- 4. Leave it half done --------------------------------------
+UPDATE report SET dept_name = 'Information Tech.'
+ WHERE dept_code = 'IT' AND semester = 'FALL2025';
+SELECT dept_name, COUNT(*) FROM report
+ WHERE dept_code = 'IT' GROUP BY dept_name;
+-- Two answers. Write the query a programmer would need to find out
+-- which name is current. Can it be written at all?
+
+-- --- 5. The insertion anomaly -----------------------------------
+-- Add a course nobody is enrolled in yet, to report.
+-- Try it. What would you have to put in roll_no and grade?
+
+-- --- 6. The deletion anomaly ------------------------------------
+SELECT course_code, COUNT(*) FROM report
+ GROUP BY course_code ORDER BY 2 LIMIT 1;
+-- Delete every row for that course. Then ask report its title.
+
+-- --- 7. Read cost, like for like --------------------------------
+SELECT course_code, title FROM report
+ WHERE roll_no = (SELECT MIN(roll_no) FROM student);
+CREATE INDEX idx_report_roll ON report(roll_no);
+SELECT course_code, title FROM report
+ WHERE roll_no = (SELECT MIN(roll_no) FROM student);
+-- Two timings. Which part of the difference was the join?
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 8. On paper: decompose report to BCNF ---------------------------
+# One violating dependency at a time. Name each new relation, its key,
+# and which normal form the split repaired. Compare your six relations
+# with Figure 9.1. Then run the measured version:
+python code/m18_normalforms.py
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 4 is the one with no repair. Once a table holds
+two versions of a fact and nothing records which came later, no query can tell
+you which is true. That is not a performance problem, and no index fixes it.
+It is the reason normal forms exist.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item For each of the three anomalies, give the specific operation on
+        \textit{report} that exhibits it, the measured consequence, and the
+        single dependency responsible.
+  \item \relation{R}{\relkey{A}, \relkey{B}, C, D} has \fd{A}{C} and
+        \fd{C}{D}. State its normal form, identify each violation by kind, and
+        decompose it to BCNF.
+  \item The wide table read a transcript 162$\times$ slower than the
+        normalised schema and a department report 1.5$\times$ faster. Explain
+        both results, and say which one would change if \textit{report} were
+        given an index on \texttt{roll\_no}, and to what.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item Three anomalies --- \textbf{update}, \textbf{insertion},
+        \textbf{deletion} --- share one cause: a fact whose determinant is
+        smaller than the key is stored once per key value.
+  \item \textbf{Measured:} one department's name was held \textbf{7{,}936}
+        times; renaming it changed \textbf{7{,}869} rows against 1; a
+        half-finished update left \textbf{two names} for one department.
+  \item \textbf{Measured:} a new course could not be inserted into the wide
+        table at all, and deleting a course's enrolments deleted the course.
+  \item \textbf{Measured:} like for like, the wide table was
+        \textbf{1.7$\times$} the size --- 1.2$\times$ only when compared
+        without its index.
+  \item \textbf{Measured:} the wide table was \textbf{162$\times$ slower} on a
+        lookup with no index and tied with one; it was \textbf{1.5$\times$
+        faster} only on a full-scan report.
+  \item \textbf{1NF}: atomic values. \textbf{2NF}: no partial dependency.
+        \textbf{3NF}: no transitive dependency on a non-prime attribute.
+        \textbf{BCNF}: every determinant is a superkey.
+  \item Decompose on a violating \fd{X}{Y} into $X \cup Y$ and $R - Y$, and
+        repeat.
+  \item \textit{report} decomposes to exactly the six tables \chref{mapping}
+        derived from the ER diagram --- two independent routes, one schema.
+  \item 3NF and BCNF differ only with overlapping composite keys, where BCNF
+        can cost an enforceable dependency.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} A non-prime attribute depending on part of a composite
+        key violates: (a)~1NF; (b)~2NF; (c)~3NF but not 2NF; (d)~BCNF only.
+  \item \textbf{(MCQ)} In BCNF, for every non-trivial \fd{X}{A}: (a)~$A$ is
+        prime; (b)~$X$ is a superkey; (c)~$X$ is a candidate key;
+        (d)~$A$ is in $X$.
+  \item \textbf{(Short)} Why can no query repair a table holding two versions
+        of the same fact?
+  \item \textbf{(Short)} Give the dependency in \textit{report} that is
+        transitive, and say which normal form it violates.
+  \item \textbf{(Short)} Why was the wide table 1.2$\times$ the size as
+        created but 1.7$\times$ like for like?
+  \item \textbf{(Applied)} A spreadsheet records
+        \relation{loan}{member\_id, member\_name, book\_id, title, author,
+        date\_out, date\_back}, one row per loan. Write its dependencies,
+        identify its key, classify every violation, and decompose it to BCNF,
+        naming each relation's key.
+  \item \textbf{(Applied)} A manager proposes keeping \textit{report} as the
+        only table ``because reports are faster''. Using every figure in the
+        measured box, write a reply that concedes what is true, refutes what is
+        not, and proposes a design that keeps the 1.5$\times$ for reports
+        without keeping the anomalies --- a design \chref{decomposition}
+        measures.
+\end{reviewq}

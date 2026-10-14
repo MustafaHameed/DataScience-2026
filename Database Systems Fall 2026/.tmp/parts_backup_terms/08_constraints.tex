@@ -1,0 +1,552 @@
+%=====================================================================
+\chapter{Keys and Integrity Constraints}\label{ch:constraints}
+%=====================================================================
+\locator{2}{Part II --- Designing It}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{State} the three model-based integrity constraints --- domain,
+        entity and referential --- and \textbf{give} an example of each being
+        violated.
+  \item \textbf{Define} a foreign key and \textbf{explain} what referential
+        integrity forbids.
+  \item \textbf{Choose} an appropriate referential action (\sqlkw{CASCADE},
+        \sqlkw{RESTRICT}, \sqlkw{SET NULL}) and \textbf{justify} the choice.
+  \item \textbf{Demonstrate} that a declared constraint and an enforced
+        constraint are not the same thing.
+  \item \textbf{Verify} on any SQLite database whether its foreign keys are
+        actually being enforced.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{relational}: relations, keys, nulls. \chref{cardinality} for
+participation, which is the constraint this chapter implements. You will need
+\texttt{sqlite3} and \texttt{code/m08\_constraints.py}.
+\end{prereq}
+
+\begin{keyterms}
+integrity constraint $\bullet$ domain constraint $\bullet$ entity integrity
+$\bullet$ referential integrity $\bullet$ foreign key $\bullet$ referencing
+relation $\bullet$ referenced relation $\bullet$ orphan row $\bullet$
+referential action $\bullet$ \sqlkw{CASCADE} $\bullet$ \sqlkw{RESTRICT}
+$\bullet$ \sqlkw{SET NULL} $\bullet$ semantic constraint $\bullet$
+\sqlkw{CHECK} $\bullet$ \sqlkw{PRAGMA} $\bullet$ declared versus enforced
+\end{keyterms}
+
+\section{Three Constraints the Model Gives You Free}
+
+A schema is not only a list of attributes. It is a list of \emph{promises}, and
+the front matter of this handout claims that a database is nothing but a set
+of promises about data. This is the chapter where that is made literal.
+
+\begin{definitionbox}[The three model-based constraints]
+A \term{domain constraint} says every value of an attribute comes from its
+domain. \texttt{semester} is an integer between 1 and 8; \texttt{'spring'} is
+not a semester and neither is $-3$.
+
+\smallskip
+\term{Entity integrity} says no attribute of a primary key may be null. An
+identifier that is missing identifies nothing, so the tuple could not be
+addressed.
+
+\smallskip
+\term{Referential integrity} says that if a tuple refers to another relation,
+the tuple it refers to must exist. A section claiming to belong to course
+CS-999 when there is no CS-999 is an \term{orphan}.
+
+\smallskip
+These three come from the model itself. A fourth kind, \term{semantic}
+constraints, come from the university --- ``a student may not enrol in more
+than six sections'' --- and have to be stated case by case.
+\end{definitionbox}
+
+\begin{examplebox}[One row, three ways to be wrong]
+Into \relation{section}{\relkey{course\_code}, \relkey{section\_no}, room,
+emp\_id}:
+
+\medskip
+\begin{tabular}{@{}L{4.4cm}L{3.2cm}L{5.8cm}@{}}
+\textbf{The row} & \textbf{Violates} & \textbf{Why it matters} \\
+\texttt{('CS-103','two','R7')} & domain & \texttt{section\_no} is an
+  integer; sorting and counting now fail \\
+\texttt{(NULL,1,'R7')} & entity integrity & part of the primary key is
+  missing, so the row cannot be addressed \\
+\texttt{('CS-999',1,'R7')} & referential integrity & there is no course
+  CS-999; the timetable now lists a section of nothing \\
+\end{tabular}
+
+\smallskip
+All three are refusals a database can make \emph{for you}, on every insert,
+for ever --- which is exactly what the application code in
+\chref{whynotfiles} could not do, because each program had to remember to
+check and one of them always forgot.
+\end{examplebox}
+
+\section{Foreign Keys}
+
+\begin{definitionbox}[Foreign key]
+A \term{foreign key} is a set of attributes $FK$ in a \term{referencing}
+relation $R$ whose values must either
+\begin{tight}
+  \item appear as the primary key of some tuple in the \term{referenced}
+        relation $S$, or
+  \item be entirely null.
+\end{tight}
+
+\smallskip
+The null case is not a loophole --- it is \chref{cardinality}'s partial
+participation. A section with no instructor yet has a null \texttt{emp\_id},
+and that is a design decision you already took.
+\end{definitionbox}
+
+\dsfig{%
+\begin{tikzpicture}[
+  hd/.style={font=\scriptsize\bfseries, text=white},
+  cell/.style={font=\scriptsize\ttfamily, text=primary!65!black},
+  bad/.style={font=\scriptsize\ttfamily, text=accent},
+  ttl/.style={font=\scriptsize\bfseries, text=primary},
+  note/.style={font=\scriptsize\itshape, text=neutral, align=left},
+  ok/.style={-{Stealth[length=2mm]}, greenhl, line width=0.9pt},
+  no/.style={-{Stealth[length=2mm]}, accent, line width=0.9pt, dashed}
+]
+  % --- parent: course, top right so the arrows have clear air on the left
+  \node[ttl, anchor=west] at (2.2,1.42) {course \ \ (referenced)};
+  \fill[primary, rounded corners=2pt] (2.2,0.55) rectangle (6.6,1.1);
+  \node[hd, anchor=west] at (2.32,0.83) {course\_code};
+  \node[hd, anchor=west] at (4.75,0.83) {title};
+  \node[cell, anchor=west] at (2.32,0.3)  {CS-103};
+  \node[cell, anchor=west] at (4.75,0.3)  {Databases};
+  \node[cell, anchor=west] at (2.32,-0.1) {CS-201};
+  \node[cell, anchor=west] at (4.75,-0.1) {Data Struct};
+  \draw[primary!35, line width=0.8pt] (2.2,-0.33) rectangle (6.6,1.1);
+  \node[note, anchor=north west, text=primary] at (2.2,-0.40)
+       {course\_code is the primary key};
+
+  % --- child: section
+  \node[ttl, anchor=west] at (0,-1.18) {section \ \ (referencing)};
+  \fill[accent!10] (0,-3.3) rectangle (6.6,-2.92);
+  \fill[primary, rounded corners=2pt] (0,-2.05) rectangle (6.6,-1.5);
+  \node[hd, anchor=west] at (0.12,-1.78) {course\_code};
+  \node[hd, anchor=west] at (2.6,-1.78)  {section\_no};
+  \node[hd, anchor=west] at (4.8,-1.78)  {emp\_id};
+  \node[cell, anchor=west] at (0.12,-2.3) {CS-103};
+  \node[cell, anchor=west] at (2.6,-2.3)  {1};
+  \node[cell, anchor=west] at (4.8,-2.3)  {E-114};
+  \node[cell, anchor=west] at (0.12,-2.7) {CS-103};
+  \node[cell, anchor=west] at (2.6,-2.7)  {2};
+  \node[cell, anchor=west, text=neutral] at (4.8,-2.7) {NULL};
+  \node[bad, anchor=west] at (0.12,-3.11) {CS-999};
+  \node[bad, anchor=west] at (2.6,-3.11)  {1};
+  \node[bad, anchor=west] at (4.8,-3.11)  {E-114};
+  \draw[primary!35, line width=0.8pt] (0,-3.33) rectangle (6.6,-1.5);
+
+  % the two valid references, up the left-hand side
+  \draw[ok] (0.08,-2.3) .. controls (-1.5,-1.9) and (-1.5,0.5) .. (2.12,0.3);
+  \draw[ok] (0.08,-2.7) .. controls (-1.9,-2.1) and (-1.9,0.7) .. (2.12,0.24);
+  % The orphan gets a mark beside its row, not an arrow. A dashed arrow
+  % "pointing at nothing" had to curve round the outside of the figure and
+  % crossed both annotations on the way.
+  \node[bad, anchor=west] at (6.75,-3.11) {$\times$ no such course};
+
+  % Both notes below the tables, side by side: nothing can overlap a row.
+  \node[note, anchor=north west, text width=5.0cm] at (0,-3.62)
+       {\texttt{NULL} is allowed by the definition --- it is Chapter~6's
+        partial participation, not a hole in the rule};
+  \node[note, anchor=north west, text=accent, text width=5.4cm] at (5.4,-3.62)
+       {\textbf{the orphan.} CS-999 does not exist.
+        \textbf{Measured: SQLite accepts this row by default.}};
+  \draw[-{Stealth[length=1.8mm]}, neutral!60] (1.9,-3.58) -- (4.75,-2.7);
+\end{tikzpicture}}%
+{Referential integrity. Two of the three child rows point at a course that
+exists; the null is permitted by the definition; the third is an orphan. The
+whole of this chapter's measurement is that the third row goes in.}{fkorphan}
+
+\begin{conceptbox}[Where foreign keys come from]
+You do not invent them. Each one is a \chref{cardinality} constraint written
+down in a different notation, and \chref{mapping} turns one into the other
+mechanically.
+
+\begin{tight}
+  \item \textbf{A 1:N relationship} puts a foreign key on the \emph{many} side,
+        pointing at the one. \ent{course} $\rightarrow$
+        \ent{department}.
+  \item \textbf{Total participation} makes that foreign key \sqlkw{NOT NULL}.
+        Partial participation leaves it nullable.
+  \item \textbf{A weak entity} gets a foreign key to its owner, and that
+        foreign key is part of its own primary key.
+  \item \textbf{An M:N relationship} has no foreign key, because it has no
+        table yet. It becomes one in \chref{mapping}, with two.
+\end{tight}
+
+\smallskip
+So the four answers you argued about in \chref{cardinality} are not an
+academic exercise: each one lands as a specific line of \sqlkw{CREATE TABLE},
+and you can check your diagram against your schema by reading them back.
+\end{conceptbox}
+
+\begin{definitionbox}[Referential actions]
+Referential integrity can be broken from the \emph{other} end: delete the
+course and its sections become orphans. A \term{referential action} says what
+the database should do about it.
+
+\medskip
+\begin{tabular}{@{}L{3.1cm}L{5.0cm}L{5.9cm}@{}}
+\textbf{Action} & \textbf{On deleting the parent} & \textbf{Use when} \\
+\sqlkw{RESTRICT} / \sqlkw{NO ACTION} & refuse the delete & the default, and
+  the right answer when you are unsure \\
+\sqlkw{CASCADE} & delete the children too & the child is meaningless alone ---
+  a weak entity \\
+\sqlkw{SET NULL} & null the children's foreign key & the child survives
+  without the parent, and the column is nullable \\
+\end{tabular}
+
+\smallskip
+The same three apply \sqlkw{ON UPDATE}, for when a primary key value changes
+--- which is one more reason \chref{ermodel} said to choose a key that never
+changes.
+\end{definitionbox}
+
+\begin{alertbox}[\sqlkw{CASCADE} is a loaded weapon]
+\sqlkw{ON DELETE CASCADE} is attractive because it makes a tidy-up problem
+disappear. It also means that one \sqlkw{DELETE} statement can remove rows
+from tables you did not name, in tables you did not think about, through
+chains you did not draw.
+
+\smallskip
+Delete a department with cascade all the way down and you remove its courses,
+their sections, every enrolment in them, and therefore the grade history of
+students who graduated years ago. One statement, no warning, and the
+transaction commits.
+
+\smallskip
+\textbf{The rule used in this course:} cascade only to a \emph{weak} entity ---
+one that genuinely cannot exist without its owner --- and use \sqlkw{RESTRICT}
+everywhere else. A refused delete is an inconvenience; a successful one is
+sometimes a disaster, and only one of the two is reversible.
+\end{alertbox}
+
+\section{Declared Is Not Enforced}
+
+Everything above is standard and true of every relational system. What follows
+is specific to the tool on your machine, and it is the most important single
+fact in this chapter.
+
+\begin{measured}[A correct \sqlkw{REFERENCES} clause that does nothing]
+\textsf{\footnotesize \texttt{code/m08\_constraints.py}, SQLite 3.51.2,
+Intel i5-6600, 16\,GB, Windows 11.}
+
+\medskip
+\textbf{1. The same schema, the same \sqlkw{INSERT}, two connections}
+
+\begin{tabular}{@{}L{5.6cm}R{2.4cm}L{5.6cm}@{}}
+\textbf{\sqlkw{PRAGMA} foreign\_keys} & \textbf{orphans in} & \textbf{outcome} \\
+default (untouched) & 1 & \textbf{accepted} \\
+\sqlkw{ON}          & 0 & refused: \texttt{FOREIGN KEY constraint failed} \\
+\end{tabular}
+
+\smallskip
+The \sqlkw{REFERENCES} clause is identical in both. Only the connection
+differs.
+
+\medskip
+\textbf{2. The setting is per connection, not per database}
+
+\begin{tabular}{@{}L{8.6cm}L{5.0cm}@{}}
+connection A, after \sqlkw{PRAGMA} foreign\_keys = \sqlkw{ON} & reports 1 \\
+connection A, orphan insert & refused \\
+connection B, \emph{same file}, nothing set & reports 0 \\
+connection B, orphan insert & \textbf{accepted} \\
+\end{tabular}
+
+\smallskip
+Nothing in the file remembers that enforcement was ever wanted.
+
+\medskip
+\textbf{3. A \sqlkw{PRIMARY KEY} column that stores a null}
+
+\begin{tabular}{@{}L{5.6cm}R{2.6cm}R{2.4cm}R{2.0cm}@{}}
+\textbf{declared as} & \textbf{\sqlkw{INSERT} NULL} & \textbf{stored} & \textbf{rows} \\
+\texttt{TEXT PRIMARY KEY}            & accepted & \textbf{null} & 1 \\
+\texttt{INTEGER PRIMARY KEY}         & accepted & integer & 1 \\
+\texttt{TEXT PRIMARY KEY}, \sqlkw{STRICT} & refused & --- & 0 \\
+\texttt{TEXT PRIMARY KEY NOT NULL}   & refused & --- & 0 \\
+\end{tabular}
+
+\smallskip
+Read the \emph{stored} column, not the first one. \texttt{INTEGER PRIMARY KEY}
+accepted the null and stored an integer --- it is an alias for the rowid, so
+the null was replaced, and no constraint was broken. \texttt{TEXT PRIMARY KEY}
+accepted it and \textbf{stored null}, which breaks entity integrity --- and
+that is the declaration every table in this course uses.
+
+\medskip
+\textbf{4. What enforcement costs} (20{,}000 valid child rows, 5 runs)
+
+\begin{tabular}{@{}L{6.6cm}R{2.4cm}R{2.2cm}R{2.2cm}@{}}
+& \textbf{median} & \textbf{min} & \textbf{max} \\
+foreign\_keys \sqlkw{OFF} & 58.7\,ms & 55.1 & 63.8 \\
+foreign\_keys \sqlkw{ON}  & 73.0\,ms & 67.3 & 79.6 \\
+\textbf{cost of enforcement} & \textbf{14.3\,ms} & \multicolumn{2}{l}{\textbf{(+24\%)}} \\
+\end{tabular}
+
+\smallskip
+\textbf{Read the four results together.} The declaration is accepted, stored,
+and printed back by \texttt{.schema} --- and by default enforces nothing. It
+costs 24\% on bulk inserts to turn on, which is a real cost and a small one:
+note that the slowest run with enforcement on (79.6\,ms) is only 25\% worse
+than the slowest without it, and that the two ranges do not overlap, so the
+24\% is a result rather than noise. \textbf{A single run of this measurement
+put the two settings 0.6\,ms apart}, which would have been reported as 3\%.
+Repeating it is not a nicety.
+\end{measured}
+
+\begin{alertbox}[What this means for everything you write from here on]
+\sqlkw{PRAGMA} \texttt{foreign\_keys} has been off by default since foreign
+keys were added to SQLite in 2009, and it will stay off: turning it on would
+break existing databases that have been quietly accumulating orphans.
+
+\smallskip
+The consequences you have to live with:
+
+\begin{tight}
+  \item \textbf{Set it on every connection}, as the first statement, before
+        any transaction. It is a no-op inside one.
+  \item \textbf{Your lab partner's connection is not yours.} A database can be
+        enforced in your program and unenforced in theirs, at the same moment,
+        on the same file.
+  \item \textbf{Orphans already in the file are not detected} when you turn it
+        on. Enforcement applies to \emph{new} statements only.
+        \texttt{PRAGMA foreign\_key\_check} is how you find the old ones, and
+        step 7 of the laboratory runs it.
+  \item \textbf{A schema that looks correct may never have been enforced.}
+        When you are handed an unfamiliar SQLite database, this is the first
+        thing to check and the last thing anybody remembers.
+\end{tight}
+
+\smallskip
+This is not a criticism of SQLite --- the behaviour is documented and the
+reason is sound. It is a demonstration of something general: \textbf{a
+constraint has two separate lives, one in the schema and one at run time, and
+only the second one protects anything.}
+\end{alertbox}
+
+\begin{examplebox}[The university schema, with its promises declared]
+\begin{lstlisting}[language=sql]
+PRAGMA foreign_keys = ON;        -- first. every time.
+
+CREATE TABLE department (
+  dept_code TEXT PRIMARY KEY NOT NULL,
+  name      TEXT NOT NULL
+) STRICT;
+\end{lstlisting}
+
+A course belongs to exactly one department, and must:
+
+\begin{lstlisting}[language=sql]
+CREATE TABLE course (
+  course_code  TEXT PRIMARY KEY NOT NULL,
+  title        TEXT NOT NULL,
+  credit_hours INTEGER NOT NULL CHECK (credit_hours BETWEEN 1 AND 4),
+  dept_code    TEXT NOT NULL              -- total participation
+               REFERENCES department(dept_code)
+               ON DELETE RESTRICT         -- a department with courses stays
+) STRICT;
+\end{lstlisting}
+
+A section is the weak entity of \chref{cardinality}, so its owner's key is part
+of its own and the cascade is correct here and nowhere else:
+
+\begin{lstlisting}[language=sql]
+CREATE TABLE section (
+  course_code TEXT    NOT NULL
+              REFERENCES course(course_code)
+              ON DELETE CASCADE,          -- weak entity: cascade is correct
+  semester    TEXT    NOT NULL,
+  section_no  INTEGER NOT NULL CHECK (section_no > 0),
+  room        TEXT,
+  emp_id      TEXT                        -- nullable: partial participation
+              REFERENCES instructor(emp_id)
+              ON DELETE SET NULL,         -- the section survives; the
+  PRIMARY KEY (course_code, semester, section_no)   -- teacher changed
+) STRICT;
+\end{lstlisting}
+
+\smallskip
+\textbf{Every line is a decision you have already made.} \texttt{NOT NULL} on
+\texttt{dept\_code} is the total participation from \chref{cardinality}'s
+worked example; the nullable \texttt{emp\_id} is the partial participation
+argued for in the same place; the three-part primary key is the weak entity's
+owner key plus discriminator; and each of the three referential actions
+follows the rule in this chapter. Nothing here is a matter of taste.
+\end{examplebox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Assuming \sqlkw{REFERENCES} does something.} By default, in
+        SQLite, it does not. Check, every time.
+  \item \textbf{Setting the pragma once and assuming it stuck.} It is per
+        connection and lasts until that connection closes.
+  \item \textbf{Setting it inside a transaction.} It is silently ignored there.
+  \item \textbf{Declaring \texttt{TEXT PRIMARY KEY} without \sqlkw{NOT NULL}.}
+        It will store a null, as measured. Add \sqlkw{NOT NULL} or
+        \sqlkw{STRICT}, and this course does both.
+  \item \textbf{Cascading beyond a weak entity.} One delete, a chain you did
+        not draw, and a committed transaction.
+  \item \textbf{Believing the application will check it.} Three programs, one
+        of them written next year by somebody else. This is
+        \chref{whynotfiles}'s whole argument.
+  \item \textbf{Turning enforcement on and assuming the old data is clean.} It
+        applies to new statements only; run
+        \texttt{PRAGMA foreign\_key\_check}.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Insert an orphan into a correct schema, then make it impossible]
+\begin{lstlisting}[language=bash]
+# --- 1. A scratch database ------------------------------------------
+sqlite3 fk.db
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. A schema that declares referential integrity ------------
+.headers on
+.mode box
+CREATE TABLE course (
+  course_code TEXT PRIMARY KEY NOT NULL,
+  title       TEXT NOT NULL
+) STRICT;
+CREATE TABLE section (
+  course_code TEXT    NOT NULL REFERENCES course(course_code),
+  section_no  INTEGER NOT NULL,
+  room        TEXT,
+  PRIMARY KEY (course_code, section_no)
+) STRICT;
+INSERT INTO course VALUES ('CS-103','Database Systems');
+
+-- --- 3. Confirm the declaration is really there -----------------
+.schema section
+PRAGMA foreign_key_list(section);
+-- It is declared. Written down. Reported back to you.
+
+-- --- 4. Now break it --------------------------------------------
+PRAGMA foreign_keys;              -- what does it say?
+INSERT INTO section VALUES ('CS-999', 1, 'Room 7');
+SELECT * FROM section;
+-- A section of a course that does not exist. No error.
+
+-- --- 5. Turn enforcement on and try again -----------------------
+PRAGMA foreign_keys = ON;
+PRAGMA foreign_keys;
+INSERT INTO section VALUES ('CS-888', 1, 'Room 8');
+-- Record the exact error message.
+
+-- --- 6. The orphan from step 4 is still there -------------------
+SELECT * FROM section;
+-- Enforcement did not clean up. It never looks backwards.
+
+-- --- 7. Find every orphan already in the file -------------------
+PRAGMA foreign_key_check;
+-- Learn this one. It is how you audit a database you were handed.
+
+-- --- 8. Prove it is per connection ------------------------------
+.quit
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 9. A brand new connection to the SAME file ---------------------
+sqlite3 fk.db "PRAGMA foreign_keys;"
+sqlite3 fk.db "INSERT INTO section VALUES ('CS-777',1,'R9');"
+sqlite3 fk.db "SELECT * FROM section;"
+# It went in. Nothing in the file remembered.
+
+# --- 10. The measured version ---------------------------------------
+python code/m08_constraints.py
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 3 is the one that makes the point. The constraint
+is \emph{there} --- \texttt{PRAGMA foreign\_key\_list} prints it, the schema
+stores it, any tool reading the database would report it --- and step 4 walks
+straight past it. From now on, every script you write in this course opens
+with \texttt{PRAGMA foreign\_keys = ON;}, and \texttt{code/run\_all.py}
+checks that they all do.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item You are handed a SQLite database and told its foreign keys are
+        enforced. List the commands you would run to find out whether that is
+        true \emph{now}, and whether it has ever been true, and say what each
+        result would and would not establish.
+  \item For each of \ent{section}~$\rightarrow$~\ent{course},
+        \ent{section}~$\rightarrow$~\ent{instructor} and
+        \ent{enrolment}~$\rightarrow$~\ent{student}, choose an
+        \sqlkw{ON DELETE} action and justify it in one sentence. At least one
+        of your three must not be \sqlkw{CASCADE}.
+  \item A table is declared \texttt{roll\_no TEXT PRIMARY KEY}. Explain what
+        value it will accept that it should not, which integrity constraint
+        that violates, and give the two different one-word changes that each
+        fix it.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item The model gives three constraints: \textbf{domain} (values come from
+        the right set), \textbf{entity integrity} (no part of a primary key is
+        null), \textbf{referential integrity} (a reference points at something
+        that exists). \textbf{Semantic} constraints come from the university.
+  \item A \textbf{foreign key} must match a primary key in the referenced
+        relation, \emph{or} be wholly null --- and the null case is
+        \chref{cardinality}'s partial participation.
+  \item Foreign keys are not invented: a 1:N relationship puts one on the many
+        side, total participation makes it \sqlkw{NOT NULL}, and a weak entity
+        makes it part of its own key.
+  \item \textbf{Referential actions}: \sqlkw{RESTRICT} by default,
+        \sqlkw{CASCADE} only to a weak entity, \sqlkw{SET NULL} when the child
+        survives the parent.
+  \item \textbf{Measured: \sqlkw{PRAGMA} foreign\_keys is 0 by default.} A
+        correct \sqlkw{REFERENCES} clause is parsed, stored, reported --- and
+        enforces nothing. The orphan went in without an error.
+  \item The setting is \textbf{per connection}. Connection B, on the same
+        file, accepted what connection A refused.
+  \item Enforcement \textbf{never looks backwards}: orphans already present
+        stay. \texttt{PRAGMA foreign\_key\_check} finds them.
+  \item \textbf{Measured: \texttt{TEXT PRIMARY KEY} stores a null.}
+        \sqlkw{STRICT} or \sqlkw{NOT NULL} fixes it; \texttt{INTEGER PRIMARY
+        KEY} only appears to, because it substitutes a rowid.
+  \item \textbf{Measured: enforcement costs +24\%} on bulk inserts --- outside
+        the run-to-run spread, and cheap for what it buys. A single run
+        reported 3\%, which is why the harness repeats.
+  \item The general lesson: \textbf{a constraint has two lives, one in the
+        schema and one at run time, and only the second protects anything.}
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Entity integrity is violated when: (a)~a foreign key
+        points nowhere; (b)~part of a primary key is null; (c)~a value is
+        outside its domain; (d)~two tables have the same name.
+  \item \textbf{(MCQ)} In SQLite, \sqlkw{PRAGMA} \texttt{foreign\_keys}
+        defaults to: (a)~\sqlkw{ON} for \sqlkw{STRICT} tables;
+        (b)~\sqlkw{ON}; (c)~\sqlkw{OFF}; (d)~whatever it was last set to in
+        that file.
+  \item \textbf{(Short)} Give a situation in which \sqlkw{ON DELETE SET NULL}
+        is the right action and \sqlkw{CASCADE} would lose data you need.
+  \item \textbf{(Short)} Why is a foreign key allowed to be null at all? Answer
+        in terms of \chref{cardinality}.
+  \item \textbf{(Short)} You turn on foreign key enforcement for a database
+        that has been running for a year. What does it protect you from, and
+        what does it not?
+  \item \textbf{(Applied)} Write the \sqlkw{CREATE TABLE} statements for
+        \ent{instructor} and \ent{enrolment}, with every domain, entity
+        and referential constraint declared and a referential action chosen
+        for each foreign key. Beside each constraint, name the decision from
+        \chref{ermodel} or \chref{cardinality} that it implements.
+  \item \textbf{(Applied)} A colleague argues that foreign keys should be left
+        off because they cost 24\% on bulk inserts and ``the application
+        checks anyway''. Write the reply. Use the measured figures, the
+        per-connection result, and \chref{whynotfiles}'s argument, and say
+        under what single condition their position would actually be
+        defensible.
+\end{reviewq}

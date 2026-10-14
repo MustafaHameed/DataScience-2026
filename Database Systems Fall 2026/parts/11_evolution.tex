@@ -1,0 +1,450 @@
+%=====================================================================
+\chapter{Changing a Schema That Is Already Full}\label{ch:evolution}
+%=====================================================================
+\locator{3}{Part III --- From Diagram to Schema}
+
+\begin{outcomes}
+By the end of this chapter you will be able to:
+\begin{tight}
+  \item \textbf{Classify} a proposed schema change as cheap, expensive or
+        impossible, and \textbf{say} what decides which.
+  \item \textbf{Use} the four forms of \sqlkw{ALTER TABLE} SQLite supports, and
+        \textbf{state} the limits of each.
+  \item \textbf{Perform} the twelve-step rebuild for a change
+        \sqlkw{ALTER TABLE} cannot make.
+  \item \textbf{Write} a migration as a numbered, repeatable script, and
+        \textbf{record} the schema version in the database itself.
+  \item \textbf{Backfill} a new \sqlkw{NOT NULL} column on a table that already
+        has rows.
+\end{tight}
+\end{outcomes}
+
+\begin{prereq}
+\chref{ddl}: \sqlkw{CREATE TABLE} and \sqlkw{STRICT}. \chref{mapping} for the
+schema you are about to change --- this chapter modifies the
+\texttt{university.db} you built there, and produces
+\texttt{v2\_constraints.sql}.
+\end{prereq}
+
+\begin{keyterms}
+schema evolution $\bullet$ migration $\bullet$ \sqlkw{ALTER TABLE} $\bullet$
+\sqlkw{ADD COLUMN} $\bullet$ \sqlkw{RENAME TO} $\bullet$ \sqlkw{RENAME COLUMN}
+$\bullet$ \sqlkw{DROP COLUMN} $\bullet$ the twelve-step rebuild $\bullet$
+backfill $\bullet$ \sqlkw{PRAGMA} \texttt{user\_version} $\bullet$
+forward migration $\bullet$ rollback
+\end{keyterms}
+
+\section{The Chapter the Outline Does Not Name}
+
+HEC's course content lists nothing about changing a schema --- \term{schema
+evolution}, in the textbooks' phrase. It is here anyway,
+for a reason you can check against your own timetable: this course carries one
+database through sixteen weeks. In week~5 it had seven tables; by
+\chref{normalforms} it has more, by \chref{views} it has views and triggers,
+and by \chref{indexes} it has indexes. Every one of those is a schema change
+made to a database that already has rows in it.
+
+A student who can only create a schema from scratch has to start again every
+time the design improves --- and in a real system, starting again means losing
+the data.
+
+\begin{conceptbox}[Three kinds of change, and what decides the cost]
+\begin{tabular}{@{}L{3.6cm}L{4.6cm}L{5.8cm}@{}}
+\textbf{Kind} & \textbf{Examples} & \textbf{Cost} \\
+\textbf{Cheap} & add a nullable column; rename; add an index &
+  a change to the \emph{schema only}. The rows are untouched. \\
+\textbf{Expensive} & change a type; add a constraint; split a table &
+  every row must be read and rewritten. \\
+\textbf{Impossible} & recover a fact nobody recorded &
+  no amount of work helps; only a new requirement and future data. \\
+\end{tabular}
+
+\smallskip
+\textbf{What decides it is whether existing rows must change.} Adding a
+nullable column does not: every existing row's new value is null, and null
+needs no writing. Adding \sqlkw{NOT NULL} does, because every existing row
+needs a value that is not there.
+
+\smallskip
+The third row is the one worth remembering. \chref{ermodel} said a
+\texttt{address} stored whole could never answer ``who lives in Bahawalpur''.
+That is not expensive --- the city was never recorded separately and splitting
+the column cannot invent it. Design errors in Part~II become \emph{impossible}
+here, which is why Part~II took four chapters.
+\end{conceptbox}
+
+\section{What \sqlkw{ALTER TABLE} Can Do}
+
+\begin{definitionbox}[The four forms, and the limits of each]
+\begin{tight}
+  \item \sqlkw{ALTER TABLE} $t$ \sqlkw{RENAME TO} $u$ --- renames the table,
+        and since 3.25 updates every reference to it in other tables' foreign
+        keys, views and triggers.
+  \item \sqlkw{ALTER TABLE} $t$ \sqlkw{RENAME COLUMN} $a$ \sqlkw{TO} $b$ ---
+        renames a column, updating references.
+  \item \sqlkw{ALTER TABLE} $t$ \sqlkw{ADD COLUMN} $c$ \dots\ --- adds a
+        column at the \emph{end}. It may not be \sqlkw{PRIMARY KEY} or
+        \sqlkw{UNIQUE}; it may not have a non-constant default; and it may be
+        \sqlkw{NOT NULL} \textbf{only if it has a default}.
+  \item \sqlkw{ALTER TABLE} $t$ \sqlkw{DROP COLUMN} $c$ --- removes a column,
+        provided nothing depends on it: not a primary key, not indexed, not
+        mentioned in a constraint, view or trigger.
+\end{tight}
+
+\smallskip
+That is the complete list. \textbf{There is no \sqlkw{ALTER COLUMN}}, so a
+type cannot be changed, a constraint cannot be added, and a column cannot be
+moved --- not by \sqlkw{ALTER TABLE}.
+\end{definitionbox}
+
+\begin{examplebox}[The three cheap changes, and the one that catches people]
+\begin{lstlisting}[language=sql]
+-- Cheap: a nullable column. Instant on any number of rows.
+ALTER TABLE student ADD COLUMN email TEXT;
+
+-- Cheap: renames.
+ALTER TABLE student RENAME COLUMN cnic TO national_id;
+
+-- Refused: NOT NULL with no default, on a table with rows.
+ALTER TABLE student ADD COLUMN email TEXT NOT NULL;
+--   Cannot add a NOT NULL column with default value NULL
+\end{lstlisting}
+
+\smallskip
+\textbf{The third is not an arbitrary restriction.} Every existing row would
+need a value for \texttt{email} and there is none, so the table would be in a
+state its own schema forbids the instant the statement finished. SQLite
+refuses rather than produce that.
+
+\smallskip
+The two honest ways out are both in the next section, and the dishonest one is
+\sqlkw{DEFAULT} \texttt{''} --- which satisfies the constraint with a value
+that means nothing, and is \chref{relational}'s magic value wearing a new hat.
+\end{examplebox}
+
+\section{The Twelve-Step Rebuild}
+
+For everything else --- changing a type, adding a \sqlkw{CHECK}, adding
+\sqlkw{STRICT}, reordering columns --- there is one procedure, and it is in
+SQLite's own documentation. It is worth doing by hand once.
+
+\begin{worked}[Adding a constraint to a table that is already full]
+The requirement: \texttt{student.semester} must be between 1 and 8. The table
+exists, has 4{,}000 rows, and has no such \sqlkw{CHECK}.
+
+\medskip
+\textbf{Step 0 --- find out whether the data already satisfies it.} Before
+anything else:
+\begin{lstlisting}[language=sql]
+SELECT roll_no, semester FROM student
+ WHERE semester NOT BETWEEN 1 AND 8 OR semester IS NULL;
+\end{lstlisting}
+If this returns rows, the migration will fail at step 5 and you need a
+decision from the university first --- not a cleverer script. \textbf{This is
+the step people skip, and it is the one that turns a ten-minute migration into
+an afternoon.}
+
+\medskip
+\textbf{Steps 1--12, as a script:}
+\begin{lstlisting}[language=sql]
+PRAGMA foreign_keys = OFF;          -- 1. and NOT inside the transaction
+BEGIN;                              -- 2. all of it, or none of it
+
+CREATE TABLE student_new (          -- 3. the table you wish you had
+  roll_no   TEXT    PRIMARY KEY NOT NULL,
+  name      TEXT    NOT NULL,
+  programme TEXT    NOT NULL,
+  semester  INTEGER NOT NULL CHECK (semester BETWEEN 1 AND 8),
+  cnic      TEXT    UNIQUE
+) STRICT;
+
+INSERT INTO student_new                -- 4. copy, naming every column
+  SELECT roll_no, name, programme, semester, cnic FROM student;
+
+DROP TABLE student;                    -- 5. the old one
+ALTER TABLE student_new RENAME TO student;   -- 6. take its name
+
+CREATE INDEX idx_student_name ON student(name);  -- 7. rebuild indexes
+-- 8. recreate views and triggers that referenced it
+
+PRAGMA foreign_key_check;           -- 9. did anything become an orphan?
+COMMIT;                             -- 10.
+PRAGMA foreign_keys = ON;           -- 11.
+PRAGMA integrity_check;             -- 12.
+\end{lstlisting}
+
+\medskip
+\textbf{Four things about this that are not obvious.}
+\begin{tight}
+  \item \textbf{\sqlkw{PRAGMA} foreign\_keys goes \emph{outside} the
+        transaction}, both times. Inside one it is silently ignored --- which
+        is \chref{constraints}'s pitfall arriving in a place where the
+        consequence is a dropped foreign key rather than a rejected insert.
+  \item \textbf{Name every column in the \sqlkw{INSERT}.} \sqlkw{SELECT *}
+        depends on column order, which is exactly what you may be changing.
+  \item \textbf{Indexes, views and triggers do not survive \sqlkw{DROP
+        TABLE}.} Step 7 is not optional and is the most commonly forgotten.
+  \item \textbf{It is $O(n)$.} Every row is read and written. On this
+        database that is instant; on a real one it is the difference between a
+        maintenance window and a Tuesday.
+\end{tight}
+\end{worked}
+
+\dsfig{%
+\begin{tikzpicture}[
+  box/.style={rounded corners=3pt, draw=#1, line width=1pt, fill=#1!7,
+              text=#1!60!black, font=\scriptsize\bfseries, align=center,
+              text width=2.9cm, minimum height=0.8cm},
+  arr/.style={-{Stealth[length=2.2mm]}, primary!55, line width=0.9pt},
+  q/.style={font=\scriptsize\itshape, text=neutral, align=center},
+  tag/.style={font=\scriptsize\bfseries, align=center}
+]
+  \node[box=primary] (start) at (0,2.6) {the change\\you want};
+  \node[q, text width=4.6cm] (q1) at (0,1.2)
+       {does any \emph{existing row} have to change?};
+  \node[box=greenhl] (cheap) at (-4.6,-0.3) {ALTER TABLE\\{\scriptsize
+       \mdseries schema only, instant}};
+  \node[q, text width=4.4cm] (q2) at (2.2,-0.3)
+       {is the information already in the database?};
+  \node[box=goldhl] (reb) at (0.4,-2.1) {the 12-step\\rebuild};
+  \node[box=accent]  (imp) at (5.0,-2.1) {\textbf{impossible}};
+
+  \draw[arr] (start) -- (q1);
+  \draw[arr] (q1) -- node[tag, above, text=greenhl!60!black, pos=0.55] {no}
+             (cheap);
+  \draw[arr] (q1) -- node[tag, above right, text=neutral, pos=0.5] {yes}
+             (q2);
+  \draw[arr] (q2) -- node[tag, left, text=goldhl!70!black] {yes} (reb);
+  \draw[arr] (q2) -- node[tag, right, text=accent] {no} (imp);
+
+  \node[q, anchor=north, text width=3.6cm, text=greenhl!60!black]
+       at (-4.6,-1.1) {add a nullable column, rename, add an index};
+  \node[q, anchor=north, text width=3.6cm, text=goldhl!70!black]
+       at (0.4,-2.9) {change a type, add a \sqlkw{CHECK}, split a table,
+        backfill};
+  \node[q, anchor=north, text width=3.6cm, text=accent]
+       at (5.0,-2.9) {recover a fact nobody ever recorded --- a Part~II error};
+\end{tikzpicture}}%
+{Two questions decide what a schema change costs. The right-hand branch is the
+one Part~II existed to prevent: no procedure recovers information that was
+never stored.}{evolution}
+
+\section{Migrations as Files}
+
+\begin{definitionbox}[A migration]
+A \term{migration} is a numbered script that moves the database from one schema
+version to the next. It is kept in the repository beside the code, it is run
+once per database, and it is never edited after it has been run anywhere.
+
+\smallskip
+\sqlkw{PRAGMA} \texttt{user\_version} is a 32-bit integer SQLite stores in the
+database file and otherwise ignores completely. It is yours to use, and it is
+how a script knows which migrations a given file has already had.
+\end{definitionbox}
+
+\begin{examplebox}[The pattern, and it is four lines]
+\begin{lstlisting}[language=sql]
+-- v2_constraints.sql -- run only against a version 1 database
+PRAGMA foreign_keys = OFF;
+BEGIN;
+
+-- ... the changes ...
+
+PRAGMA user_version = 2;      -- the last thing before COMMIT
+COMMIT;
+PRAGMA foreign_keys = ON;
+\end{lstlisting}
+
+and the check before running it:
+\begin{lstlisting}[language=bash]
+sqlite3 university.db "PRAGMA user_version;"
+# 1  -> run v2.   2 -> already applied, do nothing.
+\end{lstlisting}
+
+\smallskip
+\textbf{Why the version is set inside the transaction.} If the migration
+fails half-way, the rollback takes the version number with it, and the
+database is honestly still at version 1. Set it afterwards and a failed
+migration leaves a database that claims to be something it is not --- which is
+worse than the failure.
+\end{examplebox}
+
+\begin{alertbox}[Four rules that are about people, not about SQL]
+\begin{tight}
+  \item \textbf{Never edit a migration that has run anywhere.} Somebody else's
+        database already has the old version applied; changing the file means
+        two databases with the same version number and different schemas, and
+        nothing will ever tell you.
+  \item \textbf{Take a backup first, and check that you can restore it.} For
+        SQLite this is \texttt{copy university.db university.db.bak} and then
+        actually opening the copy. An untested backup is a hope.
+  \item \textbf{Make the change in two deployments when a column is going
+        away.} Stop writing it, ship, confirm nothing broke, then drop it.
+        Dropping and deploying together means the rollback is also a
+        migration.
+  \item \textbf{Write the \emph{reverse} migration, even if you never run
+        it.} Writing it is how you find out that the change is irreversible
+        --- and finding that out before you run it is the entire point.
+  \end{tight}
+\end{alertbox}
+
+\begin{pitfall}
+\begin{tight}
+  \item \textbf{Adding \sqlkw{NOT NULL} without a default to a full table.}
+        Refused, and correctly: every existing row would violate it.
+  \item \textbf{Satisfying it with \sqlkw{DEFAULT} \texttt{''}.} A magic value
+        that will be counted and compared as though it meant something.
+  \item \textbf{Setting \sqlkw{PRAGMA} foreign\_keys inside the transaction.}
+        Silently ignored, and in a rebuild the consequence is a dropped
+        foreign key.
+  \item \textbf{\sqlkw{INSERT} \dots\ \sqlkw{SELECT *} in a rebuild.} It
+        depends on the column order you are changing.
+  \item \textbf{Forgetting to recreate indexes, views and triggers.} They go
+        with the dropped table and nothing reminds you.
+  \item \textbf{Skipping step 0.} Check the data satisfies the new constraint
+        \emph{before} writing the migration.
+  \item \textbf{Editing a migration after it has run.} Two databases, one
+        version number, different schemas.
+\end{tight}
+\end{pitfall}
+
+\begin{lab}[Migrate the database you built in Chapter 9]
+This lab produces \texttt{code/schema/v2\_constraints.sql}.
+
+\begin{lstlisting}[language=bash]
+# --- 1. Back it up, and prove the backup opens ----------------------
+cp university.db university.db.bak
+sqlite3 university.db.bak ".tables"
+sqlite3 university.db "PRAGMA user_version;"     # 0 or 1
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 2. The cheap change: a nullable column ---------------------
+ALTER TABLE student ADD COLUMN email TEXT;
+SELECT roll_no, email FROM student LIMIT 3;
+-- Instant, whatever the row count. Nothing was rewritten.
+
+-- --- 3. The same column, NOT NULL -------------------------------
+ALTER TABLE student ADD COLUMN email2 TEXT NOT NULL;
+-- Record the error. Explain it in terms of the existing rows.
+
+-- --- 4. Step 0 of any rebuild: does the data already comply? ----
+SELECT COUNT(*) FROM student WHERE semester NOT BETWEEN 1 AND 8;
+-- If this is not 0, stop and decide what the right value is.
+
+-- --- 5. Backfill, so NOT NULL becomes possible ------------------
+UPDATE student SET email = roll_no || '@iub.edu.pk' WHERE email IS NULL;
+SELECT COUNT(*) FROM student WHERE email IS NULL;
+-- Now every row has a value, and only now is the constraint addable.
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+# --- 6. Write the migration -----------------------------------------
+# Put steps 1-12 into code/schema/v2_constraints.sql, adding to the
+# student table:  email TEXT NOT NULL, and a CHECK that semester is
+# between 1 and 8. Set PRAGMA user_version = 2 before COMMIT.
+\end{lstlisting}
+\begin{lstlisting}[language=sql]
+-- --- 7. Run it --------------------------------------------------
+.read code/schema/v2_constraints.sql
+PRAGMA user_version;
+.schema student
+PRAGMA integrity_check;
+PRAGMA foreign_key_check;
+
+-- --- 8. Prove the new constraint is live ------------------------
+INSERT INTO student VALUES
+  ('2021-IT-999','Test','BSIT',99,NULL,NULL,NULL,NULL,'x@y.z');
+-- Must fail. Which constraint caught it?
+
+-- --- 9. Prove the old data survived -----------------------------
+SELECT COUNT(*) FROM student;
+-- Compare with the count before step 6. They must match.
+
+-- --- 10. Write the reverse migration ----------------------------
+-- Write v2_rollback.sql, which undoes step 6. Do not run it.
+-- Then answer: is it a true reverse? What cannot be undone?
+\end{lstlisting}
+
+\smallskip
+\textbf{What to notice.} Step 10 is the exercise. The forward migration added a
+\sqlkw{CHECK} and a column; the reverse can drop both --- but the
+\emph{backfilled email addresses} are now indistinguishable from real ones,
+and no rollback can tell them apart. \textbf{A migration that writes data is
+not reversible, whatever the script says}, and knowing which of your
+migrations are in that class is the whole of the skill.
+\end{lab}
+
+\begin{checkpoint}
+\begin{tightnum}
+  \item Classify each as cheap, expensive or impossible, with the reason:
+        adding a nullable \texttt{email}; adding \texttt{email} \sqlkw{NOT
+        NULL}; changing \texttt{semester} from \texttt{TEXT} to
+        \texttt{INTEGER}; splitting \texttt{address} into house, street and
+        city on a table where only the whole address was ever stored.
+  \item A migration adds a \sqlkw{NOT NULL} column by backfilling it with a
+        computed value. Explain why the rollback script is not a true reverse,
+        and say what you would record at migration time to make it one.
+  \item \sqlkw{PRAGMA} \texttt{user\_version} is set inside the transaction
+        rather than after it. Say what goes wrong if it is set after, and
+        describe the state the database would be left in.
+\end{tightnum}
+\end{checkpoint}
+
+\begin{chaptersummary}
+\begin{tight}
+  \item A schema change is \textbf{cheap} if no existing row must change,
+        \textbf{expensive} if every row must be rewritten, and
+        \textbf{impossible} if it needs information nobody recorded.
+  \item The third class is a Part~II design error arriving late. No procedure
+        recovers a fact that was never stored.
+  \item SQLite's \sqlkw{ALTER TABLE} does four things: \sqlkw{RENAME TO},
+        \sqlkw{RENAME COLUMN}, \sqlkw{ADD COLUMN}, \sqlkw{DROP COLUMN}.
+        \textbf{There is no \sqlkw{ALTER COLUMN}}, so types and constraints
+        cannot be changed by it.
+  \item \sqlkw{ADD COLUMN} may be \sqlkw{NOT NULL} only with a default,
+        because every existing row needs a value --- and a default of
+        \texttt{''} is a magic value, not a solution.
+  \item Everything else is the \textbf{twelve-step rebuild}: new table, copy
+        naming every column, drop, rename, \textbf{rebuild indexes, views and
+        triggers}, check, commit.
+  \item \sqlkw{PRAGMA} \texttt{foreign\_keys} goes \emph{outside} the
+        transaction. Inside one it is ignored, and in a rebuild that costs you
+        a foreign key.
+  \item A \textbf{migration} is a numbered script, kept in the repository, run
+        once, and \textbf{never edited after it has run anywhere}.
+  \item \sqlkw{PRAGMA} \texttt{user\_version} records which migrations a file
+        has had. Set it \emph{inside} the transaction, so a failed migration
+        leaves an honest version number.
+  \item Back up first and open the backup. Drop a column in a second
+        deployment. Write the reverse migration even if you never run it.
+  \item \textbf{A migration that writes data is not reversible}, whatever the
+        rollback script claims --- backfilled values cannot be told from real
+        ones afterwards.
+\end{tight}
+\end{chaptersummary}
+
+\begin{reviewq}
+  \item \textbf{(MCQ)} Which of these can SQLite's \sqlkw{ALTER TABLE} do?
+        (a)~change a column's type; (b)~add a \sqlkw{CHECK} constraint;
+        (c)~rename a column; (d)~reorder columns.
+  \item \textbf{(MCQ)} \sqlkw{ADD COLUMN} \texttt{x TEXT NOT NULL} on a table
+        with rows is: (a)~instant; (b)~refused unless a default is given;
+        (c)~refused always; (d)~allowed but leaves nulls.
+  \item \textbf{(Short)} Why must \sqlkw{PRAGMA} \texttt{foreign\_keys = OFF}
+        appear before \sqlkw{BEGIN} rather than after it?
+  \item \textbf{(Short)} Name two things that are lost by \sqlkw{DROP TABLE}
+        during a rebuild and must be recreated explicitly.
+  \item \textbf{(Short)} Give a schema change that is impossible, and say what
+        decision in Part~II would have prevented it.
+  \item \textbf{(Applied)} Write the full twelve-step migration that changes
+        \texttt{enrolment.grade} from an unconstrained \texttt{TEXT} column to
+        one with \sqlkw{CHECK} \texttt{(grade IN ('A','B','C','D','F'))}.
+        Include step 0, say what you would do if step 0 returned 40 rows with
+        a grade of \texttt{'I'}, and state which parts of your script are not
+        reversible.
+  \item \textbf{(Applied)} Your university decides, in week 12, that an
+        instructor may co-teach: \ent{teaches} becomes M:N. Describe the
+        complete migration --- new table, backfill from the existing
+        \texttt{section.emp\_id}, what to do with the old column, and in how
+        many deployments you would ship it. Then say which single step is
+        irreversible and why.
+\end{reviewq}

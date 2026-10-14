@@ -370,9 +370,11 @@ def main() -> int:
     for n in want:
         build_chapter(n, chapters, deps, figman)
     if a.overview:
-        # The Data Science pipeline has an overview deck; this course does not
-        # (yet). Fail clearly rather than with an ImportError.
-        print("no overview deck for this course")
+        # This used to print "no overview deck for this course" -- a stub
+        # inherited from a sibling that had none -- while overview.py sat in
+        # this directory, so --overview did nothing and said so politely.
+        import overview
+        overview.build(chapters, deps, figman)
     return 0
 
 

@@ -192,6 +192,19 @@ def compile_one(name: str, body: str, pre: str, level: int | None = None
     # workers write into out/ at once, so retry each conversion.
     svg = os.path.join(OUT, name + ".svg")
     png = os.path.join(OUT, name + ".png")
+    # Remove last run's outputs FIRST. The retry loop below skips a conversion
+    # whose output already exists, which is what makes a retry idempotent --
+    # and, left to itself, also means an output from a previous run is never
+    # replaced. We only reach this function when the figure needs rebuilding,
+    # so by this point the .pdf has just been recompiled from changed source
+    # and whatever is in out/ is stale by definition. Without this, editing a
+    # figure updated the handout and silently did not update the decks: the
+    # decks embed the .png. That is exactly what happened to the Chapter 6 ER
+    # diagram -- the handout showed the corrected layout and the slide showed
+    # the old one, with the build reporting "all figures current" throughout.
+    for f in (svg, png):
+        if os.path.exists(f):
+            os.remove(f)
     for attempt in range(3):
         if not os.path.exists(svg):
             subprocess.run(["pdftocairo", "-svg", pdf, svg],
